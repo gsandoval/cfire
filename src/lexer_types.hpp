@@ -16,7 +16,7 @@ enum class TokenKind : int {
     Float,
     String,
     RawString, // Backtick `...`
-    Char,      // Q37 (CF-182): ASCII byte literal 'L'; the lexeme keeps its quotes
+    Char,      // ASCII byte literal 'L'; the lexeme keeps its quotes
     CppBlock,  // Balanced `{ ... }` after `cplusplus` or `cpp`
 
     // Keywords (28)

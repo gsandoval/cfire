@@ -180,7 +180,7 @@ template <typename T>
     return sp.data() + offset;
 }
 
-// --- Safe Numeric & Boolean Parsing (`CF-022`) ---
+// --- Safe Numeric & Boolean Parsing ---
 [[nodiscard]] inline auto parse_i64(std::string_view sv) noexcept -> std::optional<std::int64_t> {
     return cfire::detail::parse_int<std::int64_t>(trim(sv));
 }

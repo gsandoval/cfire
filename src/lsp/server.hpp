@@ -1,7 +1,7 @@
 #pragma once
 // src/lsp/server.hpp — Full-Featured Language Server Protocol (LSP 3.17) Server (`cfire::lsp::Server`)
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 #include "../analysis.hpp"
 #include "../buildsys.hpp"
 #endif
@@ -81,7 +81,7 @@ public:
 
     void handle_stream(std::istream& in, std::ostream& out);
 
-    // Exception barrier (CF-140): a failure while serving one message must never take the server down.
+    // Exception barrier: a failure while serving one message must never take the server down.
     bool handle_message(std::string_view msg, std::ostream& out);
 
     bool handle_message_impl(std::string_view msg, std::ostream& out);
@@ -159,7 +159,7 @@ public:
         int end_col = 0;   // 0-based
     };
 
-    // Q21 (CF-178): the workspace is the editor's rootUri, else the nearest ancestor holding a project
+    // the workspace is the editor's rootUri, else the nearest ancestor holding a project
     // marker. A cache directory (`.cfire`) is not a marker: a stray /tmp/.cfire used to turn all of /tmp
     // into one workspace. `has_marker == false` means "just this file's directory, non-recursively".
     struct WorkspaceRoot {
@@ -198,7 +198,7 @@ public:
 };
 
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 CFIRE_LSP_SERVER_INLINE void Server::start_worker() {
     if (worker_running_.load()) return;
@@ -762,8 +762,7 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
             } else if (imp.is_cpp) {
                 cfire::build::BuildPlan lsp_plan;
                 lsp_plan.cflags = {"-std=c++2b", "-I" + src_dir.string()};
-                cfire::build::append_imp_define_cflags(imp, lsp_plan.cflags);
-                // Check sibling or parent `build.cf` for local C/C++ include directories, deps, and PkgConfig (Q60)
+                // Check sibling or parent `build.cf` for local C/C++ include directories, deps, defines, and PkgConfig
                 std::filesystem::path search_dir = src_dir;
                 for (int depth = 0; depth < 6 && !search_dir.empty(); ++depth) {
                     auto bcf = search_dir / "build.cf";
@@ -771,10 +770,10 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
                     if (std::filesystem::exists(bcf, ec)) {
                         if (auto parsed = cfire::build::parse_build_cf(bcf)) {
                             cfire::build::apply_manifest_pkg_fields(
-                                lsp_plan, search_dir, parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes);
+                                lsp_plan, search_dir, parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes, parsed->defines);
                             for (const auto& ex : parsed->executables) {
                                 cfire::build::apply_manifest_pkg_fields(
-                                    lsp_plan, search_dir, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes);
+                                    lsp_plan, search_dir, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines);
                             }
                             for (const auto& dep : parsed->external_deps) {
                                 if (!dep.source.empty()) {
@@ -798,6 +797,7 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
                         }
                         auto rt_dir = cfire::build::locate_toolchain_layout().runtime_dir;
                         cfire::build::resolve_plan_pkg_configs(lsp_plan, rt_dir);
+                        (void)cfire::build::resolve_plan_defines(lsp_plan);
                         break;
                     }
                     if (search_dir == search_dir.parent_path()) break;
@@ -1109,7 +1109,7 @@ CFIRE_LSP_SERVER_INLINE auto Server::discover_workspace_cf_files(const std::stri
     std::filesystem::path root = ws.path;
     std::error_code ec;
     if (std::filesystem::exists(root, ec) && std::filesystem::is_directory(root, ec) && !ws.has_marker) {
-        // No project marker: only the opened file's own directory, never its whole subtree (Q21).
+        // No project marker: only the opened file's own directory, never its whole subtree.
         for (const auto& entry : std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec)) {
             if (uris.size() >= kMaxWorkspaceFiles) break;
             if (entry.is_regular_file(ec) && entry.path().extension() == ".cf") {
@@ -1312,7 +1312,7 @@ CFIRE_LSP_SERVER_INLINE auto Server::compute_on_type_formatting(const std::strin
         line, line, ws_len, detail::json_escape(target_ws));
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 } // namespace cfire::lsp
 

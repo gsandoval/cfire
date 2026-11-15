@@ -1,5 +1,5 @@
 #pragma once
-// tests/unit/test_golden_codegen.hpp — Golden Codegen Snapshot & #line Verification Suite (CF-092)
+// tests/unit/test_golden_codegen.hpp — Golden Codegen Snapshot & #line Verification Suite
 
 #include "../test_harness.hpp"
 #include <algorithm>
@@ -11,7 +11,7 @@
 #include <vector>
 
 void test_golden_codegen_snapshots(const std::filesystem::path& repo_root) {
-    std::println("=== RUN   test_golden_codegen_snapshots (CF-092)");
+    std::println("=== RUN   test_golden_codegen_snapshots");
 
     auto golden_dir = repo_root / "tests" / "golden";
     require(std::filesystem::exists(golden_dir), std::format("tests/golden exists at {}", golden_dir.string()));
@@ -54,7 +54,7 @@ void test_golden_codegen_snapshots(const std::filesystem::path& repo_root) {
 
         std::string actual_cpp = cfire::frontend::emit_cpp(*check_res, false);
 
-        // 1. Verify #line directive fidelity (CF-092)
+        // 1. Verify #line directive fidelity
         std::string line_pattern = std::format("#line [0-9]+ \"{}\"", filename);
         bool has_line_directives = std::regex_search(actual_cpp, std::regex(line_pattern));
         require(has_line_directives, std::format("{} must emit #line directives referencing \"{}\"", filename, filename));

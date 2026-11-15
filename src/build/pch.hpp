@@ -203,6 +203,16 @@ inline void set_build_profile(BuildProfile profile) {
 #endif
 }
 
+[[nodiscard]] inline auto pch_instantiate_templates_flag() -> std::string_view {
+#if defined(__linux__)
+    // Clang + GNU libstdc++ <format> drops inline virtual sink definitions (e.g. _Seq_sink::_M_bump)
+    // in consuming TUs at -O0/-O1 when templates are pre-instantiated in a PCH without -fpch-codegen.
+    return "";
+#else
+    return " -fpch-instantiate-templates";
+#endif
+}
+
 [[nodiscard]] CFIRE_INFRA_INLINE auto pch_cache_dir() -> std::filesystem::path;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto runtime_headers_fingerprint(const std::filesystem::path& runtime_dir) -> std::string;
@@ -244,7 +254,7 @@ inline void set_build_profile(BuildProfile profile) {
     bool with_pthread = false
 ) -> std::string;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto pch_cache_dir() -> std::filesystem::path {
     auto dir = cache_subdir("pch");
@@ -396,14 +406,15 @@ struct PchDirLockGuard {
     std::string rt_fp = runtime_headers_fingerprint(runtime_dir);
 
     std::string key = std::format(
-        "v3|rt={}|rtfp={}|cc={}|ver={}|sha={}|opt={}|st={}\n",
+        "v4|rt={}|rtfp={}|cc={}|ver={}|sha={}|opt={}|st={}|it={}\n",
         (ec ? runtime_dir : can_rt).string(),
         rt_fp,
         compiler_fp,
         cfire::version::kVersion,
         cfire::version::kGitSha,
         opt_flags,
-        pch_static_flag()
+        pch_static_flag(),
+        pch_instantiate_templates_flag()
     );
     for (const auto& cf : cflags) {
         key += "cf:";
@@ -461,9 +472,10 @@ struct PchDirLockGuard {
         cmd += " " + f;
     }
     cmd += std::format(
-        " {}{} -fpch-instantiate-templates -x c++-header \"{}\" -o \"{}\"",
+        " {}{}{} -x c++-header \"{}\" -o \"{}\"",
         opt_flags,
         pch_static_flag(),
+        pch_instantiate_templates_flag(),
         umb_hpp.string(),
         tmp_pch_path.string()
     );
@@ -538,7 +550,7 @@ struct PchDirLockGuard {
     return ensure_composite_pch(runtime_dir, "#pragma once\n#include \"cfire_prelude.hpp\"\n", opt_flags, cflags);
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

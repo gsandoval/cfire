@@ -125,8 +125,8 @@ fn main() {
     undef_text.assert_fail("undefined symbol fails text cfire check")
         .assert_contains("undef_err.cf:4:", "text check error points to .cf file and line 4");
 
-    // CF-102: Terminal Warning Visibility in human check mode
-    // (Uses PREFER-ENUM: the injection lints became errors in CF-167.)
+    // Terminal Warning Visibility in human check mode
+    // (Uses PREFER-ENUM: the injection lints became errors in.)
     auto warn_cf = tmp_ws.file("warn_test.cf", R"(package main
 MODE_A := 0
 MODE_B := 1
@@ -135,9 +135,9 @@ MODE_C := 2
 fn main() {}
 )");
     auto warn_check = run_cfire(std::format("check \"{}\"", warn_cf.string()));
-    warn_check.assert_ok("human cfire check exits 0 on warning (CF-102)")
-        .assert_contains("warning: cluster of 3 related integer constants with prefix 'MODE'", "warning output rendered to stderr (CF-102)")
-        .assert_contains("checked (0 errors, 1 warning)", "summary line reports warning count (CF-102)");
+    warn_check.assert_ok("human cfire check exits 0 on warning")
+        .assert_contains("warning: cluster of 3 related integer constants with prefix 'MODE'", "warning output rendered to stderr")
+        .assert_contains("checked (0 errors, 1 warning)", "summary line reports warning count");
 
     // 6. Test doc --llm & doc --check (AGENT-P0-04)
     auto llm_res = run_cfire("doc --llm");
@@ -150,7 +150,7 @@ fn main() {}
     llm_res.assert_contains("ext:ai", "doc --llm lists ext:ai");
     llm_res.assert_contains("json.parse", "doc --llm contains exact json.parse API");
     require(!llm_res.output.contains("json.decode"), "doc --llm does not contain hallucinated json.decode");
-    // sort.slice_by is a real API since CF-115; ensure it is documented with valid trailing-closure syntax.
+    // sort.slice_by is a real API since; ensure it is documented with valid trailing-closure syntax.
     require(!llm_res.output.contains("sort.slice_by(mut items, |a, b| a < b)"), "doc --llm does not contain invalid expression-closure sort.slice_by example");
 
     run_cfire("doc --check").assert_ok("cfire doc --check exit 0 (AGENT-P0-04)");
@@ -167,41 +167,41 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
     require(res_all.has_value(), std::format("configure_ide --all (IDE-01): {}", res_all ? "" : res_all.error()));
     require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "settings.json"), "creates .vscode/settings.json (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "extensions.json"), "creates .vscode/extensions.json (IDE-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "mcp.json"), "creates .vscode/mcp.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "mcp.json"), "creates .cursor/mcp.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "rules" / "cfire.mdc"), "creates .cursor/rules/cfire.mdc (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".windsurf" / "mcp_config.json"), "creates .windsurf/mcp_config.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "plugin.json"), "creates Antigravity .agents/plugins/cfire/plugin.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "mcp_config.json"), "creates Antigravity .agents/plugins/cfire/mcp_config.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "rules" / "cfire.md"), "creates Antigravity .agents/rules/cfire.md (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".mcp.json"), "creates Claude Code .mcp.json (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".lsp.json"), "creates Claude Code .lsp.json (E7)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".claude-plugin" / "plugin.json"), "creates Claude Code .claude-plugin/plugin.json (E7)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".claude" / "rules" / "cfire.md"), "creates Claude Code .claude/rules/cfire.md (IDE-MCP-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / "opencode.json"), "creates OpenCode opencode.json (E7)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".codex" / "config.toml"), "creates Codex CLI .codex/config.toml (E7)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".vscode" / "mcp.json"), "creates .vscode/mcp.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "mcp.json"), "creates .cursor/mcp.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".cursor" / "rules" / "cfire.mdc"), "creates .cursor/rules/cfire.mdc");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".windsurf" / "mcp_config.json"), "creates .windsurf/mcp_config.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "plugin.json"), "creates Antigravity .agents/plugins/cfire/plugin.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "plugins" / "cfire" / "mcp_config.json"), "creates Antigravity .agents/plugins/cfire/mcp_config.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".agents" / "rules" / "cfire.md"), "creates Antigravity .agents/rules/cfire.md");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".mcp.json"), "creates Claude Code .mcp.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".lsp.json"), "creates Claude Code .lsp.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".claude-plugin" / "plugin.json"), "creates Claude Code .claude-plugin/plugin.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".claude" / "rules" / "cfire.md"), "creates Claude Code .claude/rules/cfire.md");
+    require(std::filesystem::exists(tmp_ide_ws.path / "opencode.json"), "creates OpenCode opencode.json");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".codex" / "config.toml"), "creates Codex CLI .codex/config.toml");
     require(std::filesystem::exists(tmp_ide_ws.path / ".zed" / "settings.json"), "creates .zed/settings.json (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".nvim.lua"), "creates .nvim.lua (IDE-01)");
     require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "lsp.xml"), "creates .idea/lsp.xml (IDE-01)");
-    require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "mcp.json"), "creates .idea/mcp.json (IDE-MCP-01)");
+    require(std::filesystem::exists(tmp_ide_ws.path / ".idea" / "mcp.json"), "creates .idea/mcp.json");
 
     // Verify contents of .lsp.json, opencode.json, and .codex/config.toml
     auto claude_lsp_txt = cfire::fs::read_text(tmp_ide_ws.path / ".lsp.json");
     require(claude_lsp_txt.has_value() && claude_lsp_txt->contains("\".cf\": \"cfire\"") && claude_lsp_txt->contains("\"args\": [\"lsp\"]"),
-        "Claude Code .lsp.json maps .cf to cfire lsp (E7)");
+        "Claude Code .lsp.json maps .cf to cfire lsp");
     auto opencode_txt = cfire::fs::read_text(tmp_ide_ws.path / "opencode.json");
     require(opencode_txt.has_value() && opencode_txt->contains("\"lsp\"") && opencode_txt->contains("\"mcp\""),
-        "OpenCode opencode.json configures both lsp and mcp (E7)");
+        "OpenCode opencode.json configures both lsp and mcp");
     auto codex_txt = cfire::fs::read_text(tmp_ide_ws.path / ".codex" / "config.toml");
     require(codex_txt.has_value() && codex_txt->contains("[mcp_servers.cfire]"),
-        "Codex CLI .codex/config.toml configures mcp_servers.cfire (E7)");
+        "Codex CLI .codex/config.toml configures mcp_servers.cfire");
 
     // Verify contents of .vscode/settings.json & .zed/settings.json
     auto vs_txt = cfire::fs::read_text(tmp_ide_ws.path / ".vscode" / "settings.json");
     require(vs_txt.has_value() && vs_txt->contains("\"editor.defaultFormatter\": \"cfire\""), "vs settings formatter (IDE-01)");
     require(vs_txt->contains("\"cfire.inlayHints.enable\": true"), "vs settings inlay hints (IDE-01)");
     auto zed_txt = cfire::fs::read_text(tmp_ide_ws.path / ".zed" / "settings.json");
-    require(zed_txt.has_value() && zed_txt->contains("\"context_servers\""), "zed settings includes context_servers MCP (IDE-MCP-01)");
+    require(zed_txt.has_value() && zed_txt->contains("\"context_servers\""), "zed settings includes context_servers MCP");
 
     // Verify contents of .nvim.lua
     auto nvim_txt = cfire::fs::read_text(tmp_ide_ws.path / ".nvim.lua");
@@ -219,29 +219,29 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
         if (d.id == "cursor" && d.configured) found_cursor = true;
         if (d.id == "vscode" && d.configured) found_vscode = true;
     }
-    require(found_agy, "detect_environments detects configured Antigravity (IDE-MCP-01)");
-    require(found_claude, "detect_environments detects configured Claude Code (IDE-MCP-01)");
-    require(found_cursor, "detect_environments detects configured Cursor (IDE-MCP-01)");
-    require(found_vscode, "detect_environments detects configured VS Code (IDE-MCP-01)");
+    require(found_agy, "detect_environments detects configured Antigravity");
+    require(found_claude, "detect_environments detects configured Claude Code");
+    require(found_cursor, "detect_environments detects configured Cursor");
+    require(found_vscode, "detect_environments detects configured VS Code");
 
     // 3. Verify CLI `cfire mcp --print-config` & `cfire ide --status`
     run_cfire("mcp --print-config")
-        .assert_ok("cfire mcp --print-config exit 0 (IDE-MCP-01)")
-        .assert_contains("\"mcpServers\"", "cfire mcp --print-config outputs mcpServers JSON (IDE-MCP-01)");
+        .assert_ok("cfire mcp --print-config exit 0")
+        .assert_contains("\"mcpServers\"", "cfire mcp --print-config outputs mcpServers JSON");
 
     run_cfire(std::format("ide --status --dir {}", cfire::bridge::shell_quote(tmp_ide_ws.path.string())))
-        .assert_ok("cfire ide --status exit 0 (IDE-MCP-01)")
-        .assert_contains("Google Antigravity", "cfire ide --status lists Antigravity (IDE-MCP-01)")
-        .assert_contains("Claude Code", "cfire ide --status lists Claude Code (IDE-MCP-01)");
+        .assert_ok("cfire ide --status exit 0")
+        .assert_contains("Google Antigravity", "cfire ide --status lists Antigravity")
+        .assert_contains("Claude Code", "cfire ide --status lists Claude Code");
 
     // 4. Verify new MCP server tools (cfire_outline, cfire_inspect, cfire_doc_llm)
     {
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{tmp_ide_ws.path, false});  // CF-160 root
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{tmp_ide_ws.path, false});  // root
         auto resp_inspect = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cfire_inspect","arguments":{"target":"cfire/USE-AFTER-FREE"}}})");
-        require(resp_inspect.contains("Use of a Slice View"), "MCP cfire_inspect returns diagnostic rule (IDE-MCP-01)");
+        require(resp_inspect.contains("Use of a Slice View"), "MCP cfire_inspect returns diagnostic rule");
 
         auto resp_llm = mcp_srv.handle_jsonrpc(R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"cfire_doc_llm","arguments":{}}})");
-        require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet (IDE-MCP-01)");
+        require(resp_llm.contains("Memory Safety, Loan Tracking"), "MCP cfire_doc_llm returns LLM reference sheet");
 
         // E1: Verify MCP cfire_check reports undefined symbol inside fn main()
         auto bad_main_cf = tmp_ide_ws.file("bad_main_mcp.cf", R"(package main
@@ -260,10 +260,10 @@ fn main() {
             cfire::lsp::Server hier_srv(10);
             std::stringstream h_in;
             std::stringstream h_out;
-            // CF-178: hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
+            // hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
             // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
             ScopedTempDir rpc_f_ws("cfire_lsp_ws");
-            std::filesystem::create_directory(rpc_f_ws.path / ".git");  // workspace-root marker (Q21)
+            std::filesystem::create_directory(rpc_f_ws.path / ".git");  // workspace-root marker
             auto rpc_f = [ws_uri = cfire::lsp::detail::path_to_uri(rpc_f_ws.path) + "/"](std::string_view p) {
                 std::string rebased(cfire::str::replace_all(p, "file:///tmp/", ws_uri));
                 return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
@@ -552,8 +552,8 @@ void test_cfire_remote_vendor(const std::filesystem::path& rt_dir) {
     std::println("--- PASS: test_cfire_remote_vendor");
 }
 
-void test_section3_agent_tooling([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_section3_agent_tooling");
+void test_cli_agent_and_workspace_tooling([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_cli_agent_and_workspace_tooling");
 
     // 1. AGENT-P2-02: Headless Auto-Fix Engine (dry-run, json, and in-place fix)
     {
@@ -668,7 +668,7 @@ test "passing test assertion" {
             .assert_contains("fn stringify", "inspect json.stringify signature match");
     }
 
-    std::println("--- PASS: test_section3_agent_tooling");
+    std::println("--- PASS: test_cli_agent_and_workspace_tooling");
 }
 
 void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_dir) {
@@ -1078,7 +1078,7 @@ fn main() {
 }
 
 void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_negative_parser_corpus_and_fuzz_runtime (CF-131)");
+    std::println("=== RUN   test_negative_parser_corpus_and_fuzz_runtime");
 
     // 1. Negative Parser Corpus: Verify syntax error recovery on 10 malformed programs
     {
@@ -1089,16 +1089,16 @@ void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::fi
         require(std::filesystem::exists(parse_fail_dir), "tests/parse_fail directory exists");
 
         std::vector<std::string> fail_cases = {
-            "01_unclosed_brace.cf",
-            "02_missing_type_bracket.cf",
-            "03_invalid_loan_intent.cf",
-            "04_reserved_keyword_var.cf",
-            "05_malformed_match_arm.cf",
-            "06_invalid_closure_param.cf",
-            "07_unclosed_string.cf",
-            "08_misplaced_top_level_stmt.cf",
-            "09_missing_fn_return_arrow.cf",
-            "10_invalid_float_exponent.cf"
+            "unclosed_brace.cf",
+            "missing_type_bracket.cf",
+            "invalid_loan_intent.cf",
+            "reserved_keyword_var.cf",
+            "malformed_match_arm.cf",
+            "invalid_closure_param.cf",
+            "unclosed_string.cf",
+            "misplaced_top_level_stmt.cf",
+            "missing_fn_return_arrow.cf",
+            "invalid_float_exponent.cf"
         };
 
         for (const auto& fname : fail_cases) {
@@ -1258,5 +1258,5 @@ void test_negative_parser_corpus_and_fuzz_runtime([[maybe_unused]] const std::fi
         }
     }
 
-    std::println("--- PASS: test_negative_parser_corpus_and_fuzz_runtime (CF-131)");
+    std::println("--- PASS: test_negative_parser_corpus_and_fuzz_runtime");
 }

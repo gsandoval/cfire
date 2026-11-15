@@ -494,7 +494,7 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_implementation(const std::string& uri,
 }
 
 namespace detail {
-// CF-155: token ranges `[first, last]` where `name` is rebound by a closure parameter (`|name| ...`) or a match-arm
+// token ranges `[first, last]` where `name` is rebound by a closure parameter (`|name| ...`) or a match-arm
 // pattern (`Some(name) => ...`). Inside such a range the name is a different variable from any outer binding.
 [[nodiscard]] inline auto rebinding_scopes(const std::vector<cfire::frontend::Token>& toks, std::string_view name)
     -> std::vector<std::pair<std::size_t, std::size_t>> {
@@ -592,7 +592,7 @@ CFIRE_LSP_NAV_INLINE auto Server::find_symbol_occurrences(const std::string& uri
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
 
-    // CF-155: closure parameters and match bindings are their own scopes.
+    // closure parameters and match bindings are their own scopes.
     if (qualifier.empty()) {
         if (auto raw_toks = cfire::frontend::tokenize(detail::uri_to_path(uri), text)) {
             auto toks = detail::expand_tokens_with_interpolations(detail::uri_to_path(uri), *raw_toks);

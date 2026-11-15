@@ -674,152 +674,152 @@ int main() {
         win32_res.assert_ok("Windows Win32 + WebView2 backend mock-header compilation and clipboard/dialog/tray/WndProc verification");
     }
 
-    // 4. Verify Upstream Stdlib & Extension Additions (CF-002, CF-003, CF-006, CF-007, CF-008, CF-021, CF-022, CF-026, CF-028, CF-043, CF-045, CF-046, CF-053)
+    // 4. Verify Upstream Stdlib & Extension Additions
     {
-        // CF-006: ext:crypto/sodium + PBKDF2 + AES auto-nonce encrypt/decrypt
+        // ext:crypto/sodium + PBKDF2 + AES auto-nonce encrypt/decrypt
 #if defined(CFIRE_SODIUM_NATIVE)
         auto salt = cfire::sodium::random_bytes(16);
-        require(salt.size() == 16, "CF-006: sodium::random_bytes(16)");
+        require(salt.size() == 16, "sodium::random_bytes(16)");
         auto kdf_key = cfire::sodium::argon2id("flint-master-password", salt, 32);
-        require(kdf_key.has_value() && kdf_key->size() == 32, "CF-006: sodium::argon2id derived 32-byte key");
+        require(kdf_key.has_value() && kdf_key->size() == 32, "sodium::argon2id derived 32-byte key");
 
         auto phc = cfire::sodium::argon2id_str("flint-master-password");
         require(phc.has_value() && cfire::sodium::argon2id_verify(*phc, "flint-master-password"),
-            "CF-006: sodium::argon2id_str + argon2id_verify pass");
+            "sodium::argon2id_str + argon2id_verify pass");
         require(!cfire::sodium::argon2id_verify(*phc, "wrong-password"),
-            "CF-006: sodium::argon2id_verify rejects wrong password");
+            "sodium::argon2id_verify rejects wrong password");
 
         auto plain_sod = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
         auto xsealed = cfire::sodium::xchacha20poly1305_encrypt(*kdf_key, plain_sod);
         require(xsealed.has_value() && xsealed->size() == plain_sod.size() + 40,
-            "CF-006: sodium::xchacha20poly1305_encrypt output size");
+            "sodium::xchacha20poly1305_encrypt output size");
         auto xopened = cfire::sodium::xchacha20poly1305_decrypt(*kdf_key, *xsealed);
         require(xopened.has_value() && str(*xopened) == "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI",
-            "CF-006: sodium::xchacha20poly1305_decrypt round-trip");
+            "sodium::xchacha20poly1305_decrypt round-trip");
         auto b2 = cfire::sodium::blake2b(plain_sod, 32);
-        require(b2.has_value() && b2->size() == 32, "CF-006: sodium::blake2b(32)");
+        require(b2.has_value() && b2->size() == 32, "sodium::blake2b(32)");
         auto subk = cfire::sodium::derive_subkey(*kdf_key, 1, "flintvlt", 32);
-        require(subk.has_value() && subk->size() == 32, "CF-006: sodium::derive_subkey");
+        require(subk.has_value() && subk->size() == 32, "sodium::derive_subkey");
         cfire::sodium::memzero(*kdf_key);
 #endif
         auto plain = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
 
         auto aes_key = cfire::aes::generate_key();
         auto aes_blob = cfire::aes::encrypt(aes_key, plain);
-        require(aes_blob.has_value(), "CF-006: aes::encrypt auto-nonce");
+        require(aes_blob.has_value(), "aes::encrypt auto-nonce");
         auto aes_pt = cfire::aes::decrypt(aes_key, *aes_blob);
         require(aes_pt.has_value() && str(*aes_pt) == "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI",
-            "CF-006: aes::decrypt auto-nonce round-trip");
+            "aes::decrypt auto-nonce round-trip");
 
         auto pbkdf2_key = cfire::hmac::pbkdf2_sha256("password", "salt", 1000, 32);
-        require(pbkdf2_key.size() == 32, "CF-006: hmac::pbkdf2_sha256");
+        require(pbkdf2_key.size() == 32, "hmac::pbkdf2_sha256");
 
         std::vector<std::uint8_t> raw_blob{std::uint8_t{0xDE}, std::uint8_t{0xAD}, std::uint8_t{0xBE}, std::uint8_t{0xEF}};
 
-        // CF-008: ext:keychain in headless mode
+        // ext:keychain in headless mode
         test_set_env("CFIRE_HEADLESS_TEST", "1");
-        require(cfire::keychain::set("dev.flint.test", "acct1", "s3cr3t").has_value(), "CF-008: keychain::set");
+        require(cfire::keychain::set("dev.flint.test", "acct1", "s3cr3t").has_value(), "keychain::set");
         auto kc_val = cfire::keychain::get("dev.flint.test", "acct1");
-        require(kc_val.has_value() && *kc_val == "s3cr3t", "CF-008: keychain::get");
-        require(cfire::keychain::delete_password("dev.flint.test", "acct1").has_value(), "CF-008: keychain::delete_password");
+        require(kc_val.has_value() && *kc_val == "s3cr3t", "keychain::get");
+        require(cfire::keychain::delete_password("dev.flint.test", "acct1").has_value(), "keychain::delete_password");
 
-        // CF-021 & CF-022: byte == u8 comparisons and str::parse_*
+        // byte == u8 comparisons and str::parse_*
         std::uint8_t b{0x0A};
-        require(b == 0x0A && b == static_cast<std::uint8_t>(10), "CF-021: std::uint8_t == integral comparison");
-        require(cfire::str::parse_i64(" -98765 ").value_or(0) == -98765, "CF-022: str::parse_i64");
-        require(cfire::str::parse_f64("3.5").value_or(0.0) == 3.5, "CF-022: str::parse_f64");
-        require(cfire::str::parse_bool("true").value_or(false) == true, "CF-022: str::parse_bool");
-        require(!cfire::str::parse_bool("yes").has_value(), "CF-022: str::parse_bool strictly rejects YAML slang");
+        require(b == 0x0A && b == static_cast<std::uint8_t>(10), "std::uint8_t == integral comparison");
+        require(cfire::str::parse_i64(" -98765 ").value_or(0) == -98765, "str::parse_i64");
+        require(cfire::str::parse_f64("3.5").value_or(0.0) == 3.5, "str::parse_f64");
+        require(cfire::str::parse_bool("true").value_or(false) == true, "str::parse_bool");
+        require(!cfire::str::parse_bool("yes").has_value(), "str::parse_bool strictly rejects YAML slang");
 
-        // CF-026: sync::Mutex, try_recv, recv_timeout
+        // sync::Mutex, try_recv, recv_timeout
         cfire::sync::Mutex mtx;
         int counter = 0;
         mtx.with_lock([&]() { counter += 10; });
-        require(counter == 10, "CF-026: sync::Mutex::with_lock");
+        require(counter == 10, "sync::Mutex::with_lock");
         auto ch = cfire::sync::make_channel<int>(4);
-        require(!ch.try_recv().has_value(), "CF-026: try_recv on empty channel returns nullopt");
+        require(!ch.try_recv().has_value(), "try_recv on empty channel returns nullopt");
         ch.send(77);
-        require(ch.len() == 1, "CF-026: ch.len() == 1");
-        require(ch.try_recv().value_or(0) == 77, "CF-026: try_recv returns queued item");
-        require(!ch.recv_timeout(5).has_value(), "CF-026: recv_timeout(5ms) on empty channel times out cleanly");
+        require(ch.len() == 1, "ch.len() == 1");
+        require(ch.try_recv().value_or(0) == 77, "try_recv returns queued item");
+        require(!ch.recv_timeout(5).has_value(), "recv_timeout(5ms) on empty channel times out cleanly");
 
-        // CF-043 & CF-089: net::socketpair, os::pipe, os::stdin/stdout/stderr RAII handles, and fail-closed net::connect_tcp
+        // net::socketpair, os::pipe, os::stdin/stdout/stderr RAII handles, and fail-closed net::connect_tcp
         auto sp = cfire::net::socketpair();
-        require(sp.has_value(), "CF-089: net::socketpair()");
+        require(sp.has_value(), "net::socketpair()");
         auto& [sp_a, sp_b] = *sp;
-        require(sp_a.write_text("X\n").value_or(0) == 2, "CF-089: TcpConn::write_text on socketpair");
-        require(sp_b.poll(50), "CF-089: TcpConn::poll detects readable socketpair");
+        require(sp_a.write_text("X\n").value_or(0) == 2, "TcpConn::write_text on socketpair");
+        require(sp_b.poll(50), "TcpConn::poll detects readable socketpair");
         auto sp_line = sp_b.read_line();
-        require(sp_line.has_value() && *sp_line == "X", "CF-089: TcpConn::read_line on socketpair");
+        require(sp_line.has_value() && *sp_line == "X", "TcpConn::read_line on socketpair");
         sp_a.close();
         sp_b.close();
-        require(!sp_a.is_open() && !sp_b.is_open(), "CF-089: socketpair closed");
-        require(!sp_a.read_bytes(16).has_value(), "CF-089: reading from closed TcpConn returns error");
+        require(!sp_a.is_open() && !sp_b.is_open(), "socketpair closed");
+        require(!sp_a.read_bytes(16).has_value(), "reading from closed TcpConn returns error");
         require(!cfire::net::connect_tcp("127.0.0.1", 59999).has_value(),
-            "CF-089: net::connect_tcp to non-listening loopback port fails closed with error");
+            "net::connect_tcp to non-listening loopback port fails closed with error");
 
         auto pp = cfire::os::pipe();
-        require(pp.has_value(), "CF-089: os::pipe() returns (fs::File, fs::File)");
+        require(pp.has_value(), "os::pipe() returns (fs::File, fs::File)");
         auto& [pipe_r, pipe_w] = *pp;
-        require(pipe_w.write_text("pipe-payload").value_or(0) == 12, "CF-089: pipe writer write_text");
+        require(pipe_w.write_text("pipe-payload").value_or(0) == 12, "pipe writer write_text");
         pipe_w.close();
         std::vector<std::uint8_t> pipe_buf(32);
         auto pipe_n = pipe_r.read_into(pipe_buf);
-        require(pipe_n.has_value() && *pipe_n == 12, "CF-089: pipe reader read_into");
+        require(pipe_n.has_value() && *pipe_n == 12, "pipe reader read_into");
         pipe_buf.resize(*pipe_n);
-        require(cfire::to_str(pipe_buf) == "pipe-payload", "CF-089: pipe payload round-trip");
+        require(cfire::to_str(pipe_buf) == "pipe-payload", "pipe payload round-trip");
         pipe_r.close();
 
         {
             auto out_f = cfire::os::stdout_file();
             auto err_f = cfire::os::stderr_file();
-            require(out_f.fd() == 1 && err_f.fd() == 2, "CF-089: os::stdout_file/stderr_file non-owning FDs 1 and 2");
+            require(out_f.fd() == 1 && err_f.fd() == 2, "os::stdout_file/stderr_file non-owning FDs 1 and 2");
         }
 
-        // CF-002, CF-003, CF-028, CF-045, CF-046, CF-053: webui enhancements
+        // webui enhancements
         ScopedTempDir ui_tmp("cfire_webui_serve_dir");
         ui_tmp.file("index.html", "<!doctype html><html><body>Custom ServeDir Index</body></html>");
         auto app = cfire::webui::new_app("Flint", 900, 600);
         app.serve_dir(ui_tmp.path.string());
         require(app.resolve_asset_content("/index.html").contains("Custom ServeDir Index"),
-            "CF-028: serve_dir(/index.html) takes priority over default placeholder without needing set_html");
+            "serve_dir(/index.html) takes priority over default placeholder without needing set_html");
 
         app.set_max_history(4);
         for (int i = 0; i < 10; ++i) {
             app.emit("term:data", i);
         }
-        require(app.emitted_events_count("term:data") == 4, "CF-002: emitted_history capped at max_history_entries");
+        require(app.emitted_events_count("term:data") == 4, "emitted_history capped at max_history_entries");
         app.clear_history();
-        require(app.emitted_events_count("term:data") == 0, "CF-002: clear_history clears emitted_history");
+        require(app.emitted_events_count("term:data") == 0, "clear_history clears emitted_history");
 
         app.emit_bytes("pty:out", raw_blob);
         require(app.emitted_events_count("pty:out") == 1 && app.last_emitted_payload("pty:out") == "3q2+7w==",
-            "CF-003: emit_bytes Base64 encodes binary frame for Uint8Array dispatch");
+            "emit_bytes Base64 encodes binary frame for Uint8Array dispatch");
 
         app.bind_action_async("slow_op", []() -> std::string {
             return "async_done";
         });
         auto async_res = app.call_rpc("slow_op", "{}");
-        require(async_res.has_value() && *async_res == "\"async_done\"", "CF-046: bind_action_async resolves");
+        require(async_res.has_value() && *async_res == "\"async_done\"", "bind_action_async resolves");
 
         app.clipboard_set("ssh root@10.0.0.1");
-        require(app.clipboard_get() == "ssh root@10.0.0.1", "CF-053: clipboard_set / clipboard_get");
-        require(!app.is_clipboard_concealed(), "CF-053: normal clipboard_set is not concealed");
+        require(app.clipboard_get() == "ssh root@10.0.0.1", "clipboard_set / clipboard_get");
+        require(!app.is_clipboard_concealed(), "normal clipboard_set is not concealed");
 
-        // CF-053: concealed & auto-clearing secret clipboard
+        // concealed & auto-clearing secret clipboard
         app.clipboard_set_secret("super-secret-password", 35);
-        require(app.clipboard_get() == "super-secret-password", "CF-053: clipboard_set_secret stores secret initially");
-        require(app.is_clipboard_concealed(), "CF-053: clipboard_set_secret marks clipboard as concealed");
+        require(app.clipboard_get() == "super-secret-password", "clipboard_set_secret stores secret initially");
+        require(app.is_clipboard_concealed(), "clipboard_set_secret marks clipboard as concealed");
         std::this_thread::sleep_for(std::chrono::milliseconds(60));
-        require(app.clipboard_get().empty(), "CF-053: clipboard_set_secret auto-clears after timeout when unchanged");
+        require(app.clipboard_get().empty(), "clipboard_set_secret auto-clears after timeout when unchanged");
 
-        // CF-053: overwriting clipboard before timeout cancels stale auto-clear
+        // overwriting clipboard before timeout cancels stale auto-clear
         app.clipboard_set_secret("transient-secret", 50);
         app.clipboard_set("user-copied-later");
         std::this_thread::sleep_for(std::chrono::milliseconds(70));
-        require(app.clipboard_get() == "user-copied-later", "CF-053: auto-clear does not wipe newer clipboard content");
+        require(app.clipboard_get() == "user-copied-later", "auto-clear does not wipe newer clipboard content");
 
-        // CF-051, CF-052 & CF-082: set_icon, add_menu_item, system tray, and window visibility controls
+        // set_icon, add_menu_item, system tray, and window visibility controls
         app.set_icon("assets/flint-icon.svg");
         app.add_menu_item("Shell", "New Tab", "t", "menu:new_tab");
         app.set_tray("assets/flint-tray.png", "Flint SSH");
@@ -827,54 +827,54 @@ int main() {
         app.set_hide_on_close(true);
         app.hide_window();
         app.show_window();
-        require(!app.monospace_fonts().empty(), "CF-045: monospace_fonts returns non-empty list");
-        require(cfire::os::getpid() > 0, "CF-064: os::getpid() > 0");
+        require(!app.monospace_fonts().empty(), "monospace_fonts returns non-empty list");
+        require(cfire::os::getpid() > 0, "os::getpid() > 0");
 
-        // CF-005: ext:net/ssh (dial, host_key_fingerprint, known_hosts, auth_publickey_mem, exec, PTY, SFTP, forward)
+        // ext:net/ssh (dial, host_key_fingerprint, known_hosts, auth_publickey_mem, exec, PTY, SFTP, forward)
         {
             cfire::ssh::enable_mock_server(true);
             auto sess_res = cfire::ssh::dial("127.0.0.1", 2222, "deploy", 2000);
-            require(sess_res.has_value(), "CF-005: ssh::dial succeeds in mock/loopback mode");
+            require(sess_res.has_value(), "ssh::dial succeeds in mock/loopback mode");
             if (sess_res) {
                 auto& sess = *sess_res;
                 std::string fp = sess.host_key_fingerprint();
-                require(fp.starts_with("SHA256:"), "CF-005: host_key_fingerprint returns SHA256:<base64>");
-                require(!sess.is_known_host(), "CF-005: new host starts unknown");
-                require(sess.write_known_host().has_value(), "CF-005: write_known_host()");
-                require(sess.is_known_host(), "CF-005: is_known_host() true after write_known_host()");
+                require(fp.starts_with("SHA256:"), "host_key_fingerprint returns SHA256:<base64>");
+                require(!sess.is_known_host(), "new host starts unknown");
+                require(sess.write_known_host().has_value(), "write_known_host()");
+                require(sess.is_known_host(), "is_known_host() true after write_known_host()");
 
                 std::string pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nmock-ed25519-key\n-----END OPENSSH PRIVATE KEY-----";
-                require(sess.auth_publickey_mem(pem).has_value(), "CF-005: auth_publickey_mem succeeds from memory without temp file");
+                require(sess.auth_publickey_mem(pem).has_value(), "auth_publickey_mem succeeds from memory without temp file");
 
                 auto ex = sess.exec("echo hello-ssh");
                 require(ex.has_value() && ex->exit_code == 0 && ex->stdout_cf_.contains("hello-ssh"),
-                    "CF-005: sess.exec returns ExecResult with stdout");
+                    "sess.exec returns ExecResult with stdout");
 
                 auto pty_res = sess.open_pty("xterm-256color", 120, 40);
-                require(pty_res.has_value(), "CF-005: sess.open_pty succeeds");
+                require(pty_res.has_value(), "sess.open_pty succeeds");
                 if (pty_res) {
                     auto& pty = *pty_res;
                     auto wn = pty.write_text("uptime\n");
-                    require(wn.has_value() && *wn == 7, "CF-005: pty.write_text");
-                    require(pty.resize_pty(160, 50).has_value(), "CF-005: pty.resize_pty");
+                    require(wn.has_value() && *wn == 7, "pty.write_text");
+                    require(pty.resize_pty(160, 50).has_value(), "pty.resize_pty");
                     auto out = pty.read_text(1024);
                     require(out.has_value() && out->contains("uptime") && out->contains("50;160t"),
-                        "CF-005: pty.read_text reflects interactive stream and resize");
+                        "pty.read_text reflects interactive stream and resize");
                     pty.close();
-                    require(pty.is_eof(), "CF-005: pty.is_eof after close");
+                    require(pty.is_eof(), "pty.is_eof after close");
                 }
 
-                require(sess.sftp_mkdir("/remote/etc").has_value(), "CF-005: sftp_mkdir");
-                require(sess.sftp_write_text("/remote/etc/app.conf", "port=8080\n").has_value(), "CF-005: sftp_write_text");
+                require(sess.sftp_mkdir("/remote/etc").has_value(), "sftp_mkdir");
+                require(sess.sftp_write_text("/remote/etc/app.conf", "port=8080\n").has_value(), "sftp_write_text");
                 auto sftp_content = sess.sftp_read_text("/remote/etc/app.conf");
-                require(sftp_content.has_value() && *sftp_content == "port=8080\n", "CF-005: sftp_read_text round-trip");
+                require(sftp_content.has_value() && *sftp_content == "port=8080\n", "sftp_read_text round-trip");
                 auto dir_entries = sess.sftp_list_dir("/remote/etc");
                 require(dir_entries.has_value() && !dir_entries->empty() && (*dir_entries)[0].name == "app.conf",
-                    "CF-005: sftp_list_dir");
-                require(sess.sftp_remove("/remote/etc/app.conf").has_value(), "CF-005: sftp_remove");
+                    "sftp_list_dir");
+                require(sess.sftp_remove("/remote/etc/app.conf").has_value(), "sftp_remove");
 
                 auto fwd_res = sess.open_forward("127.0.0.1", 5432);
-                require(fwd_res.has_value(), "CF-005: open_forward");
+                require(fwd_res.has_value(), "open_forward");
                 sess.close();
             }
         }

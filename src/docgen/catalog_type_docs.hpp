@@ -1,5 +1,5 @@
 #pragma once
-// src/docgen/catalog_type_docs.hpp — What each stdlib type is, in cfire terms (CF-188): a summary, and the fields of
+// src/docgen/catalog_type_docs.hpp — What each stdlib type is, in cfire terms: a summary, and the fields of
 // value types or the variants of enums. Methods are not repeated here; hover and the reference list them from the
 // module's `Type.method` catalog entries. `doc --check` fails when a type in a module's `types` list has no entry.
 
@@ -44,7 +44,7 @@ namespace detail {
         {"Stream", "handle", "A real-time output stream you push samples into, for custom synthesis."},
     };
     if (mod == "core:build") return {
-        {"Package", "manifest", "In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, and `Includes`."},
+        {"Package", "manifest", "In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, and `Defines`."},
         {"Executable", "manifest", "In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`)."},
         {"App", "manifest", "In `build.cf`: alias for `build.Executable(...)`."},
         {"Library", "manifest", "In `build.cf`: declares a static or shared library target."},
@@ -59,6 +59,8 @@ namespace detail {
         {"PkgConfig", "manifest", "In `build.cf`: links one or more libraries found through pkg-config."},
         {"Link", "manifest", "In `build.cf`: links a library by name."},
         {"Include", "manifest", "In `build.cf`: adds a header search directory."},
+        {"Define", "manifest", "In `build.cf`: adds a C/C++ preprocessor macro definition (`-DKEY` or `-DKEY=VAL`)."},
+        {"Defines", "manifest", "In `build.cf`: adds one or more C/C++ preprocessor macro definitions (`str`, `[]str`, or `{ KEY: VALUE }` map)."},
         {"Libraries", "manifest", "In `build.cf`: links one or more libraries by name."},
         {"Includes", "manifest", "In `build.cf`: adds one or more header search directories."},
         {"Frameworks", "manifest", "In `build.cf`: adds one or more Apple frameworks."},

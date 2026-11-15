@@ -326,7 +326,7 @@ namespace cfire::hmac {
 
 
 
-// RFC 8018 PBKDF2-HMAC-SHA256 (`CF-006`)
+// RFC 8018 PBKDF2-HMAC-SHA256
 [[nodiscard]] inline auto pbkdf2_sha256(
     std::span<const std::uint8_t> password,
     std::span<const std::uint8_t> salt,
@@ -815,7 +815,7 @@ inline void compute_ghash_tag(
     return decrypt_gcm(key, nonce, result.ciphertext, result.tag, aad);
 }
 
-// High-level OS CSPRNG Key Generation & Combined Nonce+Ciphertext+Tag AES-256-GCM (`CF-006`)
+// High-level OS CSPRNG Key Generation & Combined Nonce+Ciphertext+Tag AES-256-GCM
 [[nodiscard]] inline auto generate_key() -> std::vector<std::uint8_t> {
     return cfire::sha256::random_bytes(32);
 }

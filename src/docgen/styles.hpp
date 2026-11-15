@@ -33,7 +33,7 @@ namespace detail {
 
 [[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto html_escape(std::string_view s) -> std::string;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_MD_IMPL)
 } // namespace cfire::doc
 #if defined(__clang__)
 #pragma clang optimize off
@@ -2315,7 +2315,7 @@ syncCfireThemeBtn();
 #pragma clang optimize on
 #endif
 namespace cfire::doc {
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_MD_IMPL)
 
 } // namespace cfire::doc
 

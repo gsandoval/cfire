@@ -1,4 +1,4 @@
-// Parse + resilient Sema on arbitrary input (CF-141). Parse-only fuzzing missed CF-140's crash.
+// Parse + resilient Sema on arbitrary input. Parse-only fuzzing missed crash.
 #include "../../src/sema.hpp"
 #include <cstdint>
 #include <cstddef>

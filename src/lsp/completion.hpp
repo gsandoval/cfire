@@ -296,7 +296,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, i
         if (ast_res) {
             auto env = detail::build_scope_bindings(*ast_res, ws, lines, line);
             std::string rtype = detail::resolve_qualifier_type(sym.qualifier, *ast_res, ws, env);
-            // W4: builtin methods come from the single table (src/sema/builtin_methods.hpp).
+            // builtin methods come from the single table (src/sema/builtin_methods.hpp).
             if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
                 std::unordered_set<std::string_view> seen;
                 for (const auto& bm : cfire::frontend::kBuiltinMethods) {
@@ -470,7 +470,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, i
         auto [s_make, f_make] = builtin_snip("make", "fn make(type_or_args: T)");
         append_item("make", 3, "make([]T, len, cap) / make(map[K]V)", "Allocates and initializes slices or maps.", s_make, f_make);
     }
-    append_item("@define", 14, "@define(\"MACRO\", \"1\")", "Defines a C/C++ preprocessor macro before including an 'import cpp' header.");
+    // Completion items for import statements.
 
     // Core language constructs & snippets (LSP-01)
     if (client_snippet_support_) {

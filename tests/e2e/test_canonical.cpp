@@ -188,7 +188,7 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
         },
     };
 
-    ScopedTempDir tmp_dir_scope("cfire_tmp_dir");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir tmp_dir_scope("cfire_tmp_dir");  // hermetic, mkdtemp-backed
     auto tmp_dir = tmp_dir_scope.path / "cfire_conformance_bins";
     std::filesystem::create_directories(tmp_dir);
 
@@ -274,12 +274,12 @@ void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir) {
 
 
 
-// CF-185: the C header bridge against a bundled C library (tests/fixtures/cinterop) instead of raylib: C structs as
+// the C header bridge against a bundled C library (tests/fixtures/cinterop) instead of raylib: C structs as
 // literals and fields, struct returns, `str` -> `const char*`, slice data pointers, and bitflag enums.
 void test_cinterop_codegen_and_eject(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_cinterop_codegen_and_eject");
     {
-        ScopedTempDir fx_scope("cfire_cinterop");  // hermetic, mkdtemp-backed (CF-153)
+        ScopedTempDir fx_scope("cfire_cinterop");  // hermetic, mkdtemp-backed
         auto fx = fx_scope.path / "cinterop";
         std::error_code cec;
         std::filesystem::copy("tests/fixtures/cinterop", fx,
@@ -294,14 +294,14 @@ void test_cinterop_codegen_and_eject(const std::filesystem::path& rt_dir) {
                     emit->first.contains("Color{.r =") &&
                     emit->first.contains("cfire::c_arg(title)") &&
                     !emit->first.contains(".data()"),
-                "C struct literals and c_arg string coercion emitted; buffers are passed as the slice itself (Q54)");
+                "C struct literals and c_arg string coercion emitted; buffers are passed as the slice itself");
         }
         auto run = run_cfire(std::format("run \"{}\"", fx.string()));
         require(run.ok() && run.output.contains("cinterop ok ff7800ff"),
             std::format("cinterop fixture builds with build.CC and runs: {}", run.output));
     }
 
-    ScopedTempDir eject_dir_scope("cfire_eject_dir");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir eject_dir_scope("cfire_eject_dir");  // hermetic, mkdtemp-backed
     auto eject_dir = eject_dir_scope.path / "cfire_eject_test";
     std::filesystem::remove_all(eject_dir);
     auto ej = cfire::build::eject_cmake("examples/02-log-compressor/main.cf", rt_dir, eject_dir);
@@ -313,7 +313,7 @@ void test_cinterop_codegen_and_eject(const std::filesystem::path& rt_dir) {
         "ejected CMakeLists.txt content check");
     std::filesystem::remove_all(eject_dir);
 
-    ScopedTempDir eject_cc_dir_scope("cfire_eject_cc_dir");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir eject_cc_dir_scope("cfire_eject_cc_dir");  // hermetic, mkdtemp-backed
     auto eject_cc_dir = eject_cc_dir_scope.path / "cfire_eject_cc_test";
     std::filesystem::remove_all(eject_cc_dir);
     auto ej_cc = cfire::build::eject_cmake("examples/08-multi-pkg-cc-build/main.cf", rt_dir, eject_cc_dir);
@@ -484,7 +484,7 @@ void test_wasm_and_gui_subsystem(const std::filesystem::path& rt_dir) {
         require(has_platform_web, "wasm target defines -DPLATFORM_WEB");
     }
 
-    // 2. With the raylib canvas gone (CF-185, Q49), a webui program on wasm gets no GLFW link flags.
+    // 2. With the raylib canvas gone, a webui program on wasm gets no GLFW link flags.
     auto gui_cf = tmp.file("gui.cf", "package main\nimport \"ext:webui\"\n\nfn main() {\n    println(\"gui\")\n}\n");
     auto gui_res = cfire::build::analyze_and_emit(gui_cf, rt_dir, false, false, "wasm32-unknown-emscripten");
     require(gui_res.has_value(), "analyze_and_emit for a wasm webui program");

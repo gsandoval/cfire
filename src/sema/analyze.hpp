@@ -33,7 +33,7 @@ namespace cfire::frontend {
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
 ) -> std::expected<CheckedFile, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_STMT_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_STMT_IMPL)
 [[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze_resilient(
     FileAST ast,
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params
@@ -101,7 +101,7 @@ namespace cfire::frontend {
         cf.shadowed_default_qualifiers["cpp"] = *cf.cpp_qualifiers.begin();
     }
 
-    // 0a. Check Module Imports (CF-006 / CF-086 / CF-105)
+    // 0a. Check Module Imports
     for (const auto& imp : cf.ast.imports) {
         if (!imp.is_cpp) {
             if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
@@ -117,7 +117,7 @@ namespace cfire::frontend {
                                                                : "slice methods (xs.sort(), xs.sort_by(f), xs.binary_search(v))";
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format("module '{}' has been retired; use {}", imp.path, what), {{"rewrite", "delete_line"}, {"from", imp.path}}));
             } else if (imp.path == "vendor:raylib" || imp.path == "vendor:raygui") {
-                // CF-185 / Q60: raylib is no longer bundled. Native library linkage lives in build.cf or --pkg-config.
+                // raylib is no longer bundled. Native library linkage lives in build.cf or --pkg-config.
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
                     "module '{}' has been retired; cfire no longer bundles raylib. Use 'ext:webui' for GUIs, or import \"raylib.h\" via 'import cpp \"raylib.h\"' with 'PkgConfig: [\"raylib\"]' in 'build.cf' (or '--pkg-config raylib')", imp.path)));
             } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
@@ -134,17 +134,7 @@ namespace cfire::frontend {
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/UNKNOWN-MODULE", std::format("unknown module '{}'{}", imp.path, hint)));
             }
         }
-        // Q60 (CF-207): Validate import attributes; retire @pkg(...) onto build.cf / --pkg-config.
-        auto is_c_macro_ident = [](std::string_view s) {
-            if (s.empty()) return false;
-            auto is_alpha = [](unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; };
-            if (!is_alpha(static_cast<unsigned char>(s[0]))) return false;
-            for (std::size_t i = 1; i < s.size(); ++i) {
-                unsigned char c = static_cast<unsigned char>(s[i]);
-                if (!is_alpha(c) && !(c >= '0' && c <= '9')) return false;
-            }
-            return true;
-        };
+        // Validate import attributes; retire legacy @pkg(...) and @define(...) onto build.cf / CLI flags.
         for (const auto& attr : imp.attrs) {
             if (attr.name == "pkg") {
                 std::string pkg_hint = attr.args.empty() ? "\"libname\"" : std::format("\"{}\"", attr.args[0]);
@@ -153,24 +143,30 @@ namespace cfire::frontend {
                     "attribute '@pkg(...)' on imports has been retired; move native linkage into 'build.cf' (PkgConfig: [{}] or Libraries: [...]) or pass '--pkg-config {}' for single-file builds",
                     pkg_hint, cli_hint)));
             } else if (attr.name == "define") {
-                if (!imp.is_cpp) {
-                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
-                        "@define(...) is only supported on 'import cpp' declarations"));
-                } else if (attr.args.empty() || attr.args.size() > 2) {
-                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
-                        std::format("@define(...) expects 1 or 2 arguments (macro name and optional value), got {}", attr.args.size())));
-                } else if (!is_c_macro_ident(attr.args[0])) {
-                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
-                        std::format("invalid C macro identifier '{}' in @define(...)", attr.args[0])));
+                std::string bcf_hint;
+                std::string cli_hint;
+                if (attr.args.empty()) {
+                    bcf_hint = "Defines: [\"MACRO\"] or build.Define(\"MACRO\")";
+                    cli_hint = "--define MACRO' ('-DMACRO";
+                } else if (attr.args.size() == 1) {
+                    bcf_hint = std::format("Defines: [\"{}\"] or build.Define(\"{}\")", attr.args[0], attr.args[0]);
+                    cli_hint = std::format("--define {}' ('-D{}", attr.args[0], attr.args[0]);
+                } else {
+                    bcf_hint = std::format("Defines: {{ {}: \"{}\" }} or build.Define(\"{}\", \"{}\")",
+                        attr.args[0], attr.args[1], attr.args[0], attr.args[1]);
+                    cli_hint = std::format("--define {}={}' ('-D{}={}", attr.args[0], attr.args[1], attr.args[0], attr.args[1]);
                 }
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
+                    "attribute '@define(...)' on imports has been retired; move preprocessor macro definitions into 'build.cf' ({}) or pass '{}' for single-file builds",
+                    bcf_hint, cli_hint)));
             } else {
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-ATTRIBUTE",
-                    std::format("unknown import attribute '@{}'; only '@define(\"MACRO\"[, \"VAL\"])' is supported on 'import cpp'", attr.name)));
+                    std::format("unknown import attribute '@{}'; imports do not accept attributes (declare native linkage and preprocessor defines in 'build.cf')", attr.name)));
             }
         }
     }
 
-    // 0b. Check Duplicate Symbol Declarations (CF-104)
+    // 0b. Check Duplicate Symbol Declarations
     struct DeclLocation {
         std::string path;
         int line = 1;
@@ -219,7 +215,7 @@ namespace cfire::frontend {
         }
     }
 
-    // CF-123: Lint clusters of 3+ identically prefixed integer constants (VIEW_*, MODE_*)
+    // Lint clusters of 3+ identically prefixed integer constants (VIEW_*, MODE_*)
     struct PrefixConstInfo {
         std::string source_path;
         int line = 1;
@@ -281,7 +277,7 @@ namespace cfire::frontend {
         }
     }
 
-    // Populate type table with user-defined structs and enums (CF-116)
+    // Populate type table with user-defined structs and enums
     for (const auto& st : cf.ast.structs) {
         TypeDesc d;
         d.kind = TypeKind::NominalStruct;
@@ -312,7 +308,7 @@ namespace cfire::frontend {
         if (count > 1) cf.colliding_gv_names.insert(name);
     }
 
-    // A type two packages both declare is renamed `cfire_pkg_<pkg>__<Name>` (CF-017); its spelling stays `Name`.
+    // A type two packages both declare is renamed `cfire_pkg_<pkg>__<Name>`; its spelling stays `Name`.
     auto declare_type_name = [&](const std::string& n) {
         cf.declared_type_names.insert(n);
         if (n.starts_with("cfire_pkg_")) {
@@ -322,10 +318,10 @@ namespace cfire::frontend {
     for (const auto& st : cf.ast.structs) declare_type_name(st.name);
     for (const auto& en : cf.ast.enums) declare_type_name(en.name);
     for (const auto& in : cf.ast.interfaces) cf.declared_type_names.insert(in.name);
-    std::unordered_set<std::string> scope_type_params;  // CF-190: type parameters of the declaration being checked
-    // Validate no dynamic slices or arrays of structural interfaces (CF-108)
+    std::unordered_set<std::string> scope_type_params;  // type parameters of the declaration being checked
+    // Validate no dynamic slices or arrays of structural interfaces
     auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
-        // CF-189: no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types (Q53).
+        // no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types.
         if (tr.is_ptr || tr.is_mut_ptr) {
             cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/RAW-POINTER",
                 "raw pointer types ('*T', '*mut T') exist only in C++ interop: hold the value itself, an index into a slice, or 'own[T]'/'shared[T]'"));
@@ -333,8 +329,8 @@ namespace cfire::frontend {
         }
         if (tr.is_borrow || tr.is_mut_borrow) {
             cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/REFERENCE-TYPE",
-                tr.is_mut_borrow ? "'&mut T' is not a cfire type (Q53): a parameter the callee changes is 'mut name: T'"
-                                 : "'&T' is not a cfire type (Q53): write 'T'; read-only parameters are already views",
+                tr.is_mut_borrow ? "'&mut T' is not a cfire type: a parameter the callee changes is 'mut name: T'"
+                                 : "'&T' is not a cfire type: write 'T'; read-only parameters are already views",
                 {{"kind", tr.is_mut_borrow ? "mut" : "view"}}));
             return;
         }
@@ -350,7 +346,7 @@ namespace cfire::frontend {
                     cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/DEPRECATED-SEPARATOR", std::format("use '{}.{}' instead of '{}::{}'", qual, rest, qual, rest), {{"kind", "qualifier"}}));
                 }
             }
-            // CF-188: a struct field of a stdlib type the module does not export.
+            // a struct field of a stdlib type the module does not export.
             if (dot != std::string::npos && (dcol == std::string::npos || dot < dcol)) {
                 std::string qual = tr.raw_name.substr(0, dot);
                 std::string ns;
@@ -365,7 +361,7 @@ namespace cfire::frontend {
                     }
                 }
             }
-            // CF-190: a bare type name resolves (builtin, package type, type parameter), or it is a cfire error.
+            // a bare type name resolves (builtin, package type, type parameter), or it is a cfire error.
             if (dot == std::string::npos && dcol == std::string::npos && !tr.is_fn && !tr.is_tuple) {
                 if (std::string why = bare_type_name_problem(tr.raw_name, cf.declared_type_names, scope_type_params); !why.empty()) {
                     cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/UNDECLARED-TYPE", why, {{"name", tr.raw_name}}));
@@ -392,7 +388,7 @@ namespace cfire::frontend {
             self(self, *tr.fn_ret, src_path, line, col);
         }
     };
-    // Q28: struct fields are snake_case; `cfire fix` renames the field and every use across the workspace.
+    // struct fields are snake_case; `cfire fix` renames the field and every use across the workspace.
     auto snake_case_of = [](std::string_view n) -> std::string {
         std::string out;
         for (std::size_t i = 0; i < n.size(); ++i) {
@@ -430,7 +426,7 @@ namespace cfire::frontend {
         }
     }
 
-    // CF-208: Reject direct or optional value-recursive struct cycles (`cfire/RECURSIVE-TYPE`)
+    // Reject direct or optional value-recursive struct cycles (`cfire/RECURSIVE-TYPE`)
     {
         std::unordered_map<std::string, const StructDecl*> struct_by_name;
         for (const auto& st : cf.ast.structs) struct_by_name.emplace(st.name, &st);
@@ -508,7 +504,7 @@ namespace cfire::frontend {
         }
     }
 
-    // CF-208: Transitive fixed-point set of move-only structs containing `own[T]`
+    // Transitive fixed-point set of move-only structs containing `own[T]`
     {
         auto tr_is_move_only = [&](auto& self, const TypeRef& tr) -> bool {
             if (tr.is_ptr || tr.is_mut_ptr || tr.smart_wrap == "shared" || tr.is_borrow || tr.is_mut_borrow || tr.is_fn) {
@@ -791,7 +787,7 @@ namespace cfire::frontend {
         }
     }
 
-    // 3b. Resolve Global Variables & Struct Default Value Expressions (CF-115)
+    // 3b. Resolve Global Variables & Struct Default Value Expressions
     for (const auto& gv : cf.ast.global_vars) {
         if (!gv.value) continue;
         std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);

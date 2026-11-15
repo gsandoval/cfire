@@ -38,7 +38,7 @@ struct StdFnSigInfo {
     std::string unwrapped_return_type{};
 };
 
-// Non-throwing map lookup for Sema: a missing key yields "" instead of std::out_of_range (CF-140).
+// Non-throwing map lookup for Sema: a missing key yields "" instead of std::out_of_range.
 template <typename Map>
 [[nodiscard]] inline auto lookup_or(const Map& m, const std::string& key, std::string_view fallback) -> std::string {
     if (auto it = m.find(key); it != m.end()) return it->second;
@@ -129,7 +129,7 @@ struct StdlibCatalogIndex {
     }
 };
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_STDLIB_INDEX_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_STDLIB_INDEX_IMPL)
 #if defined(CFIRE_SPLIT_TUS)
 #define CFIRE_STDLIB_IDX_INLINE
 #else
@@ -172,7 +172,7 @@ struct StdlibCatalogIndex {
     }
     if (auto dot = fn_name.find('.'); dot != std::string_view::npos) {
         std::string_view prefix = fn_name.substr(0, dot);
-        // `Type.make` is a constructor (Q25: `make(ns.Type, args...)`), not a method.
+        // `Type.make` is a constructor (`make(ns.Type, args...)`), not a method.
         if (prefix != "Response" && prefix != "Duration" && fn_name.substr(dot + 1) != "make") {
             info.has_receiver = true;
             if (info.receiver_type.empty()) info.receiver_type = std::string(prefix);
@@ -367,6 +367,6 @@ CFIRE_STDLIB_IDX_INLINE StdlibCatalogIndex::StdlibCatalogIndex() {
 }
 
 #undef CFIRE_STDLIB_IDX_INLINE
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_STDLIB_INDEX_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_STDLIB_INDEX_IMPL)
 
 } // namespace cfire::frontend

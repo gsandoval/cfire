@@ -1,5 +1,5 @@
 #pragma once
-// tools/vmtest/vmtest.hpp — the pure parts of the UTM VM gate driver (CF-187): settings and the file server's
+// tools/vmtest/vmtest.hpp — the pure parts of the UTM VM gate driver: settings and the file server's
 // request rules. tools/vmtest/main.cpp does the I/O; tests/runner_self_tests.hpp unit-tests this header.
 
 #include <cstdlib>

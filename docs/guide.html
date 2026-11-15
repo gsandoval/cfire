@@ -3100,7 +3100,7 @@ fn main() {
     </tbody>
   </table>
 </div>
-<p>There are no raw pointers in <code>cfire</code> code: no <code>*T</code> type, no <code>&amp;x</code>, no <code>*p</code>, and no <code>&amp;T</code> reference type (CF-189). Each job a pointer does in C++ has a direct form:</p>
+<p>There are no raw pointers in <code>cfire</code> code: no <code>*T</code> type, no <code>&amp;x</code>, no <code>*p</code>, and no <code>&amp;T</code> reference type. Each job a pointer does in C++ has a direct form:</p>
 <ul>
   <li><strong>Read a value without copying it</strong>: parameters are read-only views by default (<code>fn f(s: str)</code> takes a <code>std::string_view</code>); write <code>mut</code> when the callee changes the argument (<code>fn f(mut xs: []i32)</code>, called as <code>f(mut xs)</code>).</li>
   <li><strong>Point at an element</strong>: keep its index (<code>cursor := 2</code>, then <code>xs[cursor] += 1</code>).</li>
@@ -3329,8 +3329,8 @@ fn main() {
       <tr><td><code>cfire/MUT-ALIAS</code></td><td>Passing the same variable twice in one call when at least one arg is <code>mut</code>.</td><td>Pass distinct variables (<code>transfer(mut a, mut b)</code>).</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Reading a variable after <code>move x</code> transferred ownership on an earlier path.</td><td>Read before <code>move x</code>, or pass by <code>mut</code> borrow.</td></tr>
       <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Reading a view (<code>s[a..b]</code>, <code>xs[a..b]</code>) after <code>.push()</code>, <code>.clear()</code>, <code>move</code>, or reassignment mutated the owner.</td><td>Finish reading the view before mutating the container, or re-slice after <code>.push()</code>.</td></tr>
-      <tr><td><code>cfire/RAW-POINTER</code></td><td><code>*T</code>, <code>&amp;x</code>, <code>*p</code> or <code>.data()</code> outside C++ interop (CF-189).</td><td>Use a view parameter, <code>mut</code>, an index, <code>own[T]</code>/<code>shared[T]</code>, or a <code>cpp { }</code> block.</td></tr>
-      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type (Q53).</td><td>Write <code>x: T</code> (a view) or <code>mut x: T</code>; <code>cfire fix</code> rewrites it.</td></tr>
+      <tr><td><code>cfire/RAW-POINTER</code></td><td><code>*T</code>, <code>&amp;x</code>, <code>*p</code> or <code>.data()</code> outside C++ interop.</td><td>Use a view parameter, <code>mut</code>, an index, <code>own[T]</code>/<code>shared[T]</code>, or a <code>cpp { }</code> block.</td></tr>
+      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type.</td><td>Write <code>x: T</code> (a view) or <code>mut x: T</code>; <code>cfire fix</code> rewrites it.</td></tr>
       <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Mutating a collection (<code>.push()</code>, <code>.clear()</code>, <code>.remove()</code>, <code>move</code>) inside <code>for x in col</code>.</td><td>Collect mutations in a separate slice and apply them after the loop.</td></tr>
     </tbody>
   </table>
@@ -3770,7 +3770,7 @@ ep=127.0.0.1:8080 q1=10443 q2=50
   </section>
   <section class="guide-topic" id="topic-ch7-no-null-values-absence-is-t" data-topic-id="ch7-no-null-values-absence-is-t" data-topic-title="No Null Values: Absence Is T?" data-short-title="7.3 No Null Values: Absenc..">
 <h3 class="guide-heading" id="ch7-no-null-values-absence-is-t"><span class="heading-hash">#</span><span class="heading-text">No Null Values: Absence Is <code>T?</code></span></h3>
-<p>A <code>cfire</code> value is never null, because there are no raw pointers to be null (CF-189). A value that may be absent has type <code>T?</code>. Reading through one without unwrapping is a compile-time error: <code>cfire/UNWRAPPED-OPTIONAL</code> for an expression such as <code>find(id).id</code>, and the flow-sensitive <code>cfire/NULL-DEREF</code> for a <code>T?</code> variable until a branch proves it present (<code>if s != none</code>, an early <code>return</code>, <code>assert(s != none)</code>). Unwrap with <code>if x := opt { ... }</code>, <code>or</code>, or <code>try</code>:</p>
+<p>A <code>cfire</code> value is never null, because there are no raw pointers to be null. A value that may be absent has type <code>T?</code>. Reading through one without unwrapping is a compile-time error: <code>cfire/UNWRAPPED-OPTIONAL</code> for an expression such as <code>find(id).id</code>, and the flow-sensitive <code>cfire/NULL-DEREF</code> for a <code>T?</code> variable until a branch proves it present (<code>if s != none</code>, an early <code>return</code>, <code>assert(s != none)</code>). Unwrap with <code>if x := opt { ... }</code>, <code>or</code>, or <code>try</code>:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3903,7 +3903,7 @@ fn main() {
       <tr><td>builtin</td><td><code>s.strip_prefix(p)</code> / <code>strip_suffix(p)</code></td><td><code>fn(p: str) -&gt; str?</code></td><td>View after the prefix / before the suffix, or <code>none</code> when it is absent.</td></tr>
       <tr><td>builtin</td><td><code>s.replace(from, to)</code> / <code>replace_all(from, to)</code></td><td><code>fn(from: str, to: str) -&gt; str</code></td><td>Copy with the first / every occurrence of <code>from</code> replaced.</td></tr>
       <tr><td>builtin</td><td><code>s.starts_with(p)</code> / <code>ends_with(p)</code> / <code>contains(p)</code></td><td><code>fn(p: str) -&gt; bool</code></td><td>Prefix, suffix, and substring containment checks.</td></tr>
-      <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (Q8: no <code>-1</code> sentinels).</td></tr>
+      <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (no <code>-1</code> sentinels).</td></tr>
       <tr><td>builtin</td><td><code>s.to_upper()</code> / <code>to_lower()</code> / <code>repeat(n)</code></td><td><code>fn() -&gt; str</code> / <code>fn(n: usize) -&gt; str</code></td><td>ASCII case conversion and <code>n</code>-fold repetition.</td></tr>
       <tr><td>builtin</td><td><code>s.runes()</code> / <code>rune_count()</code></td><td><code>fn() -&gt; []u32</code> / <code>fn() -&gt; usize</code></td><td>Unicode code points (invalid UTF-8 decodes as U+FFFD).</td></tr>
       <tr><td>builtin</td><td><code>i32.parse(s)</code> / <code>f64.parse(s)</code> / <code>bool.parse(s)</code></td><td><code>fn(s: str) -&gt; T?</code></td><td>Parses a whole literal of the target type; <code>none</code> on invalid or out-of-range input.</td></tr>
@@ -4305,7 +4305,7 @@ fn main() {
 <ol>
   <li><strong>Bounded Worker Pool</strong>: Allocates <code>N</code> hardware worker threads (<code>std::jthread</code>) scoped to the lexical block.</li>
   <li><strong>Mandatory Join Barrier</strong>: The closing <code>}</code> of <code>async.scope</code> blocks until every task spawned via <code>scope.spawn || { ... }</code> finishes.</li>
-  <li><strong>Zero-Heap Stack Borrowing</strong>: Because no worker can outlive <code>async.scope</code>, tasks can read outer immutable bindings without <code>shared_ptr</code> overhead, and hand results back in one of two ways (Q51):
+  <li><strong>Zero-Heap Stack Borrowing</strong>: Because no worker can outlive <code>async.scope</code>, tasks can read outer immutable bindings without <code>shared_ptr</code> overhead, and hand results back in one of two ways:
     <ul>
       <li><strong>Return them</strong>: <code>results := async.scope ...</code> (or <code>return async.scope ...</code>) is a <code>[]T</code> of the tasks' <code>return</code> values, in spawn order.</li>
       <li><strong>Write their own element</strong>: <code>scope.spawn |mut xs[i]| { xs[i] = v }</code> gives each task one element, named by the spawning loop's index; the task cannot touch the rest of <code>xs</code>, and <code>xs</code> cannot be resized until the scope ends (<code>cfire/SLOT-CAPTURE</code>).</li>
@@ -4582,7 +4582,7 @@ fn main() {
       <tr><td><code>i8</code>..<code>i64</code>, <code>u8</code>..<code>u64</code>, <code>f32</code>, <code>f64</code>, <code>bool</code></td><td><code>int8_t</code>..<code>int64_t</code>, <code>uint8_t</code>..<code>uint64_t</code>, <code>float</code>, <code>double</code>, <code>bool</code></td><td>Identical C++23 scalar type (0-cost pass-through)</td></tr>
       <tr><td><code>str</code> passed to <code>const char*</code></td><td><code>const char*</code></td><td>Automatic <code>cfire::c_arg(s)</code> (<code>.c_str()</code>, 0 allocation)</td></tr>
       <tr><td>read-only <code>str</code> parameter, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view; converts to <code>std::string</code> where an owned <code>str</code> is needed</td></tr>
-      <tr><td><code>[]T</code> / <code>[N]T</code> / <code>str</code> passed to a pointer parameter (<code>T*</code>, <code>const T*</code>, <code>void*</code>)</td><td><code>T*</code></td><td>The buffer pointer (<code>cfire::c_ptr</code>, Q54); byte-sized element types convert (<code>[]byte</code> to <code>char*</code>)</td></tr>
+      <tr><td><code>[]T</code> / <code>[N]T</code> / <code>str</code> passed to a pointer parameter (<code>T*</code>, <code>const T*</code>, <code>void*</code>)</td><td><code>T*</code></td><td>The buffer pointer (<code>cfire::c_ptr</code>); byte-sized element types convert (<code>[]byte</code> to <code>char*</code>)</td></tr>
       <tr><td><code>mut x: T</code> parameter</td><td><code>T&amp;</code></td><td>A mutable reference; C out-pointers (<code>int*</code> written by the callee) go through a <code>cpp { ... }</code> block</td></tr>
       <tr><td><code>own[T]</code></td><td><code>T*</code> via <code>.release()</code>, back with <code>own[T].from_raw(p)</code></td><td>Hands ownership across the boundary</td></tr>
     </tbody>
@@ -4634,11 +4634,11 @@ fn main() {
   </section>
   <section class="guide-topic" id="topic-ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp" data-topic-id="ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp" data-topic-title="Importing C Headers &amp; Using Bitwise Flag Enums (import cpp)" data-short-title="11.2 C Headers &amp; Flags">
 <h3 class="guide-heading" id="ch11-importing-c-headers-using-bitwise-flag-enums-import-cpp"><span class="heading-hash">#</span><span class="heading-text">Importing C Headers &amp; Using Bitwise Flag Enums (<code>import cpp</code>)</span></h3>
-<p>Use <code>import cpp &quot;&lt;header.h&gt;&quot;</code> (with optional <code>@define(&quot;&lt;KEY&gt;&quot;, &quot;&lt;VAL&gt;&quot;)</code> or <code>@define(&quot;&lt;KEY&gt;&quot;)</code> preprocessor attributes) to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under <code>cpp.</code> (or an aliased qualifier <code>import cpp &quot;...&quot; as &lt;alias&gt;</code>). Native linker flags (<code>PkgConfig</code>, <code>Libraries</code>, <code>Frameworks</code>, <code>Includes</code>) belong declaratively in <code>build.cf</code> (or via CLI <code>--pkg-config &lt;name&gt;</code>); legacy <code>@pkg(...)</code> on <code>import cpp</code> is retired (<code>cfire/RETIRED-API</code>).</p>
+<p>Use <code>import cpp &quot;&lt;header.h&gt;&quot;</code> to parse a system or vendor C/C++ header via Clang's JSON AST bridge and expose its functions, structs, enums, and constants under <code>cpp.</code> (or an aliased qualifier <code>import cpp &quot;...&quot; as &lt;alias&gt;</code>). Preprocessor defines (<code>Defines</code>, <code>build.Define</code>) and native linker flags (<code>PkgConfig</code>, <code>Libraries</code>, <code>Frameworks</code>, <code>Includes</code>) belong declaratively in <code>build.cf</code> (or via CLI <code>--define &lt;K[=V]&gt;</code> / <code>-D&lt;K[=V]&gt;</code> and <code>--pkg-config &lt;name&gt;</code>); legacy <code>@pkg(...)</code> and <code>@define(...)</code> on <code>import cpp</code> are retired (<code>cfire/RETIRED-API</code>).</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import cpp &quot;math.h&quot; @define(&quot;_USE_MATH_DEFINES&quot;, &quot;1&quot;)
+import cpp &quot;math.h&quot;
 
 fn query_math_runtime() -&gt; (f64, f64) {
     hyp := cpp.hypot(3.0, 4.0)
@@ -4656,7 +4656,7 @@ fn main() {
   <pre><code>hypot_ok=true fmax_ok=true
 </code></pre>
 </div>
-<p>For external system libraries such as <code>libzstd</code> or <code>raylib</code>, declare <code>PkgConfig: [&quot;libzstd&quot;]</code> (or <code>Libraries</code> / <code>Includes</code>) in <code>build.cf</code> instead of attaching <code>@pkg(...)</code> to the <code>.cf</code> import statement:</p>
+<p>When linking against system or vendor headers that require preprocessor macros or external libraries (such as <code>_USE_MATH_DEFINES</code>, <code>libzstd</code>, or <code>raylib</code>), declare <code>Defines</code>, <code>PkgConfig</code>, <code>Libraries</code>, or <code>Includes</code> in <code>build.cf</code> instead of attaching <code>@define(...)</code> or <code>@pkg(...)</code> to the <code>.cf</code> import statement:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 import &quot;core:build&quot;
@@ -4664,6 +4664,7 @@ import &quot;core:build&quot;
 app := build.Executable{
     Name:      &quot;zstd-tool&quot;,
     Entry:     &quot;main.cf&quot;,
+    Defines:   { _USE_MATH_DEFINES: &quot;1&quot; },
     PkgConfig: [&quot;libzstd&quot;],
 }
 </code></pre>
@@ -4900,8 +4901,8 @@ cfire fix src/main.cf
       <tr><td><code>cfire/ARITY-MISMATCH</code></td><td>Types</td><td>A call passes the wrong number of arguments.</td></tr>
       <tr><td><code>cfire/ASSIGN-IMMUTABLE</code></td><td>Mutability</td><td>Assignment to a binding declared without <code>mut</code>.</td></tr>
       <tr><td><code>cfire/BREAK-OUTSIDE-LOOP</code></td><td>Detailed rule</td><td><code>break</code> or <code>continue</code> Outside of a <code>for</code> Loop</td></tr>
-      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Detailed rule</td><td>Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)</td></tr>
-      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Detailed rule</td><td>Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)</td></tr>
+      <tr><td><code>cfire/DANGLING-POINTER</code></td><td>Detailed rule</td><td>Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers)</td></tr>
+      <tr><td><code>cfire/DANGLING-RETURN</code></td><td>Detailed rule</td><td>Returning a Pointer to Function-Local Storage (retired with raw pointers)</td></tr>
       <tr><td><code>cfire/DANGLING-TEMPORARY</code></td><td>Memory safety</td><td>A view or pointer borrows from a temporary that is destroyed at the end of the statement.</td></tr>
       <tr><td><code>cfire/DEPRECATED-API</code></td><td>Migration</td><td>A stdlib function that was renamed or replaced before 0.16 (<code>fs.read_all</code>, <code>os.read_stdin</code>, ...).</td></tr>
       <tr><td><code>cfire/DEPRECATED-DISCARD</code></td><td>Migration</td><td><code>_ := expr</code> is not a discard form; write <code>_ = expr</code>.</td></tr>
@@ -4931,7 +4932,7 @@ cfire fix src/main.cf
       <tr><td><code>cfire/INVALID-STRUCT-TAG</code></td><td>Detailed rule</td><td>Duplicate or Malformed Struct Reflection Tag</td></tr>
       <tr><td><code>cfire/INVALID-TRY-CONTEXT</code></td><td>Detailed rule</td><td><code>try</code> Inside Short-Circuit Operand or <code>for</code> Condition</td></tr>
       <tr><td><code>cfire/ITERATOR-INVALIDATION</code></td><td>Detailed rule</td><td>Structural Mutation or Move of Collection During <code>for</code> Iteration</td></tr>
-      <tr><td><code>cfire/LITERAL-OUT-OF-RANGE</code></td><td>Numbers</td><td>An integer literal that does not fit its target type (Q9).</td></tr>
+      <tr><td><code>cfire/LITERAL-OUT-OF-RANGE</code></td><td>Numbers</td><td>An integer literal that does not fit its target type.</td></tr>
       <tr><td><code>cfire/MISSING-IMPORT</code></td><td>Imports</td><td>A stdlib module is used without being imported.</td></tr>
       <tr><td><code>cfire/MISSING-RETURN</code></td><td>Control flow</td><td>A function with a return type can fall off its end.</td></tr>
       <tr><td><code>cfire/MOVE-CALLSITE</code></td><td>Detailed rule</td><td>Missing Call-Site <code>move</code> Marker</td></tr>
@@ -4947,21 +4948,21 @@ cfire fix src/main.cf
       <tr><td><code>cfire/OPTIONAL-OR-ERR</code></td><td>Detailed rule</td><td>Binding Error Variable <code>or err</code> on Optional <code>T?</code></td></tr>
       <tr><td><code>cfire/OUT-CALLSITE</code></td><td>Migration</td><td>A call-site <code>out</code> marker (retired with the <code>out</code> intent).</td></tr>
       <tr><td><code>cfire/PREFER-ENUM</code></td><td>Style</td><td>A cluster of related integer constants that should be an enum (warning).</td></tr>
-      <tr><td><code>cfire/RAW-POINTER</code></td><td>Ownership</td><td>Raw pointer syntax (<code>*T</code>, <code>&amp;x</code>, <code>*p</code>, <code>.data()</code>) outside C++ interop (CF-189).</td></tr>
+      <tr><td><code>cfire/RAW-POINTER</code></td><td>Ownership</td><td>Raw pointer syntax (<code>*T</code>, <code>&amp;x</code>, <code>*p</code>, <code>.data()</code>) outside C++ interop.</td></tr>
       <tr><td><code>cfire/RECURSIVE-TYPE</code></td><td>Types</td><td>A struct contains itself directly or through an optional without heap indirection.</td></tr>
       <tr><td><code>cfire/REDUNDANT-CALLSITE-INTENT</code></td><td>Detailed rule</td><td>Redundant <code>mut</code> Annotation on a Read-Only Parameter</td></tr>
       <tr><td><code>cfire/REDUNDANT-DEREF</code></td><td>Style</td><td><code>(*p).field</code> on a smart pointer; write <code>p.field</code>.</td></tr>
       <tr><td><code>cfire/REDUNDANT-OR</code></td><td>Detailed rule</td><td>Redundant <code>or</code> on Non-Fallible, Non-Optional Expression</td></tr>
       <tr><td><code>cfire/REDUNDANT-TRY</code></td><td>Detailed rule</td><td>Redundant <code>try</code> on Non-Fallible Expression</td></tr>
-      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>Ownership</td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type; parameters are views by default and <code>mut</code> by intent (Q53).</td></tr>
+      <tr><td><code>cfire/REFERENCE-TYPE</code></td><td>Ownership</td><td>A <code>&amp;T</code> / <code>&amp;mut T</code> type; parameters are views by default and <code>mut</code> by intent.</td></tr>
       <tr><td><code>cfire/RETIRED-API</code></td><td>Detailed rule</td><td>API Retired in the 0.16 Uniform-API Migration</td></tr>
       <tr><td><code>cfire/RETURN-IN-DEFER</code></td><td>Detailed rule</td><td><code>return</code> Statement Inside <code>defer { ... }</code> Block</td></tr>
-      <tr><td><code>cfire/SCOPE-RESULT</code></td><td>Concurrency</td><td>A value-producing <code>async.scope</code> whose spawned tasks return no value or different types (Q51).</td></tr>
+      <tr><td><code>cfire/SCOPE-RESULT</code></td><td>Concurrency</td><td>A value-producing <code>async.scope</code> whose spawned tasks return no value or different types.</td></tr>
       <tr><td><code>cfire/SEMA-ERROR</code></td><td>Tooling</td><td>A semantic error with no more specific code.</td></tr>
       <tr><td><code>cfire/SHELL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in Shell Command</td></tr>
-      <tr><td><code>cfire/SHIFT-OUT-OF-RANGE</code></td><td>Numbers</td><td>A constant shift count outside the operand's bit width (Q11).</td></tr>
-      <tr><td><code>cfire/SLOT-CAPTURE</code></td><td>Concurrency</td><td>A slot capture <code>|mut xs[i]|</code> used outside <code>scope.spawn</code>, or a task that uses its slice other than <code>xs[i]</code>, or a slice resized while tasks write it (Q51).</td></tr>
-      <tr><td><code>cfire/SPAWN-SHARED-MUT</code></td><td>Concurrency</td><td>A spawned task writes through a pointer other tasks can reach (Q20).</td></tr>
+      <tr><td><code>cfire/SHIFT-OUT-OF-RANGE</code></td><td>Numbers</td><td>A constant shift count outside the operand's bit width.</td></tr>
+      <tr><td><code>cfire/SLOT-CAPTURE</code></td><td>Concurrency</td><td>A slot capture <code>|mut xs[i]|</code> used outside <code>scope.spawn</code>, or a task that uses its slice other than <code>xs[i]</code>, or a slice resized while tasks write it.</td></tr>
+      <tr><td><code>cfire/SPAWN-SHARED-MUT</code></td><td>Concurrency</td><td>A spawned task writes through a pointer other tasks can reach.</td></tr>
       <tr><td><code>cfire/SQL-INJECTION-RISK</code></td><td>Detailed rule</td><td>Dynamic String Concatenation or Interpolation in SQL Query</td></tr>
       <tr><td><code>cfire/SYNTAX</code></td><td>Syntax</td><td>The source does not parse.</td></tr>
       <tr><td><code>cfire/TRY-IN-DEFER</code></td><td>Detailed rule</td><td><code>try</code> Inside <code>defer</code> Block</td></tr>
@@ -4970,15 +4971,15 @@ cfire fix src/main.cf
       <tr><td><code>cfire/TYPE-ERROR</code></td><td>Tooling</td><td>The C++ backend rejected generated code; Sema should have caught it (please report).</td></tr>
       <tr><td><code>cfire/TYPE-MISMATCH</code></td><td>Types</td><td>A value of one type is used where another is required.</td></tr>
       <tr><td><code>cfire/UNDECLARED-IDENT</code></td><td>Names</td><td>A name that is not declared, or a module used under the wrong alias.</td></tr>
-      <tr><td><code>cfire/UNDECLARED-TYPE</code></td><td>Names</td><td>A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190).</td></tr>
+      <tr><td><code>cfire/UNDECLARED-TYPE</code></td><td>Names</td><td>A type name that is not a builtin, a type declared in the package, or a type parameter in scope.</td></tr>
       <tr><td><code>cfire/UNHANDLED-RESULT</code></td><td>Errors</td><td>A fallible <code>T!</code> value used without <code>try</code> or <code>or</code>.</td></tr>
       <tr><td><code>cfire/UNKNOWN-ARG-LABEL</code></td><td>Detailed rule</td><td>Unknown Labeled Argument</td></tr>
       <tr><td><code>cfire/UNKNOWN-ENUM-VARIANT</code></td><td>Names</td><td>A variant that the enum does not declare.</td></tr>
       <tr><td><code>cfire/UNKNOWN-FIELD</code></td><td>Names</td><td>A field or associated item that the type does not have.</td></tr>
-      <tr><td><code>cfire/UNKNOWN-METHOD</code></td><td>Names</td><td>A method that the receiver type does not have (Q14 closed builtin surface).</td></tr>
+      <tr><td><code>cfire/UNKNOWN-METHOD</code></td><td>Names</td><td>A method that the receiver type does not have (closed builtin surface).</td></tr>
       <tr><td><code>cfire/UNKNOWN-MODULE</code></td><td>Imports</td><td>An import path that names no known module.</td></tr>
       <tr><td><code>cfire/UNKNOWN-STDLIB-FN</code></td><td>Names</td><td>A function that the stdlib module does not export.</td></tr>
-      <tr><td><code>cfire/UNKNOWN-STDLIB-TYPE</code></td><td>Names</td><td>A type that the stdlib module does not export, or a <code>build.*</code> type outside <code>build.cf</code> (CF-188).</td></tr>
+      <tr><td><code>cfire/UNKNOWN-STDLIB-TYPE</code></td><td>Names</td><td>A type that the stdlib module does not export, or a <code>build.*</code> type outside <code>build.cf</code>.</td></tr>
       <tr><td><code>cfire/UNKNOWN-TYPE</code></td><td>Types</td><td>An expression whose type cannot be inferred (warning).</td></tr>
       <tr><td><code>cfire/UNREACHABLE-MATCH-ARM</code></td><td>Detailed rule</td><td>Unreachable <code>match</code> Arm Shadowed by Earlier Pattern</td></tr>
       <tr><td><code>cfire/UNRESOLVED-PACKAGE</code></td><td>Imports</td><td>A local package import that cannot be found.</td></tr>

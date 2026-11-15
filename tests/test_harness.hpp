@@ -24,7 +24,7 @@
 
 inline std::atomic<int> g_failures{0};
 
-// CF-184: the few POSIX calls the suites make, with their Windows equivalents, so the runner builds everywhere.
+// the few POSIX calls the suites make, with their Windows equivalents, so the runner builds everywhere.
 inline void test_set_env(const char* name, const char* value) {
 #if defined(_WIN32)
     (void)::_putenv_s(name, value);
@@ -78,7 +78,7 @@ inline void require(bool cond, std::string_view msg) {
     }
 }
 
-// Structured parse errors (Q24) used as a failure message.
+// Structured parse errors used as a failure message.
 template <typename E>
     requires std::is_same_v<std::remove_cvref_t<E>, cfire::frontend::SourceError>
 inline void require(bool cond, const E& msg) {
@@ -214,7 +214,7 @@ inline void require_sema_error(
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     for (const auto& imp : ast->imports) {
         if (imp.is_cpp) {
-            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire (CF-153, CF-178)
+            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire
             std::vector<std::string> cflags;
             auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
             if (idx) {
@@ -263,7 +263,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
     for (const auto& imp : ast->imports) {
         if (imp.is_cpp) {
-            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire (CF-153, CF-178)
+            auto cache_dir = cfire::detail::user_cache_dir("test-header-cache");  // not /tmp/.cfire
             std::vector<std::string> cflags;
             auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir, "clang++");
             if (idx) {
@@ -283,9 +283,9 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir);
 void test_golden_codegen_snapshots(const std::filesystem::path& repo_root);
 void test_cfire_refactor_rename(const std::filesystem::path& rt_dir);
-void test_phase4_tooling_depth(const std::filesystem::path& rt_dir);
+void test_lsp_refactor_and_docgen_depth(const std::filesystem::path& rt_dir);
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir);
-void test_section2_language_ergonomics(const std::filesystem::path& rt_dir);
+void test_language_ergonomics(const std::filesystem::path& rt_dir);
 
 // Sema Suites
 void test_sema_intent_and_move_diagnostics();
@@ -302,34 +302,34 @@ void test_match_exhaustiveness_and_reachability(const std::filesystem::path& rt_
 void test_or_chaining_and_block_disambiguation(const std::filesystem::path& rt_dir);
 void test_lexer_exponents_keywords_and_interpolation(const std::filesystem::path& rt_dir);
 void test_content_hashed_pch_and_cli_flag_validation(const std::filesystem::path& rt_dir);
-void test_multiline_lambda_source_mapping_cf114(const std::filesystem::path& rt_dir);
-void test_interned_typeid_lattice_and_diagnostics_cf116(const std::filesystem::path& rt_dir);
-void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir);
-void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir);
-void test_phase2_concurrency_match_and_flow_control(const std::filesystem::path& rt_dir);
-void test_phase3_advanced_language_and_safety(const std::filesystem::path& rt_dir);
+void test_multiline_lambda_source_mapping(const std::filesystem::path& rt_dir);
+void test_interned_typeid_lattice_and_diagnostics(const std::filesystem::path& rt_dir);
+void test_unified_stdlib_metadata_table(const std::filesystem::path& rt_dir);
+void test_unified_diagnostics_pipeline(const std::filesystem::path& rt_dir);
+void test_concurrency_match_and_flow_control(const std::filesystem::path& rt_dir);
+void test_advanced_language_and_safety(const std::filesystem::path& rt_dir);
 void test_negative_parser_corpus_and_fuzz_runtime(const std::filesystem::path& rt_dir);
-void test_cf140_crash_proof_tools(const std::filesystem::path& rt_dir);
-void test_cf177_context_lifetime(const std::filesystem::path& rt_dir);
-void test_cf153_secure_temp_storage(const std::filesystem::path& rt_dir);
-void test_cf151_no_inband_tls_controls(const std::filesystem::path& rt_dir);
-void test_w4_migration_rewrites(const std::filesystem::path& rt_dir);
-void test_w4_builtin_runtime_semantics(const std::filesystem::path& rt_dir);
-void test_cf180_dual_stack_listener(const std::filesystem::path& rt_dir);
-void test_cf156_formatter_corpus(const std::filesystem::path& rt_dir);
-void test_cf155_rename_scopes_and_diff(const std::filesystem::path& rt_dir);
-void test_cf158_doc_integrity(const std::filesystem::path& rt_dir);
-void test_cf183_cli_and_tooling(const std::filesystem::path& rt_dir);
-void test_cf188_stdlib_type_surface(const std::filesystem::path& rt_dir);
-void test_cf192_keepalive_and_websocket_sessions(const std::filesystem::path& rt_dir);
-void test_cf193_http_event_loop(const std::filesystem::path& rt_dir);
-void test_cf194_websocket_server_sessions(const std::filesystem::path& rt_dir);
-void test_cf195_websocket_handshake_read_ahead(const std::filesystem::path& rt_dir);
-void test_cf197_inflate_stops_at_end_of_input(const std::filesystem::path& rt_dir);
-void test_cf150_http_server_hardening(const std::filesystem::path& rt_dir);
-void test_cf152_verified_dependency_cache(const std::filesystem::path& rt_dir);
-void test_cf160_mcp_workspace_confinement(const std::filesystem::path& rt_dir);
-void test_cf168_secure_runtime_defaults(const std::filesystem::path& rt_dir);
+void test_crash_proof_frontend_and_tools(const std::filesystem::path& rt_dir);
+void test_sync_context_parent_lifetime(const std::filesystem::path& rt_dir);
+void test_secure_temp_storage(const std::filesystem::path& rt_dir);
+void test_no_inband_tls_controls(const std::filesystem::path& rt_dir);
+void test_retired_api_migration_rewrites(const std::filesystem::path& rt_dir);
+void test_builtin_runtime_semantics(const std::filesystem::path& rt_dir);
+void test_dual_stack_tcp_listener(const std::filesystem::path& rt_dir);
+void test_formatter_roundtrip_corpus(const std::filesystem::path& rt_dir);
+void test_rename_scopes_and_diff(const std::filesystem::path& rt_dir);
+void test_generated_doc_integrity(const std::filesystem::path& rt_dir);
+void test_standalone_scripts_and_fmt_flags(const std::filesystem::path& rt_dir);
+void test_stdlib_type_docs_and_hover(const std::filesystem::path& rt_dir);
+void test_http_keepalive_and_websocket_sessions(const std::filesystem::path& rt_dir);
+void test_http_server_event_loop(const std::filesystem::path& rt_dir);
+void test_websocket_server_sessions(const std::filesystem::path& rt_dir);
+void test_websocket_handshake_read_ahead(const std::filesystem::path& rt_dir);
+void test_deflate_stops_at_end_of_input(const std::filesystem::path& rt_dir);
+void test_http_server_hardening(const std::filesystem::path& rt_dir);
+void test_verified_dependency_cache(const std::filesystem::path& rt_dir);
+void test_mcp_workspace_confinement(const std::filesystem::path& rt_dir);
+void test_secure_runtime_defaults(const std::filesystem::path& rt_dir);
 
 // Granular Stdlib Intent Suites
 void test_crypto_sha256_and_csprng(const std::filesystem::path& rt_dir);
@@ -373,15 +373,15 @@ void test_crypto_hmac_and_aes(const std::filesystem::path& rt_dir);
 void test_sync_context(const std::filesystem::path& rt_dir);
 void test_net_websocket(const std::filesystem::path& rt_dir);
 void test_net_http_and_router(const std::filesystem::path& rt_dir);
-void test_section3_agent_tooling(const std::filesystem::path& rt_dir);
+void test_cli_agent_and_workspace_tooling(const std::filesystem::path& rt_dir);
 void test_webui_rpc_events_and_linux_backend(const std::filesystem::path& rt_dir);
 void test_security_and_fuzzing(const std::filesystem::path& rt_dir);
 void test_performance_benchmarks(const std::filesystem::path& rt_dir);
-void test_cf198_199_200_build_perf_and_caching(const std::filesystem::path& rt_dir);
-void test_cf201_single_pass_in_memory_check(const std::filesystem::path& rt_dir);
-void test_cf202_sharded_codegen(const std::filesystem::path& rt_dir);
-void test_cf203_206_portable_releases(const std::filesystem::path& rt_dir);
-void test_cf207_210_consistency_and_docs(const std::filesystem::path& rt_dir);
+void test_toolchain_pch_and_binary_caching(const std::filesystem::path& rt_dir);
+void test_single_pass_in_memory_check(const std::filesystem::path& rt_dir);
+void test_sharded_cpp_codegen(const std::filesystem::path& rt_dir);
+void test_vendored_archives_and_portable_releases(const std::filesystem::path& rt_dir);
+void test_language_consistency_and_docs(const std::filesystem::path& rt_dir);
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);

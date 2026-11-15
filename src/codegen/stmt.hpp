@@ -113,7 +113,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
                     cpp_type = "std::string";
                 } else if (is_int_const_expr(st.init)) {
-                    cpp_type = "std::int64_t";  // CF-196: `x := 0` is `i64`; `auto` made it a 32-bit `int`
+                    cpp_type = "std::int64_t";  // `x := 0` is `i64`; `auto` made it a 32-bit `int`
                 } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
                     // `nums := [10, 20, 30]` is a slice; `auto x = {...}` would be a std::initializer_list.
                     const auto* first_lit = std::get_if<LiteralExpr>(&arr_lit->elements[0]->node);
@@ -133,7 +133,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             }
             if (st.init) {
                 std::string init_val = emit_expr(st.init);
-                if (cf_.owned_slice_decls.contains(&st)) init_val = std::format("cfire::own_copy({})", init_val);  // Q53
+                if (cf_.owned_slice_decls.contains(&st)) init_val = std::format("cfire::own_copy({})", init_val);
                 if (st.type && (st.type->is_ptr || st.type->is_mut_ptr) && init_val == "std::nullopt") {
                     init_val = "nullptr";
                 }
@@ -339,7 +339,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     std::string start_s = emit_expr(st.iter_expr);
                     std::string end_s = emit_expr(st.range_end);
                     std::string cmp_op = st.range_inclusive ? "<=" : "<";
-                    // CF-196: the typed end decides the index type (`0..xs.len()` is `usize`, `0..n` is `n`'s type);
+                    // the typed end decides the index type (`0..xs.len` is `usize`, `0..n` is `n`'s type);
                     // a range of two literals is `i64`, as Sema types it.
                     auto is_int_lit = [](const ExprPtr& e) {
                         if (const auto* un = e ? std::get_if<UnaryExpr>(&e->node) : nullptr; un && un->op == "-") return un->operand && std::holds_alternative<LiteralExpr>(un->operand->node);
@@ -372,7 +372,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     writeln("}");
                     loop_index_to_col_.erase(st.index_var);
                 } else {
-                    // Q39 (CF-183): `iter_items` yields a `str`'s elements as `byte`s and keeps a temporary alive. An
+                    // `iter_items` yields a `str`'s elements as `byte`s and keeps a temporary alive. An
                     // array literal lowers to a braced list, which range-for iterates directly.
                     const bool braced = std::holds_alternative<ArrayLitExpr>(st.iter_expr->node);
                     const std::string range = emit_expr(st.iter_expr);
@@ -399,7 +399,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             hoist_subexpr_tries(st.target, in_main, s->line, false);
             emit_match_stmt(st, in_main);
         } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
-            // Q51 (CF-189): a value-producing scope collects each spawned task and yields their values in spawn order.
+            // a value-producing scope collects each spawned task and yields their values in spawn order.
             const bool yields = !st.result_elem_type.empty() && (!st.result_var.empty() || st.result_return);
             std::string elem_cpp;
             if (yields) {
@@ -538,7 +538,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     }, s->node);
 }
 
-// CF-148: explicit lambda return type for match expressions whose arms share a primitive type.
+// explicit lambda return type for match expressions whose arms share a primitive type.
 CFIRE_CG_INLINE auto Emitter::match_lambda_header() const -> std::string {
     if (match_expr_result_type_.empty()) return "([&]() -> auto {";
     TypeRef tr;

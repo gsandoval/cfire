@@ -10,7 +10,7 @@ auto main(int argc, char** argv) -> int {
         return suite == "all" || suite == category;
     };
 
-    // CF-186: the conformance corpus and the GUIDE doc-tests (formerly scripts/run_conformance.py and run_guide_tests.py).
+    // the conformance corpus and the GUIDE doc-tests (formerly scripts/run_conformance.py and run_guide_tests.py).
     // `all` does not include them: `make check` runs each once, and the sanitizer targets rerun conformance with
     // their own --run-flags.
     if (suite == "conformance" || suite == "guide") {
@@ -61,44 +61,44 @@ auto main(int argc, char** argv) -> int {
         test_or_chaining_and_block_disambiguation(rt_dir);
         test_lexer_exponents_keywords_and_interpolation(rt_dir);
         test_content_hashed_pch_and_cli_flag_validation(rt_dir);
-        test_multiline_lambda_source_mapping_cf114(rt_dir);
-        test_interned_typeid_lattice_and_diagnostics_cf116(rt_dir);
-        test_unified_stdlib_metadata_table_cf117(rt_dir);
-        test_unified_diagnostics_pipeline_cf118(rt_dir);
-        test_phase2_concurrency_match_and_flow_control(rt_dir);
-        test_phase3_advanced_language_and_safety(rt_dir);
-        test_phase4_tooling_depth(rt_dir);
+        test_multiline_lambda_source_mapping(rt_dir);
+        test_interned_typeid_lattice_and_diagnostics(rt_dir);
+        test_unified_stdlib_metadata_table(rt_dir);
+        test_unified_diagnostics_pipeline(rt_dir);
+        test_concurrency_match_and_flow_control(rt_dir);
+        test_advanced_language_and_safety(rt_dir);
+        test_lsp_refactor_and_docgen_depth(rt_dir);
         test_negative_parser_corpus_and_fuzz_runtime(rt_dir);
-        test_cf140_crash_proof_tools(rt_dir);
-        test_cf177_context_lifetime(rt_dir);
-        test_cf153_secure_temp_storage(rt_dir);
-        test_cf151_no_inband_tls_controls(rt_dir);
-        test_cf150_http_server_hardening(rt_dir);
-        test_cf152_verified_dependency_cache(rt_dir);
-        test_cf160_mcp_workspace_confinement(rt_dir);
-        test_cf168_secure_runtime_defaults(rt_dir);
-        test_w4_migration_rewrites(rt_dir);
-        test_w4_builtin_runtime_semantics(rt_dir);
-        test_cf180_dual_stack_listener(rt_dir);
-        test_cf156_formatter_corpus(rt_dir);
-        test_cf155_rename_scopes_and_diff(rt_dir);
-        test_cf158_doc_integrity(rt_dir);
-        test_cf183_cli_and_tooling(rt_dir);
-        test_cf188_stdlib_type_surface(rt_dir);
-        test_cf192_keepalive_and_websocket_sessions(rt_dir);
-        test_cf193_http_event_loop(rt_dir);
-        test_cf194_websocket_server_sessions(rt_dir);
-        test_cf195_websocket_handshake_read_ahead(rt_dir);
-        test_cf197_inflate_stops_at_end_of_input(rt_dir);
+        test_crash_proof_frontend_and_tools(rt_dir);
+        test_sync_context_parent_lifetime(rt_dir);
+        test_secure_temp_storage(rt_dir);
+        test_no_inband_tls_controls(rt_dir);
+        test_http_server_hardening(rt_dir);
+        test_verified_dependency_cache(rt_dir);
+        test_mcp_workspace_confinement(rt_dir);
+        test_secure_runtime_defaults(rt_dir);
+        test_retired_api_migration_rewrites(rt_dir);
+        test_builtin_runtime_semantics(rt_dir);
+        test_dual_stack_tcp_listener(rt_dir);
+        test_formatter_roundtrip_corpus(rt_dir);
+        test_rename_scopes_and_diff(rt_dir);
+        test_generated_doc_integrity(rt_dir);
+        test_standalone_scripts_and_fmt_flags(rt_dir);
+        test_stdlib_type_docs_and_hover(rt_dir);
+        test_http_keepalive_and_websocket_sessions(rt_dir);
+        test_http_server_event_loop(rt_dir);
+        test_websocket_server_sessions(rt_dir);
+        test_websocket_handshake_read_ahead(rt_dir);
+        test_deflate_stops_at_end_of_input(rt_dir);
         test_google_cpp_and_language_design(rt_dir);
-        test_section2_language_ergonomics(rt_dir);
-        test_section3_agent_tooling(rt_dir);
-        test_cf186_runner_self_tests(rt_dir);
-        test_cf198_199_200_build_perf_and_caching(rt_dir);
-        test_cf201_single_pass_in_memory_check(rt_dir);
-        test_cf202_sharded_codegen(rt_dir);
-        test_cf203_206_portable_releases(rt_dir);
-        test_cf207_210_consistency_and_docs(rt_dir);
+        test_language_ergonomics(rt_dir);
+        test_cli_agent_and_workspace_tooling(rt_dir);
+        test_conformance_and_guide_runner_self_tests(rt_dir);
+        test_toolchain_pch_and_binary_caching(rt_dir);
+        test_single_pass_in_memory_check(rt_dir);
+        test_sharded_cpp_codegen(rt_dir);
+        test_vendored_archives_and_portable_releases(rt_dir);
+        test_language_consistency_and_docs(rt_dir);
     }
     if (should_run("e2e")) {
         test_end_to_end_canonical_examples(rt_dir);

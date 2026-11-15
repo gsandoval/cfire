@@ -9,7 +9,7 @@
 #endif
 #endif
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_REFACTOR_IMPL)
 #include "lsp.hpp"
 #include "build/toolchain_layout.hpp"
 #include <atomic>
@@ -65,12 +65,12 @@ struct RenameResult {
 ) -> RenameResult;
 [[nodiscard]] CFIRE_REFACTOR_INLINE auto apply_rename(const RenameResult& res) -> std::expected<void, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_REFACTOR_IMPL)
 
 using lsp::detail::is_valid_identifier;
 using lsp::detail::check_rename_collision;
 
-// CF-155: a unified diff that `git apply` / `patch -p1` accept: paths relative to the current directory (when the
+// a unified diff that `git apply` / `patch -p1` accept: paths relative to the current directory (when the
 // file is under it), 3 lines of context, overlapping hunks merged, and correct line counts.
 [[nodiscard]] CFIRE_REFACTOR_INLINE auto generate_unified_diff(const RenameResult& res) -> std::string {
     std::string diff;
@@ -376,7 +376,7 @@ using lsp::detail::check_rename_collision;
     return {};
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_REFACTOR_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_REFACTOR_IMPL)
 
 } // namespace cfire::refactor
 

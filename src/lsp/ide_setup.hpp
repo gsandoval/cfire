@@ -45,7 +45,7 @@ struct DetectedIde {
     bool global_scope = false
 ) -> std::expected<std::string, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_IDE_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_IDE_IMPL)
 
 [[nodiscard]] CFIRE_LSP_IDE_INLINE auto resolve_cfire_binary(const std::filesystem::path& repo_root) -> std::string {
     std::error_code ec;
@@ -250,7 +250,7 @@ struct DetectedIde {
 - **Packages & Imports**:
   - **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants. Never write `import "./sibling.cf"` for same-directory files.
   - **Standard Library, Cloud & Hybrid Native WebUI Packages**: Use `import "core:tako"` (`cfire new <dir> --template tako` / `cfire init --template tako`) for local/cloud S3 & SQS primitives, or `import "ext:webui"` (`cfire new <dir> --template webui`) for hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, Linux, and Windows.
-  - **C/C++ Interop & Declarative `build.cf` Linkage**: Use `import cpp "<header.h>"` (with optional `as <alias>` and `@define("KEY", "VAL")`) for foreign C/C++ headers, and declare native linkage (`PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`) in `build.cf` (never `@pkg` attributes on imports).
+  - **C/C++ Interop & Declarative `build.cf` Linkage**: Use `import cpp "<header.h>"` (with optional `as <alias>`) for foreign C/C++ headers, and declare preprocessor defines and native linkage (`Defines: {{...}}`, `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, or `build.Define(...)`) in `build.cf` (never `@pkg` or `@define` attributes on imports).
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
   - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer {{ ... }}` for RAII scope cleanup (`return` inside `defer {{ ... }}` is forbidden via `cfire/RETURN-IN-DEFER`).
@@ -855,7 +855,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {{
     return summary;
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_IDE_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_IDE_IMPL)
 
 } // namespace cfire::lsp
 

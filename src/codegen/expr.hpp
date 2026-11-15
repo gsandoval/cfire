@@ -183,22 +183,22 @@ namespace cfire::frontend {
                 return std::format("cfire::mod({}, {})", emit_expr(ex.left), emit_expr(ex.right));
             }
             if (ex.op == "+") {
-                // CF-148: `"a" + "b"` must concatenate strings, not add two `const char[]` (which clang rejects).
+                // `"a" + "b"` must concatenate strings, not add two `const char[]` (which clang rejects).
                 const auto* llit = ex.left ? std::get_if<LiteralExpr>(&ex.left->node) : nullptr;
                 const auto* rlit = ex.right ? std::get_if<LiteralExpr>(&ex.right->node) : nullptr;
                 if (llit && rlit && llit->kind == TokenKind::String && rlit->kind == TokenKind::String) {
                     return std::format("(std::string({}) + {})", emit_expr(ex.left), emit_expr(ex.right));
                 }
             }
-            if (ex.op == "<<" || ex.op == ">>") {  // Q11 (CF-166): out-of-range counts panic instead of UB
-                // CF-183: a bare integer literal is 64-bit here, as Sema's constant shift check assumes (`1 << 50`).
+            if (ex.op == "<<" || ex.op == ">>") {  // out-of-range counts panic instead of UB
+                // a bare integer literal is 64-bit here, as Sema's constant shift check assumes (`1 << 50`).
                 const auto* llit = ex.left ? std::get_if<LiteralExpr>(&ex.left->node) : nullptr;
                 std::string lhs = emit_expr(ex.left);
                 if (llit && llit->kind == TokenKind::Int) lhs = std::format("static_cast<std::int64_t>({})", lhs);
                 return std::format("cfire::{}({}, {})", ex.op == "<<" ? "shl" : "shr", lhs, emit_expr(ex.right));
             }
             if (ex.op == "<" || ex.op == "<=" || ex.op == ">" || ex.op == ">=" || ex.op == "==" || ex.op == "!=") {
-                // CF-183: `r < xs.len()` with a negative `r` must be true; a literal operand converts exactly.
+                // `r < xs.len` with a negative `r` must be true; a literal operand converts exactly.
                 const bool lit = (ex.left && std::holds_alternative<LiteralExpr>(ex.left->node)) ||
                                  (ex.right && std::holds_alternative<LiteralExpr>(ex.right->node));
                 if (!lit) {
@@ -206,13 +206,13 @@ namespace cfire::frontend {
                     return std::format("cfire::cmp_{}({}, {})", fn, emit_expr(ex.left), emit_expr(ex.right));
                 }
             }
-            // CF-196: an expression of integer literals only is `i64` (Sema's type), not C++ `int`.
+            // an expression of integer literals only is `i64` (Sema's type), not C++ `int`.
             if (is_int_const_expr(ex.left) && is_int_const_expr(ex.right) && std::holds_alternative<LiteralExpr>(ex.left->node)) {
                 return std::format("(static_cast<std::int64_t>({}) {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
             }
             return std::format("({} {} {})", emit_expr(ex.left), ex.op, emit_expr(ex.right));
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
-            if (cf_.guard_value_members.contains(&ex)) return std::format("(*{})", emit_expr(ex.object));  // Q52 `g.value`
+            if (cf_.guard_value_members.contains(&ex)) return std::format("(*{})", emit_expr(ex.object));  // `g.value`
             if (ex.resolution) {
                 const auto& res = *ex.resolution;
                 if (res.kind == SymbolKind::CoreNamespace) {
@@ -400,7 +400,7 @@ namespace cfire::frontend {
                 } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
                     tname = rest;
                 } else if (cfire::frontend::StdlibCatalogIndex::instance().has_namespace(mod)) {
-                    tname = std::format("cfire::{}::{}", mod, rest);  // CF-188: `http.ServerLimits{}`, `aes.GcmResult{}`
+                    tname = std::format("cfire::{}::{}", mod, rest);  // `http.ServerLimits{}`, `aes.GcmResult{}`
                 } else {
                     tname = std::format("{}::{}", mod, rest);
                 }
@@ -759,7 +759,7 @@ namespace cfire::frontend {
                 return std::format("cfire::bm::parse<{}>({})", prim, emit_call_arg(call.args[0]));
             }
         }
-        // W4: methods on builtin types (src/sema/builtin_methods.hpp) lower to `cfire::bm::<name>(recv, args...)`.
+        // methods on builtin types (src/sema/builtin_methods.hpp) lower to `cfire::bm::<name>(recv, args...)`.
         if (mem->resolution && mem->resolution->kind == SymbolKind::Method && mem->resolution->owner_type == "builtin") {
             std::string args = emit_expr(mem->object);
             if (const auto* oid = std::get_if<IdentExpr>(&mem->object->node); oid && optional_vars_.contains(oid->name)) {
@@ -878,7 +878,7 @@ namespace cfire::frontend {
             }
         }
 
-        // W4: a `str` or numeric method on a receiver Sema could not type (a field of a stdlib struct such as
+        // a `str` or numeric method on a receiver Sema could not type (a field of a stdlib struct such as
         // `res.stdout.trim()`) still lowers to `cfire::bm`. Names that containers also use (`insert`, `contains`,
         // `len`, ...) keep the member call, since the receiver may be a stdlib collection.
         if (!is_ns_object && !is_user_method) {
@@ -913,7 +913,7 @@ namespace cfire::frontend {
             return std::format("cfire::vec_push({}, {})", obj, emit_call_arg(call.args[0]));
         }
         if (mem->field == "pop" && call.args.empty()) {
-            // CF-183: an untyped receiver may be a slice, a string or a stdlib queue; `bm::pop` handles all three.
+            // an untyped receiver may be a slice, a string or a stdlib queue; `bm::pop` handles all three.
             return std::format("cfire::bm::pop({})", obj);
         }
         if (mem->field == "with_ext" && call.args.size() == 1) {
@@ -928,7 +928,7 @@ namespace cfire::frontend {
         }
         if ((mem->field == "wrapping_as" || mem->field == "saturating_as" || mem->field == "try_as") &&
             call.type_args.size() == 1 && call.args.empty()) {
-            // Q9 (CF-165): explicit numeric conversions with defined out-of-range behavior.
+            // explicit numeric conversions with defined out-of-range behavior.
             return std::format("cfire::{}<{}>({})", mem->field, lower_owning_type(call.type_args[0]), obj);
         }
         if ((mem->field == "parse" || mem->field == "try_parse") && call.type_args.size() == 1) {
@@ -968,12 +968,12 @@ namespace cfire::frontend {
             }
             if (spawn_cl) {
                 std::ostringstream sb;
-                // Q51 slot captures: the task writes `xs[i]` of the real slice (Sema proved the slot is its own).
+                // slot captures: the task writes `xs[i]` of the real slice (Sema proved the slot is its own).
                 std::string caps = view_param_captures(spawn_cl->body);
                 for (const auto& sc : spawn_cl->slot_captures) caps += ", &" + sc.first;
                 const auto vsr = value_scope_results_.find(obj);
                 if (vsr != value_scope_results_.end()) {
-                    // Q51: the task's value goes to the scope's result, in spawn order.
+                    // the task's value goes to the scope's result, in spawn order.
                     sb << std::format("{}.add({}.spawn([={}]() mutable -> {} {{\n", vsr->second.first, obj, caps, vsr->second.second);
                 } else {
                     sb << std::format("{}.spawn([={}]() mutable {{\n", obj, caps);
@@ -1088,7 +1088,7 @@ namespace cfire::frontend {
                        !ptype.contains("string_view") && !arg_val.starts_with("std::string(")) {
                 arg_val = std::format("std::string({})", arg_val);
             } else if (ptype.ends_with('*') && !ptype.contains("(*") && ptype != "const char *" && ptype != "const char*") {
-                arg_val = std::format("cfire::c_ptr<{}>({})", ptype, arg_val);  // Q54: a slice / str is its buffer pointer
+                arg_val = std::format("cfire::c_ptr<{}>({})", ptype, arg_val);  // a slice / str is its buffer pointer
             }
         } else if (is_vendor_call) {
             bool is_plain_lit_or_const = false;

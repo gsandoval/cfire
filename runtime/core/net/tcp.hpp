@@ -43,7 +43,7 @@ namespace detail {
 inline std::mutex loopback_mu;
 inline std::unordered_map<std::uint16_t, std::queue<int>> loopback_queues;
 inline std::atomic<std::uint16_t> next_vport{49152};
-// CF-193: called after a virtual-port connection is queued, so an event loop waiting on that port wakes up.
+// called after a virtual-port connection is queued, so an event loop waiting on that port wakes up.
 inline std::unordered_map<std::uint16_t, std::function<void()>> loopback_wake_hooks;
 
 inline void ensure_winsock() noexcept {
@@ -73,7 +73,7 @@ inline void shutdown_sock(int fd) noexcept {
 #endif
 }
 
-// CF-192: lets another thread shut a socket down (to end a blocked read) without racing its owner's close:
+// lets another thread shut a socket down (to end a blocked read) without racing its owner's close:
 // the owner clears `fd` under `mu` before closing the socket, so a reused descriptor is never touched.
 struct CloseGuard {
     std::mutex mu;
@@ -113,7 +113,7 @@ inline void set_sock_timeout_ms(int fd, int ms) noexcept {
 #endif
 }
 
-// CF-180: an IPv6 listener that also accepts IPv4 (as ::ffff:a.b.c.d) when the OS allows it.
+// an IPv6 listener that also accepts IPv4 (as::ffff:a.b.c.d) when the OS allows it.
 inline void set_dual_stack(int fd) noexcept {
     if (fd < 0) return;
 #if defined(_WIN32)
@@ -164,7 +164,7 @@ inline void set_reuseaddr(int fd) noexcept {
 #endif
 }
 
-// CF-193: the outcome of one non-blocking read, write or TLS handshake step.
+// the outcome of one non-blocking read, write or TLS handshake step.
 enum class Io : std::uint8_t { Ok, WantRead, WantWrite, Eof, Error };
 
 inline void set_nonblocking(int fd, bool on) noexcept {
@@ -350,7 +350,7 @@ public:
     [[nodiscard]] auto fd() const noexcept -> std::int32_t { return static_cast<std::int32_t>(fd_); }
     [[nodiscard]] auto is_open() const noexcept -> bool { return fd_ >= 0; }
     [[nodiscard]] auto release_fd() noexcept -> int { return std::exchange(fd_, -1); }
-    // CF-192: a guard another thread can use to shut this socket down; it moves with `release_close_guard()`.
+    // a guard another thread can use to shut this socket down; it moves with `release_close_guard`.
     [[nodiscard]] auto close_guard() -> std::shared_ptr<detail::CloseGuard> {
         if (!guard_) {
             guard_ = std::make_shared<detail::CloseGuard>();
@@ -360,7 +360,7 @@ public:
     }
     [[nodiscard]] auto release_close_guard() noexcept -> std::shared_ptr<detail::CloseGuard> { return std::exchange(guard_, nullptr); }
     [[nodiscard]] auto endpoint() const noexcept -> const std::string& { return endpoint_; }
-    // CF-180: the peer's address (IPv4 dotted or IPv6 text) for accepted connections, the dialed host otherwise.
+    // the peer's address (IPv4 dotted or IPv6 text) for accepted connections, the dialed host otherwise.
     [[nodiscard]] auto remote_addr() const -> std::string { return endpoint_; }
 
     [[nodiscard]] auto poll(std::int64_t timeout_ms = 0) const noexcept -> bool {
@@ -571,7 +571,7 @@ public:
     // The listening socket (-1 for a virtual in-process port).
     [[nodiscard]] auto fd() const noexcept -> int { return fd_; }
 
-    // CF-193: one connection if one is waiting, without blocking (the listening socket must be non-blocking).
+    // one connection if one is waiting, without blocking (the listening socket must be non-blocking).
     [[nodiscard]] auto try_accept() -> std::optional<TcpConn> {
         if (int sfd = detail::pop_loopback_fd(port_); sfd >= 0) return TcpConn(sfd, "127.0.0.1");
         if (fd_ < 0) return std::nullopt;
@@ -612,7 +612,7 @@ public:
                     int client_fd = ::accept(fd_, reinterpret_cast<sockaddr*>(&client_addr), &len);
 #endif
                     if (client_fd >= 0) {
-                        // Report the real peer address (CF-150); every client used to appear as 127.0.0.1.
+                        // Report the real peer address; every client used to appear as 127.0.0.1.
                         return TcpConn(client_fd, detail::peer_address_text(client_addr));
                     }
                 }
@@ -632,7 +632,7 @@ private:
 [[nodiscard]] inline auto listen_tcp_addr(std::string_view host, std::uint16_t port = 0)
     -> std::expected<TcpListener, cfire::Error>
 {
-    // CF-180: the wildcard host listens dual-stack (IPv6 with IPv4-mapped clients) and falls back to IPv4;
+    // the wildcard host listens dual-stack (IPv6 with IPv4-mapped clients) and falls back to IPv4;
     // `::1` / any IPv6 literal binds IPv6; an address that is neither is an error instead of a silent
     // bind to every interface.
     const bool wildcard = host.empty() || host == "0.0.0.0" || host == "*" || host == "::";
@@ -707,7 +707,7 @@ private:
     std::string port_str = std::to_string(port);
 
     addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;  // CF-180: IPv6 hosts and literals (`::1`) as well as IPv4
+    hints.ai_family = AF_UNSPEC;  // IPv6 hosts and literals (`::1`) as well as IPv4
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* res = nullptr;
     if (host_str.size() > 2 && host_str.front() == '[' && host_str.back() == ']') host_str = host_str.substr(1, host_str.size() - 2);
@@ -751,7 +751,7 @@ private:
     };
 }
 
-// Q29: one verb per direction across `net`, `tls`, `websocket` and `ssh`.
+// one verb per direction across `net`, `tls`, `websocket` and `ssh`.
 [[nodiscard]] inline auto connect(std::string_view host, std::uint16_t port) -> std::expected<TcpConn, cfire::Error> {
     return connect_tcp(host, port);
 }

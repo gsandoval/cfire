@@ -112,7 +112,7 @@ inline Win32Utf8ConsoleInit g_win32_utf8_console_init{};
     return out;
 }
 
-// CommandLineToArgvW-compatible argument escaping (CF-010.d)
+// CommandLineToArgvW-compatible argument escaping
 [[nodiscard]] inline auto quote_win32_arg(std::wstring_view arg) -> std::wstring {
     if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring_view::npos) {
         return std::wstring(arg);
@@ -179,7 +179,7 @@ struct ExecResult {
     [[nodiscard]] auto success() const noexcept -> bool { return exit_code == 0; }
 };
 
-// --- Standard Streams & Safe Pipe Handles (`CF-089`) ---
+// --- Standard Streams & Safe Pipe Handles ---
 
 [[nodiscard]] inline auto stdin_file() noexcept -> cfire::fs::File {
     return cfire::fs::File(STDIN_FILENO, false);
@@ -392,7 +392,7 @@ struct ExecResult {
     return command(binary, std::span<const std::string>(vec));
 }
 
-// --- Terminal & Event Loop Primitives (`CF-043`, `CF-010`) ---
+// --- Terminal & Event Loop Primitives ---
 struct TermSize {
     std::int32_t cols = 80;
     std::int32_t rows = 24;

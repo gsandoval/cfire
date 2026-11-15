@@ -129,7 +129,7 @@ struct TypeRef {
     bool is_map = false;
     std::shared_ptr<TypeRef> key_type = nullptr;
     std::shared_ptr<TypeRef> elem_type = nullptr;
-    std::vector<TypeRef> type_args{}; // CF-107: Uniform first-class multi-argument generic type application
+    std::vector<TypeRef> type_args{}; // Uniform first-class multi-argument generic type application
     bool is_fallible = false; // T!
     bool is_optional = false; // T?
     bool is_mut_ptr = false;  // *mut T
@@ -260,7 +260,7 @@ struct ParamDecl {
     bool has_deprecated_mut_pos = false;
 };
 
-// --- Semantic Resolution & Symbol Kinds (CF-115) ---
+// --- Semantic Resolution & Symbol Kinds ---
 
 enum class SymbolKind {
     Local,
@@ -382,7 +382,7 @@ struct ClosureExpr {
     bool is_async = false;
     bool is_escaping = false;
     std::vector<StmtPtr> body{};
-    // Q51 (CF-189): `scope.spawn |mut codes[i]| { codes[i] = v }`: the task may write that one element and
+    // `scope.spawn |mut codes[i]| { codes[i] = v }`: the task may write that one element and
     // nothing else of `codes`. Each entry is (slice variable, index expression).
     std::vector<std::pair<std::string, ExprPtr>> slot_captures{};
 };
@@ -401,7 +401,7 @@ struct CallExpr {
     std::vector<CallArg> args{};
     std::optional<ClosureExpr> block_arg{};
     std::optional<Resolution> resolution{};
-    // Q25: `make(T, args...)` with the type as the first argument (stored in type_args[0]); false for the
+    // `make(T, args...)` with the type as the first argument (stored in type_args[0]); false for the
     // retired bracket form `make[T](args...)`.
     bool make_type_first = false;
     // Set by Sema: `make(own[T], v)` where `v` is already a `T` (so T's declared constructor is not called).
@@ -502,10 +502,10 @@ struct MatchExpr {
     std::vector<MatchArm> arms{};
     int line = 1;
     int col = 1;
-    // Q40 (CF-183): `if c { a } else { b }` in expression position, parsed as a match on `c` with a `true`
+    // `if c { a } else { b }` in expression position, parsed as a match on `c` with a `true`
     // arm and a `_` arm. Sema requires both branches to have the same type.
     bool is_if = false;
-    // Set by Sema when every arm yields the same primitive type (CF-148): codegen gives the lowered lambda an
+    // Set by Sema when every arm yields the same primitive type: codegen gives the lowered lambda an
     // explicit return type, so a literal arm (`_ => 0`) converts instead of clashing with `i64(...)`.
     mutable std::string result_type{};
 };
@@ -630,7 +630,7 @@ struct AsyncScopeStmt {
     std::string scope_var{};
     std::vector<StmtPtr> body{};
     int line = 1;
-    // Q51 (CF-189): `results := async.scope(...) |s| { ... }` / `return async.scope(...) ...`: the values the
+    // `results:= async.scope(...) |s| { ... }` / `return async.scope(...)...`: the values the
     // spawned tasks return, as `[]T` in spawn order. `result_var` names the new variable ("" for none).
     std::string result_var{};
     bool result_mut = false;
@@ -695,7 +695,7 @@ template <typename T>
 // --- Top-Level Declarations ---
 
 // Calls `visit(e)` for every expression in `stmts`, outer expressions first; returning false skips that
-// expression's children. Closure bodies are included (CF-189: a slot capture checks every use inside the task).
+// expression's children. Closure bodies are included (a slot capture checks every use inside the task).
 template <typename F>
 void visit_exprs(const std::vector<StmtPtr>& stmts, F&& visit);
 
@@ -799,7 +799,7 @@ struct FnDecl {
     int line = 1;
     std::string package_name{};
     std::string source_path{};
-    std::string ctor_type{};  // Q25: set for `fn (T) make(...)`, whose name is rewritten to `cfire_ctor_T`
+    std::string ctor_type{};  // set for `fn (T) make(...)`, whose name is rewritten to `cfire_ctor_T`
 };
 
 struct GlobalVarDecl {

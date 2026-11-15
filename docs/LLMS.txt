@@ -9,7 +9,7 @@
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
   - Note on Builtin Operations: Methods and associated items on `str`, numeric types, slices (`[]T`), arrays (`[N]T`), and maps (`map[K]V`) live directly on values/types (`s.trim()`, `s.split(",")`, `xs.sort()`, `m.keys()`, `i32.parse(s)`, `i32.MAX`). Legacy `import "core:str"` and `import "core:sort"` are retired (`cfire/RETIRED-API`).
   - Local package: `import "./path/to/pkg"`
-  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias @define("KEY", "VAL")` (compile-time preprocessor defines belong on `import cpp` via `@define`; native linkage, `pkg-config`, libraries, frameworks, and include paths belong declaratively in `build.cf` via `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` or CLI `--pkg-config <name>`. Legacy `@pkg` import attributes are retired via `cfire/RETIRED-API`).
+  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias` (preprocessor defines and native linkage — `Defines`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `UrlSchemes`, and `SignIdentity` — belong declaratively in `build.cf` via `build.Executable`/`build.Package`/`build.Define`, or via CLI `--define <K[=V]>` / `-D<K[=V]>` and `--pkg-config <name>`. Legacy `@pkg` and `@define` import attributes are retired via `cfire/RETIRED-API`).
 - Variable Declarations & Naming Conventions:
   - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
@@ -71,7 +71,7 @@
   - View & Loan Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`, `cfire/ITERATOR-INVALIDATION`): Mutating, reallocating, or moving a container while a view borrows from it or while iterating over it, or returning a view into a local/temporary, is rejected at compile time.
   - Type & Boundary Checks (`cfire/RECURSIVE-TYPE`, `cfire/UNSATISFIED-CONSTRAINT`, `cfire/RAW-POINTER`, `cfire/REFERENCE-TYPE`, `cfire/RETIRED-API`, `cfire/NULL-DEREF`): Direct or optional self-recursive value structs without `own[T]`/`shared[T]`/`[]T` indirection, non-matching interface constraints, pure-`.cf` raw pointers or `&T` references, and unguarded pointer dereferences are rejected at compile time.
   - Bounds, Arithmetic, Tags & Injection (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`, `cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Constant OOB indexing, div-by-zero, duplicate struct tags, and string-concatenated SQL/shell calls are diagnosed at compile time.
-- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h" @define("KEY", "VAL")`
+- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h"` (defines in `build.cf` `Defines` or CLI `-DK=V`)
 - CLI Tooling:
   - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
   - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
@@ -93,7 +93,7 @@
 ## Builtin Types & Standard Library (`core:*`, `ext:*`)
 
 ### Builtin Types: Methods, Associated Items & make (no import required)
-Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
+Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
 Functions & Methods:
 - `fn (x: i64) abs() -> Self`: Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`.
 - `fn (x: i64) min(a: Self) -> Self`: Smaller of the two values (for floats, a NaN operand yields the other operand).
@@ -232,8 +232,8 @@ Functions & Methods:
 - `fn (m: map[K]V) get(a: K) -> V?`: Copy of the value for `k`, or `none`.
 - `fn (m: map[K]V) insert(a: K, b: V) -> V?`: Sets `k` to `v`; returns the previous value, or `none`.
 - `fn (m: map[K]V) remove(a: K) -> V?`: Removes `k`; returns its value, or `none` if absent.
-- `fn (m: map[K]V) keys() -> []K`: Copy of the keys, in unspecified order (Q27).
-- `fn (m: map[K]V) values() -> []V`: Copy of the values, in unspecified order (Q27).
+- `fn (m: map[K]V) keys() -> []K`: Copy of the keys, in unspecified order.
+- `fn (m: map[K]V) values() -> []V`: Copy of the values, in unspecified order.
 - `const <int>.MAX: Self`: Largest value of the type.
 - `const <int>.MIN: Self`: Smallest value of the type.
 - `const <int>.BITS: u32`: Width in bits (`u32`).
@@ -248,9 +248,9 @@ Functions & Methods:
 - `make(T) / make(T, args...)`: A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type).
 - `make(own[T], args...) / make(shared[T], args...)`: A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments.
 - `make([]T, len) / make([]T, len, cap)`: `len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics.
-- `make(map[K]V)`: An empty map (iteration order is unspecified, Q27).
-- `fn (o: own[T]) release() -> *mut T`: Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.
-- `fn own[T].from_raw(p: *mut T) -> own[T]`: Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior.
+- `make(map[K]V)`: An empty map (iteration order is unspecified).
+- `fn (o: own[T]) release() -> *mut T`: Gives up ownership for C interop: returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.
+- `fn own[T].from_raw(p: *mut T) -> own[T]`: Takes ownership of a pointer produced by `release`. Adopting any other pointer is undefined behavior.
 
 ### `import "core:audio"` (alias: `audio`)
 Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.
@@ -288,9 +288,9 @@ Functions & Methods:
 - `fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool`: Returns `true` when buffered frames fall below `target_frames`.
 
 ### `import "core:build"` (alias: `build`)
-Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/framework links (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
+Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/define/framework settings (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Define`, `build.Defines`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
 Types:
-- `Package`: In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, and `Includes`.
+- `Package`: In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, and `Defines`.
 - `Executable`: In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`).
 - `App`: In `build.cf`: alias for `build.Executable(...)`.
 - `Library`: In `build.cf`: declares a static or shared library target.
@@ -305,6 +305,8 @@ Types:
 - `PkgConfig`: In `build.cf`: links one or more libraries found through pkg-config.
 - `Link`: In `build.cf`: links a library by name.
 - `Include`: In `build.cf`: adds a header search directory.
+- `Define`: In `build.cf`: adds a C/C++ preprocessor macro definition (`-DKEY` or `-DKEY=VAL`).
+- `Defines`: In `build.cf`: adds one or more C/C++ preprocessor macro definitions (`str`, `[]str`, or `{ KEY: VALUE }` map).
 - `Libraries`: In `build.cf`: links one or more libraries by name.
 - `Includes`: In `build.cf`: adds one or more header search directories.
 - `Frameworks`: In `build.cf`: adds one or more Apple frameworks.
@@ -313,7 +315,7 @@ Types:
 - `DepTarget`: In `build.cf`: what `build.CC`, `build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, and `build.Archive` return.
 - `PackageTarget`: In `build.cf`: what `build.Package` returns.
 Functions & Methods:
-- `fn Package(cfg: any, extra: any = {}) -> PackageTarget` (call: `build.Package`): Declares package metadata and manifest-level native linkage defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Entry`, `OutDir`).
+- `fn Package(cfg: any, extra: any = {}) -> PackageTarget` (call: `build.Package`): Declares package metadata and manifest-level native defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Defines`, `Entry`, `OutDir`).
 - `fn Executable(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.Executable`): Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, `Frameworks`, `Portable`, `Static`, `Universal`, `UrlSchemes`, and `SignIdentity`.
 - `fn App(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.App`): Alias for `build.Executable` declaring an application executable target.
 - `fn Library(name_or_cfg: any, cfg: any = {}) -> Target` (call: `build.Library`): Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, and `Frameworks`.
@@ -327,6 +329,8 @@ Functions & Methods:
 - `fn Command(name_or_cfg: any, cfg: any = {}) -> StepTarget` (call: `build.Command`): Alias for `build.Step` declaring a custom pre-build command step.
 - `fn Link(lib: str)` (call: `build.Link`): Adds a system library (`"sqlite3"`) or Apple framework (`"-framework Security"`) to the linker flags.
 - `fn Include(dir: str)` (call: `build.Include`): Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers.
+- `fn Define(key: str, value: any = "")` (call: `build.Define`): Adds a C/C++ preprocessor macro definition (`-DKEY` or `-DKEY=VAL`) for `import cpp` headers and native C/C++ sources.
+- `fn Defines(defs: any)` (call: `build.Defines`): Adds one or more C/C++ preprocessor macro definitions (`str`, `[]str`, or `{ KEY: VALUE }` map) for `import cpp` headers and native targets.
 - `fn PkgConfig(pkg: any)` (call: `build.PkgConfig`): Queries `pkg-config --cflags --libs` for a package name or list of package names (`str` or `[]str`) and links the resolved flags into the build.
 - `fn Libraries(libs: any)` (call: `build.Libraries`): Adds one or more native libraries (`str` or `[]str`) to the linker flags.
 - `fn Includes(dirs: any)` (call: `build.Includes`): Adds one or more header search directories (`str` or `[]str`) for `import cpp` headers.
@@ -550,8 +554,8 @@ Types:
 - `HttpServer`: An HTTP server bound to a port (`make(http.Server, port)`); `serve_in_background` runs it and `stop` ends it.
 - `Server`: The name `make(http.Server, port)` constructs; the same type as `http.HttpServer`.
 - `SseEvent`: One server-sent event.
-- `ServerLimits`: Per-connection limits for `http.Server` (Q22, CF-192, CF-193); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503.
-- `TlsConfig`: Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM.
+- `ServerLimits`: Per-connection limits for `http.Server` (with keep-alive and event-loop limits); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503.
+- `TlsConfig`: Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM.
 Functions & Methods:
 - `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL.
 - `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body.
@@ -569,9 +573,9 @@ Functions & Methods:
 - `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router`: Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.
 - `fn (r: Router) dispatch(req: Request) -> Response`: Dispatches an HTTP request through the router in-memory without open network sockets.
 - `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router`: Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.
-- `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128, keepalive_timeout_ms: i32 = 5000, max_requests_per_conn: usize = 1000, max_websockets: usize = 1024, max_connections: usize = 10000 }` (call: `http.ServerLimits`): Per-connection server limits (Q22, CF-180, CF-192, CF-193). Idle and slow connections wait in the server's event loop, so `workers` is how many handlers run at once. Omitted fields keep their defaults; `workers = 0` keeps the default (twice the core count, at least 4). `keepalive_timeout_ms = 0` turns keep-alive off.
-- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `http.TlsConfig`): Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM.
-- `fn (mut s: HttpServer) set_limits(limits: ServerLimits)`: Replaces the per-connection limits (Q22, CF-192): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending, keepalive_timeout_ms, max_requests_per_conn, max_websockets, max_connections}`; omitted fields keep their defaults.
+- `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128, keepalive_timeout_ms: i32 = 5000, max_requests_per_conn: usize = 1000, max_websockets: usize = 1024, max_connections: usize = 10000 }` (call: `http.ServerLimits`): Per-connection server limits. Idle and slow connections wait in the server's event loop, so `workers` is how many handlers run at once. Omitted fields keep their defaults; `workers = 0` keeps the default (twice the core count, at least 4). `keepalive_timeout_ms = 0` turns keep-alive off.
+- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `http.TlsConfig`): Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM.
+- `fn (mut s: HttpServer) set_limits(limits: ServerLimits)`: Replaces the per-connection limits: `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending, keepalive_timeout_ms, max_requests_per_conn, max_websockets, max_connections}`; omitted fields keep their defaults.
 - `fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!`: Enables TLS on the server using certificate and private key PEM files.
 - `fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!`: Enables TLS on the server using in-memory certificate and private key PEM strings.
 - `fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void`: Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests.
@@ -609,11 +613,11 @@ RFC 6455 full-duplex `ws://` and `wss://` WebSocket client (`connect`, with `ver
 Types:
 - `Conn`: An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`).
 - `Server`: A WebSocket server bound to a port (`make(websocket.Server, port)`); each connection runs on its own session thread, so handlers run concurrently.
-- `ServerLimits`: Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default.
-- `TlsConfig`: Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`.
+- `ServerLimits`: Limits for `websocket.Server`; pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default.
+- `TlsConfig`: Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`.
 Functions & Methods:
 - `fn connect(url: str, verify_peer: bool = true) -> Conn!` (call: `websocket.connect`): Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.
-- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `websocket.TlsConfig`): Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`.
+- `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `websocket.TlsConfig`): Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`.
 - `fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!`: `make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`.
 - `fn upgrade(req: Request, mut conn: TcpConn) -> Conn!` (call: `websocket.upgrade`): Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.
 - `fn pair() -> (Conn, Conn)!` (call: `websocket.pair`): Creates an in-process full-duplex WebSocket client/server loopback pair.
@@ -626,10 +630,10 @@ Functions & Methods:
 - `fn (mut ws: Conn) close(code: u16 = 1000, reason: str = "")`: Initiates a clean RFC 6455 closure handshake and closes the socket.
 - `fn (ws: Conn) is_open() -> bool`: Returns true if the WebSocket connection is open.
 - `fn (mut s: Server) accept() -> Conn!`: Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`.
-- `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` (call: `websocket.ServerLimits`): Limits for `websocket.Server` (CF-194): open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults.
-- `fn (mut s: Server) set_limits(limits: ServerLimits)`: Replaces the server's limits (CF-194): `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving.
+- `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` (call: `websocket.ServerLimits`): Limits for `websocket.Server`: open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults.
+- `fn (mut s: Server) set_limits(limits: ServerLimits)`: Replaces the server's limits: `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving.
 - `fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void`: Accepts and serves a single WebSocket connection with `handler`, on the calling thread.
-- `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void`: Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503.
+- `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void`: Runs a blocking accept loop; each connection is upgraded and served on its own session thread, so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503.
 - `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void`: Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently.
 - `fn (mut s: Server) stop() -> void`: Stops the accept loop, shuts the open sessions down and waits for their handlers to return.
 
@@ -702,7 +706,7 @@ Functions & Methods:
 - `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!`: Receives from the channel or aborts immediately with an error if `ctx` is cancelled.
 - `fn (ch: Channel[T]) len() -> usize`: Returns the number of buffered items currently queued in the channel.
 - `fn (mut ch: Channel[T]) close()`: Closes the channel and wakes all waiting receivers.
-- `type Mutex[T] struct` (call: `sync.Mutex`): Mutual exclusion (CF-154): `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock.
+- `type Mutex[T] struct` (call: `sync.Mutex`): Mutual exclusion: `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock.
 - `fn (m: Mutex[T]) lock() -> MutexGuard[T]`: `Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`.
 - `fn (m: Mutex[void]) unlock()`: Releases a `Mutex[void]` acquired with `lock()`.
 - `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?`: Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock.
@@ -984,8 +988,8 @@ Functions & Methods:
 - `cfire/ARITY-MISMATCH` (Types): A call passes the wrong number of arguments.
 - `cfire/ASSIGN-IMMUTABLE` (Mutability): Assignment to a binding declared without `mut`.
 - `cfire/BREAK-OUTSIDE-LOOP` (Detailed rule): `break` or `continue` Outside of a `for` Loop
-- `cfire/DANGLING-POINTER` (Detailed rule): Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)
-- `cfire/DANGLING-RETURN` (Detailed rule): Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)
+- `cfire/DANGLING-POINTER` (Detailed rule): Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers)
+- `cfire/DANGLING-RETURN` (Detailed rule): Returning a Pointer to Function-Local Storage (retired with raw pointers)
 - `cfire/DANGLING-TEMPORARY` (Memory safety): A view or pointer borrows from a temporary that is destroyed at the end of the statement.
 - `cfire/DEPRECATED-API` (Migration): A stdlib function that was renamed or replaced before 0.16 (`fs.read_all`, `os.read_stdin`, ...).
 - `cfire/DEPRECATED-DISCARD` (Migration): `_ := expr` is not a discard form; write `_ = expr`.
@@ -1015,7 +1019,7 @@ Functions & Methods:
 - `cfire/INVALID-STRUCT-TAG` (Detailed rule): Duplicate or Malformed Struct Reflection Tag
 - `cfire/INVALID-TRY-CONTEXT` (Detailed rule): `try` Inside Short-Circuit Operand or `for` Condition
 - `cfire/ITERATOR-INVALIDATION` (Detailed rule): Structural Mutation or Move of Collection During `for` Iteration
-- `cfire/LITERAL-OUT-OF-RANGE` (Numbers): An integer literal that does not fit its target type (Q9).
+- `cfire/LITERAL-OUT-OF-RANGE` (Numbers): An integer literal that does not fit its target type.
 - `cfire/MISSING-IMPORT` (Imports): A stdlib module is used without being imported.
 - `cfire/MISSING-RETURN` (Control flow): A function with a return type can fall off its end.
 - `cfire/MOVE-CALLSITE` (Detailed rule): Missing Call-Site `move` Marker
@@ -1031,21 +1035,21 @@ Functions & Methods:
 - `cfire/OPTIONAL-OR-ERR` (Detailed rule): Binding Error Variable `or err` on Optional `T?`
 - `cfire/OUT-CALLSITE` (Migration): A call-site `out` marker (retired with the `out` intent).
 - `cfire/PREFER-ENUM` (Style): A cluster of related integer constants that should be an enum (warning).
-- `cfire/RAW-POINTER` (Ownership): Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop (CF-189).
+- `cfire/RAW-POINTER` (Ownership): Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop.
 - `cfire/RECURSIVE-TYPE` (Types): A struct contains itself directly or through an optional without heap indirection.
 - `cfire/REDUNDANT-CALLSITE-INTENT` (Detailed rule): Redundant `mut` Annotation on a Read-Only Parameter
 - `cfire/REDUNDANT-DEREF` (Style): `(*p).field` on a smart pointer; write `p.field`.
 - `cfire/REDUNDANT-OR` (Detailed rule): Redundant `or` on Non-Fallible, Non-Optional Expression
 - `cfire/REDUNDANT-TRY` (Detailed rule): Redundant `try` on Non-Fallible Expression
-- `cfire/REFERENCE-TYPE` (Ownership): A `&T` / `&mut T` type; parameters are views by default and `mut` by intent (Q53).
+- `cfire/REFERENCE-TYPE` (Ownership): A `&T` / `&mut T` type; parameters are views by default and `mut` by intent.
 - `cfire/RETIRED-API` (Detailed rule): API Retired in the 0.16 Uniform-API Migration
 - `cfire/RETURN-IN-DEFER` (Detailed rule): `return` Statement Inside `defer { ... }` Block
-- `cfire/SCOPE-RESULT` (Concurrency): A value-producing `async.scope` whose spawned tasks return no value or different types (Q51).
+- `cfire/SCOPE-RESULT` (Concurrency): A value-producing `async.scope` whose spawned tasks return no value or different types.
 - `cfire/SEMA-ERROR` (Tooling): A semantic error with no more specific code.
 - `cfire/SHELL-INJECTION-RISK` (Detailed rule): Dynamic String Concatenation or Interpolation in Shell Command
-- `cfire/SHIFT-OUT-OF-RANGE` (Numbers): A constant shift count outside the operand's bit width (Q11).
-- `cfire/SLOT-CAPTURE` (Concurrency): A slot capture `|mut xs[i]|` used outside `scope.spawn`, or a task that uses its slice other than `xs[i]`, or a slice resized while tasks write it (Q51).
-- `cfire/SPAWN-SHARED-MUT` (Concurrency): A spawned task writes through a pointer other tasks can reach (Q20).
+- `cfire/SHIFT-OUT-OF-RANGE` (Numbers): A constant shift count outside the operand's bit width.
+- `cfire/SLOT-CAPTURE` (Concurrency): A slot capture `|mut xs[i]|` used outside `scope.spawn`, or a task that uses its slice other than `xs[i]`, or a slice resized while tasks write it.
+- `cfire/SPAWN-SHARED-MUT` (Concurrency): A spawned task writes through a pointer other tasks can reach.
 - `cfire/SQL-INJECTION-RISK` (Detailed rule): Dynamic String Concatenation or Interpolation in SQL Query
 - `cfire/SYNTAX` (Syntax): The source does not parse.
 - `cfire/TRY-IN-DEFER` (Detailed rule): `try` Inside `defer` Block
@@ -1054,15 +1058,15 @@ Functions & Methods:
 - `cfire/TYPE-ERROR` (Tooling): The C++ backend rejected generated code; Sema should have caught it (please report).
 - `cfire/TYPE-MISMATCH` (Types): A value of one type is used where another is required.
 - `cfire/UNDECLARED-IDENT` (Names): A name that is not declared, or a module used under the wrong alias.
-- `cfire/UNDECLARED-TYPE` (Names): A type name that is not a builtin, a type declared in the package, or a type parameter in scope (CF-190).
+- `cfire/UNDECLARED-TYPE` (Names): A type name that is not a builtin, a type declared in the package, or a type parameter in scope.
 - `cfire/UNHANDLED-RESULT` (Errors): A fallible `T!` value used without `try` or `or`.
 - `cfire/UNKNOWN-ARG-LABEL` (Detailed rule): Unknown Labeled Argument
 - `cfire/UNKNOWN-ENUM-VARIANT` (Names): A variant that the enum does not declare.
 - `cfire/UNKNOWN-FIELD` (Names): A field or associated item that the type does not have.
-- `cfire/UNKNOWN-METHOD` (Names): A method that the receiver type does not have (Q14 closed builtin surface).
+- `cfire/UNKNOWN-METHOD` (Names): A method that the receiver type does not have (closed builtin surface).
 - `cfire/UNKNOWN-MODULE` (Imports): An import path that names no known module.
 - `cfire/UNKNOWN-STDLIB-FN` (Names): A function that the stdlib module does not export.
-- `cfire/UNKNOWN-STDLIB-TYPE` (Names): A type that the stdlib module does not export, or a `build.*` type outside `build.cf` (CF-188).
+- `cfire/UNKNOWN-STDLIB-TYPE` (Names): A type that the stdlib module does not export, or a `build.*` type outside `build.cf`.
 - `cfire/UNKNOWN-TYPE` (Types): An expression whose type cannot be inferred (warning).
 - `cfire/UNREACHABLE-MATCH-ARM` (Detailed rule): Unreachable `match` Arm Shadowed by Earlier Pattern
 - `cfire/UNRESOLVED-PACKAGE` (Imports): A local package import that cannot be found.

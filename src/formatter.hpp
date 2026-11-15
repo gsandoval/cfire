@@ -2,7 +2,7 @@
 // src/formatter.hpp — Canonical Code Formatter (`cfire fmt`) & AST Pretty-Printer
 
 #include "ast.hpp"
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_FMT_IMPL)
 #include "parser.hpp"
 #endif
 #include "../runtime/cfire_prelude.hpp"
@@ -19,7 +19,7 @@
 #include <string_view>
 #include <vector>
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_FMT_IMPL)
 #include "formatter_printer.hpp"
 #endif
 
@@ -376,7 +376,7 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
 [[nodiscard]] CFIRE_FMT_INLINE auto format_path(const std::filesystem::path& target, bool check_only, bool to_stdout)
     -> std::expected<int, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_FMT_IMPL)
 
 // Canonically formats a `.cf` source string:
 // 1. Validates syntax via Lexer + Parser.
@@ -411,7 +411,7 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
     std::string out;
     for (const auto& l : lines) out += l + "\n";
 
-    // Token-stream invariance check (CF-096): verify non-whitespace tokens match identically
+    // Token-stream invariance check: verify non-whitespace tokens match identically
     // Statement `;` separators are the one token the printer may drop (it puts the statement on its own line).
     auto drop_semicolons = [](std::expected<std::vector<cfire::frontend::Token>, cfire::frontend::SourceError> t) {
         if (t) std::erase_if(*t, [](const cfire::frontend::Token& x) { return x.kind == cfire::frontend::TokenKind::Semicolon; });
@@ -550,7 +550,7 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
     return changed_count;
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_FMT_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_FMT_IMPL)
 #undef CFIRE_FMT_INLINE
 
 } // namespace cfire::fmt

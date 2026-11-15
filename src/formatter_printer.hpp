@@ -1,5 +1,5 @@
 #pragma once
-// src/formatter_printer.hpp — `cfire fmt` layout engine (Q34, CF-156).
+// src/formatter_printer.hpp — `cfire fmt` layout engine.
 //
 // The printer re-emits the exact source text of every token and comment and decides only the whitespace between
 // them: indentation from bracket depth, one canonical spacing rule per pair of token kinds, at most one blank

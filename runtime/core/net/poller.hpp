@@ -1,5 +1,5 @@
 #pragma once
-// CF-193: readiness polling for the HTTP server's event loop: kqueue on macOS, epoll on Linux, WSAPoll on
+// readiness polling for the HTTP server's event loop: kqueue on macOS, epoll on Linux, WSAPoll on
 // Windows (`poll()` on other targets such as Emscripten), all level-triggered. One thread owns a Poller (add / modify / remove / wait); `wake()` may be
 // called from any thread and makes a pending `wait` return.
 #include "tcp.hpp"

@@ -33,7 +33,7 @@ inline auto get_package_cache_root() -> std::filesystem::path {
         }
     }
     // No writable per-user location: use a private per-process cache, never a shared temp-dir name that
-    // another account could pre-populate with poisoned packages (CF-153).
+    // another account could pre-populate with poisoned packages.
     if (auto user = cfire::detail::user_cache_dir("pkg"); !user.empty()) return user;
     static cfire::detail::SecureTempDir fallback("cfire_pkg_cache");
     return fallback.path();
@@ -112,7 +112,7 @@ inline auto write_build_lock(
     return true;
 }
 
-// CF-152: arguments that reach `git` / `curl` as positional values must not be parseable as options
+// arguments that reach `git` / `curl` as positional values must not be parseable as options
 // (`--upload-pack=...`), and git's command-running transports (`ext::`, `fd::`) are never allowed.
 [[nodiscard]] inline auto validate_fetch_arg(std::string_view what, std::string_view v) -> std::expected<void, std::string> {
     if (v.starts_with("-")) {
@@ -142,7 +142,7 @@ inline auto fetch_git_repository(
     const std::string q_dest = bridge::shell_quote(dest_dir.string());
 
     if (std::filesystem::exists(dest_dir / ".git", ec)) {
-        // CF-152: a cache hit is trusted only if it is exactly the locked commit with no modified tracked
+        // a cache hit is trusted only if it is exactly the locked commit with no modified tracked
         // files; otherwise it is discarded and refetched.
         int rc = 0;
         std::string rev = trim_whitespace(bridge::run_command_capture(std::format("git -C {} rev-parse HEAD", q_dest), rc));
@@ -209,7 +209,7 @@ inline auto fetch_archive(
         for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return s;
     };
-    // CF-152: a cache hit is trusted only if its recorded archive hash matches the pin (`.cfire_sha256`
+    // a cache hit is trusted only if its recorded archive hash matches the pin (`.cfire_sha256`
     // is written after a verified download); a missing or different record forces a refetch.
     const auto sidecar = dest_dir / ".cfire_sha256";
     if (std::filesystem::exists(dest_dir, ec) && !std::filesystem::is_empty(dest_dir, ec)) {
@@ -223,7 +223,7 @@ inline auto fetch_archive(
         std::filesystem::remove_all(dest_dir, ec);
     }
 
-    cfire::detail::SecureTempDir dl_dir("cfire_pkg_dl");  // private 0700 dir, removed on return (CF-153)
+    cfire::detail::SecureTempDir dl_dir("cfire_pkg_dl");  // private 0700 dir, removed on return
     if (!dl_dir.ok()) return std::unexpected("failed to create a private temporary directory for the download");
     auto tmp_archive = dl_dir.file("download.archive");
 
@@ -274,7 +274,7 @@ inline auto fetch_archive(
     if (ext_rc != 0) {
         return std::unexpected(std::format("failed to extract archive from '{}':\n{}", url, out));
     }
-    // Record the verified archive hash so later cache hits can be checked against the pin (CF-152).
+    // Record the verified archive hash so later cache hits can be checked against the pin.
     if (std::ofstream rec(sidecar, std::ios::trunc); rec) rec << actual_sha256 << "\n";
     return {};
 }

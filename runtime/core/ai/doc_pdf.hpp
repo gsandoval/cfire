@@ -384,7 +384,7 @@ inline void parse_pdf_cmap(std::string_view stream_text, std::unordered_map<std:
     }
     if (has_pdftotext != 1) return false;
 
-    cfire::detail::SecureTempDir tmp_dir("cfire_pdf");  // private 0700 dir, removed on scope exit (CF-153)
+    cfire::detail::SecureTempDir tmp_dir("cfire_pdf");  // private 0700 dir, removed on scope exit
     std::string tmp_path = tmp_dir.file("in.pdf").string();
     if (!tmp_dir.ok() || !cfire::fs::write_bytes(tmp_path, pdf_bytes)) return false;
 

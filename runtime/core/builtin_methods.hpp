@@ -1,5 +1,5 @@
 #pragma once
-// runtime/core/builtin_methods.hpp — Methods on builtin types (Q7/Q8, W4).
+// runtime/core/builtin_methods.hpp — Methods on builtin types (uniform builtin surface).
 //
 // Every row of src/sema/builtin_methods.hpp with a runtime lowering is an overload set here:
 // `xs.reverse()` lowers to `cfire::bm::reverse(xs)`. Operations that would be UB in C++ (`std::clamp` with
@@ -518,7 +518,7 @@ inline auto pop(std::string& s) -> std::optional<std::uint8_t> {
     return b;
 }
 
-// --- Type-associated parsing (Q10): `i32.parse(s)`, `f64.parse(s)`, `bool.parse(s)` ---------------------
+// --- Type-associated parsing: `i32.parse(s)`, `f64.parse(s)`, `bool.parse(s)` ---------------------
 // Surrounding ASCII whitespace is ignored; anything else that is not a complete, in-range literal is `none`.
 template <typename T>
 [[nodiscard]] inline auto parse(std::string_view s) noexcept -> std::optional<T> {
@@ -593,7 +593,7 @@ inline auto pop(std::vector<T, A>& v) -> std::optional<T> {
     return x;
 }
 // A stdlib container with its own `pop() -> T?` (`collections.PriorityQueue`, `MinQueue`), reached when Sema
-// could not type the receiver (CF-183).
+// could not type the receiver.
 template <typename C>
     requires requires(C& c) { c.pop(); }
 inline auto pop(C& c) -> decltype(c.pop()) {

@@ -7,7 +7,7 @@
 ### `builtin` (`builtin`) — Builtin Types: Methods, Associated Items & make
 
 - **Auto-Link Flags:** `(always available)`
-- **Overview:** Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
+- **Overview:** Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -148,8 +148,8 @@
 | `fn (m: map[K]V) get(a: K) -> V?` | `cfire::bm::get(m, ...)` | Copy of the value for `k`, or `none`. | `port := cfg.get("port") or 8080` |
 | `fn (m: map[K]V) insert(a: K, b: V) -> V?` | `cfire::bm::insert(m, ...)` | Sets `k` to `v`; returns the previous value, or `none`. | `old := m.insert(k, v)` |
 | `fn (m: map[K]V) remove(a: K) -> V?` | `cfire::bm::remove(m, ...)` | Removes `k`; returns its value, or `none` if absent. | `gone := m.remove(k)` |
-| `fn (m: map[K]V) keys() -> []K` | `cfire::bm::keys(m, ...)` | Copy of the keys, in unspecified order (Q27). | `for k in m.keys() { ... }` |
-| `fn (m: map[K]V) values() -> []V` | `cfire::bm::values(m, ...)` | Copy of the values, in unspecified order (Q27). | `total := m.values().len()` |
+| `fn (m: map[K]V) keys() -> []K` | `cfire::bm::keys(m, ...)` | Copy of the keys, in unspecified order. | `for k in m.keys() { ... }` |
+| `fn (m: map[K]V) values() -> []V` | `cfire::bm::values(m, ...)` | Copy of the values, in unspecified order. | `total := m.values().len()` |
 | `const <int>.MAX: Self` | `std::numeric_limits<std::int64_t>::max()` | Largest value of the type. | `v := i32.MAX` |
 | `const <int>.MIN: Self` | `std::numeric_limits<std::int64_t>::min()` | Smallest value of the type. | `v := i32.MIN` |
 | `const <int>.BITS: u32` | `static_cast<std::uint32_t>(std::numeric_limits<std::make_unsigned_t<std::int64_t>>::digits)` | Width in bits (`u32`). | `v := i32.BITS` |
@@ -164,9 +164,9 @@
 | `make(T) / make(T, args...)` | `T{} / cfire_ctor_T(args...)` | A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type). | `p := make(Point, 3, 4)` |
 | `make(own[T], args...) / make(shared[T], args...)` | `cfire::make_own<T>(...) / cfire::make_shared_ptr<T>(...)` | A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments. | `node := make(own[Node], Node{v: 1})` |
 | `make([]T, len) / make([]T, len, cap)` | `cfire::make_slice<T>(len[, cap])` | `len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics. | `buf := make([]byte, 0, 4096)` |
-| `make(map[K]V)` | `cfire::Map<K, V>{}` | An empty map (iteration order is unspecified, Q27). | `counts := make(map[str]i32)` |
-| `fn (o: own[T]) release() -> *mut T` | `o.release()` | Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`. | `c_api_take(buf.release())` |
-| `fn own[T].from_raw(p: *mut T) -> own[T]` | `std::unique_ptr<T>(p)` | Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior. | `buf := own[Buffer].from_raw(c_api_give())` |
+| `make(map[K]V)` | `cfire::Map<K, V>{}` | An empty map (iteration order is unspecified). | `counts := make(map[str]i32)` |
+| `fn (o: own[T]) release() -> *mut T` | `o.release()` | Gives up ownership for C interop: returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`. | `c_api_take(buf.release())` |
+| `fn own[T].from_raw(p: *mut T) -> own[T]` | `std::unique_ptr<T>(p)` | Takes ownership of a pointer produced by `release`. Adopting any other pointer is undefined behavior. | `buf := own[Buffer].from_raw(c_api_give())` |
 
 ### `core:audio` (`audio`) — Audio Engine, Polyphonic Mixer, Synth & WAV
 
@@ -242,7 +242,7 @@ fn main() {
 ### `core:build` (`build`) — Declarative Project & Cross-Platform Build System (`build.cf`)
 
 - **Auto-Link Flags:** `(compiler-integrated)`
-- **Overview:** Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/framework links (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
+- **Overview:** Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/define/framework settings (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Define`, `build.Defines`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).
 
 **Practical Example:**
 ```cf
@@ -269,7 +269,7 @@ fn main() {
 
 | Type | Kind | Description |
 |---|---|---|
-| `build.Package` | manifest | In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, and `Includes`. |
+| `build.Package` | manifest | In `build.cf`: declares package metadata and manifest-level `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, and `Defines`. |
 | `build.Executable` | manifest | In `build.cf`: declares an executable target (`build.Executable(name, { Entry: ... })`). |
 | `build.App` | manifest | In `build.cf`: alias for `build.Executable(...)`. |
 | `build.Library` | manifest | In `build.cf`: declares a static or shared library target. |
@@ -284,6 +284,8 @@ fn main() {
 | `build.PkgConfig` | manifest | In `build.cf`: links one or more libraries found through pkg-config. |
 | `build.Link` | manifest | In `build.cf`: links a library by name. |
 | `build.Include` | manifest | In `build.cf`: adds a header search directory. |
+| `build.Define` | manifest | In `build.cf`: adds a C/C++ preprocessor macro definition (`-DKEY` or `-DKEY=VAL`). |
+| `build.Defines` | manifest | In `build.cf`: adds one or more C/C++ preprocessor macro definitions (`str`, `[]str`, or `{ KEY: VALUE }` map). |
 | `build.Libraries` | manifest | In `build.cf`: links one or more libraries by name. |
 | `build.Includes` | manifest | In `build.cf`: adds one or more header search directories. |
 | `build.Frameworks` | manifest | In `build.cf`: adds one or more Apple frameworks. |
@@ -294,7 +296,7 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn Package(cfg: any, extra: any = {}) -> PackageTarget` | `(buildsys manifest)` | Declares package metadata and manifest-level native linkage defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Entry`, `OutDir`). | `build.Package({ Name: "myapp", PkgConfig: ["libzstd"] })` |
+| `fn Package(cfg: any, extra: any = {}) -> PackageTarget` | `(buildsys manifest)` | Declares package metadata and manifest-level native defaults (`Name`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Defines`, `Entry`, `OutDir`). | `build.Package({ Name: "myapp", PkgConfig: ["libzstd"] })` |
 | `fn Executable(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Declares an executable build target with `Entry`, `Subsystem` (`"cli"` or `"gui"`), `OutDir`, `Targets` (`["native", "wasm", "ios-sim"]`), `WebProfile`, `BundleId`, `AppName`, `Icon` (`.png`/`.svg`/`.icns`/`.ico`), `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, `Frameworks`, `Portable`, `Static`, `Universal`, `UrlSchemes`, and `SignIdentity`. | `app := build.Executable("Flint", { Entry: "src/main.cf", Subsystem: "gui", BundleId: "dev.flint.app", Icon: "assets/icon.png" })` |
 | `fn App(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Alias for `build.Executable` declaring an application executable target. | `app := build.App("Flint", { Entry: "src/main.cf", Subsystem: "gui" })` |
 | `fn Library(name_or_cfg: any, cfg: any = {}) -> Target` | `(buildsys manifest)` | Declares a static or shared C/C++/cfire library target with `Sources`, `Includes`, `Defines`, `Flags`, `PkgConfig`, `Libraries`, and `Frameworks`. | `lib := build.Library("corelib", { Sources: ["native/bridge.cpp"], Includes: ["native"] })` |
@@ -308,6 +310,8 @@ fn main() {
 | `fn Command(name_or_cfg: any, cfg: any = {}) -> StepTarget` | `(buildsys manifest)` | Alias for `build.Step` declaring a custom pre-build command step. | `gen := build.Command("codegen", { Command: "python3", Args: ["gen.py"] })` |
 | `fn Link(lib: str)` | `(buildsys manifest)` | Adds a system library (`"sqlite3"`) or Apple framework (`"-framework Security"`) to the linker flags. | `build.Link("sqlite3")` |
 | `fn Include(dir: str)` | `(buildsys manifest)` | Adds a relative or absolute header search directory (`-I<dir>`) for `import cpp` headers. | `build.Include("src/native/include")` |
+| `fn Define(key: str, value: any = "")` | `(buildsys manifest)` | Adds a C/C++ preprocessor macro definition (`-DKEY` or `-DKEY=VAL`) for `import cpp` headers and native C/C++ sources. | `build.Define("STB_IMAGE_IMPLEMENTATION")` |
+| `fn Defines(defs: any)` | `(buildsys manifest)` | Adds one or more C/C++ preprocessor macro definitions (`str`, `[]str`, or `{ KEY: VALUE }` map) for `import cpp` headers and native targets. | `build.Defines({ STB_IMAGE_IMPLEMENTATION: true, BUFFER_SIZE: "4096" })` |
 | `fn PkgConfig(pkg: any)` | `(buildsys manifest)` | Queries `pkg-config --cflags --libs` for a package name or list of package names (`str` or `[]str`) and links the resolved flags into the build. | `build.PkgConfig(["libssh", "libzstd"])` |
 | `fn Libraries(libs: any)` | `(buildsys manifest)` | Adds one or more native libraries (`str` or `[]str`) to the linker flags. | `build.Libraries(["sqlite3", "z"])` |
 | `fn Includes(dirs: any)` | `(buildsys manifest)` | Adds one or more header search directories (`str` or `[]str`) for `import cpp` headers. | `build.Includes(["include", "third_party/inc"])` |
@@ -943,8 +947,8 @@ fn main() {
 | `http.HttpServer` | handle | An HTTP server bound to a port (`make(http.Server, port)`); `serve_in_background` runs it and `stop` ends it. |
 | `http.Server` | handle | The name `make(http.Server, port)` constructs; the same type as `http.HttpServer`. |
 | `http.SseEvent` | struct | One server-sent event. Fields: `event: str`, `data: str`, `id: str`. |
-| `http.ServerLimits` | struct | Per-connection limits for `http.Server` (Q22, CF-192, CF-193); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503. Fields: `header_timeout_ms: i32`, `body_timeout_ms: i32`, `max_body_bytes: usize`, `workers: usize`, `max_pending: usize`, `keepalive_timeout_ms: i32`, `max_requests_per_conn: usize`, `max_websockets: usize`, `max_connections: usize`. |
-| `http.TlsConfig` | struct | Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
+| `http.ServerLimits` | struct | Per-connection limits for `http.Server` (with keep-alive and event-loop limits); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503. Fields: `header_timeout_ms: i32`, `body_timeout_ms: i32`, `max_body_bytes: usize`, `workers: usize`, `max_pending: usize`, `keepalive_timeout_ms: i32`, `max_requests_per_conn: usize`, `max_websockets: usize`, `max_connections: usize`. |
+| `http.TlsConfig` | struct | Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
@@ -964,9 +968,9 @@ fn main() {
 | `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router` | `r.ws(pattern, handler)` | Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`. | `r.ws("/chat/:room", |req, mut ws| { ... })` |
 | `fn (r: Router) dispatch(req: Request) -> Response` | `r.dispatch(req)` | Dispatches an HTTP request through the router in-memory without open network sockets. | `res := router.dispatch(test_req)` |
 | `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router` | `r.use(mw)` | Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests. | `r.use(|req| { return None })` |
-| `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128, keepalive_timeout_ms: i32 = 5000, max_requests_per_conn: usize = 1000, max_websockets: usize = 1024, max_connections: usize = 10000 }` | `cfire::http::ServerLimits` | Per-connection server limits (Q22, CF-180, CF-192, CF-193). Idle and slow connections wait in the server's event loop, so `workers` is how many handlers run at once. Omitted fields keep their defaults; `workers = 0` keeps the default (twice the core count, at least 4). `keepalive_timeout_ms = 0` turns keep-alive off. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000, keepalive_timeout_ms: 2000})` |
-| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM. | `tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}` |
-| `fn (mut s: HttpServer) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the per-connection limits (Q22, CF-192): `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending, keepalive_timeout_ms, max_requests_per_conn, max_websockets, max_connections}`; omitted fields keep their defaults. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})` |
+| `type ServerLimits struct { header_timeout_ms: i32 = 10000, body_timeout_ms: i32 = 30000, max_body_bytes: usize = 10485760, workers: usize = 0, max_pending: usize = 128, keepalive_timeout_ms: i32 = 5000, max_requests_per_conn: usize = 1000, max_websockets: usize = 1024, max_connections: usize = 10000 }` | `cfire::http::ServerLimits` | Per-connection server limits. Idle and slow connections wait in the server's event loop, so `workers` is how many handlers run at once. Omitted fields keep their defaults; `workers = 0` keeps the default (twice the core count, at least 4). `keepalive_timeout_ms = 0` turns keep-alive off. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576, header_timeout_ms: 5000, keepalive_timeout_ms: 2000})` |
+| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file` / `key_file`, or `cert_pem` / `key_pem` for in-memory PEM. | `tls: http.TlsConfig{cert_pem: pair.cert_pem, key_pem: pair.key_pem}` |
+| `fn (mut s: HttpServer) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the per-connection limits: `http.ServerLimits{header_timeout_ms, body_timeout_ms, max_body_bytes, workers, max_pending, keepalive_timeout_ms, max_requests_per_conn, max_websockets, max_connections}`; omitted fields keep their defaults. | `srv.set_limits(http.ServerLimits{max_body_bytes: 1048576})` |
 | `fn (mut s: HttpServer) enable_tls_files(cert_file: str, key_file: str) -> void!` | `s.enable_tls_files(cert_file, key_file)` | Enables TLS on the server using certificate and private key PEM files. | `try srv.enable_tls_files("cert.pem", "key.pem")` |
 | `fn (mut s: HttpServer) enable_tls_pem(cert_pem: str, key_pem: str) -> void!` | `s.enable_tls_pem(cert_pem, key_pem)` | Enables TLS on the server using in-memory certificate and private key PEM strings. | `try srv.enable_tls_pem(pair.cert_pem, pair.key_pem)` |
 | `fn (mut s: HttpServer) serve_in_background(handler: fn(Request) -> Response | Router) -> void` | `s.serve_in_background(handler)` | Starts a non-blocking background accept loop serving HTTP and WebSocket upgrade requests. | `server.serve_in_background(router)` |
@@ -1090,13 +1094,13 @@ fn main() {
 |---|---|---|
 | `websocket.Conn` | handle | An open WebSocket connection; messages are `str` (`recv_text`) or `[]byte` (`recv_binary`). |
 | `websocket.Server` | handle | A WebSocket server bound to a port (`make(websocket.Server, port)`); each connection runs on its own session thread, so handlers run concurrently. |
-| `websocket.ServerLimits` | struct | Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default. Fields: `max_websockets: usize`, `header_timeout_ms: i32`, `max_frame_size: usize`. |
-| `websocket.TlsConfig` | struct | Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
+| `websocket.ServerLimits` | struct | Limits for `websocket.Server`; pass to `server.set_limits(...)`. Each connection runs on its own session thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default. Fields: `max_websockets: usize`, `header_timeout_ms: i32`, `max_frame_size: usize`. |
+| `websocket.TlsConfig` | struct | Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`. Fields: `cert_file: str`, `key_file: str`, `cert_pem: str`, `key_pem: str`. |
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn connect(url: str, verify_peer: bool = true) -> Conn!` | `cfire::websocket::connect(url, verify_peer)` | Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake. | `mut ws := try websocket.connect("ws://127.0.0.1:8080/ws")` |
-| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`. | `tls: websocket.TlsConfig{cert_file: "cert.pem", key_file: "key.pem"}` |
+| `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` | `cfire::http::TlsConfig` | Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`. | `tls: websocket.TlsConfig{cert_file: "cert.pem", key_file: "key.pem"}` |
 | `fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!` | `cfire::websocket::make_server(port, tls)` | `make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`. | `mut srv := try make(websocket.Server, 9001)` |
 | `fn upgrade(req: Request, mut conn: TcpConn) -> Conn!` | `cfire::websocket::upgrade(req, conn)` | Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection. | `mut ws := try websocket.upgrade(req, mut conn)` |
 | `fn pair() -> (Conn, Conn)!` | `cfire::websocket::pair()` | Creates an in-process full-duplex WebSocket client/server loopback pair. | `mut (client, server) := try websocket.pair()` |
@@ -1109,10 +1113,10 @@ fn main() {
 | `fn (mut ws: Conn) close(code: u16 = 1000, reason: str = "")` | `ws.close(code, reason)` | Initiates a clean RFC 6455 closure handshake and closes the socket. | `ws.close()` |
 | `fn (ws: Conn) is_open() -> bool` | `ws.is_open()` | Returns true if the WebSocket connection is open. | `if ws.is_open() { ... }` |
 | `fn (mut s: Server) accept() -> Conn!` | `s.accept()` | Accepts one incoming connection, completes the TLS and RFC 6455 upgrade handshake, and returns a `Conn`. | `mut ws := try srv.accept()` |
-| `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` | `cfire::websocket::ServerLimits` | Limits for `websocket.Server` (CF-194): open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
-| `fn (mut s: Server) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the server's limits (CF-194): `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
+| `type ServerLimits struct { max_websockets: usize = 1024, header_timeout_ms: i32 = 10000, max_frame_size: usize = 16777216 }` | `cfire::websocket::ServerLimits` | Limits for `websocket.Server`: open sessions (over `max_websockets` a client gets 503), the deadline for the TLS handshake and upgrade request, and the largest accepted frame. Omitted or 0 fields keep their defaults. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
+| `fn (mut s: Server) set_limits(limits: ServerLimits)` | `s.set_limits(limits)` | Replaces the server's limits: `websocket.ServerLimits{max_websockets, header_timeout_ms, max_frame_size}`; call it before serving. | `srv.set_limits(websocket.ServerLimits{max_websockets: 64})` |
 | `fn (mut s: Server) serve_once(handler: fn(mut Conn) -> void) -> void` | `s.serve_once(handler)` | Accepts and serves a single WebSocket connection with `handler`, on the calling thread. | `srv.serve_once(|mut ws| { ... })` |
-| `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void` | `s.listen_and_serve(handler)` | Runs a blocking accept loop; each connection is upgraded and served on its own session thread (CF-194), so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503. | `srv.listen_and_serve(|mut ws| { ... })` |
+| `fn (mut s: Server) listen_and_serve(handler: fn(mut Conn) -> void) -> void` | `s.listen_and_serve(handler)` | Runs a blocking accept loop; each connection is upgraded and served on its own session thread, so `handler` runs concurrently for several clients and state it shares must be synchronized. Over `max_websockets` open sessions a client gets 503. | `srv.listen_and_serve(|mut ws| { ... })` |
 | `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void` | `s.serve_in_background(handler)` | Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently. | `srv.serve_in_background(|mut ws| { ... })` |
 | `fn (mut s: Server) stop() -> void` | `s.stop()` | Stops the accept loop, shuts the open sessions down and waits for their handlers to return. | `srv.stop()` |
 
@@ -1294,7 +1298,7 @@ fn main() {
 | `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!` | `ch.recv_ctx(ctx)` | Receives from the channel or aborts immediately with an error if `ctx` is cancelled. | `v := try ch.recv_ctx(ctx)` |
 | `fn (ch: Channel[T]) len() -> usize` | `ch.len()` | Returns the number of buffered items currently queued in the channel. | `n := ch.len()` |
 | `fn (mut ch: Channel[T]) close()` | `ch.close()` | Closes the channel and wakes all waiting receivers. | `ch.close()` |
-| `type Mutex[T] struct` | `cfire::sync::MutexT<T>` | Mutual exclusion (CF-154): `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock. | `mu := make(sync.Mutex[i64], 0)` |
+| `type Mutex[T] struct` | `cfire::sync::MutexT<T>` | Mutual exclusion: `Mutex[T]` protects a value of type `T`; `Mutex[void]` is a pure lock. Copies share the same lock. | `mu := make(sync.Mutex[i64], 0)` |
 | `fn (m: Mutex[T]) lock() -> MutexGuard[T]` | `m.lock()` | `Mutex[T]`: blocks, then returns a guard that gives access to the value and unlocks when it goes out of scope. `Mutex[void]`: acquires the lock; pair it with `unlock()`. | `mut g := mu.lock()` |
 | `fn (m: Mutex[void]) unlock()` | `m.unlock()` | Releases a `Mutex[void]` acquired with `lock()`. | `lk.unlock()` |
 | `fn (m: Mutex[T]) try_lock() -> MutexGuard[T]?` | `m.try_lock()` | Non-blocking `lock()`: `none` (`false` for `Mutex[void]`) when another task holds the lock. | `if g := mu.try_lock() { ... }` |
@@ -1906,7 +1910,7 @@ fn main() {
 
 ### `[cfire/RETIRED-API]` — API Retired in the 0.16 Uniform-API Migration
 
-The 0.16 release (Q16) replaced free functions, sentinels and duplicate spellings with one form each: methods on values (`s.trim()`, `xs.sort()`, `x.abs()`), type-associated items (`i32.parse(s)`, `i32.MAX`, `math.PI`), `.len()`, `.is_empty()`, `make(T, ...)` construction, `connect` / `listen` verbs and `verify_peer: false`. Every retired form is a hard error with a fix-it; `cfire fix --only cfire/RETIRED-API` applies exactly these rewrites.
+The unified builtin surface replaced free functions, sentinels and duplicate spellings with one form each: methods on values (`s.trim()`, `xs.sort()`, `x.abs()`), type-associated items (`i32.parse(s)`, `i32.MAX`, `math.PI`), `.len()`, `.is_empty()`, `make(T, ...)` construction, `connect` / `listen` verbs and `verify_peer: false`. Every retired form is a hard error with a fix-it; `cfire fix --only cfire/RETIRED-API` applies exactly these rewrites.
 
 **Rejected (`.cf`):**
 ```cf
@@ -1927,7 +1931,7 @@ fn main() {
 
 ### `[cfire/INVALID-MAKE]` — Invalid `make(T, ...)` Arguments
 
-`make` takes the type first (Q25). Slices take `len` and optional `cap` integers, maps and arrays take nothing, and a struct takes either nothing (default fields) or the arguments of its declared constructor `fn (T) make(...) -> T`.
+`make` takes the type first. Slices take `len` and optional `cap` integers, maps and arrays take nothing, and a struct takes either nothing (default fields) or the arguments of its declared constructor `fn (T) make(...) -> T`.
 
 **Rejected (`.cf`):**
 ```cf
@@ -1950,7 +1954,7 @@ fn main() {
 
 ### `[cfire/INVALID-CONSTRUCTOR]` — Associated Function Other Than `make`
 
-A receiver type with no binding (`fn (T) ...`) declares the type's constructor, and the only name it may have is `make` (Q25). Methods need a receiver binding.
+A receiver type with no binding (`fn (T) ...`) declares the type's constructor, and the only name it may have is `make`. Methods need a receiver binding.
 
 **Rejected (`.cf`):**
 ```cf
@@ -1967,7 +1971,7 @@ fn (p: P) shifted() -> P { return P{x: p.x + 1} } // OK
 
 ### `[cfire/INVALID-RELEASE]` — `release` on a Shared Pointer
 
-`o.release() -> *mut T` hands ownership to C (CF-181) and exists only on `own[T]`: a `shared[T]` may have other owners.
+`o.release() -> *mut T` hands ownership to C and exists only on `own[T]`: a `shared[T]` may have other owners.
 
 **Rejected (`.cf`):**
 ```cf
@@ -2009,7 +2013,7 @@ fn main() -> void! {
 
 ### `[cfire/FIELD-NAME-CASE]` — Struct Field Is Not snake_case
 
-Struct fields are snake_case like functions and locals (Q28); capitalization carries no meaning. This is a warning; `cfire fix` renames the field and every use across the workspace. Untagged JSON/CLI keys follow the field name, so add a `json:"..."` tag to keep an existing wire name.
+Struct fields are snake_case like functions and locals; capitalization carries no meaning. This is a warning; `cfire fix` renames the field and every use across the workspace. Untagged JSON/CLI keys follow the field name, so add a `json:"..."` tag to keep an existing wire name.
 
 **Rejected (`.cf`):**
 ```cf
@@ -2252,9 +2256,9 @@ view := nums[0..2] // view taken after the mutation
 println("{}", view[0]) // OK
 ```
 
-### `[cfire/DANGLING-POINTER]` — Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers, CF-189)
+### `[cfire/DANGLING-POINTER]` — Inner-Scope Address Escaping to an Outer Pointer (retired with raw pointers)
 
-Raw pointers are not cfire syntax any more (CF-189), so no pointer can outlive its target; the check remains for code that still reaches it. Keep an index, the value itself, or `own[T]` instead.
+Raw pointers are not cfire syntax any more, so no pointer can outlive its target; the check remains for code that still reaches it. Keep an index, the value itself, or `own[T]` instead.
 
 **Rejected (`.cf`):**
 ```cf
@@ -2268,9 +2272,9 @@ mut at := 0 // an index instead of a pointer
 values[at] = 42 // OK
 ```
 
-### `[cfire/DANGLING-RETURN]` — Returning a Pointer to Function-Local Storage (retired with raw pointers, CF-189)
+### `[cfire/DANGLING-RETURN]` — Returning a Pointer to Function-Local Storage (retired with raw pointers)
 
-Functions return values (`T`, `str`, `[]T`) or `own[T]`; a returned `str` or `[]T` is a copy of any view, so nothing returned can borrow a local (Q36, CF-189).
+Functions return values (`T`, `str`, `[]T`) or `own[T]`; a returned `str` or `[]T` is a copy of any view, so nothing returned can borrow a local.
 
 **Rejected (`.cf`):**
 ```cf
@@ -2311,7 +2315,7 @@ for x in items {
 
 ### `[cfire/NULL-DEREF]` — Member Access on an Optional Variable That May Be `none`
 
-A variable of type `T?` (`own[T]?`, `Session?`) is tracked across branches. Reading a field or calling a method on it is rejected until the code proves it holds a value: `if s != none { ... }`, an early `return` when it is `none`, `assert(s != none)`, or `if v := s { ... }`. (cfire values are otherwise never null: there are no raw pointers, CF-189.)
+A variable of type `T?` (`own[T]?`, `Session?`) is tracked across branches. Reading a field or calling a method on it is rejected until the code proves it holds a value: `if s != none { ... }`, an early `return` when it is `none`, `assert(s != none)`, or `if v := s { ... }`. (cfire values are otherwise never null: there are no raw pointers,.)
 
 **Rejected (`.cf`):**
 ```cf

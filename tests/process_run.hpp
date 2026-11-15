@@ -1,6 +1,6 @@
 #pragma once
 // tests/process_run.hpp — Run a program with an argv, a working directory and a timeout, capturing stdout and stderr
-// separately (CF-186). The conformance and GUIDE runners need both, which `run_command_capture` (one merged stream,
+// separately. The conformance and GUIDE runners need both, which `run_command_capture` (one merged stream,
 // no timeout) cannot give. Output goes to files rather than pipes, so a chatty child can never block on a full pipe.
 
 #include "../runtime/cfire_core_stdlib.hpp"

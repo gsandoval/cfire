@@ -5,7 +5,7 @@
 
 inline void test_ergonomics_and_upstream_suite(const std::filesystem::path& rt_dir) {
     // =========================================================================
-    // 2.21 Developer Ergonomics Milestones (ERG-01 through ERG-05)
+    // Developer Ergonomics Test Suite
     // =========================================================================
     {
         // ERG-03a: Numeric range loop immutability check (negative sema test)
@@ -38,7 +38,7 @@ fn main() {
 }
 )", "cfire/USE-AFTER-MOVE", "bad_interp_move.cf");
 
-        // ERG-02, ERG-03, ERG-04, ERG-05a: End-to-end multi-file package merging, range loops,
+        // End-to-end multi-file package merging, range loops,
         // block defer LIFO order, expression interpolation, and single-eval power assertions
         ScopedTempDir tmp("cfire_erg_suite");
         tmp.file("helpers.cf", R"CF(package main
@@ -103,7 +103,7 @@ test "ergonomics suite and single-eval assertions" {
 
         auto erg_bin = tmp.path / "erg_bin";
         auto plan = cfire::build::build_native(main_cf, rt_dir, erg_bin);
-        require(plan.has_value(), std::format("ERG-02/03/04/05 build_native(main.cf): {}", plan ? "" : plan.error()));
+        require(plan.has_value(), std::format("build_native(main.cf): {}", plan ? "" : plan.error()));
         if (plan) {
             int rc = 0;
             std::string out = cfire::bridge::run_command_capture(erg_bin.string(), rc);
@@ -251,13 +251,13 @@ test "deliberate fd leak" {
                     std::format("TEST-06a: LSP documentSymbol includes fuzz and bench blocks: {}", syms));
         }
 
-        // 6. Verify Upstream Feedback Language & Codegen Fixes (CF-013..CF-049) & Language Design Invariants (UPSTREAM-02)
+        // 6. Verify Upstream Feedback Language & Codegen Fixes & Language Design Invariants (UPSTREAM-02)
         {
-            // CF-039: Multiline raw string closing line with braces does not drift formatter indentation
+            // Multiline raw string closing line with braces does not drift formatter indentation
             std::string raw_src = "package main\n\nfn build_html() -> str {\n    if true {\n        s := `line1\nline2`}\n    return \"ok\"\n}\n";
             std::string formatted = cfire::fmt::format_source(raw_src).value_or("");
             require(formatted.contains("    return \"ok\""),
-                std::format("CF-039: formatter keeps 4-space indent after multiline raw string close:\n{}", formatted));
+                std::format("formatter keeps 4-space indent after multiline raw string close:\n{}", formatted));
 
             // UPSTREAM-02 Item 1: `as` cast syntax is rejected with actionable diagnostic pointing to `T(x)` / `[]byte(x)`
             {
@@ -359,9 +359,9 @@ fn (h: CustomHandle) read() -> str {
     return "custom-read:" + h.tag
 }
 
-// CF-033: Out-of-order struct declarations (Parent references Child before Child is declared)
-// CF-025: Comma-separated struct fields
-// CF-049 & CF-037: Untagged struct fields + optional T? field in JSON
+// Out-of-order struct declarations (Parent references Child before Child is declared)
+// Comma-separated struct fields
+// Untagged struct fields + optional T? field in JSON
 type ParentConfig struct {
     title: str,
     child: ChildItem,
@@ -411,15 +411,15 @@ fn maybe_child(ok: bool) -> ChildItem? {
     return ChildItem{export: 55, stdout: "narrowed"}
 }
 
-test "upstream language and codegen fixes (CF-013..CF-049)" {
-    // CF-013: Canonical constructor conversions `i64(x)` and `bool(x)`
+test "upstream language and codegen fixes " {
+    // Canonical constructor conversions `i64(x)` and `bool(x)`
     x: i32 = 15
     y := i64(x) + GLOBAL_LIMIT + TYPED_LIMIT
     assert(y == 157)
     assert(bool(1) == true)
     assert(bool(0) == false)
 
-    // CF-014: local immutable binding (including `input` identifier without prelude collision)
+    // local immutable binding (including `input` identifier without prelude collision)
     LOCAL_K := 9
     input := "user_input_var"
     assert(LOCAL_K == 9)
@@ -441,18 +441,18 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     assert(ch.open() == "custom-open:h1")
     assert(ch.read() == "custom-read:h1")
 
-    // CF-019 (CF-189: an optional instead of a raw pointer): default none and return none
+    // (an optional instead of a raw pointer): default none and return none
     n := PtrNode{val: 5}
     assert(n.next_id == none)
     assert(find_node(false) == none)
 
-    // CF-020 & CF-038: C++ keywords (`export`, `delete`, `class`) and `stdout` macro as identifiers
+    // C++ keywords (`export`, `delete`, `class`) and `stdout` macro as identifiers
     delete := 12
     class := "ssh"
     assert(delete == 12)
     assert(class == "ssh")
 
-    // CF-033, CF-037, CF-049: Out-of-order structs + untagged JSON + optional T? field
+    // Out-of-order structs + untagged JSON + optional T? field
     p := ParentConfig{
         title: "flint",
         child: ChildItem{export: 7, stdout: "ready"},
@@ -465,7 +465,7 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     assert(parsed.child.stdout == "ready")
     assert(parsed.note == none)
 
-    // CF-032 & CF-040/CF-047: `[][]str!` and `or` fallback values
+    // `[][]str!` and `or` fallback values
     rows := make_rows(true) or []
     assert(rows.len() == 2)
     empty_rows := make_rows(false) or []
@@ -474,15 +474,15 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     num := i64.parse("not_a_number") or -1
     assert(num == -1)
 
-    // CF-034: Nested string literals inside string interpolation
+    // Nested string literals inside string interpolation
     msg := "result={greet("world")}"
     assert(msg == "result=hi-world")
 
-    // CF-035: `match` expression returning string literals
+    // `match` expression returning string literals
     label := classify_code(200)
     assert(label == "ok")
 
-    // CF-036: Optional `T?` field access after `!= none` and early-return `== none` guard
+    // Optional `T?` field access after `!= none` and early-return `== none` guard
     mut opt_child: ChildItem? = ChildItem{export: 99, stdout: "opt"}
     if opt_child != none {
         assert(opt_child.export == 99)
@@ -494,11 +494,11 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     }
     assert(guarded.export == 55)
 
-    // CF-044: `assert(slice == [a, b])`
+    // `assert(slice == [a, b])`
     items := ["alpha", "beta"]
     assert(items == ["alpha", "beta"])
 
-    // CF-048: `or` handler block inside reassignment (`=`) and parameterless `or { ... }`
+    // `or` handler block inside reassignment (`=`) and parameterless `or { ... }`
     mut parsed_val: i64 = 0
     parsed_val = i64.parse("1234") or {
         return
@@ -516,7 +516,7 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
     }
     assert(unwrapped_opt.export == 55)
 
-    // CF-007 / CF-069: sqlite.open + []byte BLOB parameter binding (and fail-closed open_encrypted check)
+    // sqlite.open + []byte BLOB parameter binding (and fail-closed open_encrypted check)
     mut db := try sqlite.open(":memory:")
     defer db.close()
     try db.exec("CREATE TABLE secrets (id TEXT, cipher BLOB)")
@@ -531,8 +531,8 @@ test "upstream language and codegen fixes (CF-013..CF-049)" {
 }
 )CF");
             run_cfire(std::format("test \"{}\"", upstream_cf.string()))
-                .assert_ok("CF-013..CF-049: upstream language & codegen suite passes")
-                .assert_contains("PASS: upstream language and codegen fixes", "CF-013..CF-049 test block passed");
+                .assert_ok("upstream language & codegen suite passes")
+                .assert_contains("PASS: upstream language and codegen fixes", "upstream language & codegen test block passed");
 
             // UPSTREAM-03: Comprehensive Orthogonality, build.cf Frameworks/Libraries, Type Inference & Docs/LSP/MCP Parity
             {
@@ -568,11 +568,11 @@ app := build.Executable{
                 require(parsed_bcf->executables[0].libraries == std::vector<std::string>{"z", "sqlite3"},
                         "UPSTREAM-03: Executable.Libraries parsed");
                 require(parsed_bcf->executables[0].url_schemes == std::vector<std::string>{"ssh", "sftp"},
-                        "CF-052: Executable.UrlSchemes parsed");
+                        "Executable.UrlSchemes parsed");
                 require(parsed_bcf->executables[0].sign_identity == "Developer ID Application: Flint",
-                        "CF-052: Executable.SignIdentity parsed");
+                        "Executable.SignIdentity parsed");
 
-                // CF-005: End-to-end .cf compilation and execution with `import "ext:net/ssh"`
+                // End-to-end.cf compilation and execution with `import "ext:net/ssh"`
                 auto ssh_cf = cf_tmp.file("ssh_e2e/ssh_suite.cf", R"CF(package main
 
 import "ext:net/ssh"
@@ -602,8 +602,8 @@ test "ssh e2e session and pty" {
 }
 )CF");
                 run_cfire(std::format("test \"{}\"", ssh_cf.string()))
-                    .assert_ok("CF-005: ext:net/ssh .cf compilation and execution passes")
-                    .assert_contains("PASS: ssh e2e session and pty", "CF-005 test block passed");
+                    .assert_ok("ext:net/ssh .cf compilation and execution passes")
+                    .assert_contains("PASS: ssh e2e session and pty", "test block passed");
 
                 // 4. LSP & Sema type inference for `[]byte(x)`, `[]u8(x)`, `str(x)`, `cli.prompt()`, and `OrExpr` on `T?`
                 auto inf_ast = cfire::frontend::parse_source("infer_test.cf", R"CF(package main
@@ -655,7 +655,7 @@ fn main() {
                         has_cat_fn("core:os", "stdin") && has_cat_fn("core:os", "pipe") &&
                         !has_cat_fn("core:os", "read_line"),
                         "UPSTREAM-03: core:os functions in stdlib_catalog (and removed read_line absent)");
-                // W4 (Q7/Q10): `core:str` is retired; string operations are builtin methods and parsing is `T.parse(s)`.
+                // `core:str` is retired; string operations are builtin methods and parsing is `T.parse(s)`.
                 require(!has_cat_fn("core:str", "trim") &&
                         cfire::frontend::find_builtin_method(cfire::frontend::BmStr, "trim") != nullptr &&
                         cfire::frontend::find_builtin_method(cfire::frontend::BmStr, "find") == nullptr,
@@ -671,19 +671,19 @@ fn main() {
                 require(has_cat_fn("ext:net/ssh", "connect") && has_cat_fn("ext:net/ssh", "Session.auth_publickey_mem") &&
                         has_cat_fn("ext:net/ssh", "Session.open_pty") && has_cat_fn("ext:net/ssh", "Channel.resize_pty") &&
                         has_cat_fn("ext:net/ssh", "Session.sftp_write_text") && has_cat_fn("ext:net/ssh", "Session.open_forward"),
-                        "CF-005: ext:net/ssh functions in stdlib_catalog");
+                        "ext:net/ssh functions in stdlib_catalog");
 
                 std::string llm_ref = cfire::doc::generate_llm_reference();
                 require(llm_ref.contains("[]byte(s_or_slice)") && llm_ref.contains("fn stdin() -> File") &&
                         llm_ref.contains("cfire/OPTIONAL-OR-ERR") && !llm_ref.contains("`bytes`, `[]byte`"),
                         "UPSTREAM-03: generate_llm_reference includes canonical []byte(x), os.stdin(), and OPTIONAL-OR-ERR");
 
-                // 6. Follow-up Upstream Review Fixes (CF-027 & E1..E7)
+                // 6. Follow-up Upstream Review Fixes (& E1..E7)
                 // E3: Reserved parameter-intent keywords `move` and `mut` as variable names emit actionable diagnostic;
-                // `out` is an ordinary identifier since Q33 (CF-175).
+                // `out` is an ordinary identifier since.
                 {
                     auto ok_out = cfire::frontend::parse_source("ok_out.cf", "package main\nfn main() {\n    out := 1\n}\n");
-                    require(ok_out.has_value(), "E3: 'out := 1' declares a variable (CF-175)");
+                    require(ok_out.has_value(), "'out := 1' declares a variable");
 
                     auto bad_move = cfire::frontend::parse_source("bad_move.cf", "package main\nfn main() {\n    move := 1\n}\n");
                     require(!bad_move.has_value() && bad_move.error().contains("'move' is a reserved parameter-intent keyword"),
@@ -720,8 +720,8 @@ fn main() {
 }
 )", "test_os_exit_diverges.cf");
 
-                // CF-027: Closure returning both `return error(...)` inside `or err` handler and `return v` value
-                auto cf027_file = cf_tmp.file("cf027_closure.cf", R"CF(package main
+                // Closure returning both `return error(...)` inside `or err` handler and `return v` value
+                auto closure_err_file = cf_tmp.file("closure_error_return.cf", R"CF(package main
 
 fn check(s: str) -> str! {
     if s == "" {
@@ -734,7 +734,7 @@ fn apply(cb: fn(str) -> str!) -> str! {
     return try cb("hello")
 }
 
-test "CF-027 closure mixed error and value return inside or err block" {
+test "closure mixed error and value return inside or err block" {
     res := try apply(|params: str| {
         v := check(params) or err {
             return error("wrapped: " + err.message())
@@ -744,8 +744,8 @@ test "CF-027 closure mixed error and value return inside or err block" {
     assert_eq(res, "hello!")
 }
 )CF");
-                run_cfire(std::format("test \"{}\"", cf027_file.string()))
-                    .assert_ok("CF-027: closure with or err { return error(...) } and value return compiles and passes");
+                run_cfire(std::format("test \"{}\"", closure_err_file.string()))
+                    .assert_ok("closure with or err { return error(...) } and value return compiles and passes");
 
                 // E2: `cfire run` preserves non-zero process exit code (not truncated to 0 via & 0xFF on wait status)
                 auto exit3_cf = cf_tmp.file("exit3.cf", R"CF(package main
@@ -758,8 +758,8 @@ fn main() {
                 require(exit3_res.exit_code == 3,
                         std::format("E2: expected cfire run os.exit(3) to return exit code 3, got {}", exit3_res.exit_code));
 
-                // 7. Upstream Round 3 Audit & Orthogonality Suite (CF-006..CF-086)
-                // CF-006 / CF-070 / CF-086: Reject non-canonical core:* / ext:* prefixes in Sema and auto-fix via `cfire fix`
+                // 7. Upstream Round 3 Audit & Orthogonality Suite
+                // Reject non-canonical core:* / ext:* prefixes in Sema and auto-fix via `cfire fix`
                 require_sema_error(R"(package main
 import "core:crypto/sodium"
 fn main() {}
@@ -799,14 +799,14 @@ import "core:db/sqlite"
 fn main() {}
 )CF");
                     run_cfire(std::format("fix \"{}\"", fix_imp_cf.string()))
-                        .assert_ok("CF-086: cfire fix rewrites non-canonical core:/ext: imports");
+                        .assert_ok("cfire fix rewrites non-canonical core:/ext: imports");
                     auto fixed_src = cfire::fs::read_text(fix_imp_cf).value_or("");
                     require(fixed_src.contains("import \"core:json\"") && fixed_src.contains("import \"ext:db/sqlite\"") &&
                             !fixed_src.contains("import \"ext:json\"") && !fixed_src.contains("import \"core:db/sqlite\""),
-                            std::format("CF-086: expected canonicalized imports after cfire fix, got:\n{}", fixed_src));
+                            std::format("expected canonicalized imports after cfire fix, got:\n{}", fixed_src));
                 }
 
-                // CF-059: Reject `.find()` and `.rfind()` on `str` receivers with fix-it pointing to `index_of` / `last_index_of`
+                // Reject `.find` and `.rfind` on `str` receivers with fix-it pointing to `index_of` / `last_index_of`
                 require_sema_error(R"(package main
 fn main() {
     s := "hello:world"
@@ -815,7 +815,7 @@ fn main() {
 }
 )", "cfire/UNKNOWN-METHOD", "bad_str_find.cf");
 
-                // CF-062: Reject integer literals in `[]byte` slice literal with `cfire/TYPE-MISMATCH`
+                // Reject integer literals in `[]byte` slice literal with `cfire/TYPE-MISMATCH`
                 require_sema_error(R"(package main
 fn main() {
     b: []byte = [0x61, 0x62]
@@ -823,7 +823,7 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "bad_byte_slice_lit.cf");
 
-                // Q36 (CF-182) supersedes CF-060: a `s[a..b]` view passes to a read-only `str` parameter with no copy.
+                // supersedes: a `s[a..b]` view passes to a read-only `str` parameter with no copy.
                 {
                     auto ast = cfire::frontend::parse_source("slice_view_to_str.cf", R"(package main
 fn consume(s: str) -> usize { return s.len() }
@@ -832,14 +832,14 @@ fn main() {
     println("{}", consume(full[0..5]))
 }
 )");
-                    require(ast.has_value(), "Q36: parse slice_view_to_str.cf");
+                    require(ast.has_value(), "parse slice_view_to_str.cf");
                     if (ast.has_value()) {
                         auto checked = cfire::frontend::analyze(std::move(*ast));
-                        require(checked.has_value(), "Q36: a slice view is accepted by a read-only str parameter");
+                        require(checked.has_value(), "a slice view is accepted by a read-only str parameter");
                     }
                 }
 
-                // CF-085: Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make(shared[T], v)`
+                // Reject `shared(v)` constructor syntax in Sema with fix-it pointing to `make(shared[T], v)`
                 require_sema_error(R"(package main
 type Box struct {
     v: i64
@@ -850,10 +850,10 @@ fn main() {
 }
 )", "cfire/INVALID-SMART-PTR-CTOR", "bad_shared_ctor.cf");
 
-                // Multi-package type & function mangling (CF-017), interpolation (CF-034/CF-060),
-                // JSON default tags (CF-057), JSON non-serializable struct guard (CF-066),
-                // [][]str push (CF-067), #line directives (CF-068), negative struct defaults (CF-078),
-                // nested scope.spawn (CF-083), and smart-pointer auto-deref (CF-085)
+                // Multi-package type & function mangling, interpolation,
+                // JSON default tags, JSON non-serializable struct guard,
+                // [][]str push, #line directives, negative struct defaults,
+                // nested scope.spawn, and smart-pointer auto-deref
                 auto r3_dir = cf_tmp.subpath("round3");
                 auto pkg_a_dir = r3_dir / "pkga";
                 auto pkg_b_dir = r3_dir / "pkgb";
@@ -884,8 +884,8 @@ import "core:sync"
 import "./pkga" as pa
 import "./pkgb" as pb
 
-// CF-078: Negative default values in struct fields
-// CF-057: `default:"..."` tags honored by json.parse when key is absent or null
+// Negative default values in struct fields
+// `default:"..."` tags honored by json.parse when key is absent or null
 type EndpointConfig struct {
     host: str `json:"host" default:"127.0.0.1"`
     port: i32 = -1 `json:"port" default:"2222"`
@@ -893,7 +893,7 @@ type EndpointConfig struct {
     enabled: bool `json:"enabled" default:"true"`
 }
 
-// CF-066: Struct holding non-serializable handle (`sync.Mutex`) alongside `ext:json` import
+// Struct holding non-serializable handle (`sync.Mutex`) alongside `ext:json` import
 type RuntimeHolder struct {
     name: str
     mu: sync.Mutex
@@ -912,17 +912,17 @@ fn borrow_slice(v: str) -> usize {
 }
 
 test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
-    // CF-017: Colliding struct and function names across two imported packages
+    // Colliding struct and function names across two imported packages
     ra := pa.make_rec()
     rb := pb.make_rec()
     assert_eq(ra.id + rb.id, 30)
 
-    // CF-063: os.getenv returns non-optional str directly
+    // os.getenv returns non-optional str directly
     env_val := os.getenv("CFIRE_NONEXISTENT_VAR_999", "fallback_val")
     assert_eq(env_val, "fallback_val")
     assert(os.getpid() > 0)
 
-    // CF-059 & CF-060: s.index_of / s.last_index_of and zero-copy &str slice view + explicit str(...) copy
+    // s.index_of / s.last_index_of and zero-copy &str slice view + explicit str(...) copy
     addr := "10.0.0.1:8022"
     colon := addr.index_of(":") or 0
     last_dot := addr.last_index_of(".")
@@ -933,11 +933,11 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
     owned_host := str(addr[0..usize(colon)])
     assert_eq(owned_host, "10.0.0.1")
 
-    // CF-034 & CF-060: String interpolation with package call and slice expression
+    // String interpolation with package call and slice expression
     interp := "host={addr[0..usize(colon)]} a={pa.make_rec().id}"
     assert_eq(interp, "host=10.0.0.1 a=10")
 
-    // CF-078 & CF-057: Negative struct field defaults and JSON `default:"..."` tags on missing/null keys
+    // Negative struct field defaults and JSON `default:"..."` tags on missing/null keys
     def_ep := EndpointConfig{}
     assert_eq(def_ep.port, -1)
     assert(def_ep.bias == -0.5)
@@ -947,14 +947,14 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
     assert_eq(parsed_ep.port, 2222)
     assert_eq(parsed_ep.enabled, true)
 
-    // CF-067: Pushing slice literal into [][]str
+    // Pushing slice literal into [][]str
     mut rows: [][]str = []
     rows.push(["col1", "col2"])
     rows.push(["col3"])
     assert_eq(rows.len(), 2)
     assert_eq(rows[0][1], "col2")
 
-    // CF-085: make(shared[T], v) and make(own[T], v) with auto-deref on .field and .method()
+    // make(shared[T], v) and make(own[T], v) with auto-deref on.field and.method
     sc := make(shared[SharedCounter], SharedCounter{count: 21})
     assert_eq(sc.count, 21)
     assert_eq(sc.doubled(), 42)
@@ -962,7 +962,7 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
     assert_eq(oc.count, 9)
     assert_eq(oc.doubled(), 18)
 
-    // CF-083: Nested scope.spawn inside async.scope
+    // Nested scope.spawn inside async.scope
     ch := make(sync.Channel[i64], 4)
     async.scope(2) |scope| {
         scope.spawn(|| {
@@ -979,9 +979,9 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
 }
 )CF");
                 run_cfire(std::format("test \"{}\"", round3_cf.string()))
-                    .assert_ok("CF-017/034/057/059/060/063/066/067/078/083/085: round 3 upstream suite passes");
+                    .assert_ok("round 3 upstream suite passes");
 
-                // CF-018 / CF-080: Test file using `import cpp` is automatically exempted from FD leak canary
+                // Test file using `import cpp` is automatically exempted from FD leak canary
                 auto cpp_fd_cf = cf_tmp.file("cpp_fd_exempt/cpp_fd_exempt_test.cf", R"CF(package main
 import cpp "<cstdio>"
 test "cpp import exempts fd leak canary" {
@@ -992,7 +992,7 @@ test "cpp import exempts fd leak canary" {
 }
 )CF");
                 run_cfire(std::format("test \"{}\"", cpp_fd_cf.string()))
-                    .assert_ok("CF-018/080: test suite with `import cpp` is automatically exempted from FD leak canary");
+                    .assert_ok("test suite with `import cpp` is automatically exempted from FD leak canary");
 
                 require(has_cat_fn("core:fs", "rename") && has_cat_fn("core:os", "getpid") &&
                         has_cat_fn("ext:crypto/sodium", "blake2b") && has_cat_fn("ext:crypto/sodium", "derive_subkey") &&
@@ -1001,7 +1001,7 @@ test "cpp import exempts fd leak canary" {
                         has_cat_fn("ext:webui", "App.set_hide_on_close"),
                         "Round 3 catalog entries present in stdlib_catalog");
 
-                // ── CF-087: Pydantic AI Capabilities (`validate:"..."`, `ai.Agent`, `ai.mock`, MCP tool sharing) ──
+                // ──: Pydantic AI Capabilities (`validate:"..."`, `ai.Agent`, `ai.mock`, MCP tool sharing) ──
                 {
                     // 1. Sema compile-time validation of `validate:"..."` struct tags
                     require_sema_error(R"CF(package main
@@ -1026,7 +1026,7 @@ fn main() {}
 )CF", "cfire/INVALID-STRUCT-TAG", "bad_validate_enum.cf");
 
                     // 2. End-to-end test of validate:"...", ai.Agent, ai.mock, MCP tool sharing, and self-correction loops
-                    auto cf087_test = cf_tmp.file("cf087_agent/agent_test.cf", R"CF(package main
+                    auto agent_val_test = cf_tmp.file("agent_validation/agent_test.cf", R"CF(package main
 
 import "core:json"
 import "ext:ai"
@@ -1047,7 +1047,7 @@ type ServiceInfo struct {
     healthy: bool `json:"healthy"`
 }
 
-test "CF-087 validate struct tags and Agent self-correction" {
+test "validate struct tags and Agent self-correction" {
     // 1. JSON Schema includes validation keywords
     schema := json.schema[TicketSpec]()
     assert(schema.contains("\"minimum\":1"))
@@ -1116,7 +1116,7 @@ test "CF-087 validate struct tags and Agent self-correction" {
     assert_eq(step, 4)
     assert(agent.history().len() >= 6)
 
-    // 4. CF-088: Stateful ai.local() default_model, embed(text), and detect_language(text)
+    // 4.: Stateful ai.local default_model, embed(text), and detect_language(text)
     mut local_ai := ai.local()
     assert_eq(local_ai.model(), "local")
     vec := try local_ai.embed("stateful client embedding")
@@ -1124,8 +1124,8 @@ test "CF-087 validate struct tags and Agent self-correction" {
     assert_eq(local_ai.detect_language("Bonjour tout le monde"), "fr")
 }
 )CF");
-                    run_cfire(std::format("test \"{}\"", cf087_test.string()))
-                        .assert_ok("CF-087: validate tags, Agent multi-turn tool loop, MCP tool sharing, and self-correction pass");
+                    run_cfire(std::format("test \"{}\"", agent_val_test.string()))
+                        .assert_ok("validate tags, Agent multi-turn tool loop, MCP tool sharing, and self-correction pass");
 
                     require(has_cat_fn("ext:ai", "local") && has_cat_fn("ext:ai", "mock") &&
                             has_cat_fn("ext:ai", "mock_sequence") && has_cat_fn("ext:ai", "Agent.make") &&
@@ -1134,9 +1134,9 @@ test "CF-087 validate struct tags and Agent self-correction" {
                             !has_cat_fn("ext:ai", "embed") && !has_cat_fn("ext:ai", "ocr") &&
                             has_cat_fn("ext:ai", "Agent.run") && has_cat_fn("ext:ai", "Agent.run_struct") &&
                             has_cat_fn("ext:ai", "Agent.run_struct_validated") && has_cat_fn("ext:ai", "Agent.use_mcp"),
-                            "CF-087/CF-088: Agent, mock, and stateful Client catalog entries present in stdlib_catalog");
+                            "Agent, mock, and stateful Client catalog entries present in stdlib_catalog");
 
-                    // CF-088: Sema rejects top-level ai.embed, ai.embed_image, ai.ocr, ai.detect_language
+                    // Sema rejects top-level ai.embed, ai.embed_image, ai.ocr, ai.detect_language
                     require_sema_error(R"CF(package main
 import "ext:ai"
 fn main() -> void! {
@@ -1151,9 +1151,9 @@ fn main() -> void! {
 }
 )CF", "cfire/DEPRECATED-API", "deprecated_ai_ocr.cf");
 
-                    // ── CF-089: Unified I/O Architecture (fs, os, net, cli, ssh) & Auto-Fix Verification ──
+                    // ──: Unified I/O Architecture (fs, os, net, cli, ssh) & Auto-Fix Verification ──
                     {
-                        auto cf089_test = cf_tmp.file("cf089_io/io_suite_test.cf", R"CF(package main
+                        auto io_suite_test = cf_tmp.file("io_suite/io_suite_test.cf", R"CF(package main
 
 import "core:fs"
 import "core:net"
@@ -1166,7 +1166,7 @@ fn can_connect_unlistening() -> bool {
     return true
 }
 
-test "CF-089 unified fs, os.pipe, net.socketpair, and fail-closed tcp" {
+test "unified fs, os.pipe, net.socketpair, and fail-closed tcp" {
     // 1. One-shot core:fs text & bytes symmetry + metadata helpers
     try fs.write_text("io_t.txt", "alpha")
     try fs.append_text("io_t.txt", "-beta")
@@ -1232,10 +1232,10 @@ test "CF-089 unified fs, os.pipe, net.socketpair, and fail-closed tcp" {
     assert(!can_connect_unlistening())
 }
 )CF");
-                        run_cfire(std::format("test \"{}\"", cf089_test.string()))
-                            .assert_ok("CF-089: unified fs, os.pipe, net.socketpair, and fail-closed tcp pass");
+                        run_cfire(std::format("test \"{}\"", io_suite_test.string()))
+                            .assert_ok("unified fs, os.pipe, net.socketpair, and fail-closed tcp pass");
 
-                        auto fix_io_cf = cf_tmp.file("cf089_io/fix_io.cf", R"CF(package main
+                        auto fix_io_cf = cf_tmp.file("io_suite/fix_io.cf", R"CF(package main
 
 import "core:fs"
 import "core:net"
@@ -1250,13 +1250,13 @@ fn demo(mut f: fs.File, mut c: net.TcpConn) -> void! {
 fn main() {}
 )CF");
                         run_cfire(std::format("fix \"{}\"", fix_io_cf.string()))
-                            .assert_ok("CF-089: cfire fix rewrites deprecated I/O calls");
+                            .assert_ok("cfire fix rewrites deprecated I/O calls");
                         auto fixed_io_src = cfire::fs::read_text(fix_io_cf).value_or("");
                         require(fixed_io_src.contains("fs.read_bytes(\"a.bin\")") &&
                                 fixed_io_src.contains("fs.write_bytes(\"a.bin\"") &&
                                 fixed_io_src.contains("f.write_text(\"hi\")") &&
                                 fixed_io_src.contains("c.read_text(64)"),
-                                std::format("CF-089: expected auto-fixed I/O methods, got:\n{}", fixed_io_src));
+                                std::format("expected auto-fixed I/O methods, got:\n{}", fixed_io_src));
                     }
                 }
             }

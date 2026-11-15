@@ -99,7 +99,7 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
     std::string_view cxx_compiler = ""
 ) -> std::expected<HeaderIndex, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto shell_quote(std::string_view arg) -> std::string {
 #if defined(_WIN32)
@@ -789,7 +789,7 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
     return idx;
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::bridge
 

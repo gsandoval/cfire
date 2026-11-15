@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Static musl Linux release builder stage (CF-205)
+# Static musl Linux release builder stage
 FROM alpine:3.20 AS release-linux-musl
 
 RUN apk add --no-cache \

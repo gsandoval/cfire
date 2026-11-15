@@ -94,7 +94,7 @@ CFIRE_INFRA_INLINE void query_pkg_config(
 
 CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
     std::error_code ec;
@@ -361,7 +361,7 @@ CFIRE_INFRA_INLINE void query_pkg_config(
         }
     }
 
-    // 1. Prioritize user-local override in ~/.local/include + ~/.local/lib (CF-075)
+    // 1. Prioritize user-local override in ~/.local/include + ~/.local/lib
     std::error_code ec;
     if (const char* home = std::getenv("HOME"); home && !hdr.empty()) {
         std::filesystem::path local_root = std::filesystem::path(home) / ".local";
@@ -471,7 +471,7 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string {
     return std::string(s);
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

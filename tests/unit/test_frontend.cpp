@@ -3,17 +3,17 @@
 #include "test_lsp_docgen.hpp"
 #include "test_ergonomics_upstream.hpp"
 #include "test_golden_codegen.hpp"
-#include "test_audit_w0.hpp"
-#include "test_audit_w2.hpp"
-#include "test_audit_w4.hpp"
-#include "test_audit_w5.hpp"
-#include "test_cf183.hpp"
-#include "test_cf188.hpp"
-#include "test_cf192.hpp"
-#include "test_cf193.hpp"
-#include "test_cf194.hpp"
-#include "test_cf195.hpp"
-#include "test_cf197.hpp"
+#include "test_diagnostics_and_build_audit.hpp"
+#include "test_net_security.hpp"
+#include "test_builtin_surface.hpp"
+#include "test_tooling_docs_polish.hpp"
+#include "test_cli_and_conformance_regressions.hpp"
+#include "test_stdlib_docs_and_hover.hpp"
+#include "test_http_keepalive_and_ws.hpp"
+#include "test_http_event_loop.hpp"
+#include "test_websocket_sessions.hpp"
+#include "test_websocket_handshake_tail.hpp"
+#include "test_deflate_bounds.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");
@@ -97,8 +97,8 @@ fn main() {
     std::println("--- PASS: test_google_cpp_and_language_design");
 }
 
-void test_section2_language_ergonomics(const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_section2_language_ergonomics");
+void test_language_ergonomics(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_language_ergonomics");
 
     // 1. AGENT-P1-01: String interpolation & format lowering in println / print
     {
@@ -705,7 +705,7 @@ fn main() {
 
     test_ergonomics_and_upstream_suite(rt_dir);
 
-    std::println("--- PASS: test_section2_language_ergonomics");
+    std::println("--- PASS: test_language_ergonomics");
 }
 
 

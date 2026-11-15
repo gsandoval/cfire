@@ -15,7 +15,7 @@
 
 namespace cfire::math {
 
-// Q10: math constants are values (`math.PI`), not functions.
+// math constants are values (`math.PI`), not functions.
 inline constexpr double PI = std::numbers::pi;
 inline constexpr double E = std::numbers::e;
 inline constexpr double TAU = 2.0 * std::numbers::pi;
@@ -23,7 +23,7 @@ inline constexpr double SQRT_2 = std::numbers::sqrt2;
 inline constexpr double LN_2 = std::numbers::ln2;
 inline constexpr double LN_10 = std::numbers::ln10;
 
-// Multi-input functions with no natural receiver (Q7).
+// Multi-input functions with no natural receiver.
 [[nodiscard]] inline auto atan2(double y, double x) noexcept -> double { return std::atan2(y, x); }
 [[nodiscard]] inline auto hypot(double x, double y) noexcept -> double { return std::hypot(x, y); }
 

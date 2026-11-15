@@ -1,9 +1,9 @@
 #pragma once
-// tests/guide_runner.hpp — Doc-tests for docs/GUIDE.md (C++ since CF-186).
+// tests/guide_runner.hpp — Doc-tests for docs/GUIDE.md (C++ runner).
 //
 // 1. Every ```cfire block followed by a ```text block starting with `# Output:` must run and print that output.
-// 2. CF-148: every complete ```cfire block (one with `package`) must type-check without cfire/UNKNOWN-TYPE.
-// 3. CF-158: in ```bash blocks, each `cfire eval ...` line followed by `# Output: <text>` must print <text>.
+// 2.: every complete ```cfire block (one with `package`) must type-check without cfire/UNKNOWN-TYPE.
+// 3.: in ```bash blocks, each `cfire eval...` line followed by `# Output: <text>` must print <text>.
 //
 // Usage: .cfire_test_runner guide [--cfire path] [--jobs N]
 
@@ -147,7 +147,7 @@ inline auto run_guide(const std::string& cfire, const std::filesystem::path& rep
         }
     }
 
-    // 2. CF-148: complete blocks must be fully typed.
+    // 2.: complete blocks must be fully typed.
     std::vector<std::string> complete;
     for (const auto& b : fenced_blocks(text)) {
         if (b.lang == "cfire" && b.code.contains("package ")) complete.push_back(b.code);
@@ -176,7 +176,7 @@ inline auto run_guide(const std::string& cfire, const std::filesystem::path& rep
         failed += unknown_blocks;
     }
 
-    // 3. CF-158: `cfire eval` examples.
+    // 3.: `cfire eval` examples.
     int eval_checked = 0;
     for (const auto& b : fenced_blocks(text)) {
         if (b.lang != "bash") continue;

@@ -58,7 +58,7 @@ namespace cfire::cli {
         return 1;
     }
 
-    if (tmpl == "gui") tmpl = "webui";  // CF-185: the raylib `gui` template became the webui one
+    if (tmpl == "gui") tmpl = "webui";  // the raylib `gui` template became the webui one
     std::string build_cf_txt;
     std::string main_cf_txt;
     std::string test_cf_txt;
@@ -455,7 +455,7 @@ inline auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::st
 
         std::string wrapped_cf = wrap_eval_code(raw_code, expr_mode);
 
-        cfire::detail::SecureTempDir eval_dir("cfire_eval");  // private 0700 dir (CF-153)
+        cfire::detail::SecureTempDir eval_dir("cfire_eval");  // private 0700 dir
         auto tmp_dir = eval_dir.path();
         std::error_code ec;
 

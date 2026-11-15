@@ -64,7 +64,7 @@ private:
     std::unordered_set<T, cfire::detail::KeyHash<T>> set_{};
 };
 
-// `PriorityQueue[T]` pops the largest element first; `MinQueue[T]` (Q44, CF-183) pops the smallest first.
+// `PriorityQueue[T]` pops the largest element first; `MinQueue[T]` pops the smallest first.
 template <typename T, typename Compare = std::less<T>>
 class PriorityQueue {
 public:

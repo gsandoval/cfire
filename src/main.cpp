@@ -112,30 +112,30 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (sub == "doctor" || sub == "setup" || sub == "install" || sub == "config") {
-        return cfire::cli::tu::run_doctor_tu(sub, eff_argc, eff_ptr, toolchain_layout);
+        return cfire::cli::run_toolchain_commands(sub, eff_argc, eff_ptr, toolchain_layout);
     }
     if (sub == "lsp") {
-        return cfire::cli::tu::run_lsp_tu(eff_argc, eff_ptr);
+        return cfire::cli::run_lsp_command(eff_argc, eff_ptr);
     }
     if (sub == "mcp" || sub == "ide") {
-        return cfire::cli::tu::run_mcp_tu(sub, eff_argc, eff_ptr, runtime_dir);
+        return cfire::cli::run_mcp_and_ide_commands(sub, eff_argc, eff_ptr, runtime_dir);
     }
     if (sub == "doc") {
-        return cfire::cli::tu::run_docgen_tu(eff_argc, eff_ptr, toolchain_layout);
+        return cfire::cli::run_doc_command(eff_argc, eff_ptr, toolchain_layout);
     }
     if (sub == "fmt" || sub == "outline" || sub == "inspect") {
-        return cfire::cli::tu::run_inspect_fmt_tu(sub, eff_argc, eff_ptr, runtime_dir);
+        return cfire::cli::run_inspect_and_fmt_commands(sub, eff_argc, eff_ptr, runtime_dir);
     }
     if (sub == "init" || sub == "new" || sub == "eval" || sub == "refactor" || sub == "vendor" ||
         sub == "serve" || sub == "server") {
-        return cfire::cli::tu::run_scaffold_tu(sub, eff_argc, eff_ptr, runtime_dir);
+        return cfire::cli::run_project_commands(sub, eff_argc, eff_ptr, runtime_dir);
     }
     if (sub == "check" || sub == "fix") {
-        return cfire::cli::tu::run_check_fix_tu(sub, eff_argc, eff_ptr, runtime_dir);
+        return cfire::cli::run_check_commands(sub, eff_argc, eff_ptr, runtime_dir);
     }
     if (sub == "clean" || sub == "emit-cpp" || sub == "build" || sub == "run" ||
         sub == "test" || sub == "bench" || sub == "eject") {
-        return cfire::cli::tu::run_build_tu(sub, eff_argc, eff_ptr, runtime_dir);
+        return cfire::cli::run_build_commands(sub, eff_argc, eff_ptr, runtime_dir);
     }
 
     cfire::cli::print_usage();
@@ -143,12 +143,12 @@ auto main(int argc, char** argv) -> int {
 }
 
 #if !defined(CFIRE_SPLIT_TUS)
-#include "tu_doctor.cpp"
-#include "tu_lsp.cpp"
-#include "tu_mcp.cpp"
-#include "tu_docgen.cpp"
-#include "tu_inspect_fmt.cpp"
-#include "tu_scaffold.cpp"
-#include "tu_check_fix.cpp"
-#include "tu_build.cpp"
+#include "cli/toolchain_commands.cpp"
+#include "lsp/server_command.cpp"
+#include "cli/mcp_and_ide_commands.cpp"
+#include "docgen/command.cpp"
+#include "cli/inspect_and_fmt_commands.cpp"
+#include "cli/project_commands.cpp"
+#include "cli/check_commands.cpp"
+#include "cli/build_commands.cpp"
 #endif

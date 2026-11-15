@@ -75,7 +75,7 @@ struct LocalBindingInfo {
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto map_cf_named_type_to_cpp(std::string_view n, bool param_borrow) -> std::string {
     if (n == "i8") return "std::int8_t";
@@ -446,7 +446,7 @@ struct LocalBindingInfo {
             // 5. Check receiver methods (`os.stdin().read_lines()`, `listener.accept()`, `s.trim()`, `ch.recv()`, user methods)
             std::string rtype = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
             if (!rtype.empty() && rtype != "auto") {
-                // W4: builtin method return types come from the single table; `T`/`K`/`V`/`Self` resolve here.
+                // builtin method return types come from the single table; `T`/`K`/`V`/`Self` resolve here.
                 if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
                     if (const auto* bm = cfire::frontend::find_builtin_method(bits, mem->field); bm && !bm->ret.empty()) {
                         std::string self = rtype;
@@ -666,7 +666,7 @@ struct LocalBindingInfo {
     return cpp;
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 } // namespace cfire::lsp::detail
 

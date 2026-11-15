@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# .githooks/commit-msg — Reject agent attribution trailers, AI/agent names, and internal milestone IDs.
+set -eu
+
+msg_file="${1:-}"
+if [ -z "$msg_file" ] || [ ! -f "$msg_file" ]; then
+    echo "commit-msg: missing commit message file" >&2
+    exit 1
+fi
+
+stripped="$(grep -v '^[[:space:]]*#' "$msg_file" || true)"
+
+if printf '%s\n' "$stripped" | grep -Eiq '^[[:space:]]*(Co-Authored-By|Generated-By|Assisted-By):'; then
+    echo "commit-msg: remove Co-Authored-By / Generated-By / Assisted-By trailers from the commit message." >&2
+    exit 1
+fi
+
+if printf '%s\n' "$stripped" | grep -Eiq '(^|[^[:alnum:]_])(claude|anthropic|openai|chatgpt|gpt-[0-9a-z.-]+|gemini|codex|copilot|cursor|windsurf|antigravity|opus|sonnet|haiku|deepseek)([^[:alnum:]_]|$)'; then
+    echo "commit-msg: remove AI, agent, or model names from the commit message." >&2
+    exit 1
+fi
+
+if printf '%s\n' "$stripped" | grep -Eq '(^|[^[:alnum:]_])(CF-[0-9]+|W[0-5]|Wave [A-Z0-9]+)([^[:alnum:]_]|$)'; then
+    echo "commit-msg: remove internal milestone or wave identifiers from the commit message." >&2
+    exit 1
+fi

@@ -176,7 +176,7 @@ CFIRE_LSP_RPC_INLINE void write_rpc_message(std::ostream& out, std::string_view 
 } // namespace detail
 
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 namespace detail {
 
@@ -488,7 +488,7 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
     auto canon = std::filesystem::weakly_canonical(p, ec);
     std::string s = (ec ? p : canon).generic_string();
 #if defined(_WIN32)
-    // CF-184: `C:\a\b.cf` is `file:///C:/a/b.cf` (RFC 8089), the form editors send and `uri_to_path` reads back.
+    // `C:\a\b.cf` is `file:///C:/a/b.cf` (RFC 8089), the form editors send and `uri_to_path` reads back.
     if (s.size() >= 2 && std::isalpha(static_cast<unsigned char>(s[0])) && s[1] == ':') return "file:///" + s;
 #endif
     return "file://" + s;
@@ -1368,7 +1368,7 @@ CFIRE_LSP_RPC_INLINE void write_rpc_message(std::ostream& out, std::string_view 
 } // namespace detail
 
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_LSP_SERVER_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 
 } // namespace cfire::lsp
 

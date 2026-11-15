@@ -1,4 +1,4 @@
-// tools/vmtest/main.cpp — runs the CI-equivalent gate inside a local UTM VM (CF-184 Q48; C++ since CF-187).
+// tools/vmtest/main.cpp — runs the CI-equivalent gate inside a local UTM VM (C++ UTM gate runner).
 //   .vmtest linux | windows               run the gate on the current working tree (uncommitted changes included)
 //   .vmtest setup-linux | setup-windows   install the toolchain in the guest once (apt packages / MSYS2 CLANG64)
 // Settings come from CFIRE_VM_* environment variables (tools/vmtest/vmtest.hpp). See scripts/vm/README.md.

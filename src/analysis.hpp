@@ -1,7 +1,7 @@
 #pragma once
-// src/analysis.hpp — Unified Diagnostic Pipeline & Semantic Check for CLI, LSP, and MCP (CF-118)
+// src/analysis.hpp — Unified Diagnostic Pipeline & Semantic Check for CLI, LSP, and MCP
 
-#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_ANALYSIS_IMPL)
+#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_ANALYSIS_IMPL)
 #include "diagnostics.hpp"
 #else
 #include "buildsys.hpp"
@@ -50,6 +50,7 @@ struct CheckOptions {
     std::string sysroot{};
     std::vector<std::string> extra_includes{};
     std::vector<std::string> extra_pkg_configs{};
+    std::vector<std::string> extra_defines{};
     std::string web_profile{"auto"};
     std::string subsystem{"auto"};
     std::unordered_map<std::string, std::string> source_overlays{};
@@ -82,7 +83,7 @@ struct CheckOptions {
     const CheckOptions& opts = {}
 ) -> std::vector<Diagnostic>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_ANALYSIS_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_ANALYSIS_IMPL)
 
 namespace detail {
 
@@ -320,16 +321,18 @@ struct ScopedDevDebugGuard {
     if (!rt_dir.empty()) {
         if (auto plan_res = cfire::build::init_build_plan_flags(
                 fpath, rt_dir, is_test_f, opts.target_triple, opts.sysroot, opts.web_profile, opts.subsystem,
-                false, opts.extra_pkg_configs);
+                false, opts.extra_pkg_configs, opts.extra_defines);
             plan_res) {
             local_plan = std::move(*plan_res);
         } else {
             local_plan.entry_file = fpath.string();
             local_plan.extra_pkg_configs = opts.extra_pkg_configs;
+            local_plan.extra_defines = opts.extra_defines;
         }
     } else {
         local_plan.entry_file = fpath.string();
         local_plan.extra_pkg_configs = opts.extra_pkg_configs;
+        local_plan.extra_defines = opts.extra_defines;
     }
 
     auto parent_dir = fpath.parent_path().empty() ? std::filesystem::path(".") : fpath.parent_path();
@@ -341,12 +344,25 @@ struct ScopedDevDebugGuard {
     // 2. Local package / sibling & build.cf resolution (strictly using in-memory overlays)
     bool unresolved_local_package = false;
     if (opts.resolve_sibling_packages && has_real_dir) {
-        (void)cfire::build::discover_and_apply_build_cf(
-            local_plan, fpath, parent_dir, is_test_f, /*run_pre_build=*/opts.source_overlays.empty());
+        if (auto bcr = cfire::build::discover_and_apply_build_cf(
+                local_plan, fpath, parent_dir, is_test_f, /*run_pre_build=*/opts.source_overlays.empty());
+            !bcr && bcr.error().contains("invalid C macro identifier")) {
+            Diagnostic d;
+            d.file = std::string(file_path);
+            d.line = 1;
+            d.col = 1;
+            d.end_line = 1;
+            d.end_col = 1;
+            d.severity = "error";
+            d.code = "cfire/INVALID-ATTRIBUTE";
+            d.message = bcr.error();
+            d.source = "cfire";
+            diags.push_back(std::move(d));
+        }
         auto resolved = cfire::build::resolve_local_cf_imports(
             parent_dir, merged_ast, local_plan, rt_dir, is_test_f, &overlays);
         // Surface missing local packages as a cfire diagnostic instead of letting clang report
-        // "no member named '<pkg>' in namespace 'cfire'" (CF-140).
+        // "no member named '<pkg>' in namespace 'cfire'".
         constexpr std::string_view kNotFound = "local package import not found: ";
         if (!resolved && resolved.error().starts_with(kNotFound)) {
             std::string missing = resolved.error().substr(kNotFound.size());
@@ -391,6 +407,19 @@ struct ScopedDevDebugGuard {
             }
         }
         cfire::build::resolve_plan_pkg_configs(local_plan, rt_dir);
+        if (auto dr = cfire::build::resolve_plan_defines(local_plan); !dr) {
+            cfire::diag::Diagnostic d;
+            d.file = std::string(file_path);
+            d.line = 1;
+            d.col = 1;
+            d.end_line = 1;
+            d.end_col = 1;
+            d.severity = "error";
+            d.code = "cfire/INVALID-ATTRIBUTE";
+            d.message = dr.error();
+            d.source = "cfire";
+            diags.push_back(std::move(d));
+        }
 
         if (has_cpp_interop) {
             std::vector<std::string> base_header_cflags = local_plan.cflags;
@@ -404,9 +433,7 @@ struct ScopedDevDebugGuard {
             std::string cxx_bin = cfire::build::resolve_cxx_compiler(local_plan.target_triple);
             for (const auto& imp : merged_ast.imports) {
                 if (!imp.is_cpp) continue;
-                std::vector<std::string> header_cflags = base_header_cflags;
-                cfire::build::append_imp_define_cflags(imp, header_cflags);
-                auto idx = bridge::inspect_header(imp.path, header_cflags, hdr_cache_dir, cxx_bin);
+                auto idx = bridge::inspect_header(imp.path, base_header_cflags, hdr_cache_dir, cxx_bin);
                 if (idx) {
                     for (const auto& [sym_name, sym] : idx->symbols) {
                         if (sym.kind == "FunctionDecl") {
@@ -421,7 +448,7 @@ struct ScopedDevDebugGuard {
 
     // 4. Single-pass resilient semantic analysis
     auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast), std::move(pre_cpp_fn_params));
-    // Q24 (CF-149): Sema diagnostics are structured at detection; here they only get exact ranges and fix-its.
+    // Sema diagnostics are structured at detection; here they only get exact ranges and fix-its.
     // Diagnostics from sibling package files keep their own file; ranges are resolved against this file only.
     for (auto d : chk.diagnostics) {
         if (d.file.empty()) d.file = std::string(file_path);
@@ -576,7 +603,7 @@ struct ScopedDevDebugGuard {
     return check_path(std::filesystem::path(target_or_content), opts);
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_ANALYSIS_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_ANALYSIS_IMPL)
 #undef CFIRE_ANALYSIS_INLINE
 
 } // namespace cfire::analysis

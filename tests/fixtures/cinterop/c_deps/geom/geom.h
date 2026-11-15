@@ -1,5 +1,5 @@
 #pragma once
-// A small C library used to test cfire's C header bridge (CF-185): structs, struct returns, string and pointer
+// A small C library used to test cfire's C header bridge: structs, struct returns, string and pointer
 // parameters, and bitflag enums. It replaced raylib as the test's foreign library.
 #include <stddef.h>
 #include <stdint.h>

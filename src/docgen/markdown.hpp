@@ -4,7 +4,7 @@
 #include "catalog.hpp"
 #include "styles.hpp"
 #include "../parser.hpp"
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_MD_IMPL)
 #include "../formatter.hpp"
 #endif
 #include <algorithm>
@@ -65,7 +65,7 @@ namespace detail {
 
 [[nodiscard]] CFIRE_DOCGEN_MD_INLINE auto generate_llm_reference() -> std::string;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_MD_IMPL)
 } // namespace cfire::doc
 #if defined(__clang__)
 #pragma clang optimize off
@@ -1637,7 +1637,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Domain Extensions: `import "ext:<module>"` (e.g. `import "ext:ai"`, `import "ext:compress/zstd"`, `import "ext:crypto/sodium"`, `import "ext:db/sqlite"`, `import "ext:net/ssh"`, `import "ext:webui"`)
   - Note on Builtin Operations: Methods and associated items on `str`, numeric types, slices (`[]T`), arrays (`[N]T`), and maps (`map[K]V`) live directly on values/types (`s.trim()`, `s.split(",")`, `xs.sort()`, `m.keys()`, `i32.parse(s)`, `i32.MAX`). Legacy `import "core:str"` and `import "core:sort"` are retired (`cfire/RETIRED-API`).
   - Local package: `import "./path/to/pkg"`
-  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias @define("KEY", "VAL")` (compile-time preprocessor defines belong on `import cpp` via `@define`; native linkage, `pkg-config`, libraries, frameworks, and include paths belong declaratively in `build.cf` via `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, `UrlSchemes: [...]`, and `SignIdentity: "..."` or CLI `--pkg-config <name>`. Legacy `@pkg` import attributes are retired via `cfire/RETIRED-API`).
+  - Foreign C/C++: `import cpp "header.h"` or `import cpp "header.h" as alias` (preprocessor defines and native linkage — `Defines`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `UrlSchemes`, and `SignIdentity` — belong declaratively in `build.cf` via `build.Executable`/`build.Package`/`build.Define`, or via CLI `--define <K[=V]>` / `-D<K[=V]>` and `--pkg-config <name>`. Legacy `@pkg` and `@define` import attributes are retired via `cfire/RETIRED-API`).
 - Variable Declarations & Naming Conventions:
   - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
@@ -1699,7 +1699,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - View & Loan Tracking (`cfire/USE-AFTER-FREE`, `cfire/DANGLING-RETURN`, `cfire/DANGLING-TEMPORARY`, `cfire/ITERATOR-INVALIDATION`): Mutating, reallocating, or moving a container while a view borrows from it or while iterating over it, or returning a view into a local/temporary, is rejected at compile time.
   - Type & Boundary Checks (`cfire/RECURSIVE-TYPE`, `cfire/UNSATISFIED-CONSTRAINT`, `cfire/RAW-POINTER`, `cfire/REFERENCE-TYPE`, `cfire/RETIRED-API`, `cfire/NULL-DEREF`): Direct or optional self-recursive value structs without `own[T]`/`shared[T]`/`[]T` indirection, non-matching interface constraints, pure-`.cf` raw pointers or `&T` references, and unguarded pointer dereferences are rejected at compile time.
   - Bounds, Arithmetic, Tags & Injection (`cfire/INDEX-OUT-OF-BOUNDS`, `cfire/DIVIDE-BY-ZERO`, `cfire/INVALID-STRUCT-TAG`, `cfire/SQL-INJECTION-RISK`, `cfire/SHELL-INJECTION-RISK`): Constant OOB indexing, div-by-zero, duplicate struct tags, and string-concatenated SQL/shell calls are diagnosed at compile time.
-- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h" @define("KEY", "VAL")`
+- Foreign C/C++: `cpp { /* verbatim C++23 */ }`, `cpp.some_c_func()`, `import cpp "hdr.h"` (defines in `build.cf` `Defines` or CLI `-DK=V`)
 - CLI Tooling:
   - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
   - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
@@ -1760,7 +1760,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
 #pragma clang optimize on
 #endif
 namespace cfire::doc {
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_MD_IMPL)
 
 } // namespace cfire::doc
 

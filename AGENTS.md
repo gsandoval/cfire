@@ -70,3 +70,11 @@ Before editing code for any non-trivial task:
    - `make check-deep` — sanitizers and fuzz replay.
    - `make check-platforms` — the Linux and Windows VMs.
    - `make check-all` runs all three; a task is done only when its summary is recorded in `active.md`.
+
+---
+
+## 3. Naming & Commit Hygiene Rules
+
+- **Source & header naming**: Every `.cpp` translation unit and `.hpp` header must have a domain-descriptive filename matching the subsystem it implements. Do not introduce `tu_`-prefixed translation units or `.inc` textual fragment headers.
+- **Test, fixture & seed naming**: Unit test headers, test functions, conformance fixtures, golden snapshots, formatter inputs/outputs, and fuzz seeds must be named after the language rule, API, or bug behavior under test—never after internal milestone, wave, or ticket identifiers or numeric ordering prefixes outside `docs/planning/`.
+- **Plain-English commits**: Commit messages must describe the change directly in plain English without `Co-Authored-By:` / attribution trailers, AI/agent/model names, or internal ticket/wave identifiers. Enable repository hooks with `make hooks` (enforced by `.githooks/commit-msg`).

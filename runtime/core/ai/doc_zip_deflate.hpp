@@ -14,7 +14,7 @@ struct BitStream {
     std::uint32_t bit_buf = 0;
     int bit_count = 0;
     // Set once a read needs bits past the end of the input. Without it a truncated stream reads as zero bits,
-    // and a Huffman code of all zeros can decode to a literal, so garbage inflates to `max_out` (CF-197).
+    // and a Huffman code of all zeros can decode to a literal, so garbage inflates to `max_out`.
     bool overrun = false;
 
     void fill(int need) noexcept {
@@ -273,7 +273,7 @@ inline void append_u32_le(std::vector<std::uint8_t>& buf, std::uint32_t v) {
         std::string name(reinterpret_cast<const char*>(zip_bytes.data() + pos + 30), name_len);
 
         // If bit 3 (data descriptor) is set and comp_size == 0, take the size from the Central Directory. Its
-        // entries are indexed on first use, so many such headers cost one scan, not one each (CF-197).
+        // entries are indexed on first use, so many such headers cost one scan, not one each.
         if ((flags & 0x08u) != 0 && comp_size == 0) {
             if (!cd_indexed) {
                 cd_indexed = true;

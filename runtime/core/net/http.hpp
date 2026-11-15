@@ -43,7 +43,7 @@ inline constexpr std::size_t kMaxHttpHeaders = 128;
 inline constexpr std::size_t kMaxHttpQueryParams = 256;
 
 namespace detail {
-// CF-151: `x-cfire-*` header names are reserved and never sent. They used to be read as in-band TLS
+// `x-cfire-*` header names are reserved and never sent. They used to be read as in-band TLS
 // controls (`x-cfire-tls-verify: false` disabled certificate checks), so code that forwarded
 // user-supplied headers could be downgraded. TLS behavior now comes only from typed parameters.
 [[nodiscard]] inline auto is_reserved_cfire_header(std::string_view k) -> bool {
@@ -121,7 +121,7 @@ struct Response {
         return (it != headers.end()) ? it->second : std::string(fallback);
     }
 
-    // CF-192: `keep_alive` is the server's choice to read another request on this connection.
+    // `keep_alive` is the server's choice to read another request on this connection.
     [[nodiscard]] auto to_http_wire(bool keep_alive = false) const -> std::string {
         std::string text = status_text.empty() ? status_text_for_code(status_code) : detail::strip_crlf(status_text);
         std::string out = std::format("HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: {}\r\n",
@@ -189,7 +189,7 @@ struct Response {
 };
 
 struct Request {
-    std::string remote_addr{};  // peer IP address of the client connection (CF-150)
+    std::string remote_addr{};  // peer IP address of the client connection
     std::string method{"GET"};
     std::string path{"/"};
     std::string raw_query{};
@@ -406,7 +406,7 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
                 lower_k.reserve(k.size());
                 for (char c : k) lower_k.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
                 if ((lower_k == "content-length" || lower_k == "transfer-encoding") && req.headers.contains(lower_k)) {
-                    // Q22 (CF-150): duplicate framing headers are a request-smuggling vector.
+                    // duplicate framing headers are a request-smuggling vector.
                     return cfire::make_error(std::format("duplicate {} header", lower_k), 400);
                 }
                 req.headers[lower_k] = std::string(v);
@@ -418,9 +418,9 @@ inline auto parse_request(std::string_view raw) -> std::expected<Request, cfire:
     return req;
 }
 
-// Q22 (CF-150): per-connection limits for the built-in server. Errors carry the HTTP status to send
+// per-connection limits for the built-in server. Errors carry the HTTP status to send
 // (Error::code): 400 malformed / ambiguous framing, 408 deadline exceeded, 413 body too large.
-// Q31: the server certificate for `make(http.Server, port, tls: http.TlsConfig{...})`: files or in-memory PEM.
+// the server certificate for `make(http.Server, port, tls: http.TlsConfig{...})`: files or in-memory PEM.
 struct TlsConfig {
     std::string cert_file{};
     std::string key_file{};
@@ -434,7 +434,7 @@ struct ServerLimits {
     std::size_t max_body_bytes = 10 * 1024 * 1024;
     std::size_t workers = std::max<std::size_t>(4, 2 * static_cast<std::size_t>(std::thread::hardware_concurrency()));
     std::size_t max_pending = 128;
-    // CF-192: an idle keep-alive connection is closed after this long; 0 turns keep-alive off.
+    // an idle keep-alive connection is closed after this long; 0 turns keep-alive off.
     int keepalive_timeout_ms = 5000;
     std::size_t max_requests_per_conn = 1000;
     std::size_t max_websockets = 1024;
@@ -507,7 +507,7 @@ enum class ReadMore : std::uint8_t { Data, Eof, Deadline };
     }
 }
 
-// CF-192: builds requests from bytes as they arrive, so the same rules serve a blocking reader and the
+// builds requests from bytes as they arrive, so the same rules serve a blocking reader and the
 // event loop. It keeps the bytes after a complete request (pipelining). Errors carry the HTTP status to
 // send: 400 malformed or ambiguous framing, 413 body too large, 431 header section too large.
 class RequestAssembler {
@@ -1340,7 +1340,7 @@ public:
         return false;
     }
 
-    // CF-192: whether `req` asks for one of the WebSocket routes; the server then serves it on its own thread.
+    // whether `req` asks for one of the WebSocket routes; the server then serves it on its own thread.
     [[nodiscard]] auto is_ws_upgrade(const Request& req) const -> bool {
         if (ws_routes_.empty()) return false;
         std::string upg = req.header("upgrade");
@@ -1500,7 +1500,7 @@ private:
 }
 
 namespace detail {
-// CF-192: long-lived sessions (WebSockets) run on their own threads, so they never hold a pool worker.
+// long-lived sessions (WebSockets) run on their own threads, so they never hold a pool worker.
 // `stop()` shuts their sockets down through each session's close guard, then joins them.
 class SessionThreads {
 public:
@@ -1569,7 +1569,7 @@ private:
     std::mutex mu_;
     std::vector<Session> sessions_;
 };
-// CF-193: one connection as the event loop sees it. While `Busy` a worker owns it and the loop does not touch it.
+// one connection as the event loop sees it. While `Busy` a worker owns it and the loop does not touch it.
 struct LoopConn {
     enum class Phase : std::uint8_t { Handshake, Reading, Idle, Busy };
 
@@ -1680,7 +1680,7 @@ public:
         (void)conn.write_text(resp.to_http_wire());
     }
 
-    // Q22 (CF-150), CF-192, CF-193: one event-loop thread waits on every connection and reads each request
+    // one event-loop thread waits on every connection and reads each request
     // whole (the TLS handshake too) without blocking, so slow and idle clients hold no worker. A worker gets a
     // complete Request, runs the handler, writes the response and hands a keep-alive connection back.
     // The loop answers 503 over `max_connections` open connections or `max_pending` requests waiting for a
@@ -1910,7 +1910,7 @@ public:
         if (limits_.max_connections == 0) limits_.max_connections = ServerLimits{}.max_connections;
     }
     [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
-    // CF-192: open WebSocket sessions.
+    // open WebSocket sessions.
     [[nodiscard]] auto websocket_sessions() const -> std::size_t { return ws_->live(); }
 
     template <typename Handler>
@@ -2003,7 +2003,7 @@ private:
     return HttpServer(std::move(*l), std::move(*ctx_res));
 }
 
-// Q31: `make(http.Server, port, tls: cfg)`. An empty config builds a plain HTTP server.
+// `make(http.Server, port, tls: cfg)`. An empty config builds a plain HTTP server.
 [[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<HttpServer, cfire::Error> {
     if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);
     if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem);

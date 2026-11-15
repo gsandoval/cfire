@@ -154,7 +154,7 @@ inline auto operator+(std::string_view lhs, const char* rhs) -> std::string {
     return res;
 }
 
-// Q36 (CF-182): the lowering of a read-only `str` parameter and of every `&str` view. It is a
+// the lowering of a read-only `str` parameter and of every `&str` view. It is a
 // `std::string_view` that also converts implicitly to an owned `std::string`, so a view passed where
 // cfire requires an owned `str` (a `move` parameter, field, variable or return value) is copied there.
 namespace cfire {
@@ -182,7 +182,7 @@ struct std::formatter<cfire::str_ref, char> : std::formatter<std::string_view, c
 template <>
 struct std::hash<cfire::str_ref> : std::hash<std::string_view> {};
 
-// Q53 (CF-189): the lowering of a read-only `[]T` parameter. Parameters are views by default, so a whole slice, a
+// the lowering of a read-only `[]T` parameter. Parameters are views by default, so a whole slice, a
 // sub-slice (`xs[1..]`, a `..rest` pattern) or a fixed array passes without a copy; like `str_ref`, it converts
 // implicitly to an owned `std::vector<T>` wherever cfire needs one (a field, a `mut` copy, a return value).
 namespace cfire {
@@ -242,7 +242,7 @@ inline constexpr None_t none{};
 
 [[noreturn]] inline void panic(std::string_view msg) {
     std::println(stderr, "panic: {}", msg);
-    std::fflush(nullptr);  // stdout is fully buffered on a pipe; keep what ran before the panic (CF-183)
+    std::fflush(nullptr);  // stdout is fully buffered on a pipe; keep what ran before the panic
     std::abort();
 }
 
@@ -254,7 +254,7 @@ template <typename A, typename B>
         }
         using R = decltype(a / b);
         if constexpr (std::is_signed_v<R>) {
-            // MIN / -1 overflows (UB, traps on x86); release wraps like every other overflow (Q4, CF-166).
+            // MIN / -1 overflows (UB, traps on x86); release wraps like every other overflow.
             if (static_cast<R>(b) == R{-1} && static_cast<R>(a) == std::numeric_limits<R>::min()) [[unlikely]] {
                 return static_cast<R>(a);
             }
@@ -266,7 +266,7 @@ template <typename A, typename B>
 template <typename A, typename B>
 [[nodiscard]] constexpr auto mod(A a, B b) {
     if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>) {
-        // W4 (CF-162): float `%` is IEEE `fmod` (sign of the dividend; `x % 0.0` is NaN, not a panic).
+        // float `%` is IEEE `fmod` (sign of the dividend; `x % 0.0` is NaN, not a panic).
         using R = std::common_type_t<A, B>;
         return std::fmod(static_cast<R>(a), static_cast<R>(b));
     } else {
@@ -378,7 +378,7 @@ inline auto operator!=(std::nullopt_t, T* ptr) noexcept -> bool {
 
 namespace cfire::detail {
 
-// --- Secure temporary storage & per-user caches (CF-153) ---
+// --- Secure temporary storage & per-user caches ---
 // Never use a predictable or shared name under the temp directory: on a multi-user machine another
 // account can pre-create it (symlink attacks, cache poisoning, reading private documents). Temp data
 // lives in a private directory created atomically (mkdtemp, mode 0700) that is removed on scope exit.
@@ -561,7 +561,7 @@ template <typename F>
     return ScopeExit<std::decay_t<F>>(std::forward<F>(fn));
 }
 
-// --- Q43 (CF-183): key hashing for `map[K]V` and `Set[T]`. Anything `std::hash` handles is hashed by it;
+// --- key hashing for `map[K]V` and `Set[T]`. Anything `std::hash` handles is hashed by it;
 // tuples and pairs combine their elements; a cfire struct provides `cfire_hash()` when all its fields are
 // hashable. A type with none of these is not a valid key.
 namespace detail {
@@ -694,12 +694,12 @@ private:
 };
 
 // --- Zero-Copy Slicing (`s[start..end]`) for `str`, `[]T`, `[N]T`, and `bytes` ---
-// Q12 (CF-147): `xs[a..b]` panics on an invalid range (a > b, b > len, negative bound), exactly like
+// `xs[a..b]` panics on an invalid range (a > b, b > len, negative bound), exactly like
 // indexing; `str` slices also panic when a bound falls inside a UTF-8 code point. The location is the
 // caller's `.cf` line via #line + std::source_location.
 inline void assert_true_at(bool cond, std::string_view msg, std::string_view file, int line, std::string_view expr_text);
 
-// --- `make([]T, len[, cap])` (Q25): `len` zero-filled elements, `cap` reserved; negative sizes panic ---
+// --- `make([]T, len[, cap])`: `len` zero-filled elements, `cap` reserved; negative sizes panic ---
 template <typename T, std::integral L>
 [[nodiscard]] inline auto make_slice(L len, const std::source_location& loc = std::source_location::current()) -> std::vector<T> {
     if (std::cmp_less(len, 0)) [[unlikely]] {
@@ -784,7 +784,7 @@ template <typename T, typename... Args>
 
 namespace cfire {
 
-// --- Q39 (CF-183): a `str` element is a `byte` (`u8`), never a C++ `char` whose signedness varies by target.
+// --- a `str` element is a `byte` (`u8`), never a C++ `char` whose signedness varies by target.
 // `unsigned char` may alias any object, so a `char&` is viewed in place as a `std::uint8_t&`.
 namespace detail {
 [[nodiscard]] inline auto as_byte_elem(char& c) noexcept -> std::uint8_t& { return reinterpret_cast<std::uint8_t&>(c); }
@@ -972,7 +972,7 @@ template <typename T>
 [[nodiscard]] constexpr auto c_arg(T&& v) noexcept -> T&& {
     return std::forward<T>(v);
 }
-// Q54 (CF-189): a `[]T` / `[N]T` / `str` passed where a C/C++ function takes a pointer `P` is its buffer pointer, so
+// a `[]T` / `[N]T` / `str` passed where a C/C++ function takes a pointer `P` is its buffer pointer, so
 // `.cf` code never spells one. Byte-sized element types convert between each other (`[]byte` -> `char*`); anything
 // that is not a contiguous range is passed through unchanged (a pointer a C function returned, a scalar).
 template <typename P, typename R>
@@ -996,7 +996,7 @@ template <typename P, typename R>
     p.replace_extension(ext);
     return p;
 }
-// Q39 (CF-183): `byte` is `u8`. The raw bytes of any contiguous range, as `u8` (replaces `std::as_bytes`).
+// `byte` is `u8`. The raw bytes of any contiguous range, as `u8` (replaces `std::as_bytes`).
 template <typename T, std::size_t E>
 [[nodiscard]] inline auto as_u8(std::span<T, E> sp) noexcept -> std::span<const std::uint8_t> {
     return {reinterpret_cast<const std::uint8_t*>(sp.data()), sp.size_bytes()};
@@ -1060,7 +1060,7 @@ inline void vec_push(std::vector<T>& vec, U&& val) {
     } else if constexpr (std::is_same_v<T, std::uint8_t> && std::is_same_v<std::remove_cvref_t<U>, std::uint8_t>) {
         vec.push_back(static_cast<std::uint8_t>(val));
     } else if constexpr (!std::is_constructible_v<T, U&&> && requires { std::begin(val); std::end(val); T(std::begin(val), std::end(val)); }) {
-        // A view pushed into a slice of owned slices (`grid.push(line.bytes())`, CF-183) is copied.
+        // A view pushed into a slice of owned slices (`grid.push(line.bytes)`) is copied.
         vec.push_back(T(std::begin(val), std::end(val)));
     } else {
         vec.push_back(std::forward<U>(val));
@@ -1804,7 +1804,7 @@ decltype(auto) iter_pairs(C& c) {
     if constexpr (is_map_like_v<C>) {
         return (c);
     } else if constexpr (std::is_convertible_v<C&, std::string_view>) {
-        return EnumerateBytes{iter_items(std::string_view(c))};  // `for i, b in s` (Q39)
+        return EnumerateBytes{iter_items(std::string_view(c))};  // `for i, b in s`
     } else {
         return EnumerateView<C>{c};
     }
@@ -2129,7 +2129,7 @@ void run_scope(std::size_t workers, F&& body) {
     s.join_all();
 }
 
-// Q51 (CF-189): the value of `results := async.scope(...) |s| { s.spawn || { return v } }`: every spawned task's
+// the value of `results:= async.scope(...) |s| { s.spawn || { return v } }`: every spawned task's
 // value, in spawn order. Tasks are added by the one thread running the scope body, so the order is deterministic.
 template <typename T>
 class Results {
@@ -2236,7 +2236,7 @@ concept CfireScalarCastable =
     };
 
 namespace detail {
-// Q9/Q19 (CF-165): `T(x)` preserves the value or panics. Integer narrowing and sign changes that don't fit,
+// `T(x)` preserves the value or panics. Integer narrowing and sign changes that don't fit,
 // and float->int that is NaN or out of range (UB in C++), panic at the caller's `.cf` location; the
 // `#line` directives emitted before each statement make std::source_location report the .cf file and line.
 // Widening, int->float and float->float conversions are IEEE-defined and never panic.
@@ -2296,7 +2296,7 @@ template <typename To, typename From>
 }
 } // namespace detail
 
-// --- CF-183: integer comparisons compare values, not bit patterns. `r < xs.len()` with `r: i64 = -1` is true,
+// ---: integer comparisons compare values, not bit patterns. `r < xs.len` with `r: i64 = -1` is true,
 // where C++'s usual arithmetic conversions would turn `-1` into a huge unsigned value. Anything other than two
 // integers of different signedness compares with the plain operator.
 namespace detail {
@@ -2333,7 +2333,7 @@ template <typename A, typename B>
     if constexpr (detail::mixed_sign_v<A, B>) return std::cmp_not_equal(a, b); else return a != b;
 }
 
-// --- Q11 (CF-166): shifts. `x << n` keeps C++'s promoted result type, but a count outside
+// ---: shifts. `x << n` keeps C++'s promoted result type, but a count outside
 // [0, bit width) panics at the caller's .cf location (via #line) instead of being undefined behavior.
 template <typename A, typename B>
 [[nodiscard]] constexpr auto shl(A a, B n, std::source_location loc = std::source_location::current()) {
@@ -2486,7 +2486,7 @@ template <CfireIsEnum E>
     using U = std::underlying_type_t<E>;
     return static_cast<E>(static_cast<U>(a) ^ static_cast<U>(b));
 }
-// Q18 (CF-179): only scoped enums (always a fixed underlying type) map `~E -> E`. For unscoped C enums
+// only scoped enums (always a fixed underlying type) map `~E -> E`. For unscoped C enums
 // the complement lies outside the enum's value range (UB on the cast), so they use the built-in `~`,
 // which yields the integer; `flags &= ~FLAG` then goes through the mixed enum/integer operators below.
 template <CfireIsEnum E>
@@ -2590,6 +2590,16 @@ struct std::formatter<cfire::Error, CharT> : std::formatter<std::string, CharT> 
         return std::formatter<std::string, CharT>::format(e.message(), ctx);
     }
 };
+
+#if defined(__GLIBCXX__)
+namespace cfire::detail {
+// Force GNU libstdc++'s <format> string sink virtuals (_Seq_sink::_M_bump, _M_reserve, _M_overflow)
+// to be instantiated in any PCH built from cfire_prelude.hpp so consuming TUs with custom formatters link.
+inline auto instantiate_libstdcxx_format_sinks_(double d, cfire::str_ref s) -> std::string {
+    return std::format("{:.2f} {:>4}", d, s);
+}
+} // namespace cfire::detail
+#endif
 
 // --- Monadic `try` Propagation Macros (Statement-Expression / Early Return) ---
 #define CFIRE_CONCAT_INNER(a, b) a##b

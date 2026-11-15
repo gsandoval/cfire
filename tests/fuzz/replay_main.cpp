@@ -1,4 +1,4 @@
-// Corpus replay driver (CF-141): links against any fuzz target without libFuzzer, so committed corpora
+// Corpus replay driver: links against any fuzz target without libFuzzer, so committed corpora
 // run as regression tests on every toolchain (Apple clang ships without libFuzzer).
 // Usage: <binary> <file-or-dir>...   Exit status is non-zero only if the target crashes.
 #include <cstdint>

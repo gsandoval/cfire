@@ -104,7 +104,7 @@ struct TypeId {
     static constexpr TypeId Float32() noexcept { return TypeId{14}; }
     static constexpr TypeId Float64() noexcept { return TypeId{15}; }
     static constexpr TypeId Str() noexcept { return TypeId{16}; }
-    // Q39 (CF-183): `byte` is an alias of `u8` (slot 17 is kept so the builtin ids stay stable).
+    // `byte` is an alias of `u8` (slot 17 is kept so the builtin ids stay stable).
     static constexpr TypeId Byte() noexcept { return TypeId{8}; }
 };
 
@@ -296,7 +296,7 @@ public:
             TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
             return make_mut_ptr(elem);
         }
-        // Q44 (CF-183): a stdlib priority queue keeps its element type (`collections.MinQueue[i64]`), so its
+        // a stdlib priority queue keeps its element type (`collections.MinQueue[i64]`), so its
         // `pop() -> T?` is typed. Other generic types are still named without their arguments.
         if (tr.type_args.size() == 1 && (tr.name.ends_with("PriorityQueue") || tr.name.ends_with("MinQueue"))) {
             return from_name(tr.name + "[" + to_string(from_typeref(tr.type_args[0])) + "]");
@@ -452,7 +452,7 @@ public:
         return d.kind == TypeKind::Float32 || d.kind == TypeKind::Float64;
     }
 
-    // CF-196: (bits, signed) of an integer type; {0, false} for anything else. `isize`/`usize` are 64-bit.
+    // (bits, signed) of an integer type; {0, false} for anything else. `isize`/`usize` are 64-bit.
     [[nodiscard]] auto int_shape(TypeId id) const -> std::pair<int, bool> {
         switch (get(id).kind) {
             case TypeKind::Int8: return {8, true};
@@ -467,7 +467,7 @@ public:
         }
     }
 
-    // CF-196: every value of integer type `src` fits in `dest` (Q9: only these convert implicitly).
+    // every value of integer type `src` fits in `dest` (only these convert implicitly).
     [[nodiscard]] auto int_widens(TypeId dest, TypeId src) const -> bool {
         const auto [db, ds] = int_shape(dest);
         const auto [sb, ss] = int_shape(src);
@@ -487,7 +487,7 @@ public:
         if (is_integer(dest) && is_integer(src)) return true;
         if (is_float(dest) && is_numeric(src)) return true;
         if (dest == make_borrow_const(TypeId::Str()) && src == TypeId::Str()) return true;
-        // Q36 (CF-182): a `&str` view is copied implicitly wherever an owned `str` is required.
+        // a `&str` view is copied implicitly wherever an owned `str` is required.
         if (dest == TypeId::Str() && src == make_borrow_const(TypeId::Str())) return true;
         if (dest_d.kind == TypeKind::Borrow && dest_d.elem_type == src) return true;
         if (dest_d.kind == TypeKind::Slice && src_d.kind == TypeKind::Array && dest_d.elem_type == src_d.elem_type) return true;
@@ -550,7 +550,7 @@ private:
 struct CheckedFile {
     FileAST ast{};
     TypeTable type_table{};
-    // CF-190: the struct, enum and interface names of the package, for resolving bare type names.
+    // the struct, enum and interface names of the package, for resolving bare type names.
     std::unordered_set<std::string> declared_type_names{};
     std::unordered_map<std::string, FnDecl> fn_sigs{};
     std::unordered_map<std::string, FnDecl> methods{};     // "Type::method" -> FnDecl
@@ -571,18 +571,18 @@ struct CheckedFile {
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
     std::unordered_set<std::string> move_only_structs{};
-    // Q36 (CF-182): untyped `mut x := <text>` declarations; codegen gives them an owned `std::string`
+    // untyped `mut x:= <text>` declarations; codegen gives them an owned `std::string`
     // so a view initializer (a read-only `str` param, a slice) is copied rather than becoming a mutable view.
     // `mutable`: filled by the per-function checker, which holds the file by const reference.
     mutable std::unordered_set<const VarDeclStmt*> owned_text_decls{};
-    // Q53 (CF-189): untyped `mut x := <slice>` declarations, which own a copy when the initializer is a view.
+    // untyped `mut x:= <slice>` declarations, which own a copy when the initializer is a view.
     mutable std::unordered_set<const VarDeclStmt*> owned_slice_decls{};
-    // CF-196: untyped declarations of a `match` / `if` expression whose arms are integer constants: they are
+    // untyped declarations of a `match` / `if` expression whose arms are integer constants: they are
     // `i64`, so codegen spells the type instead of `auto` (which deduced a 32-bit `int`).
     mutable std::unordered_set<const VarDeclStmt*> int64_decls{};
-    // Q52 (CF-189): `g.value` on a `sync.MutexGuard[T]`, which codegen lowers to the guarded value (`*g` in C++).
+    // `g.value` on a `sync.MutexGuard[T]`, which codegen lowers to the guarded value (`*g` in C++).
     mutable std::unordered_set<const void*> guard_value_members{};
-    // Q24 (CF-149): `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms
+    // `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms
     // (kept for callers that only print). Always add through add_error / add_warning.
     std::vector<std::string> warnings{};
     std::vector<std::string> errors{};

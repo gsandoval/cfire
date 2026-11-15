@@ -64,7 +64,7 @@ private:
     return r->is_match(text);
 }
 
-// Q46 (CF-183): one-shot forms of `Regex.find` / `Regex.find_all`, like `is_match`.
+// one-shot forms of `Regex.find` / `Regex.find_all`, like `is_match`.
 [[nodiscard]] inline auto find(std::string_view pattern, std::string_view text)
     -> std::expected<std::optional<std::string>, cfire::Error>
 {

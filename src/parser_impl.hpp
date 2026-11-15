@@ -1,0 +1,2637 @@
+// src/parser_impl.hpp — Out-of-line Parser implementation
+namespace cfire::frontend {
+
+#ifdef CFIRE_SPLIT_TUS
+#define CFIRE_PARSER_IMPL_INLINE
+#else
+#define CFIRE_PARSER_IMPL_INLINE inline
+#endif
+
+class Parser {
+public:
+    Parser(std::string file, std::vector<Token> tokens, bool resilient = true)
+        : file_(std::move(file)), tokens_(std::move(tokens)), resilient_(resilient) {}
+
+    [[nodiscard]] auto parse_file_result() -> ParseResult {
+        FileAST f;
+        f.path = file_;
+        auto pkg_kw = expect(TokenKind::KwPackage);
+        if (!pkg_kw) {
+            record_error(pkg_kw.error());
+            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+            synchronize_decl();
+        } else {
+            auto pkg_id = expect(TokenKind::Ident);
+            if (!pkg_id) {
+                record_error(pkg_id.error());
+                if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                synchronize_decl();
+            } else {
+                f.package_name = pkg_id->lexeme;
+            }
+        }
+
+        while (cur().kind != TokenKind::Eof) {
+            switch (cur().kind) {
+                case TokenKind::KwImport: {
+                    auto imp = parse_import();
+                    if (!imp) {
+                        record_error(imp.error());
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    } else {
+                        f.imports.push_back(std::move(*imp));
+                    }
+                    break;
+                }
+                case TokenKind::KwType: {
+                    if (auto r = parse_type_decl(f); !r) {
+                        record_error(r.error());
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    }
+                    break;
+                }
+                case TokenKind::KwFn: {
+                    auto fn = parse_fn_decl();
+                    if (!fn) {
+                        record_error(fn.error());
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    } else {
+                        f.functions.push_back(std::move(*fn));
+                    }
+                    break;
+                }
+                case TokenKind::KwMut: {
+                    if (peek(1).kind == TokenKind::Ident) {
+                        auto gv = parse_global_var();
+                        if (!gv) {
+                            record_error(gv.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else {
+                            f.global_vars.push_back(std::move(*gv));
+                        }
+                    } else {
+                        record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected 'mut' at top-level")});
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    }
+                    break;
+                }
+                case TokenKind::Ident: {
+                    if ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String) {
+                        auto td = parse_test_decl();
+                        if (!td) {
+                            record_error(td.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else {
+                            f.tests.push_back(std::move(*td));
+                        }
+                    } else if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                               (cur().lexeme == "const" && peek(1).kind == TokenKind::Ident)) {
+                        auto gv = parse_global_var();
+                        if (!gv) {
+                            record_error(gv.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else {
+                            f.global_vars.push_back(std::move(*gv));
+                        }
+                    } else {
+                        record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected identifier '{}' at top-level", cur().lexeme)});
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    }
+                    break;
+                }
+                case TokenKind::CppBlock: {
+                    Token cpp_tok = advance();
+                    record_error(SourceError{std::string(file_), static_cast<int>(cpp_tok.line), static_cast<int>(cpp_tok.col), std::format("top-level 'cpp {{ ... }}' blocks are not supported in cfire; use 'import cpp \"header.h\"' for headers or place 'cpp {{ ... }}' inside a 'fn' body")});
+                    if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                    break;
+                }
+                case TokenKind::KwTest: {
+                    auto td = parse_test_decl();
+                    if (!td) {
+                        record_error(td.error());
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        synchronize_decl();
+                    } else {
+                        f.tests.push_back(std::move(*td));
+                    }
+                    break;
+                }
+                default:
+                    record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected top-level token '{}'", cur().lexeme)});
+                    if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                    synchronize_decl();
+                    break;
+            }
+        }
+        return make_parse_result(std::move(f), std::move(errors_));
+    }
+
+    [[nodiscard]] auto parse_file() -> std::expected<FileAST, SourceError> {
+        auto res = parse_file_result();
+        if (!res.ok()) {
+            return std::unexpected(res.source_errors.front());
+        }
+        return std::move(res.ast);
+    }
+
+    [[nodiscard]] auto parse_standalone_expr() -> std::expected<ExprPtr, SourceError> {
+        auto ex = parse_expr();
+        if (!ex) {
+            return std::unexpected(ex.error());
+        }
+        if (cur().kind != TokenKind::Eof) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("unexpected trailing token '{}' in interpolated expression", cur().lexeme)});
+        }
+        return ex;
+    }
+
+private:
+    std::string file_;
+    std::vector<Token> tokens_;
+    std::size_t pos_ = 0;
+    std::vector<SourceError> errors_;
+    bool resilient_ = true;
+    bool allow_struct_lit_ = true;
+    int recursion_depth_ = 0;
+    static constexpr int kMaxParseDepth = 256;
+
+    struct DepthGuard {
+        int& d;
+        explicit DepthGuard(int& depth) noexcept : d(depth) { ++d; }
+        ~DepthGuard() { --d; }
+    };
+
+    struct StructLitScope {
+        Parser& p;
+        bool prev;
+        explicit StructLitScope(Parser& parser, bool allow)
+            : p(parser), prev(parser.allow_struct_lit_) {
+            p.allow_struct_lit_ = allow;
+        }
+        ~StructLitScope() {
+            p.allow_struct_lit_ = prev;
+        }
+    };
+
+    void record_error(SourceError err) {
+        if (errors_.size() < 20) {
+            errors_.push_back(std::move(err));
+        }
+    }
+
+    void synchronize_decl() {
+        if (cur().kind != TokenKind::Eof) {
+            advance();
+        }
+        while (cur().kind != TokenKind::Eof) {
+            switch (cur().kind) {
+                case TokenKind::KwPackage:
+                case TokenKind::KwImport:
+                case TokenKind::KwType:
+                case TokenKind::KwFn:
+                case TokenKind::KwMut:
+                case TokenKind::KwTest:
+                case TokenKind::CppBlock:
+                    return;
+                case TokenKind::Ident:
+                    if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                        (cur().lexeme == "const" && peek(1).kind == TokenKind::Ident) ||
+                        ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String)) {
+                        return;
+                    }
+                    advance();
+                    break;
+                default:
+                    advance();
+                    break;
+            }
+        }
+    }
+
+    void synchronize_stmt() {
+        if (cur().kind == TokenKind::Semicolon) {
+            advance();
+            return;
+        }
+        if (cur().kind != TokenKind::Eof && cur().kind != TokenKind::RBrace) {
+            advance();
+        }
+        while (cur().kind != TokenKind::Eof && cur().kind != TokenKind::RBrace) {
+            if (cur().kind == TokenKind::Semicolon) {
+                advance();
+                return;
+            }
+            switch (cur().kind) {
+                case TokenKind::KwReturn:
+                case TokenKind::KwIf:
+                case TokenKind::KwFor:
+                case TokenKind::KwMatch:
+                case TokenKind::KwMut:
+                case TokenKind::KwDefer:
+                case TokenKind::CppBlock:
+                case TokenKind::KwAsync:
+                    return;
+                case TokenKind::Ident:
+                    if (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                        peek(1).kind == TokenKind::Assign || peek(1).kind == TokenKind::PlusEq ||
+                        peek(1).kind == TokenKind::MinusEq ||
+                        ((cur().lexeme == "fuzz" || cur().lexeme == "bench") && peek(1).kind == TokenKind::String)) {
+                        return;
+                    }
+                    break;
+                case TokenKind::KwFn:
+                case TokenKind::KwType:
+                case TokenKind::KwTest:
+                case TokenKind::KwImport:
+                    return;
+                default:
+                    break;
+            }
+            advance();
+        }
+    }
+
+    [[nodiscard]] auto cur() const -> const Token& {
+        return pos_ < tokens_.size() ? tokens_[pos_] : tokens_.back();
+    }
+
+    [[nodiscard]] auto peek(std::size_t offset) const -> const Token& {
+        std::size_t idx = pos_ + offset;
+        return idx < tokens_.size() ? tokens_[idx] : tokens_.back();
+    }
+
+    auto advance() -> Token {
+        Token t = cur();
+        if (pos_ + 1 < tokens_.size()) ++pos_;
+        return t;
+    }
+
+    [[nodiscard]] auto is_generic_call_lookahead() const -> bool {
+        if (cur().kind != TokenKind::LBracket) return false;
+        int depth = 0;
+        std::size_t i = pos_;
+        while (i < tokens_.size()) {
+            if (tokens_[i].kind == TokenKind::LBracket) {
+                ++depth;
+            } else if (tokens_[i].kind == TokenKind::RBracket) {
+                --depth;
+                if (depth == 0) {
+                    return (i + 1 < tokens_.size() && tokens_[i + 1].kind == TokenKind::LParen);
+                }
+            } else if (tokens_[i].kind == TokenKind::Semicolon || tokens_[i].kind == TokenKind::Eof ||
+                       tokens_[i].kind == TokenKind::RBrace) {
+                break;
+            }
+            ++i;
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto is_destructure_lookahead(std::size_t offset = 0) const -> std::pair<bool, bool> {
+        // returns {is_destructure, is_decl} where is_decl is true for `:=` and false for `=`
+        std::size_t start = pos_ + offset;
+        if (start >= tokens_.size() || tokens_[start].kind != TokenKind::LParen) return {false, false};
+        std::size_t i = start + 1;
+        int depth = 1;
+        while (i < tokens_.size() && depth > 0) {
+            if (tokens_[i].kind == TokenKind::LParen) {
+                ++depth;
+            } else if (tokens_[i].kind == TokenKind::RParen) {
+                --depth;
+            } else if (tokens_[i].kind == TokenKind::Semicolon || tokens_[i].kind == TokenKind::Eof ||
+                       tokens_[i].kind == TokenKind::RBrace) {
+                return {false, false};
+            }
+            ++i;
+        }
+        if (depth == 0 && i < tokens_.size()) {
+            if (tokens_[i].kind == TokenKind::ColonEq) return {true, true};
+            if (tokens_[i].kind == TokenKind::Assign) return {true, false};
+        }
+        return {false, false};
+    }
+
+    [[nodiscard]] auto is_trailing_closure_lookahead() const -> bool {
+        if (cur().kind != TokenKind::Pipe) return false;
+        std::size_t offset = 1;
+        while (true) {
+            if (peek(offset).kind == TokenKind::KwMut || peek(offset).kind == TokenKind::KwIn ||
+                peek(offset).kind == TokenKind::KwMove) {
+                ++offset;
+            }
+            if (peek(offset).kind != TokenKind::Ident) return false;
+            ++offset;
+            if (peek(offset).kind == TokenKind::LBracket) {  // `|mut xs[i]|` slot capture
+                int depth = 0;
+                do {
+                    if (peek(offset).kind == TokenKind::LBracket) ++depth;
+                    else if (peek(offset).kind == TokenKind::RBracket) --depth;
+                    else if (peek(offset).kind == TokenKind::Eof) return false;
+                    ++offset;
+                } while (depth > 0);
+            }
+            if (peek(offset).kind == TokenKind::Colon) {
+                ++offset;
+                while (peek(offset).kind != TokenKind::Comma && peek(offset).kind != TokenKind::Pipe && peek(offset).kind != TokenKind::Eof) {
+                    ++offset;
+                }
+            }
+            if (peek(offset).kind == TokenKind::Comma) {
+                ++offset;
+            } else {
+                break;
+            }
+        }
+        if (peek(offset).kind != TokenKind::Pipe) return false;
+        ++offset;
+        if (peek(offset).kind == TokenKind::KwAsync) ++offset;
+        return peek(offset).kind == TokenKind::LBrace;
+    }
+
+    [[nodiscard]] auto expect(TokenKind kind) -> std::expected<Token, SourceError> {
+        const Token& t = cur();
+        if (t.kind != kind) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(t.line), static_cast<int>(t.col), std::format("expected '{}', got '{}' ({})", token_kind_name(kind), t.lexeme, token_kind_name(t.kind))});
+        }
+        return advance();
+    }
+
+    [[nodiscard]] auto parse_import() -> std::expected<ImportDecl, SourceError> {
+        ImportDecl imp;
+        auto start = expect(TokenKind::KwImport);
+        if (!start) return std::unexpected(start.error());
+        imp.line = start->line;
+        if (cur().kind == TokenKind::KwCpp) {
+            advance();
+            imp.is_cpp = true;
+        }
+        auto path_tok = expect(TokenKind::String);
+        if (!path_tok) return std::unexpected(path_tok.error());
+        imp.path = path_tok->lexeme;
+
+        while (cur().kind == TokenKind::KwAs || cur().kind == TokenKind::At) {
+            if (cur().kind == TokenKind::KwAs) {
+                if (!imp.alias.empty()) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        "duplicate 'as' alias on import declaration"});
+                }
+                advance();
+                auto alias_tok = expect(TokenKind::Ident);
+                if (!alias_tok) return std::unexpected(alias_tok.error());
+                imp.alias = alias_tok->lexeme;
+                continue;
+            }
+            advance(); // '@'
+            auto attr_name = expect(TokenKind::Ident);
+            if (!attr_name) return std::unexpected(attr_name.error());
+            if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
+            ImportAttr attr;
+            attr.name = attr_name->lexeme;
+            while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                const TokenKind tk = cur().kind;
+                if (tk == TokenKind::String || tk == TokenKind::Ident || tk == TokenKind::Int ||
+                    tk == TokenKind::Float || tk == TokenKind::KwTrue || tk == TokenKind::KwFalse) {
+                    attr.args.push_back(advance().lexeme);
+                } else if (tk == TokenKind::Minus && (peek(1).kind == TokenKind::Int || peek(1).kind == TokenKind::Float)) {
+                    advance();
+                    attr.args.push_back("-" + advance().lexeme);
+                } else {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        std::format("unexpected token '{}' in '@{}' attribute arguments", cur().lexeme, attr.name)});
+                }
+                if (cur().kind == TokenKind::Comma) {
+                    advance();
+                } else if (cur().kind != TokenKind::RParen) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col),
+                        std::format("expected ',' or ')' in '@{}' attribute arguments", attr.name)});
+                }
+            }
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+            imp.attrs.push_back(std::move(attr));
+        }
+        return imp;
+    }
+
+    [[nodiscard]] auto parse_type_decl(FileAST& f) -> std::expected<void, SourceError> {
+        Token start = advance(); // 'type'
+        auto name_tok = expect(TokenKind::Ident);
+        if (!name_tok) return std::unexpected(name_tok.error());
+
+        // Optional generic type parameters: `type Box[T: Bound] struct` or `type Result[T, E] enum`
+        std::vector<TypeParam> type_params;
+        if (cur().kind == TokenKind::LBracket) {
+            advance(); // '['
+            while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                auto tp_name = expect(TokenKind::Ident);
+                if (!tp_name) return std::unexpected(tp_name.error());
+                TypeParam tp{tp_name->lexeme, ""};
+                if (cur().kind == TokenKind::Colon) {
+                    advance();
+                    auto c_name = expect(TokenKind::Ident);
+                    if (!c_name) return std::unexpected(c_name.error());
+                    tp.constraint = c_name->lexeme;
+                }
+                type_params.push_back(std::move(tp));
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+        }
+
+        if (cur().kind == TokenKind::KwStruct) {
+            advance(); // 'struct'
+            if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+            StructDecl st;
+            st.name = name_tok->lexeme;
+            st.type_params = std::move(type_params);
+            st.line = start.line;
+            st.source_path = file_;
+            while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                auto f_tok = expect(TokenKind::Ident);
+                if (!f_tok) return std::unexpected(f_tok.error());
+                if (cur().kind == TokenKind::Colon) advance();
+                auto t_ref = parse_type_ref();
+                if (!t_ref) return std::unexpected(t_ref.error());
+
+                StructField field;
+                field.name = f_tok->lexeme;
+                field.type = std::move(*t_ref);
+                field.line = f_tok->line;
+
+                if (cur().kind == TokenKind::Assign) {
+                    advance();
+                    if (cur().kind == TokenKind::Minus) {
+                        Token m_tok = advance();
+                        auto inner_val = parse_primary_expr();
+                        if (!inner_val) return std::unexpected(inner_val.error());
+                        field.default_val = make_expr(UnaryExpr{"-", std::move(*inner_val)}, m_tok.line, m_tok.col);
+                    } else {
+                        auto def_val = parse_primary_expr();
+                        if (!def_val) return std::unexpected(def_val.error());
+                        field.default_val = std::move(*def_val);
+                    }
+                }
+                if (cur().kind == TokenKind::RawString) {
+                    field.raw_tag = advance().lexeme;
+                    for (auto& [k, v] : parse_struct_tags(field.raw_tag)) {
+                        field.tags[std::move(k)] = std::move(v);
+                    }
+                }
+                st.fields.push_back(std::move(field));
+                while (cur().kind == TokenKind::Comma || cur().kind == TokenKind::Semicolon) {
+                    advance();
+                }
+            }
+            if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+            f.structs.push_back(std::move(st));
+            return {};
+        }
+
+        if (cur().kind == TokenKind::KwEnum) {
+            advance(); // 'enum'
+            if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+            EnumDecl en;
+            en.name = name_tok->lexeme;
+            en.type_params = std::move(type_params);
+            en.line = start.line;
+            en.source_path = file_;
+            while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                auto v_tok = expect(TokenKind::Ident);
+                if (!v_tok) return std::unexpected(v_tok.error());
+                EnumVariant v;
+                v.name = v_tok->lexeme;
+                v.line = v_tok->line;
+                if (cur().kind == TokenKind::LParen) {
+                    advance(); // '('
+                    while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                        // Allow optional field label `radius: f64` or plain `f64`
+                        if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                            advance();
+                            advance();
+                        }
+                        auto pt = parse_type_ref();
+                        if (!pt) return std::unexpected(pt.error());
+                        v.payload_types.push_back(std::move(*pt));
+                        if (cur().kind == TokenKind::Comma) advance();
+                    }
+                    if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                }
+                if (cur().kind == TokenKind::Comma) advance();
+                en.variants.push_back(std::move(v));
+            }
+            if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+            f.enums.push_back(std::move(en));
+            return {};
+        }
+
+        if (cur().kind == TokenKind::KwInterface) {
+            advance(); // 'interface'
+            if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+            InterfaceDecl iface;
+            iface.name = name_tok->lexeme;
+            iface.line = start.line;
+            while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                if (cur().kind == TokenKind::KwFn) advance();
+                auto m_tok = expect(TokenKind::Ident);
+                if (!m_tok) return std::unexpected(m_tok.error());
+                if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
+                InterfaceMethodSig sig;
+                sig.name = m_tok->lexeme;
+                while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                        advance();
+                        advance();
+                    }
+                    auto pt = parse_type_ref();
+                    if (!pt) return std::unexpected(pt.error());
+                    sig.param_types.push_back(std::move(*pt));
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                if (cur().kind == TokenKind::Arrow) {
+                    advance();
+                    auto rt = parse_type_ref();
+                    if (!rt) return std::unexpected(rt.error());
+                    sig.return_type = std::move(*rt);
+                    hoist_nested_fallible_optional(sig.return_type);
+                }
+                iface.methods.push_back(std::move(sig));
+            }
+            if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+            f.interfaces.push_back(std::move(iface));
+            return {};
+        }
+
+        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected 'struct', 'enum', or 'interface' after type name")});
+    }
+
+    static void hoist_nested_fallible_optional(TypeRef& rt) {
+        TypeRef* cur_t = &rt;
+        while ((cur_t->is_slice || cur_t->is_array || cur_t->is_map) && cur_t->elem_type) {
+            cur_t = cur_t->elem_type.get();
+        }
+        if (cur_t != &rt) {
+            if (cur_t->is_fallible) {
+                cur_t->is_fallible = false;
+                rt.is_fallible = true;
+            }
+            if (cur_t->is_optional) {
+                cur_t->is_optional = false;
+                rt.is_optional = true;
+            }
+        }
+    }
+
+    [[nodiscard]] auto parse_type_ref() -> std::expected<TypeRef, SourceError> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
+        }
+        DepthGuard depth_guard(recursion_depth_);
+        TypeRef tr;
+        if (cur().kind == TokenKind::Amp) {
+            advance();
+            bool mut_borrow = false;
+            if (cur().kind == TokenKind::KwMut) {
+                advance();
+                mut_borrow = true;
+            }
+            auto inner = parse_type_ref();
+            if (!inner) return std::unexpected(inner.error());
+            tr = *inner;
+            tr.is_mut_borrow = mut_borrow;
+            tr.is_borrow = !mut_borrow;
+            if (!inner->elem_type) {
+                tr.elem_type = std::make_shared<TypeRef>(std::move(*inner));
+            }
+        } else if (cur().kind == TokenKind::Star) {
+            advance();
+            if (cur().kind == TokenKind::KwMut) {
+                advance();
+                tr.is_mut_ptr = true;
+            } else {
+                tr.is_ptr = true;
+            }
+            auto inner = parse_type_ref();
+            if (!inner) return std::unexpected(inner.error());
+            tr.name = inner->name;
+            tr.elem_type = std::make_shared<TypeRef>(std::move(*inner));
+        } else if (cur().kind == TokenKind::KwMap) {
+            advance(); // 'map'
+            if (auto lb = expect(TokenKind::LBracket); !lb) return std::unexpected(lb.error());
+            auto ktype = parse_type_ref();
+            if (!ktype) return std::unexpected(ktype.error());
+            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+            auto vtype = parse_type_ref();
+            if (!vtype) return std::unexpected(vtype.error());
+            tr.is_map = true;
+            tr.name = std::format("map[{}]{}", ktype->name, vtype->name);
+            tr.key_type = std::make_shared<TypeRef>(std::move(*ktype));
+            tr.elem_type = std::make_shared<TypeRef>(std::move(*vtype));
+        } else if (cur().kind == TokenKind::LBracket) {
+            advance();
+            if (cur().kind == TokenKind::Int) {
+                std::string len_str = advance().lexeme;
+                if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                auto elem = parse_type_ref();
+                if (!elem) return std::unexpected(elem.error());
+                tr.is_array = true;
+                tr.array_len = std::move(len_str);
+                tr.name = std::format("[{}]{}", tr.array_len, elem->name);
+                tr.elem_type = std::make_shared<TypeRef>(std::move(*elem));
+            } else {
+                if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                auto elem = parse_type_ref();
+                if (!elem) return std::unexpected(elem.error());
+                tr.is_slice = true;
+                tr.name = "[]" + elem->name;
+                tr.elem_type = std::make_shared<TypeRef>(std::move(*elem));
+            }
+        } else if (cur().kind == TokenKind::LParen) {
+            advance(); // '('
+            std::vector<TypeRef> types;
+            while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                auto t = parse_type_ref();
+                if (!t) return std::unexpected(t.error());
+                types.push_back(std::move(*t));
+                if (cur().kind == TokenKind::Comma) {
+                    advance();
+                } else if (cur().kind != TokenKind::RParen) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ')' in tuple type")});
+                }
+            }
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+            tr.is_tuple = true;
+            tr.tuple_types = std::move(types);
+            tr.name = "(";
+            for (std::size_t i = 0; i < tr.tuple_types.size(); ++i) {
+                if (i > 0) tr.name += ", ";
+                tr.name += tr.tuple_types[i].name;
+            }
+            tr.name += ")";
+        } else if (cur().kind == TokenKind::KwFn) {
+            advance(); // 'fn'
+            if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
+            std::vector<TypeRef> ptypes;
+            while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                    advance(); // optional param name
+                    advance(); // ':'
+                }
+                auto pt = parse_type_ref();
+                if (!pt) return std::unexpected(pt.error());
+                ptypes.push_back(std::move(*pt));
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+            TypeRef rtype{"void"};
+            if (cur().kind == TokenKind::Arrow) {
+                advance();
+                auto rt = parse_type_ref();
+                if (!rt) return std::unexpected(rt.error());
+                rtype = std::move(*rt);
+                hoist_nested_fallible_optional(rtype);
+            }
+            tr.is_fn = true;
+            tr.fn_params = std::move(ptypes);
+            tr.fn_ret = std::make_shared<TypeRef>(std::move(rtype));
+            tr.name = "fn(";
+            for (std::size_t i = 0; i < tr.fn_params.size(); ++i) {
+                if (i > 0) tr.name += ", ";
+                tr.name += tr.fn_params[i].name;
+            }
+            tr.name += ")";
+            if (tr.fn_ret && tr.fn_ret->name != "void") {
+                tr.name += " -> " + tr.fn_ret->name;
+            }
+        } else {
+            if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::KwCpp) {
+                Token name_tok = advance();
+                if (name_tok.lexeme == "bytes" && cur().kind != TokenKind::DoubleColon && cur().kind != TokenKind::Dot) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(name_tok.line), static_cast<int>(name_tok.col), std::format("'bytes' is not a type in cfire; use '[]byte' instead")});
+                }
+                tr.name = name_tok.lexeme;
+                tr.raw_name = name_tok.lexeme;
+            } else {
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected type name, got '{}'", cur().lexeme)});
+            }
+            while (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
+                Token sep_tok = advance();
+                auto next_id = expect(TokenKind::Ident);
+                if (!next_id) return std::unexpected(next_id.error());
+                tr.raw_name += sep_tok.lexeme + next_id->lexeme;
+                tr.name += "::" + next_id->lexeme;
+            }
+            if (cur().kind == TokenKind::LBracket) {
+                advance();
+                while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                    auto inner = parse_type_ref();
+                    if (!inner) return std::unexpected(inner.error());
+                    tr.type_args.push_back(std::move(*inner));
+                    if (cur().kind == TokenKind::Comma) {
+                        advance();
+                    } else if (cur().kind != TokenKind::RBracket) {
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ']' in type arguments")});
+                    }
+                }
+                if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                if (tr.name == "own" || tr.name == "shared") {
+                    tr.smart_wrap = tr.name;
+                }
+                if (!tr.type_args.empty()) {
+                    tr.elem_type = std::make_shared<TypeRef>(tr.type_args[0]);
+                    if (tr.type_args.size() == 2) {
+                        tr.key_type = std::make_shared<TypeRef>(tr.type_args[0]);
+                        tr.elem_type = std::make_shared<TypeRef>(tr.type_args[1]);
+                    }
+                }
+            }
+        }
+
+        if (cur().kind == TokenKind::Question) {
+            advance();
+            tr.is_optional = true;
+        }
+        if (cur().kind == TokenKind::Bang) {
+            advance();
+            tr.is_fallible = true;
+        }
+        return tr;
+    }
+
+    [[nodiscard]] auto parse_fn_decl() -> std::expected<FnDecl, SourceError> {
+        Token start = advance(); // 'fn'
+        FnDecl fn;
+        fn.return_type = TypeRef{"void"};
+        fn.line = start.line;
+        fn.source_path = file_;
+
+        // a constructor `fn (Type) make(...) -> Type` (a receiver type with no binding) becomes the plain
+        // function `cfire_ctor_<Type>`, which `make(Type, args...)` calls.
+        std::string ctor_type{};
+        int ctor_line = 0;
+        int ctor_col = 0;
+        if (cur().kind == TokenKind::LParen && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::RParen) {
+            advance(); // '('
+            Token t = advance();
+            advance(); // ')'
+            ctor_type = t.lexeme;
+            ctor_line = static_cast<int>(t.line);
+            ctor_col = static_cast<int>(t.col);
+        }
+        // Optional method receiver: `fn (s: Type)` or `fn (mut s: Type)`
+        if (ctor_type.empty() && cur().kind == TokenKind::LParen) {
+            advance(); // '('
+            ReceiverDecl recv;
+            if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwIn) {
+                if (cur().kind == TokenKind::KwIn) recv.has_explicit_in = true;
+                recv.intent = advance().lexeme;
+            }
+            auto r_name = expect(TokenKind::Ident);
+            if (!r_name) return std::unexpected(r_name.error());
+            recv.name = r_name->lexeme;
+            recv.line = r_name->line;
+            recv.col = r_name->col;
+            if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
+            if (cur().kind == TokenKind::KwMut) {
+                advance();
+                recv.intent = "mut";
+                recv.has_deprecated_mut_pos = true;
+            }
+            auto r_type = parse_type_ref();
+            if (!r_type) return std::unexpected(r_type.error());
+            recv.type = std::move(*r_type);
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+            fn.receiver = std::move(recv);
+        }
+
+        auto name_tok = expect(TokenKind::Ident);
+        if (!name_tok) return std::unexpected(name_tok.error());
+        fn.name = name_tok->lexeme;
+        if (!ctor_type.empty()) {
+            if (fn.name != "make") {
+                return std::unexpected(SourceError{std::string(file_), ctor_line, ctor_col, std::format("'fn ({}) {}' declares an associated function, but the only one a type can declare is its constructor 'make'; add a receiver binding ('fn (x: {}) {}') for a method", ctor_type, fn.name, ctor_type, fn.name), "cfire/INVALID-CONSTRUCTOR"});
+            }
+            fn.name = "cfire_ctor_" + ctor_type;
+            fn.ctor_type = ctor_type;
+        }
+
+        // Optional generic type parameters: `fn foo[T: Hasher](...)`
+        if (cur().kind == TokenKind::LBracket) {
+            advance(); // '['
+            while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                auto tp_name = expect(TokenKind::Ident);
+                if (!tp_name) return std::unexpected(tp_name.error());
+                TypeParam tp{tp_name->lexeme, ""};
+                if (cur().kind == TokenKind::Colon) {
+                    advance();
+                    auto c_name = expect(TokenKind::Ident);
+                    if (!c_name) return std::unexpected(c_name.error());
+                    tp.constraint = c_name->lexeme;
+                }
+                fn.type_params.push_back(std::move(tp));
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+        }
+
+        if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
+
+        while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+            std::string intent = "in";
+            bool explicit_in = false;
+            bool deprecated_mut_pos = false;
+            switch (cur().kind) {
+                case TokenKind::KwIn:
+                    explicit_in = true;
+                    intent = advance().lexeme;
+                    break;
+                case TokenKind::KwMut:
+                case TokenKind::KwMove:
+                    intent = advance().lexeme;
+                    break;
+                default:
+                    break;
+            }
+            auto p_tok = expect(TokenKind::Ident);
+            if (!p_tok) return std::unexpected(p_tok.error());
+            if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
+            if (cur().kind == TokenKind::KwMut) {
+                advance();
+                intent = "mut";
+                deprecated_mut_pos = true;
+            }
+            auto t_ref = parse_type_ref();
+            if (!t_ref) return std::unexpected(t_ref.error());
+            fn.params.push_back(ParamDecl{
+                .intent = std::move(intent),
+                .name = p_tok->lexeme,
+                .type = std::move(*t_ref),
+                .line = p_tok->line,
+                .col = p_tok->col,
+                .has_explicit_in = explicit_in,
+                .has_deprecated_mut_pos = deprecated_mut_pos,
+            });
+            if (cur().kind == TokenKind::Comma) advance();
+        }
+        if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+
+        if (cur().kind == TokenKind::KwAsync) {
+            advance();
+            fn.is_async = true;
+        }
+        if (cur().kind == TokenKind::Arrow) {
+            advance();
+            auto ret = parse_type_ref();
+            if (!ret) return std::unexpected(ret.error());
+            fn.return_type = std::move(*ret);
+            hoist_nested_fallible_optional(fn.return_type);
+        }
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        fn.body = std::move(*body);
+        return fn;
+    }
+
+    [[nodiscard]] auto parse_global_var() -> std::expected<GlobalVarDecl, SourceError> {
+        bool is_mut = false;
+        int line = cur().line;
+        if (cur().kind == TokenKind::KwMut) {
+            advance(); // 'mut'
+            is_mut = true;
+        } else if (cur().kind == TokenKind::Ident && cur().lexeme == "const") {
+            Token const_tok = advance(); // 'const'
+            std::string var_name = (cur().kind == TokenKind::Ident) ? cur().lexeme : "x";
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(const_tok.line), static_cast<int>(const_tok.col), std::format("'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead", var_name, var_name)});
+        }
+
+        auto name_tok = expect(TokenKind::Ident);
+        if (!name_tok) return std::unexpected(name_tok.error());
+
+        std::optional<TypeRef> type_annot;
+        if (cur().kind == TokenKind::Colon) {
+            advance(); // ':'
+            auto tr = parse_type_ref();
+            if (!tr) return std::unexpected(tr.error());
+            type_annot = std::move(*tr);
+        }
+
+        if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Assign) {
+            advance(); // ':=' or '='
+        } else {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ':=' or '=' in variable declaration")});
+        }
+
+        auto val = parse_expr();
+        if (!val) return std::unexpected(val.error());
+        return GlobalVarDecl{name_tok->lexeme, is_mut, std::move(type_annot), std::move(*val), line, "", file_};
+    }
+
+    [[nodiscard]] auto parse_test_decl() -> std::expected<TestDecl, SourceError> {
+        Token start = advance(); // 'test', 'fuzz', or 'bench'
+        auto name_tok = expect(TokenKind::String);
+        if (!name_tok) return std::unexpected(name_tok.error());
+
+        TestDecl td;
+        td.name = name_tok->lexeme;
+        td.line = start.line;
+        td.is_fuzz = (start.lexeme == "fuzz");
+        td.is_bench = (start.lexeme == "bench");
+        td.source_path = file_;
+
+        if (cur().kind == TokenKind::DoublePipe) {
+            advance(); // '||'
+        } else if (cur().kind == TokenKind::Pipe) {
+            advance(); // '|'
+            StructLitScope param_scope(*this, false);
+            while (cur().kind != TokenKind::Pipe && cur().kind != TokenKind::Eof) {
+                auto p_id = expect(TokenKind::Ident);
+                if (!p_id) return std::unexpected(p_id.error());
+                if (cur().kind == TokenKind::KwIn) {
+                    advance(); // 'in'
+                    BenchParamVariation var;
+                    var.name = p_id->lexeme;
+                    var.line = p_id->line;
+                    if (cur().kind == TokenKind::LBracket) {
+                        advance(); // '['
+                        StructLitScope bracket_scope(*this, true);
+                        while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                            auto val_ex = parse_expr();
+                            if (!val_ex) return std::unexpected(val_ex.error());
+                            var.values.push_back(std::move(*val_ex));
+                            if (cur().kind == TokenKind::Comma) advance();
+                        }
+                        if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                    } else {
+                        auto first_ex = parse_expr();
+                        if (!first_ex) return std::unexpected(first_ex.error());
+                        if (cur().kind == TokenKind::DotDot || cur().kind == TokenKind::DotDotEq) {
+                            bool inclusive = (advance().kind == TokenKind::DotDotEq);
+                            auto end_ex = parse_expr();
+                            if (!end_ex) return std::unexpected(end_ex.error());
+                            const auto* l_lit = std::get_if<LiteralExpr>(&(*first_ex)->node);
+                            const auto* r_lit = std::get_if<LiteralExpr>(&(*end_ex)->node);
+                            if (l_lit && r_lit && l_lit->kind == TokenKind::Int && r_lit->kind == TokenKind::Int) {
+                                auto s_val = cfire::detail::parse_int<std::int64_t>(l_lit->value);
+                                auto e_val = cfire::detail::parse_int<std::int64_t>(r_lit->value);
+                                if (s_val && e_val) {
+                                    std::int64_t limit = inclusive ? *e_val : (*e_val - 1);
+                                    for (std::int64_t v = *s_val; v <= limit && var.values.size() < 64; ++v) {
+                                        var.values.push_back(make_expr(LiteralExpr{TokenKind::Int, std::to_string(v)}, p_id->line, p_id->col));
+                                    }
+                                }
+                            }
+                            if (var.values.empty()) {
+                                var.values.push_back(std::move(*first_ex));
+                                var.values.push_back(std::move(*end_ex));
+                            }
+                        } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&(*first_ex)->node)) {
+                            var.values = arr_lit->elements;
+                        } else {
+                            var.values.push_back(std::move(*first_ex));
+                        }
+                    }
+                    if (!var.values.empty()) {
+                        const auto& v0 = var.values.front();
+                        if (const auto* lit = std::get_if<LiteralExpr>(&v0->node)) {
+                            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) {
+                                var.inferred_type = TypeRef{"str"};
+                            } else if (lit->kind == TokenKind::Float) {
+                                var.inferred_type = TypeRef{"f64"};
+                            } else if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) {
+                                var.inferred_type = TypeRef{"bool"};
+                            }
+                        }
+                    }
+                    td.bench_variations.push_back(std::move(var));
+                } else {
+                    TypeRef p_type{"i64"};
+                    if (cur().kind == TokenKind::Colon) {
+                        advance(); // ':'
+                        auto tr = parse_type_ref();
+                        if (!tr) return std::unexpected(tr.error());
+                        p_type = std::move(*tr);
+                    }
+                    td.params.push_back(ParamDecl{"in", p_id->lexeme, std::move(p_type), p_id->line, p_id->col});
+                }
+                if (cur().kind == TokenKind::Comma) advance();
+            }
+            if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        }
+
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        td.body = std::move(*body);
+        return td;
+    }
+
+    [[nodiscard]] auto parse_block() -> std::expected<std::vector<StmtPtr>, SourceError> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
+        }
+        DepthGuard depth_guard(recursion_depth_);
+        if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+        std::vector<StmtPtr> stmts;
+        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+            if (cur().kind == TokenKind::Semicolon) {
+                advance();
+                continue;
+            }
+            auto st = parse_stmt();
+            if (!st) {
+                if (!resilient_) return std::unexpected(st.error());
+                record_error(st.error());
+                synchronize_stmt();
+            } else {
+                stmts.push_back(std::move(*st));
+            }
+            while (cur().kind == TokenKind::Semicolon) {
+                advance();
+            }
+        }
+        if (cur().kind == TokenKind::RBrace) {
+            advance();
+        } else if (!resilient_) {
+            if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+        } else {
+            record_error(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected '}}' at end of block")});
+        }
+        return stmts;
+    }
+
+    // `async.scope(workers: N) |s| { ... }`, at `async`.
+    [[nodiscard]] auto parse_async_scope() -> std::expected<AsyncScopeStmt, SourceError> {
+        Token tok = cur();
+        advance();
+        if (auto dot = expect(TokenKind::Dot); !dot) return std::unexpected(dot.error());
+        auto m = expect(TokenKind::Ident);
+        if (!m || m->lexeme != "scope") {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("expected async.scope")});
+        }
+        ExprPtr workers = nullptr;
+        if (cur().kind == TokenKind::LParen) {
+            advance();
+            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                advance();
+                advance();
+            }
+            auto w = parse_expr();
+            if (!w) return std::unexpected(w.error());
+            workers = std::move(*w);
+            if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+        } else {
+            workers = make_expr(LiteralExpr{TokenKind::Int, "4"}, tok.line, tok.col);
+        }
+        if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
+        auto scope_var = expect(TokenKind::Ident);
+        if (!scope_var) return std::unexpected(scope_var.error());
+        if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        return AsyncScopeStmt{std::move(workers), scope_var->lexeme, std::move(*body), tok.line};
+    }
+
+    // `x:= async.scope...`, `mut x:= async.scope...` and `return async.scope...` bind the values
+    // the spawned tasks return. True when the statement at the cursor has one of those shapes.
+    [[nodiscard]] auto at_scope_result_binding() const -> bool {
+        auto is_scope_at = [&](std::size_t k) { return peek(k).kind == TokenKind::KwAsync && peek(k + 1).kind == TokenKind::Dot && peek(k + 2).lexeme == "scope"; };
+        if (cur().kind == TokenKind::KwReturn) return is_scope_at(1);
+        if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) return is_scope_at(2);
+        if (cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::ColonEq) return is_scope_at(3);
+        return false;
+    }
+
+    [[nodiscard]] auto parse_stmt() -> std::expected<StmtPtr, SourceError> {
+        Token tok = cur();
+        if (at_scope_result_binding()) {
+            std::string var;
+            bool is_mut = false;
+            bool is_return = false;
+            int col = static_cast<int>(tok.col);
+            if (cur().kind == TokenKind::KwReturn) {
+                advance();
+                is_return = true;
+            } else {
+                if (cur().kind == TokenKind::KwMut) {
+                    advance();
+                    is_mut = true;
+                }
+                col = static_cast<int>(cur().col);
+                var = advance().lexeme;
+                advance();  // ':='
+            }
+            auto sc = parse_async_scope();
+            if (!sc) return std::unexpected(sc.error());
+            sc->result_var = std::move(var);
+            sc->result_mut = is_mut;
+            sc->result_return = is_return;
+            sc->result_col = col;
+            return make_stmt(std::move(*sc), tok.line);
+        }
+        switch (tok.kind) {
+            case TokenKind::CppBlock: {
+                advance();
+                return make_stmt(CppBlockStmt{tok.lexeme, tok.line}, tok.line);
+            }
+            case TokenKind::KwDefer: {
+                advance();
+                if (cur().kind == TokenKind::LBrace) {
+                    auto blk = parse_block();
+                    if (!blk) return std::unexpected(blk.error());
+                    return make_stmt(DeferStmt{nullptr, tok.line, std::move(*blk)}, tok.line);
+                }
+                auto call = parse_expr();
+                if (!call) return std::unexpected(call.error());
+                return make_stmt(DeferStmt{std::move(*call), tok.line, {}}, tok.line);
+            }
+            case TokenKind::KwReturn: {
+                advance();
+                if (cur().kind == TokenKind::RBrace) {
+                    return make_stmt(ReturnStmt{nullptr, tok.line}, tok.line);
+                }
+                auto val = parse_expr();
+                if (!val) return std::unexpected(val.error());
+                return make_stmt(ReturnStmt{std::move(*val), tok.line}, tok.line);
+            }
+            case TokenKind::KwBreak: {
+                advance();
+                return make_stmt(BreakStmt{tok.line}, tok.line);
+            }
+            case TokenKind::KwContinue: {
+                advance();
+                return make_stmt(ContinueStmt{tok.line}, tok.line);
+            }
+            case TokenKind::KwIf:
+                return parse_if_stmt();
+            case TokenKind::KwFor:
+                return parse_for_stmt();
+            case TokenKind::KwMatch:
+                return parse_match_stmt();
+            case TokenKind::KwMut: {
+                advance();
+                if (cur().kind == TokenKind::ColonEq || cur().kind == TokenKind::Colon || cur().kind == TokenKind::Assign) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'mut' is a reserved parameter-intent and mutability keyword and cannot be used as a variable name; choose a different identifier")});
+                }
+                if (cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwMut) {
+                    Token kw_tok = advance();
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(kw_tok.line), static_cast<int>(kw_tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", kw_tok.lexeme)});
+                }
+                auto id_tok = expect(TokenKind::Ident);
+                if (!id_tok) return std::unexpected(id_tok.error());
+                if (cur().kind == TokenKind::Colon) {
+                    advance();
+                    auto t_ref = parse_type_ref();
+                    if (!t_ref) return std::unexpected(t_ref.error());
+                    ExprPtr init = nullptr;
+                    if (cur().kind == TokenKind::Assign) {
+                        advance();
+                        auto ex = parse_expr();
+                        if (!ex) return std::unexpected(ex.error());
+                        init = std::move(*ex);
+                    }
+                    return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::move(*t_ref), std::move(init), id_tok->line, id_tok->col}, id_tok->line);
+                }
+                if (auto ce = expect(TokenKind::ColonEq); !ce) return std::unexpected(ce.error());
+                auto init = parse_expr();
+                if (!init) return std::unexpected(init.error());
+                return make_stmt(VarDeclStmt{id_tok->lexeme, true, std::nullopt, std::move(*init), id_tok->line, id_tok->col}, id_tok->line);
+            }
+            case TokenKind::KwAsync: {
+                auto sc = parse_async_scope();
+                if (!sc) return std::unexpected(sc.error());
+                return make_stmt(std::move(*sc), tok.line);
+            }
+            default:
+                break;
+        }
+
+        // Destructuring declaration: `mut (x, y) := expr` or `(x, y) := expr` or `(mut x, mut y) := expr`
+        if (tok.kind == TokenKind::KwMut && peek(1).kind == TokenKind::LParen) {
+            auto [is_destr, is_decl] = is_destructure_lookahead(1);
+            if (is_destr && is_decl) {
+                advance(); // 'mut'
+                Token lp = advance(); // '('
+                std::vector<std::pair<std::string, bool>> bindings;
+                while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    if (cur().kind == TokenKind::KwMut) advance();
+                    auto id = expect(TokenKind::Ident);
+                    if (!id) return std::unexpected(id.error());
+                    bindings.push_back({id->lexeme, true});
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                if (auto ce = expect(TokenKind::ColonEq); !ce) return std::unexpected(ce.error());
+                auto init = parse_expr();
+                if (!init) return std::unexpected(init.error());
+                return make_stmt(DestructureVarDeclStmt{std::move(bindings), std::move(*init), tok.line, tok.col}, tok.line);
+            }
+        }
+
+        if (tok.kind == TokenKind::LParen) {
+            auto [is_destr, is_decl] = is_destructure_lookahead(0);
+            if (is_destr && is_decl) {
+                Token lp = advance(); // '('
+                std::vector<std::pair<std::string, bool>> bindings;
+                while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    bool m = false;
+                    if (cur().kind == TokenKind::KwMut) {
+                        advance();
+                        m = true;
+                    }
+                    auto id = expect(TokenKind::Ident);
+                    if (!id) return std::unexpected(id.error());
+                    bindings.push_back({id->lexeme, m});
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                if (auto ce = expect(TokenKind::ColonEq); !ce) return std::unexpected(ce.error());
+                auto init = parse_expr();
+                if (!init) return std::unexpected(init.error());
+                return make_stmt(DestructureVarDeclStmt{std::move(bindings), std::move(*init), lp.line, lp.col}, lp.line);
+            }
+            if (is_destr && !is_decl) {
+                Token lp = advance(); // '('
+                std::vector<ExprPtr> targets;
+                while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    auto targ = parse_expr();
+                    if (!targ) return std::unexpected(targ.error());
+                    targets.push_back(std::move(*targ));
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                if (auto eq = expect(TokenKind::Assign); !eq) return std::unexpected(eq.error());
+                auto rhs = parse_expr();
+                if (!rhs) return std::unexpected(rhs.error());
+                return make_stmt(DestructureAssignStmt{std::move(targets), "=", std::move(*rhs), lp.line}, lp.line);
+            }
+        }
+
+        if (tok.kind == TokenKind::Ident && tok.lexeme == "const" && peek(1).kind == TokenKind::Ident) {
+            advance(); // 'const'
+            Token id_tok = advance();
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'const' keyword is not used in cfire; bindings are immutable by default — write '{} := ...' or '{}: T = ...' instead", id_tok.lexeme, id_tok.lexeme)});
+        }
+
+        if (tok.kind == TokenKind::KwMove &&
+            (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon || peek(1).kind == TokenKind::Assign)) {
+            advance();
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'output', 'res', or 'val')", tok.lexeme)});
+        }
+
+        if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
+            Token id_tok = advance();
+            advance(); // ':='
+            if (id_tok.lexeme == "_") {
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(id_tok.line), static_cast<int>(id_tok.col), std::format("'_ :=' is deprecated; use '_ =' to discard values without declaring a binding"), "cfire/DEPRECATED-DISCARD"});
+            }
+            auto init = parse_expr();
+            if (!init) return std::unexpected(init.error());
+            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::nullopt, std::move(*init), id_tok.line, id_tok.col}, id_tok.line);
+        }
+
+        if (tok.kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+            Token id_tok = advance();
+            advance(); // ':'
+            auto t_ref = parse_type_ref();
+            if (!t_ref) return std::unexpected(t_ref.error());
+            ExprPtr init = nullptr;
+            if (cur().kind == TokenKind::Assign) {
+                advance();
+                auto ex = parse_expr();
+                if (!ex) return std::unexpected(ex.error());
+                init = std::move(*ex);
+            }
+            return make_stmt(VarDeclStmt{id_tok.lexeme, false, std::move(*t_ref), std::move(init), id_tok.line, id_tok.col}, id_tok.line);
+        }
+
+        auto lhs = parse_expr();
+        if (!lhs) return std::unexpected(lhs.error());
+        if (cur().kind == TokenKind::Assign || cur().kind == TokenKind::PlusEq || cur().kind == TokenKind::MinusEq ||
+            cur().kind == TokenKind::StarEq || cur().kind == TokenKind::SlashEq || cur().kind == TokenKind::PercentEq ||
+            cur().kind == TokenKind::AmpEq || cur().kind == TokenKind::PipeEq || cur().kind == TokenKind::CaretEq ||
+            cur().kind == TokenKind::ShlEq || cur().kind == TokenKind::ShrEq) {
+            std::string op = advance().lexeme;
+            auto rhs = parse_expr();
+            if (!rhs) return std::unexpected(rhs.error());
+            return make_stmt(AssignStmt{std::move(*lhs), std::move(op), std::move(*rhs), tok.line}, tok.line);
+        }
+        return make_stmt(ExprStmt{std::move(*lhs), tok.line}, tok.line);
+    }
+
+    [[nodiscard]] auto parse_if_stmt() -> std::expected<StmtPtr, SourceError> {
+        Token start = advance(); // 'if'
+        ExprPtr cond = nullptr;
+        std::string unwrap_var{};
+        bool unwrap_mut = false;
+        ExprPtr unwrap_init = nullptr;
+
+        if (cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::ColonEq) {
+            advance(); // 'mut'
+            unwrap_mut = true;
+            unwrap_var = advance().lexeme;
+            advance(); // ':='
+            StructLitScope scope(*this, false);
+            auto ie = parse_expr();
+            if (!ie) return std::unexpected(ie.error());
+            unwrap_init = std::move(*ie);
+            if (cur().kind == TokenKind::Semicolon) {
+                advance(); // ';'
+                auto c = parse_expr();
+                if (!c) return std::unexpected(c.error());
+                cond = std::move(*c);
+            }
+        } else if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
+            unwrap_mut = false;
+            unwrap_var = advance().lexeme;
+            advance(); // ':='
+            StructLitScope scope(*this, false);
+            auto ie = parse_expr();
+            if (!ie) return std::unexpected(ie.error());
+            unwrap_init = std::move(*ie);
+            if (cur().kind == TokenKind::Semicolon) {
+                advance(); // ';'
+                auto c = parse_expr();
+                if (!c) return std::unexpected(c.error());
+                cond = std::move(*c);
+            }
+        } else if (cur().kind == TokenKind::LBrace) {
+            cond = make_expr(LiteralExpr{TokenKind::KwTrue, "true"}, start.line, start.col);
+        } else {
+            StructLitScope scope(*this, false);
+            auto c = parse_expr();
+            if (!c) return std::unexpected(c.error());
+            cond = std::move(*c);
+        }
+        auto then_body = parse_block();
+        if (!then_body) return std::unexpected(then_body.error());
+        std::vector<StmtPtr> else_body;
+        if (cur().kind == TokenKind::KwElse) {
+            advance();
+            if (cur().kind == TokenKind::KwIf) {
+                auto elif = parse_if_stmt();
+                if (!elif) return std::unexpected(elif.error());
+                else_body.push_back(std::move(*elif));
+            } else {
+                auto eb = parse_block();
+                if (!eb) return std::unexpected(eb.error());
+                else_body = std::move(*eb);
+            }
+        }
+        return make_stmt(IfStmt{std::move(cond), std::move(*then_body), std::move(else_body), start.line, std::move(unwrap_var), unwrap_mut, std::move(unwrap_init)}, start.line);
+    }
+
+    [[nodiscard]] auto parse_for_stmt() -> std::expected<StmtPtr, SourceError> {
+        Token start = advance(); // 'for'
+        if (cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident && peek(2).kind == TokenKind::ColonEq) {
+            advance(); // 'mut'
+            std::string item_var = advance().lexeme;
+            advance(); // ':='
+            ExprPtr iter_ex = nullptr;
+            {
+                StructLitScope scope(*this, false);
+                auto ie = parse_expr();
+                if (!ie) return std::unexpected(ie.error());
+                iter_ex = std::move(*ie);
+            }
+            auto body = parse_block();
+            if (!body) return std::unexpected(body.error());
+            ForStmt fs{};
+            fs.item_var = std::move(item_var);
+            fs.iter_expr = std::move(iter_ex);
+            fs.body = std::move(*body);
+            fs.line = start.line;
+            fs.is_unwrap = true;
+            fs.unwrap_mut = true;
+            return make_stmt(std::move(fs), start.line);
+        }
+        if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::ColonEq) {
+            std::string item_var = advance().lexeme;
+            advance(); // ':='
+            ExprPtr iter_ex = nullptr;
+            {
+                StructLitScope scope(*this, false);
+                auto ie = parse_expr();
+                if (!ie) return std::unexpected(ie.error());
+                iter_ex = std::move(*ie);
+            }
+            auto body = parse_block();
+            if (!body) return std::unexpected(body.error());
+            ForStmt fs{};
+            fs.item_var = std::move(item_var);
+            fs.iter_expr = std::move(iter_ex);
+            fs.body = std::move(*body);
+            fs.line = start.line;
+            fs.is_unwrap = true;
+            fs.unwrap_mut = false;
+            return make_stmt(std::move(fs), start.line);
+        }
+        if (cur().kind == TokenKind::Ident && (peek(1).kind == TokenKind::Comma || peek(1).kind == TokenKind::KwIn)) {
+            std::string first = advance().lexeme;
+            std::string idx_var, item_var;
+            if (cur().kind == TokenKind::Comma) {
+                advance();
+                auto second = expect(TokenKind::Ident);
+                if (!second) return std::unexpected(second.error());
+                idx_var = std::move(first);
+                item_var = second->lexeme;
+            } else {
+                item_var = std::move(first);
+            }
+            if (auto in_kw = expect(TokenKind::KwIn); !in_kw) return std::unexpected(in_kw.error());
+            ExprPtr iter_ex = nullptr;
+            ExprPtr range_end_ex = nullptr;
+            bool range_inc = false;
+            {
+                StructLitScope scope(*this, false);
+                auto ie = parse_expr();
+                if (!ie) return std::unexpected(ie.error());
+                iter_ex = std::move(*ie);
+                if (idx_var.empty() &&
+                    (cur().kind == TokenKind::DotDot || cur().kind == TokenKind::DotDotEq)) {
+                    range_inc = (cur().kind == TokenKind::DotDotEq);
+                    advance();
+                    auto re = parse_expr();
+                    if (!re) return std::unexpected(re.error());
+                    range_end_ex = std::move(*re);
+                }
+            }
+            auto body = parse_block();
+            if (!body) return std::unexpected(body.error());
+            return make_stmt(ForStmt{
+                std::move(idx_var),
+                std::move(item_var),
+                std::move(iter_ex),
+                std::move(*body),
+                start.line,
+                std::move(range_end_ex),
+                range_inc
+            }, start.line);
+        }
+        ExprPtr cond = nullptr;
+        if (cur().kind == TokenKind::LBrace) {
+            cond = make_expr(LiteralExpr{TokenKind::KwTrue, "true"}, start.line, start.col);
+        } else {
+            StructLitScope scope(*this, false);
+            auto c = parse_expr();
+            if (!c) return std::unexpected(c.error());
+            cond = std::move(*c);
+        }
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        return make_stmt(ForStmt{"", "", std::move(cond), std::move(*body), start.line}, start.line);
+    }
+
+    [[nodiscard]] auto parse_match_arms() -> std::expected<std::vector<MatchArm>, SourceError> {
+        std::vector<MatchArm> arms;
+        auto parse_single_pattern = [&]() -> std::expected<MatchPattern, SourceError> {
+            MatchPattern pat;
+            if (cur().kind == TokenKind::KwNone) {
+                Token n = advance();
+                pat.line = n.line;
+                pat.is_none = true;
+                pat.variant_name = "none";
+                return pat;
+            }
+            if (cur().kind == TokenKind::LBracket) {
+                Token lb = advance(); // '['
+                pat.is_slice_pattern = true;
+                pat.line = lb.line;
+                bool in_tail = false;
+                while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                    if (cur().kind == TokenKind::DotDot) {
+                        advance(); // '..'
+                        pat.slice_has_rest = true;
+                        if (cur().kind == TokenKind::Ident) {
+                            std::string rest_id = advance().lexeme;
+                            if (rest_id != "_") {
+                                pat.slice_rest = rest_id;
+                            }
+                        }
+                        in_tail = true;
+                    } else if (cur().kind == TokenKind::Ident) {
+                        std::string id = advance().lexeme;
+                        if (in_tail) {
+                            pat.slice_tail.push_back(id);
+                        } else {
+                            pat.slice_head.push_back(id);
+                        }
+                    } else {
+                        return std::unexpected(SourceError{file_, cur().line, cur().col, "unexpected token in slice pattern"});
+                    }
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+            } else if (cur().kind == TokenKind::String || cur().kind == TokenKind::RawString || cur().kind == TokenKind::Int ||
+                       (cur().kind == TokenKind::Minus && peek(1).kind == TokenKind::Int)) {
+                if (cur().kind == TokenKind::Minus || cur().kind == TokenKind::Int) {
+                    std::string first_val;
+                    int line = cur().line;
+                    if (cur().kind == TokenKind::Minus) {
+                        advance();
+                        first_val = "-" + advance().lexeme;
+                    } else {
+                        first_val = advance().lexeme;
+                    }
+                    if (cur().kind == TokenKind::DotDot || cur().kind == TokenKind::DotDotEq) {
+                        bool inc = (cur().kind == TokenKind::DotDotEq);
+                        advance();
+                        std::string second_val;
+                        if (cur().kind == TokenKind::Minus && peek(1).kind == TokenKind::Int) {
+                            advance();
+                            second_val = "-" + advance().lexeme;
+                        } else if (cur().kind == TokenKind::Int) {
+                            second_val = advance().lexeme;
+                        } else {
+                            return std::unexpected(SourceError{file_, cur().line, cur().col, "expected integer literal for range pattern upper bound"});
+                        }
+                        pat.line = line;
+                        pat.is_range = true;
+                        pat.range_inclusive = inc;
+                        pat.range_start = first_val;
+                        pat.range_end = second_val;
+                        return pat;
+                    }
+                    pat.line = line;
+                    pat.literal_val = first_val;
+                } else if (cur().kind == TokenKind::String) {
+                    Token s = advance();
+                    pat.line = s.line;
+                    pat.literal_val = std::format("\"{}\"", s.lexeme);
+                } else if (cur().kind == TokenKind::RawString) {
+                    Token s = advance();
+                    pat.line = s.line;
+                    pat.literal_val = std::format("R\"({})\"", s.lexeme);
+                }
+            } else {
+                auto v_tok = expect(TokenKind::Ident);
+                if (!v_tok) return std::unexpected(v_tok.error());
+                pat.line = v_tok->line;
+                if (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
+                    Token sep = advance();
+                    auto sub_tok = expect(TokenKind::Ident);
+                    if (!sub_tok) return std::unexpected(sub_tok.error());
+                    if (sep.kind == TokenKind::Dot) {
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col), std::format("'.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}')", v_tok->lexeme, sub_tok->lexeme), "cfire/DEPRECATED-SEPARATOR"});
+                    }
+                    pat.enum_prefix = v_tok->lexeme;
+                    pat.variant_name = sub_tok->lexeme;
+                } else {
+                    pat.variant_name = v_tok->lexeme;
+                    if (pat.variant_name == "Some") pat.is_some = true;
+                    else if (pat.variant_name == "Ok") pat.is_ok = true;
+                    else if (pat.variant_name == "Err") pat.is_err = true;
+                }
+
+                if (cur().kind == TokenKind::LParen) {
+                    advance(); // '('
+                    while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                        auto b_tok = expect(TokenKind::Ident);
+                        if (!b_tok) return std::unexpected(b_tok.error());
+                        pat.bindings.push_back(b_tok->lexeme);
+                        if (cur().kind == TokenKind::Comma) advance();
+                    }
+                    if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                }
+            }
+            return pat;
+        };
+
+        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+            std::vector<MatchPattern> patterns;
+            auto first_pat = parse_single_pattern();
+            if (!first_pat) return std::unexpected(first_pat.error());
+            patterns.push_back(std::move(*first_pat));
+
+            while (cur().kind == TokenKind::Pipe) {
+                advance(); // '|'
+                auto next_pat = parse_single_pattern();
+                if (!next_pat) return std::unexpected(next_pat.error());
+                patterns.push_back(std::move(*next_pat));
+            }
+
+            MatchArm arm;
+            arm.line = patterns[0].line;
+            arm.enum_prefix = patterns[0].enum_prefix;
+            arm.variant_name = patterns[0].variant_name;
+            arm.bindings = patterns[0].bindings;
+            arm.literal_val = patterns[0].literal_val;
+            arm.is_slice_pattern = patterns[0].is_slice_pattern;
+            arm.slice_head = patterns[0].slice_head;
+            arm.slice_rest = patterns[0].slice_rest;
+            arm.slice_has_rest = patterns[0].slice_has_rest;
+            arm.slice_tail = patterns[0].slice_tail;
+            arm.is_range = patterns[0].is_range;
+            arm.range_inclusive = patterns[0].range_inclusive;
+            arm.range_start = patterns[0].range_start;
+            arm.range_end = patterns[0].range_end;
+            arm.is_some = patterns[0].is_some;
+            arm.is_none = patterns[0].is_none;
+            arm.is_ok = patterns[0].is_ok;
+            arm.is_err = patterns[0].is_err;
+            arm.patterns = std::move(patterns);
+
+            if (cur().kind == TokenKind::KwIf) {
+                advance(); // 'if'
+                StructLitScope scope(*this, false);
+                auto g = parse_expr();
+                if (!g) return std::unexpected(g.error());
+                arm.guard = std::move(*g);
+            }
+
+            if (auto fa = expect(TokenKind::FatArrow); !fa) return std::unexpected(fa.error());
+            if (cur().kind == TokenKind::LBrace) {
+                auto body = parse_block();
+                if (!body) return std::unexpected(body.error());
+                arm.body = std::move(*body);
+            } else {
+                auto st = parse_stmt();
+                if (!st) return std::unexpected(st.error());
+                arm.body.push_back(std::move(*st));
+            }
+            if (cur().kind == TokenKind::Comma) advance();
+            arms.push_back(std::move(arm));
+        }
+        return arms;
+    }
+
+    // `if c { a } else { b }` (and `else if`) as an expression. `else` is required.
+    [[nodiscard]] auto parse_if_expr() -> std::expected<ExprPtr, SourceError> {
+        Token start = advance(); // 'if'
+        ExprPtr cond = nullptr;
+        {
+            StructLitScope scope(*this, false);
+            auto c = parse_expr();
+            if (!c) return std::unexpected(c.error());
+            cond = std::move(*c);
+        }
+        auto then_body = parse_block();
+        if (!then_body) return std::unexpected(then_body.error());
+        if (cur().kind != TokenKind::KwElse) {
+            return std::unexpected(SourceError{file_, start.line, start.col, "an 'if' used as a value needs an 'else' branch", "cfire/SYNTAX"});
+        }
+        advance(); // 'else'
+        std::vector<StmtPtr> else_body;
+        if (cur().kind == TokenKind::KwIf) {
+            Token nested = cur();
+            auto e = parse_if_expr();
+            if (!e) return std::unexpected(e.error());
+            else_body.push_back(make_stmt(ExprStmt{std::move(*e), nested.line}, nested.line));
+        } else {
+            auto b = parse_block();
+            if (!b) return std::unexpected(b.error());
+            else_body = std::move(*b);
+        }
+        MatchArm yes;
+        yes.literal_val = "true";
+        yes.line = start.line;
+        yes.body = std::move(*then_body);
+        MatchArm no;
+        no.variant_name = "_";
+        no.line = start.line;
+        no.body = std::move(else_body);
+        yes.patterns.push_back(yes.to_pattern());
+        no.patterns.push_back(no.to_pattern());
+        std::vector<MatchArm> arms;
+        arms.push_back(std::move(yes));
+        arms.push_back(std::move(no));
+        MatchExpr me{std::move(cond), false, std::move(arms), start.line, start.col};
+        me.is_if = true;
+        return make_expr(std::move(me), start.line, start.col);
+    }
+
+    [[nodiscard]] auto parse_match_stmt() -> std::expected<StmtPtr, SourceError> {
+        Token start = advance(); // 'match'
+        bool is_move = false;
+        if (cur().kind == TokenKind::KwMove) {
+            advance();
+            is_move = true;
+        }
+        ExprPtr target = nullptr;
+        {
+            StructLitScope scope(*this, false);
+            auto t = parse_expr();
+            if (!t) return std::unexpected(t.error());
+            target = std::move(*t);
+        }
+        if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+
+        auto arms = parse_match_arms();
+        if (!arms) return std::unexpected(arms.error());
+
+        if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+        return make_stmt(MatchStmt{std::move(target), is_move, std::move(*arms), start.line, start.col}, start.line);
+    }
+
+    // --- Expression Parsing ---
+
+    [[nodiscard]] auto parse_expr() -> std::expected<ExprPtr, SourceError> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
+        }
+        DepthGuard depth_guard(recursion_depth_);
+        return parse_or_expr();
+    }
+
+    [[nodiscard]] auto parse_or_expr() -> std::expected<ExprPtr, SourceError> {
+        auto left = parse_binary_expr();
+        if (!left) return std::unexpected(left.error());
+        while (cur().kind == TokenKind::KwOr) {
+            Token or_tok = advance();
+            if (cur().kind == TokenKind::KwBreak) {
+                Token btok = advance();
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(BreakStmt{btok.line}, btok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            if (cur().kind == TokenKind::KwContinue) {
+                Token ctok = advance();
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(ContinueStmt{ctok.line}, ctok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            if (cur().kind == TokenKind::KwReturn) {
+                Token rtok = advance();
+                ExprPtr ret_val = nullptr;
+                if (cur().kind != TokenKind::Semicolon && cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                    auto rv = parse_expr();
+                    if (!rv) return std::unexpected(rv.error());
+                    ret_val = std::move(*rv);
+                }
+                std::vector<StmtPtr> body;
+                body.push_back(make_stmt(ReturnStmt{std::move(ret_val), rtok.line}, rtok.line));
+                left = make_expr(OrExpr{std::move(*left), "", std::move(body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            if (cur().kind == TokenKind::LBrace) {
+                auto body = parse_block();
+                if (!body) return std::unexpected(body.error());
+                left = make_expr(OrExpr{std::move(*left), "", std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            bool is_struct_lit_fallback = allow_struct_lit_ &&
+                (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace) &&
+                (peek(2).kind == TokenKind::RBrace ||
+                 ((peek(2).kind == TokenKind::Ident || peek(2).kind == TokenKind::String) && peek(3).kind == TokenKind::Colon));
+            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::LBrace && !is_struct_lit_fallback) {
+                std::string err_var = advance().lexeme;
+                auto body = parse_block();
+                if (!body) return std::unexpected(body.error());
+                left = make_expr(OrExpr{std::move(*left), std::move(err_var), std::move(*body), nullptr}, or_tok.line, or_tok.col);
+                break;
+            }
+            auto fb = parse_binary_expr();
+            if (!fb) return std::unexpected(fb.error());
+            left = make_expr(OrExpr{std::move(*left), "", {}, std::move(*fb)}, or_tok.line, or_tok.col);
+        }
+        return left;
+    }
+
+    static int get_binary_precedence(TokenKind k) {
+        switch (k) {
+            case TokenKind::DoublePipe: return 1;
+            case TokenKind::DoubleAmp: return 2;
+            case TokenKind::Pipe: return 3;
+            case TokenKind::Caret: return 4;
+            case TokenKind::Amp: return 5;
+            case TokenKind::Eq:
+            case TokenKind::Neq: return 6;
+            case TokenKind::Lt:
+            case TokenKind::Gt:
+            case TokenKind::Le:
+            case TokenKind::Ge: return 7;
+            case TokenKind::Shl:
+            case TokenKind::Shr: return 8;
+            case TokenKind::Plus:
+            case TokenKind::Minus: return 9;
+            case TokenKind::Star:
+            case TokenKind::Slash:
+            case TokenKind::Percent: return 10;
+            default: return 0;
+        }
+    }
+
+    [[nodiscard]] auto parse_binary_expr(int min_prec = 1) -> std::expected<ExprPtr, SourceError> {
+        auto left = parse_unary_expr();
+        if (!left) return std::unexpected(left.error());
+        for (;;) {
+            TokenKind k = cur().kind;
+            int prec = get_binary_precedence(k);
+            if (prec < min_prec) break;
+            if (pos_ > 0 && cur().line > tokens_[pos_ - 1].line) break;
+            Token op = advance();
+            auto right = parse_binary_expr(prec + 1);
+            if (!right) return std::unexpected(right.error());
+            left = make_expr(BinaryExpr{std::move(*left), op.lexeme, std::move(*right)}, op.line, op.col);
+        }
+        return left;
+    }
+
+    [[nodiscard]] auto parse_unary_expr() -> std::expected<ExprPtr, SourceError> {
+        if (recursion_depth_ >= kMaxParseDepth) {
+            return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("maximum parser nesting depth (256) exceeded")});
+        }
+        DepthGuard depth_guard(recursion_depth_);
+        Token tok = cur();
+        if (tok.kind == TokenKind::KwTry) {
+            advance();
+            auto op = parse_unary_expr();
+            if (!op) return std::unexpected(op.error());
+            return make_expr(TryExpr{std::move(*op)}, tok.line, tok.col);
+        }
+        if (tok.kind == TokenKind::KwMove) {
+            advance();
+            auto op = parse_unary_expr();
+            if (!op) return std::unexpected(op.error());
+            return make_expr(UnaryExpr{"move", std::move(*op)}, tok.line, tok.col);
+        }
+        if (tok.kind == TokenKind::Bang || tok.kind == TokenKind::Star || tok.kind == TokenKind::Minus || tok.kind == TokenKind::Tilde) {
+            advance();
+            auto op = parse_unary_expr();
+            if (!op) return std::unexpected(op.error());
+            return make_expr(UnaryExpr{tok.lexeme, std::move(*op)}, tok.line, tok.col);
+        }
+        if (tok.kind == TokenKind::Amp) {
+            advance();
+            std::string op_str = "&";
+            if (cur().kind == TokenKind::KwMut) {
+                advance();
+                op_str = "&mut";
+            }
+            auto op = parse_unary_expr();
+            if (!op) return std::unexpected(op.error());
+            return make_expr(UnaryExpr{std::move(op_str), std::move(*op)}, tok.line, tok.col);
+        }
+        return parse_postfix_expr();
+    }
+
+    [[nodiscard]] auto parse_postfix_expr() -> std::expected<ExprPtr, SourceError> {
+        auto expr = parse_primary_expr();
+        if (!expr) return std::unexpected(expr.error());
+
+        for (;;) {
+            switch (cur().kind) {
+                case TokenKind::Dot:
+                case TokenKind::DoubleColon: {
+                    Token sep = advance();
+                    std::string field;
+                    if (cur().kind == TokenKind::Ident ||
+                        (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
+                        field = advance().lexeme;
+                    } else {
+                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected member name after '{}'", sep.lexeme)});
+                    }
+                    expr = make_expr(MemberExpr{std::move(*expr), std::move(field), sep.kind == TokenKind::DoubleColon}, sep.line, sep.col);
+                    break;
+                }
+                case TokenKind::LBracket: {
+                    if (is_generic_call_lookahead()) {
+                        std::size_t saved_pos = pos_;
+                        advance(); // '['
+                        std::vector<TypeRef> type_args;
+                        bool ok = true;
+                        while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                            auto targ = parse_type_ref();
+                            if (!targ) {
+                                ok = false;
+                                break;
+                            }
+                            type_args.push_back(std::move(*targ));
+                            if (cur().kind == TokenKind::Comma) {
+                                advance();
+                            } else if (cur().kind != TokenKind::RBracket) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if (ok && cur().kind == TokenKind::RBracket) {
+                            advance(); // ']'
+                            auto call = parse_call_with_callee(std::move(*expr), std::move(type_args));
+                            if (call) {
+                                expr = std::move(*call);
+                                break;
+                            }
+                        }
+                        pos_ = saved_pos;
+                    }
+                    Token br = advance(); // '['
+                    StructLitScope bracket_scope(*this, true);
+                    // Check for `[..end]` or `[..]`
+                        if (cur().kind == TokenKind::DotDot) {
+                            advance(); // '..'
+                            ExprPtr end_ex = nullptr;
+                            if (cur().kind != TokenKind::RBracket) {
+                                auto e = parse_expr();
+                                if (!e) return std::unexpected(e.error());
+                                end_ex = std::move(*e);
+                            }
+                            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                            expr = make_expr(SliceExpr{std::move(*expr), nullptr, std::move(end_ex)}, br.line, br.col);
+                            break;
+                        }
+                        auto first = parse_expr();
+                        if (!first) return std::unexpected(first.error());
+                        if (cur().kind == TokenKind::DotDot) {
+                            advance(); // '..'
+                            ExprPtr end_ex = nullptr;
+                            if (cur().kind != TokenKind::RBracket) {
+                                auto e = parse_expr();
+                                if (!e) return std::unexpected(e.error());
+                                end_ex = std::move(*e);
+                            }
+                            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                            expr = make_expr(SliceExpr{std::move(*expr), std::move(*first), std::move(end_ex)}, br.line, br.col);
+                            break;
+                        }
+                        if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                        expr = make_expr(IndexExpr{std::move(*expr), std::move(*first)}, br.line, br.col);
+                        break;
+                    }
+                case TokenKind::LParen: {
+                    if (is_destructure_lookahead(0).first) {
+                        return expr;
+                    }
+                    auto call = parse_call_with_callee(std::move(*expr), {});
+                    if (!call) return std::unexpected(call.error());
+                    expr = std::move(*call);
+                    break;
+                }
+                case TokenKind::Pipe: {
+                    if (is_trailing_closure_lookahead()) {
+                        auto cl = parse_closure_expr();
+                        if (!cl) return std::unexpected(cl.error());
+                        if (auto* existing_call = std::get_if<CallExpr>(&(*expr)->node); existing_call && !existing_call->block_arg) {
+                            existing_call->block_arg = std::move(*cl);
+                        } else {
+                            int ln = (*expr)->line;
+                            int cln = (*expr)->col;
+                            expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        }
+                        break;
+                    }
+                    return expr;
+                }
+                case TokenKind::DoublePipe: {
+                    if (peek(1).kind == TokenKind::LBrace || peek(1).kind == TokenKind::Arrow || peek(1).kind == TokenKind::KwAsync) {
+                        auto cl = parse_closure_expr();
+                        if (!cl) return std::unexpected(cl.error());
+                        if (auto* existing_call = std::get_if<CallExpr>(&(*expr)->node); existing_call && !existing_call->block_arg) {
+                            existing_call->block_arg = std::move(*cl);
+                        } else {
+                            int ln = (*expr)->line;
+                            int cln = (*expr)->col;
+                            expr = make_expr(CallExpr{std::move(*expr), {}, {}, std::move(*cl)}, ln, cln);
+                        }
+                        break;
+                    }
+                    return expr;
+                }
+                case TokenKind::KwAs: {
+                    Token as_tok = advance(); // 'as'
+                    auto target_t = parse_type_ref();
+                    std::string target_name = target_t ? target_t->name : "T";
+                    if (target_t && target_t->is_slice && target_t->elem_type) {
+                        target_name = "[]" + target_t->elem_type->name;
+                    }
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(as_tok.line), static_cast<int>(as_tok.col), std::format("'as' cast syntax is not supported in cfire; use constructor conversion '{}(...)' instead", target_name)});
+                }
+                default:
+                    return expr;
+            }
+        }
+    }
+
+    [[nodiscard]] auto parse_call_with_callee(ExprPtr callee, std::vector<TypeRef> type_args)
+        -> std::expected<ExprPtr, SourceError>
+    {
+        Token lp = advance(); // '('
+        StructLitScope arg_scope(*this, true);
+        CallExpr call;
+        call.callee = std::move(callee);
+        call.type_args = std::move(type_args);
+
+        // `make(T, args...)` — the first argument of `make` is always a type.
+        if (auto* id = std::get_if<IdentExpr>(&call.callee->node);
+            id && id->name == "make" && call.type_args.empty() && cur().kind != TokenKind::RParen) {
+            auto tref = parse_type_ref();
+            if (!tref) return std::unexpected(tref.error());
+            call.type_args.push_back(std::move(*tref));
+            call.make_type_first = true;
+            if (cur().kind == TokenKind::Comma) advance();
+        }
+
+        while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+            if (cur().kind == TokenKind::Pipe || cur().kind == TokenKind::DoublePipe) {
+                Token cl_tok = cur();
+                auto cl = parse_closure_expr();
+                if (!cl) return std::unexpected(cl.error());
+                if (cur().kind == TokenKind::Comma) advance();
+                if (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    call.args.push_back(CallArg{"", "", make_expr(std::move(*cl), cl_tok.line, cl_tok.col), cl_tok.line, cl_tok.col});
+                } else {
+                    call.block_arg = std::move(*cl);
+                }
+                continue;
+            }
+            Token arg_tok = cur();
+            std::string intent;
+            if (arg_tok.kind == TokenKind::KwMut || arg_tok.kind == TokenKind::KwMove) {
+                intent = advance().lexeme;
+            }
+            std::string label;
+            if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                label = advance().lexeme;
+                advance(); // ':'
+            }
+            auto val = parse_expr();
+            if (!val) return std::unexpected(val.error());
+            call.args.push_back(CallArg{std::move(intent), std::move(label), std::move(*val), arg_tok.line, arg_tok.col});
+            if (cur().kind == TokenKind::Comma) advance();
+        }
+        if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+        return make_expr(std::move(call), lp.line, lp.col);
+    }
+
+    [[nodiscard]] auto parse_closure_expr() -> std::expected<ClosureExpr, SourceError> {
+        ClosureExpr cl;
+        if (cur().kind == TokenKind::DoublePipe) {
+            advance();
+        } else {
+            if (auto p1 = expect(TokenKind::Pipe); !p1) return std::unexpected(p1.error());
+            while (cur().kind != TokenKind::Pipe && cur().kind != TokenKind::Eof) {
+                std::string p_intent = "in";
+                if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwIn) {
+                    p_intent = advance().lexeme;
+                }
+                auto id = expect(TokenKind::Ident);
+                if (!id) return std::unexpected(id.error());
+                if (p_intent == "mut" && cur().kind == TokenKind::LBracket) {
+                    // `|mut codes[i]|`: a slot capture, not a parameter.
+                    advance();
+                    auto ix = parse_expr();
+                    if (!ix) return std::unexpected(ix.error());
+                    if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                    cl.slot_captures.emplace_back(id->lexeme, std::move(*ix));
+                    if (cur().kind == TokenKind::Comma) advance();
+                    continue;
+                }
+                cl.params.push_back(id->lexeme);
+                cl.param_intents.push_back(std::move(p_intent));
+                if (cur().kind == TokenKind::Colon) {
+                    advance(); // ':'
+                    auto tref = parse_type_ref();
+                    if (!tref) return std::unexpected(tref.error());
+                    cl.param_types.push_back(std::move(*tref));
+                } else {
+                    cl.param_types.push_back(std::nullopt);
+                }
+                if (cur().kind == TokenKind::Comma) {
+                    advance();
+                } else if (cur().kind != TokenKind::Pipe) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or '|' in closure parameter list, got '{}'", cur().lexeme)});
+                }
+            }
+            if (auto p2 = expect(TokenKind::Pipe); !p2) return std::unexpected(p2.error());
+        }
+        if (cur().kind == TokenKind::KwAsync) {
+            advance();
+            cl.is_async = true;
+        }
+        if (cur().kind == TokenKind::Arrow) {
+            advance(); // '->'
+            StructLitScope scope(*this, false);
+            auto rtype = parse_type_ref();
+            if (!rtype) return std::unexpected(rtype.error());
+            hoist_nested_fallible_optional(*rtype);
+            cl.return_type = std::move(*rtype);
+        }
+        if (cur().kind == TokenKind::KwAsync) {
+            advance();
+            cl.is_async = true;
+        }
+        auto body = parse_block();
+        if (!body) return std::unexpected(body.error());
+        cl.body = std::move(*body);
+        return cl;
+    }
+
+    [[nodiscard]] auto parse_primary_expr() -> std::expected<ExprPtr, SourceError> {
+        Token tok = cur();
+        switch (tok.kind) {
+            case TokenKind::Int:
+            case TokenKind::Float:
+            case TokenKind::String:
+            case TokenKind::RawString:
+            case TokenKind::Char:
+            case TokenKind::KwTrue:
+            case TokenKind::KwFalse:
+            case TokenKind::KwNone: {
+                advance();
+                return make_expr(LiteralExpr{tok.kind, tok.lexeme}, tok.line, tok.col);
+            }
+            case TokenKind::KwIf: {
+                return parse_if_expr();
+            }
+            case TokenKind::KwMatch: {
+                Token start = advance(); // 'match'
+                bool is_move = false;
+                if (cur().kind == TokenKind::KwMove) {
+                    advance();
+                    is_move = true;
+                }
+                ExprPtr target = nullptr;
+                {
+                    StructLitScope scope(*this, false);
+                    auto t = parse_expr();
+                    if (!t) return std::unexpected(t.error());
+                    target = std::move(*t);
+                }
+                if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+                auto arms = parse_match_arms();
+                if (!arms) return std::unexpected(arms.error());
+                if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+                return make_expr(MatchExpr{std::move(target), is_move, std::move(*arms), start.line, start.col}, start.line, start.col);
+            }
+            case TokenKind::Ident:
+            case TokenKind::KwCpp: {
+                advance();
+                std::string name = tok.lexeme;
+
+                // / Only merge type paths when immediately constructing a struct literal.
+                // General dot and double-colon expressions are parsed uniformly as MemberExpr.
+                if (allow_struct_lit_) {
+                    std::size_t look = pos_;
+                    std::string full_name = name;
+                    while (look < tokens_.size() && (tokens_[look].kind == TokenKind::Dot || tokens_[look].kind == TokenKind::DoubleColon)) {
+                        std::string sep_str = (tokens_[look].kind == TokenKind::DoubleColon) ? "::" : ".";
+                        if (look + 1 < tokens_.size() && (tokens_[look + 1].kind == TokenKind::Ident ||
+                            (tokens_[look + 1].kind >= TokenKind::KwPackage && tokens_[look + 1].kind <= TokenKind::KwNone))) {
+                            full_name += sep_str + tokens_[look + 1].lexeme;
+                            look += 2;
+                        } else {
+                            break;
+                        }
+                    }
+                    bool is_struct_lit = false;
+                    std::vector<TypeRef> type_args;
+                    if (look < tokens_.size()) {
+                        if (tokens_[look].kind == TokenKind::LBrace) {
+                            std::string last_segment = full_name;
+                            if (auto s_pos = last_segment.rfind("::"); s_pos != std::string::npos) last_segment = last_segment.substr(s_pos + 2);
+                            else if (auto d_pos = last_segment.rfind('.'); d_pos != std::string::npos) last_segment = last_segment.substr(d_pos + 1);
+                            if (!last_segment.empty() && (last_segment[0] >= 'A' && last_segment[0] <= 'Z')) {
+                                is_struct_lit = true;
+                            }
+                        } else if (tokens_[look].kind == TokenKind::LBracket) {
+                            int depth = 0;
+                            std::size_t k = look;
+                            while (k < tokens_.size()) {
+                                if (tokens_[k].kind == TokenKind::LBracket) ++depth;
+                                else if (tokens_[k].kind == TokenKind::RBracket) {
+                                    --depth;
+                                    if (depth == 0) {
+                                        if (k + 1 < tokens_.size() && tokens_[k + 1].kind == TokenKind::LBrace) {
+                                            is_struct_lit = true;
+                                        }
+                                        break;
+                                    }
+                                } else if (tokens_[k].kind == TokenKind::Semicolon || tokens_[k].kind == TokenKind::Eof || tokens_[k].kind == TokenKind::RBrace) {
+                                    break;
+                                }
+                                ++k;
+                            }
+                        }
+                    }
+                    if (is_struct_lit) {
+                        name = full_name;
+                        pos_ = look;
+                        if (cur().kind == TokenKind::LBracket) {
+                            advance(); // '['
+                            while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                                auto targ = parse_type_ref();
+                                if (!targ) return std::unexpected(targ.error());
+                                type_args.push_back(std::move(*targ));
+                                if (cur().kind == TokenKind::Comma) advance();
+                                else if (cur().kind != TokenKind::RBracket) {
+                                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(cur().line), static_cast<int>(cur().col), std::format("expected ',' or ']' in type arguments")});
+                                }
+                            }
+                            if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                        }
+                        if (auto lb = expect(TokenKind::LBrace); !lb) return std::unexpected(lb.error());
+                        StructLitExpr st;
+                        st.type_name = std::move(name);
+                        st.type_args = std::move(type_args);
+                        while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                            std::string fn_name;
+                            if (cur().kind == TokenKind::Ident ||
+                                (cur().kind >= TokenKind::KwPackage && cur().kind <= TokenKind::KwNone)) {
+                                fn_name = advance().lexeme;
+                            } else {
+                                auto fn = expect(TokenKind::Ident);
+                                if (!fn) return std::unexpected(fn.error());
+                                fn_name = fn->lexeme;
+                            }
+                            if (auto col = expect(TokenKind::Colon); !col) return std::unexpected(col.error());
+                            auto fv = parse_expr();
+                            if (!fv) return std::unexpected(fv.error());
+                            st.fields.push_back(StructLitField{std::move(fn_name), std::move(*fv)});
+                            if (cur().kind == TokenKind::Comma) advance();
+                        }
+                        if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+                        return make_expr(std::move(st), tok.line, tok.col);
+                    }
+                }
+                return make_expr(IdentExpr{std::move(name)}, tok.line, tok.col);
+            }
+            case TokenKind::LParen: {
+                Token lp = advance(); // '('
+                StructLitScope paren_scope(*this, true);
+                if (cur().kind == TokenKind::RParen) {
+                    advance(); // ')'
+                    return make_expr(TupleExpr{}, tok.line, tok.col);
+                }
+                auto first = parse_expr();
+                if (!first) return std::unexpected(first.error());
+                if (cur().kind == TokenKind::Comma) {
+                    std::vector<ExprPtr> elements;
+                    elements.push_back(std::move(*first));
+                    while (cur().kind == TokenKind::Comma) {
+                        advance(); // ','
+                        if (cur().kind == TokenKind::RParen) break; // trailing comma
+                        auto next_ex = parse_expr();
+                        if (!next_ex) return std::unexpected(next_ex.error());
+                        elements.push_back(std::move(*next_ex));
+                    }
+                    if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                    return make_expr(TupleExpr{std::move(elements)}, tok.line, tok.col);
+                }
+                if (auto rp = expect(TokenKind::RParen); !rp) return std::unexpected(rp.error());
+                return first;
+            }
+            case TokenKind::LBrace: {
+                if (!allow_struct_lit_) {
+                    return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("unexpected '{{' in expression")});
+                }
+                advance();
+                StructLitExpr st;
+                while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
+                    std::string key;
+                    if (cur().kind == TokenKind::Ident || cur().kind == TokenKind::String) {
+                        key = advance().lexeme;
+                    }
+                    if (cur().kind == TokenKind::Colon) advance();
+                    auto fv = parse_expr();
+                    if (!fv) return std::unexpected(fv.error());
+                    st.fields.push_back(StructLitField{std::move(key), std::move(*fv)});
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rb = expect(TokenKind::RBrace); !rb) return std::unexpected(rb.error());
+                return make_expr(std::move(st), tok.line, tok.col);
+            }
+            case TokenKind::LBracket: {
+                Token lb = advance(); // '['
+                StructLitScope bracket_scope(*this, true);
+                ArrayLitExpr arr;
+                while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
+                    auto el = parse_expr();
+                    if (!el) return std::unexpected(el.error());
+                    arr.elements.push_back(std::move(*el));
+                    if (cur().kind == TokenKind::Comma) advance();
+                }
+                if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+                if (arr.elements.empty() && cur().kind == TokenKind::Ident &&
+                    (cur().lexeme == "byte" || cur().lexeme == "u8") && peek(1).kind == TokenKind::LParen) {
+                    Token elem_tok = advance(); // consume 'byte' or 'u8'
+                    return make_expr(IdentExpr{"[]" + elem_tok.lexeme}, tok.line, tok.col);
+                }
+                return make_expr(std::move(arr), tok.line, tok.col);
+            }
+            case TokenKind::Pipe:
+            case TokenKind::DoublePipe: {
+                auto cl = parse_closure_expr();
+                if (!cl) return std::unexpected(cl.error());
+                return make_expr(std::move(*cl), tok.line, tok.col);
+            }
+            case TokenKind::KwMove:
+            case TokenKind::KwMut:
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("'{}' is a reserved parameter-intent keyword and cannot be used as a variable name; choose a different identifier (e.g. 'res' or 'val')", tok.lexeme)});
+            default:
+                return std::unexpected(SourceError{std::string(file_), static_cast<int>(tok.line), static_cast<int>(tok.col), std::format("unexpected token '{}' in expression", tok.lexeme)});
+        }
+    }
+};
+
+[[nodiscard]] CFIRE_PARSER_IMPL_INLINE auto parse_source_resilient(std::string_view path, std::string_view src)
+    -> ParseResult
+{
+    auto arena = std::make_shared<AstArena>();
+    ArenaScope scope(arena.get());
+    auto toks = tokenize(path, src);
+    if (!toks) {
+        return make_parse_result(FileAST{std::string(path), "", {}, {}, {}, {}, {}, {}, {}, arena}, {toks.error()});
+    }
+    Parser p(std::string(path), std::move(*toks), true);
+    auto res = p.parse_file_result();
+    res.ast.arena = arena;
+    return res;
+}
+
+[[nodiscard]] CFIRE_PARSER_IMPL_INLINE auto parse_source(std::string_view path, std::string_view src)
+    -> std::expected<FileAST, SourceError>
+{
+    auto res = parse_source_resilient(path, src);
+    if (!res.ok()) {
+        return std::unexpected(res.source_errors.front());
+    }
+    return std::move(res.ast);
+}
+
+CFIRE_PARSER_IMPL_INLINE void append_doctests(std::string_view path, std::string_view src, FileAST& ast) {
+    if (!src.contains("///") || !src.contains("```")) return;
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss{std::string(src)};
+        std::string l;
+        while (std::getline(iss, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
+            lines.push_back(std::move(l));
+        }
+    }
+
+    struct RawDocBlock {
+        int start_line = 1;
+        std::string code;
+        std::string target_symbol;
+    };
+    std::vector<RawDocBlock> blocks;
+    bool in_fence = false;
+    int fence_start_line = 1;
+    std::string cur_code;
+
+    auto trim_left = [](std::string_view sv) -> std::string_view {
+        while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+        return sv;
+    };
+
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        std::string_view t = trim_left(lines[i]);
+        if (t.starts_with("///")) {
+            std::string_view body = t.substr(3);
+            if (!body.empty() && body.front() == ' ') body.remove_prefix(1);
+            std::string_view b_trim = trim_left(body);
+            if (!in_fence) {
+                if (b_trim.starts_with("```cf") || b_trim.starts_with("```cfire")) {
+                    in_fence = true;
+                    fence_start_line = static_cast<int>(i) + 1;
+                    cur_code.clear();
+                }
+            } else {
+                if (b_trim.starts_with("```")) {
+                    in_fence = false;
+                    // Look ahead for the documented symbol (`fn <name>` or `type <name>`)
+                    std::string sym_name = std::format("line {}", fence_start_line);
+                    for (std::size_t k = i + 1; k < lines.size(); ++k) {
+                        std::string_view next_t = trim_left(lines[k]);
+                        if (next_t.starts_with("///") || next_t.empty()) continue;
+                        if (next_t.starts_with("fn ")) {
+                            std::string_view rest = trim_left(next_t.substr(3));
+                            if (!rest.empty() && rest.front() == '(') {
+                                auto rp = rest.find(')');
+                                if (rp != std::string_view::npos) rest = trim_left(rest.substr(rp + 1));
+                            }
+                            std::size_t end_id = 0;
+                            while (end_id < rest.size() && (std::isalnum(static_cast<unsigned char>(rest[end_id])) || rest[end_id] == '_')) ++end_id;
+                            if (end_id > 0) sym_name = std::string(rest.substr(0, end_id));
+                        } else if (next_t.starts_with("type ")) {
+                            std::string_view rest = trim_left(next_t.substr(5));
+                            std::size_t end_id = 0;
+                            while (end_id < rest.size() && (std::isalnum(static_cast<unsigned char>(rest[end_id])) || rest[end_id] == '_')) ++end_id;
+                            if (end_id > 0) sym_name = std::string(rest.substr(0, end_id));
+                        }
+                        break;
+                    }
+                    if (cur_code.contains("assert(") || cur_code.contains("assert_eq(")) {
+                        blocks.push_back(RawDocBlock{fence_start_line, std::move(cur_code), std::move(sym_name)});
+                    }
+                    cur_code.clear();
+                } else {
+                    cur_code += std::string(body) + "\n";
+                }
+            }
+        } else {
+            in_fence = false;
+            cur_code.clear();
+        }
+    }
+
+    for (std::size_t b = 0; b < blocks.size(); ++b) {
+        std::string wrapped = std::format("package main\ntest \"[doctest] {} (#{})\" {{\n{}}}\n",
+            blocks[b].target_symbol, b + 1, blocks[b].code);
+        auto dt_ast = parse_source(path, wrapped);
+        if (dt_ast && !dt_ast->tests.empty()) {
+            if (dt_ast->arena) ast.child_arenas.push_back(dt_ast->arena);
+            auto td = std::move(dt_ast->tests.front());
+            td.line = blocks[b].start_line;
+            td.source_path = std::string(path);
+            ast.tests.push_back(std::move(td));
+        }
+    }
+}
+
+[[nodiscard]] CFIRE_PARSER_IMPL_INLINE auto parse_expr_snippet(std::string_view path, std::string_view src, int base_line, int base_col)
+    -> std::expected<ExprSnippetResult, SourceError>
+{
+    auto arena = std::make_shared<AstArena>();
+    ArenaScope scope(arena.get());
+    auto toks = tokenize(path, src);
+    if (!toks) {
+        return std::unexpected(toks.error());
+    }
+    for (auto& t : *toks) {
+        if (t.line == 1) {
+            t.col += (base_col - 1);
+        }
+        t.line += (base_line - 1);
+    }
+    Parser p(std::string(path), std::move(*toks), false);
+    auto ex = p.parse_standalone_expr();
+    if (!ex) {
+        return std::unexpected(ex.error());
+    }
+    return ExprSnippetResult{arena, *ex};
+}
+
+[[nodiscard]] CFIRE_PARSER_IMPL_INLINE auto is_valid_std_format_spec(std::string_view spec) noexcept -> bool {
+    if (spec.empty()) return false;
+    // Reject leading space unless it is a fill character immediately followed by an alignment specifier (<, >, ^)
+    if (spec.front() == ' ' && (spec.size() < 2 || (spec[1] != '<' && spec[1] != '>' && spec[1] != '^'))) {
+        return false;
+    }
+    std::size_t pos = 0;
+    // 1. Optional [fill]align
+    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^') &&
+        spec[0] != '{' && spec[0] != '}') {
+        pos += 2;
+    } else if (spec[0] == '<' || spec[0] == '>' || spec[0] == '^') {
+        pos += 1;
+    }
+    // 2. Optional sign (+, -)
+    if (pos < spec.size() && (spec[pos] == '+' || spec[pos] == '-')) {
+        ++pos;
+    }
+    // 3. Optional '#'
+    if (pos < spec.size() && spec[pos] == '#') {
+        ++pos;
+    }
+    // 4. Optional '0'
+    if (pos < spec.size() && spec[pos] == '0') {
+        ++pos;
+    }
+    // 5. Optional width (digits)
+    while (pos < spec.size() && std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+        ++pos;
+    }
+    // 6. Optional .precision
+    if (pos < spec.size() && spec[pos] == '.') {
+        ++pos;
+        if (pos >= spec.size() || !std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+            return false;
+        }
+        while (pos < spec.size() && std::isdigit(static_cast<unsigned char>(spec[pos]))) {
+            ++pos;
+        }
+    }
+    // 7. Optional type specifier
+    if (pos < spec.size()) {
+        constexpr std::string_view kTypes = "bBcdeEfFgGopPsxXaA?";
+        if (kTypes.find(spec[pos]) == std::string_view::npos) {
+            return false;
+        }
+        ++pos;
+    }
+    return pos == spec.size();
+}
+
+[[nodiscard]] CFIRE_PARSER_IMPL_INLINE auto scan_interpolation_placeholders(std::string_view sv)
+    -> std::vector<InterpPlaceholder>
+{
+    std::vector<InterpPlaceholder> out;
+    std::size_t i = 0;
+    while (i < sv.size()) {
+        if (sv[i] == '{') {
+            if (i + 1 < sv.size() && sv[i + 1] == '{') {
+                i += 2; // escaped '{{'
+                continue;
+            }
+            std::size_t open_idx = i;
+            ++i;
+            int depth = 1;
+            bool in_quote = false;
+            while (i < sv.size() && depth > 0) {
+                if (sv[i] == '\\' && i + 1 < sv.size()) {
+                    if (sv[i + 1] == '"') {
+                        in_quote = !in_quote;
+                    }
+                    i += 2;
+                    continue;
+                }
+                if (sv[i] == '"') {
+                    in_quote = !in_quote;
+                } else if (!in_quote) {
+                    if (sv[i] == '{') ++depth;
+                    else if (sv[i] == '}') --depth;
+                }
+                if (depth > 0) ++i;
+            }
+            if (i < sv.size() && depth == 0) {
+                std::size_t raw_start = open_idx + 1;
+                std::size_t raw_end = i;
+                while (raw_start < raw_end && std::isspace(static_cast<unsigned char>(sv[raw_start]))) {
+                    ++raw_start;
+                }
+                while (raw_end > raw_start && std::isspace(static_cast<unsigned char>(sv[raw_end - 1]))) {
+                    --raw_end;
+                }
+                std::string_view raw_inner = sv.substr(raw_start, raw_end - raw_start);
+                // Ignore empty `{}` or format-specifier-only `{:02x}`
+                if (!raw_inner.empty() && raw_inner.front() != ':') {
+                    std::string fmt_spec;
+                    // Check for a top-level single ':' separating expr and format specifier
+                    int p_depth = 0;
+                    bool inner_quote = false;
+                    std::size_t split_colon = std::string_view::npos;
+                    for (std::size_t k = 0; k < raw_inner.size(); ++k) {
+                        char ch = raw_inner[k];
+                        if (ch == '\\' && k + 1 < raw_inner.size()) {
+                            if (raw_inner[k + 1] == '"') inner_quote = !inner_quote;
+                            ++k;
+                            continue;
+                        }
+                        if (ch == '"') {
+                            inner_quote = !inner_quote;
+                        } else if (!inner_quote) {
+                            if (ch == '(' || ch == '[' || ch == '{') ++p_depth;
+                            else if (ch == ')' || ch == ']' || ch == '}') --p_depth;
+                            else if (ch == ':' && p_depth == 0) {
+                                bool is_double = (k + 1 < raw_inner.size() && raw_inner[k + 1] == ':') ||
+                                                 (k > 0 && raw_inner[k - 1] == ':');
+                                if (!is_double) {
+                                    split_colon = k;
+                                }
+                            }
+                        }
+                    }
+                    if (split_colon != std::string_view::npos && split_colon > 0) {
+                        std::string_view cand_spec = raw_inner.substr(split_colon + 1);
+                        if (is_valid_std_format_spec(cand_spec)) {
+                            fmt_spec = std::string(cand_spec);
+                            raw_inner = raw_inner.substr(0, split_colon);
+                            while (!raw_inner.empty() && std::isspace(static_cast<unsigned char>(raw_inner.back()))) {
+                                raw_inner.remove_suffix(1);
+                            }
+                        }
+                    }
+
+                    // Positional format check: pure digits `{0}` or `{0:spec}` are positional arguments
+                    bool is_positional_idx = !raw_inner.empty() && std::ranges::all_of(raw_inner, [](unsigned char c) {
+                        return std::isdigit(c);
+                    });
+                    if (is_positional_idx) {
+                        ++i;
+                        continue;
+                    }
+
+                    if (!raw_inner.empty()) {
+                        std::string expr_s;
+                        expr_s.reserve(raw_inner.size());
+                        for (std::size_t k = 0; k < raw_inner.size(); ++k) {
+                            if (raw_inner[k] == '\\' && k + 1 < raw_inner.size() && raw_inner[k + 1] == '"') {
+                                expr_s.push_back('"');
+                                ++k;
+                            } else {
+                                expr_s.push_back(raw_inner[k]);
+                            }
+                        }
+                        out.push_back(InterpPlaceholder{open_idx, i, raw_start, std::move(expr_s), std::move(fmt_spec)});
+                    }
+                }
+                ++i;
+                continue;
+            }
+        }
+        ++i;
+    }
+    return out;
+}
+
+#undef CFIRE_PARSER_IMPL_INLINE
+
+} // namespace cfire::frontend

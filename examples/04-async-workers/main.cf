@@ -8,7 +8,7 @@ fn fetch_status(endpoint: str, port: u16) -> i32! {
     return 200
 }
 
-// Each task returns its host's status; the scope's value is every status, in host order (Q51).
+// Each task returns its host's status; the scope's value is every status, in host order.
 fn check_cluster(hosts: []str, port: u16) -> []i32 {
     return async.scope(workers: 4) |scope| {
         for h in hosts {

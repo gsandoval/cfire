@@ -1,7 +1,7 @@
 #include "../test_harness.hpp"
 
 
-// Q24 (CF-149): fix-its are produced by the real pipeline (structured facts), not by re-parsing strings.
+// fix-its are produced by the real pipeline (structured facts), not by re-parsing strings.
 inline auto first_diag_with_code(std::string_view file, std::string_view src, std::string_view code)
     -> cfire::diag::StructuredDiagnostic {
     cfire::analysis::CheckOptions opts;
@@ -119,7 +119,7 @@ fn main() {
 }
 )", "cfire/USE-AFTER-FREE", "uaf_after_reassign.cf");
 
-    // CF-189: the scope-escape checks (DANGLING-POINTER, DANGLING-RETURN) guarded raw pointers and `&T` returns,
+    // the scope-escape checks (DANGLING-POINTER, DANGLING-RETURN) guarded raw pointers and `&T` returns,
     // which are not cfire syntax any more; each old form is now a migration error.
     require_sema_error(R"(package main
 fn main() {
@@ -153,7 +153,7 @@ fn main() {
 }
 )", "cfire/ITERATOR-INVALIDATION", "iter_invalidation.cf");
 
-    // CF-189: values are never null (no raw pointers); absence is `T?` and must be unwrapped.
+    // values are never null (no raw pointers); absence is `T?` and must be unwrapped.
     require_sema_error(R"(package main
 fn main() {
     mut p: *mut i32 = none
@@ -295,7 +295,7 @@ fn main() {
 }
 )", "cfire/MOVE-CALLSITE", "missing_move_callsite.cf");
 
-    // SAFE-02d, tightened by CF-167: SQL & shell injection risks are errors, and the rule follows data
+    // SAFE-02d, tightened by: SQL & shell injection risks are errors, and the rule follows data
     // through locals and parameters (only provably constant strings may reach os.exec / db.exec).
     {
         auto inj_ast = cfire::frontend::parse_source("injection_err.cf", R"(package main
@@ -310,7 +310,7 @@ fn check_errs(db: sqlite.Database, user_input: str) {
 }
 fn main() {}
 )");
-        require(inj_ast.has_value(), "parse injection_err.cf (SAFE-02d/CF-167)");
+        require(inj_ast.has_value(), "parse injection_err.cf (SAFE-02d/)");
         if (inj_ast) {
             auto res = cfire::frontend::analyze_resilient(std::move(*inj_ast));
             int sql = 0;
@@ -319,25 +319,25 @@ fn main() {}
                 if (e.contains("cfire/SQL-INJECTION-RISK")) ++sql;
                 if (e.contains("cfire/SHELL-INJECTION-RISK")) ++shell;
             }
-            require(sql == 1, std::format("CF-167: concatenated SQL is an error (got {})", sql));
-            require(shell == 2, std::format("CF-167: concatenated and local-propagated shell commands are errors, the constant one is not (got {})", shell));
+            require(sql == 1, std::format("concatenated SQL is an error (got {})", sql));
+            require(shell == 2, std::format("concatenated and local-propagated shell commands are errors, the constant one is not (got {})", shell));
         }
     }
 
-    // TOOL-SAFE-01: Fix-it synthesis for cfire/MOVE-CALLSITE and cfire/NULL-DEREF + CLI inspect diagnostic code
+    // Fix-it synthesis for cfire/MOVE-CALLSITE and cfire/NULL-DEREF + CLI inspect diagnostic code
     {
-        // CF-189 (Q53): `n: &mut T` -> `mut n: T`, and `s: &T` drops the `&`.
+        // `n: &mut T` -> `mut n: T`, and `s: &T` drops the `&`.
         std::string ref_src = "package main\nfn bump(n: &mut i32) {\n}\nfn main() {}\n";
         auto sd = first_diag_with_code("ref.cf", ref_src, "cfire/REFERENCE-TYPE");
-        require(!sd.fixits.empty() && sd.fixits[0].replacement == "mut n: ", "synthesizes the cfire/REFERENCE-TYPE fix-it for '&mut T' (CF-189)");
+        require(!sd.fixits.empty() && sd.fixits[0].replacement == "mut n: ", "synthesizes the cfire/REFERENCE-TYPE fix-it for '&mut T'");
         std::string view_src = "package main\nfn show(s: &str) {\n}\nfn main() {}\n";
         auto vd = first_diag_with_code("view.cf", view_src, "cfire/REFERENCE-TYPE");
         require(!vd.fixits.empty() && vd.fixits[0].replacement.empty() && vd.fixits[0].start_col == 12,
-                "the cfire/REFERENCE-TYPE fix-it for '&T' removes the '&' (CF-189)");
+                "the cfire/REFERENCE-TYPE fix-it for '&T' removes the '&'");
 
         run_cfire("inspect cfire/USE-AFTER-FREE")
-            .assert_ok("cfire inspect cfire/USE-AFTER-FREE exit 0 (TOOL-SAFE-01)")
-            .assert_contains("Use of a Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title (TOOL-SAFE-01)");
+            .assert_ok("cfire inspect cfire/USE-AFTER-FREE exit 0")
+            .assert_contains("Use of a Slice View After Owner Invalidation", "cfire inspect shows diagnostic rule title");
 
         run_cfire("inspect cfire/INVALID-STRUCT-TAG")
             .assert_ok("cfire inspect cfire/INVALID-STRUCT-TAG exit 0 (TEST-03a/06)")
@@ -485,7 +485,7 @@ fn main() -> void! {
             require(checked.has_value(), "sema accepts os.stdin().read_lines() with try, .len, and [i]");
         }
 
-        // 1b. CF-089: Sema rejects deprecated I/O APIs with cfire/DEPRECATED-API and synthesizes fix-its
+        // 1b.: Sema rejects deprecated I/O APIs with cfire/DEPRECATED-API and synthesizes fix-its
         require_sema_error(R"(package main
 fn main() {
     ln := readln("> ") or ""
@@ -927,7 +927,7 @@ fn main() -> void! {
             .assert_contains("val=66 acc=45", "sub-expression try and block-form or produces expected runtime values");
     }
 
-    // CF-099: Missing-return divergence check
+    // Missing-return divergence check
     require_sema_error(R"(package main
 fn incomplete_ret(x: i32) -> i32 {
     if x > 0 {
@@ -946,7 +946,7 @@ fn loop_with_break() -> i32 {
 fn main() {}
 )", "cfire/MISSING-RETURN", "missing_return_break.cf");
 
-    // CF-097: Escaping closure capture semantics and mutation diagnostic
+    // Escaping closure capture semantics and mutation diagnostic
     require_sema_error(R"(package main
 fn test_esc() {
     mut total := 0
@@ -959,7 +959,7 @@ fn test_esc() {
 fn main() {}
 )", "cfire/ESCAPING-CAPTURE-MUT", "esc_capture_mut.cf");
 
-    // CF-164 / Q51 (CF-189): tasks sharing one element is a data race and is rejected; a slot named by the spawning
+    // / tasks sharing one element is a data race and is rejected; a slot named by the spawning
     // loop's own index stays legal.
     require_sema_error(R"(package main
 fn test_esc_ptr() {
@@ -1004,7 +1004,7 @@ fn full_if(x: i32) -> i32 {
 fn main() {}
 )", "valid_return_divergence.cf");
 
-    // CF-100: Expr-node-keyed move tracking and CFG loop move suppression
+    // Expr-node-keyed move tracking and CFG loop move suppression
     run_cfire_source(R"(package main
 
 fn pair_str(a: str, b: str) -> str {
@@ -1031,12 +1031,12 @@ fn main() {
     val2 := test_loop_no_move(move s2)
     println("loop={}", val2)
 }
-)", "test_cf100_move")
-        .assert_ok("CF-100 expr-node move compiles and exits 0")
+)", "test_move_diag")
+        .assert_ok("expr-node move compiles and exits 0")
         .assert_contains("same_line=hello:hello", "first argument on same line preserved")
         .assert_contains("loop=item-item-item-", "loop iterations never moved automatically");
 
-    // CF-098: Defined Integer Overflow, Wrapping & Saturation Semantics
+    // Defined Integer Overflow, Wrapping & Saturation Semantics
     run_cfire_source(R"(package main
 
 import "core:math"
@@ -1054,14 +1054,14 @@ fn main() {
     println("has_chk1={}", has_chk1)
     println("chk2={}", chk2 or 0)
 }
-)", "test_cf098_math")
-        .assert_ok("CF-098 math overflow compiles and exits 0")
+)", "test_math_diag")
+        .assert_ok("math overflow compiles and exits 0")
         .assert_contains("sat=9223372036854775807", "saturating add clamps to max i64")
         .assert_contains("wrap=-9223372036854775808", "wrapping add wraps to min i64")
         .assert_contains("has_chk1=false", "checked add returns none on overflow")
         .assert_contains("chk2=30", "checked add succeeds within bounds");
 
-    // CF-097: Escaping closure retains captured state by value
+    // Escaping closure retains captured state by value
     run_cfire_source(R"(package main
 
 fn make_adder(base: i32) -> fn(i32) -> i32 {
@@ -1075,8 +1075,8 @@ fn main() {
     res := add5(10)
     println("add5_res={}", res)
 }
-)", "test_cf097_closure")
-        .assert_ok("CF-097 escaping closure compiles and exits 0")
+)", "test_closure_diag")
+        .assert_ok("escaping closure compiles and exits 0")
         .assert_contains("add5_res=15", "returned closure retains captured state by value");
 
     std::println("--- PASS: test_sema_intent_and_move_diagnostics");
@@ -1199,9 +1199,9 @@ fn main() {
 }
 
 void test_hard_deprecation_enforcement([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_hard_deprecation_enforcement (CF-103)");
+    std::println("=== RUN   test_hard_deprecation_enforcement");
 
-    // 1-3. Q33 (CF-175): `var` and `out` are ordinary identifiers; their retired keyword forms no longer parse.
+    // 1-3.: `var` and `out` are ordinary identifiers; their retired keyword forms no longer parse.
     {
         auto ident_ast = cfire::frontend::parse_source("var_out_idents.cf", R"(package main
 fn compute(out: i32, var: i32) -> i32 {
@@ -1214,12 +1214,12 @@ fn main() {
 }
 )");
         require(ident_ast.has_value() && cfire::frontend::analyze(std::move(*ident_ast)).has_value(),
-            "var and out are usable as identifiers (CF-175)");
+            "var and out are usable as identifiers");
         auto var_kw = cfire::frontend::parse_source("var_kw.cf", "package main\nfn main() {\n    var x = 10\n}\n");
         require(!var_kw.has_value() || !cfire::frontend::analyze(std::move(*var_kw)).has_value(),
-            "`var x = 10` is not a declaration form (CF-175)");
+            "`var x = 10` is not a declaration form");
         require(!cfire::frontend::parse_source("out_kw.cf", "package main\nfn f(out total: i32) {}\nfn main() {}\n").has_value(),
-            "`out` is not a parameter intent (CF-175)");
+            "`out` is not a parameter intent");
     }
 
     // 4. x: mut T produces hard error cfire/DEPRECATED-INTENT-POS
@@ -1236,7 +1236,7 @@ fn inspect(in x: i32) {}
 fn main() {}
 )", "cfire/DEPRECATED-IN-PARAM", "dep_in_param.cf");
 
-    // 6. Q25 reverses CF-103: `make(own[T], v)` is the construction form; the bracket form is retired.
+    // 6. reverses: `make(own[T], v)` is the construction form; the bracket form is retired.
     {
         auto ast_res = cfire::frontend::parse_source("make_smart.cf", R"(package main
 type Box struct {
@@ -1247,7 +1247,7 @@ fn main() {
 }
 )");
         require(ast_res.has_value() && cfire::frontend::analyze(std::move(*ast_res)).has_value(),
-            "make(own[T], v) parses and checks (Q25)");
+            "make(own[T], v) parses and checks");
         require_sema_error(R"(package main
 type Box struct {
     val: i32
@@ -1265,7 +1265,7 @@ fn main() {
     _ := 42
 }
 )");
-        require(!ast_res.has_value(), "_ := rejected at parse time (CF-103)");
+        require(!ast_res.has_value(), "_ := rejected at parse time");
         if (!ast_res) {
             require(ast_res.error().contains("cfire/DEPRECATED-DISCARD"),
                 "expected cfire/DEPRECATED-DISCARD, got: " + ast_res.error());
@@ -1321,16 +1321,16 @@ fn main() {
 }
 )");
         auto fix_res = run_cfire(std::format("fix {}", cfire::bridge::shell_quote(f.string())));
-        fix_res.assert_ok("cfire fix applies deprecation repairs (CF-103)");
+        fix_res.assert_ok("cfire fix applies deprecation repairs");
         auto chk_res = run_cfire(std::format("check {}", cfire::bridge::shell_quote(f.string())));
-        chk_res.assert_ok("repaired file passes cfire check cleanly (CF-103)");
+        chk_res.assert_ok("repaired file passes cfire check cleanly");
     }
 
-    std::println("--- PASS: test_hard_deprecation_enforcement (CF-103)");
+    std::println("--- PASS: test_hard_deprecation_enforcement");
 }
 
 void test_duplicate_declaration_pass([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_duplicate_declaration_pass (CF-104)");
+    std::println("=== RUN   test_duplicate_declaration_pass");
 
     // 1. Duplicate free functions in package
     require_sema_error(R"(package main
@@ -1399,7 +1399,7 @@ fn main() {
     println(check_task(TaskState::Pending))
 }
 )", "enum_scope_test")
-        .assert_ok("cross-enum variant matching succeeds when scoped to target enum (CF-104)")
+        .assert_ok("cross-enum variant matching succeeds when scoped to target enum")
         .assert_contains("task_pending", "evaluates correct arm");
 
     // 8. Unknown enum variant diagnostic
@@ -1415,13 +1415,13 @@ fn get_heading(d: Direction) -> i32 {
 fn main() {}
 )", "cfire/UNKNOWN-ENUM-VARIANT", "unknown_variant.cf");
 
-    std::println("--- PASS: test_duplicate_declaration_pass (CF-104)");
+    std::println("--- PASS: test_duplicate_declaration_pass");
 }
 
 void test_catalog_gated_import_validation([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_catalog_gated_import_validation (CF-105)");
+    std::println("=== RUN   test_catalog_gated_import_validation");
 
-    // 1. Unknown standard library import with typo suggests closest module (CF-105)
+    // 1. Unknown standard library import with typo suggests closest module
     require_sema_error(R"(package main
 import "core:tyme"
 fn main() {}
@@ -1466,11 +1466,11 @@ fn main() {}
         }
     }
 
-    std::println("--- PASS: test_catalog_gated_import_validation (CF-105)");
+    std::println("--- PASS: test_catalog_gated_import_validation");
 }
 
 void test_plain_enum_usability_cluster([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_plain_enum_usability_cluster (CF-106)");
+    std::println("=== RUN   test_plain_enum_usability_cluster");
 
     run_cfire_source(R"CF(package main
 
@@ -1541,15 +1541,15 @@ fn main() {
     assert(parsed_item.color == Color::Green, "parsed item color is Green")
 }
 )CF", "enum_cluster_test")
-        .assert_ok("plain enum usability cluster runs and passes all assertions (CF-106)")
+        .assert_ok("plain enum usability cluster runs and passes all assertions")
         .assert_contains("Red", "prints interpolated enum")
         .assert_contains("Color is Green", "prints formatted enum string");
 
-    std::println("--- PASS: test_plain_enum_usability_cluster (CF-106)");
+    std::println("--- PASS: test_plain_enum_usability_cluster");
 }
 
 void test_uniform_generic_type_application([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_uniform_generic_type_application (CF-107)");
+    std::println("=== RUN   test_uniform_generic_type_application");
 
     run_cfire_source(R"CF(package main
 
@@ -1604,14 +1604,14 @@ fn main() {
     println("uniform generic application passed")
 }
 )CF", "generic_type_app_test")
-        .assert_ok("uniform generic type application passes all assertions (CF-107)")
+        .assert_ok("uniform generic type application passes all assertions")
         .assert_contains("uniform generic application passed", "prints confirmation output");
 
-    std::println("--- PASS: test_uniform_generic_type_application (CF-107)");
+    std::println("--- PASS: test_uniform_generic_type_application");
 }
 
 void test_cpp_backend_error_leak_prevention([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_cpp_backend_error_leak_prevention (CF-108)");
+    std::println("=== RUN   test_cpp_backend_error_leak_prevention");
 
     // 1. Verify 2-argument error("msg", code) compiles, runs, and exposes .message() and .code()
     run_cfire_source(R"CF(package main
@@ -1633,7 +1633,7 @@ fn main() {
     assert(false, "expected error branch")
 }
 )CF", "error_code_test")
-        .assert_ok("2-argument error(msg, code) compiles and executes correctly (CF-108)")
+        .assert_ok("2-argument error(msg, code) compiles and executes correctly")
         .assert_contains("error with code handled: entity not found (code 404)", "prints error details");
 
     // 2. Sema negative test: error() with 0 arguments or >2 arguments
@@ -1702,7 +1702,7 @@ fn main() {
     println("runtime formatting passed")
 }
 )CF", "runtime_fmt_test")
-        .assert_ok("runtime string format in println and format executes cleanly (CF-108)")
+        .assert_ok("runtime string format in println and format executes cleanly")
         .assert_contains("value is 42 and label is star", "runtime println works")
         .assert_contains("runtime formatting passed", "assert passed");
 
@@ -1725,14 +1725,14 @@ fn main() {
     println("channel range iteration passed")
 }
 )CF", "channel_range_test")
-        .assert_ok("channel range-for iteration executes cleanly (CF-108)")
+        .assert_ok("channel range-for iteration executes cleanly")
         .assert_contains("channel range iteration passed", "channel test output");
 
-    std::println("--- PASS: test_cpp_backend_error_leak_prevention (CF-108)");
+    std::println("--- PASS: test_cpp_backend_error_leak_prevention");
 }
 
 void test_scoped_name_resolution_cpp_ffi([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_scoped_name_resolution_cpp_ffi (CF-109)");
+    std::println("=== RUN   test_scoped_name_resolution_cpp_ffi");
 
     // 1. Sema Negative: File with import cpp still checks pure cfire variables and catches typos
     require_sema_error(R"(package main
@@ -1785,7 +1785,7 @@ fn main() {
     println("scoped resolution with cpp ffi passed")
 }
 )CF", "cpp_ffi_resolution_test")
-        .assert_ok("import cpp file with pure cfire and cpp. calls compiles and runs (CF-109)")
+        .assert_ok("import cpp file with pure cfire and cpp. calls compiles and runs")
         .assert_contains("printf from import cpp: 40", "cpp.printf output verified")
         .assert_contains("scoped resolution with cpp ffi passed", "completion output verified");
 
@@ -1889,7 +1889,7 @@ fn main() {
 }
 )", "did you mean 'my_io.printf'?", "bare_c_call_alias.cf");
 
-    // 11. Strict CF-116 type checks in files with import cpp
+    // 11. Strict type checks in files with import cpp
     require_sema_error(R"(package main
 import cpp "<cstdio>"
 fn main() {
@@ -1920,11 +1920,11 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "cpp_type_mismatch_assign.cf");
 
-    std::println("--- PASS: test_scoped_name_resolution_cpp_ffi (CF-109)");
+    std::println("--- PASS: test_scoped_name_resolution_cpp_ffi");
 }
 
 void test_match_exhaustiveness_and_reachability([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_match_exhaustiveness_and_reachability (CF-110)");
+    std::println("=== RUN   test_match_exhaustiveness_and_reachability");
 
     // 1. Sema Negative: Statement match on string without wildcard fallback triggers cfire/NON-EXHAUSTIVE-MATCH
     require_sema_error(R"(package main
@@ -1993,14 +1993,14 @@ fn main() {
     println("match statement exhaustiveness passed")
 }
 )CF", "match_stmt_str_test")
-        .assert_ok("statement match on string with wildcard executes cleanly (CF-110)")
+        .assert_ok("statement match on string with wildcard executes cleanly")
         .assert_contains("match statement exhaustiveness passed", "test completion confirmed");
 
-    std::println("--- PASS: test_match_exhaustiveness_and_reachability (CF-110)");
+    std::println("--- PASS: test_match_exhaustiveness_and_reachability");
 }
 
 void test_or_chaining_and_block_disambiguation([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_or_chaining_and_block_disambiguation (CF-111)");
+    std::println("=== RUN   test_or_chaining_and_block_disambiguation");
 
     // 1. Sema Negative: Redundant 'or' on non-fallible expression triggers cfire/REDUNDANT-OR
     require_sema_error(R"(package main
@@ -2102,14 +2102,14 @@ fn main() {
     println("or chaining and block disambiguation passed")
 }
 )CF", "or_chaining_disambiguation_test")
-        .assert_ok("chained or and struct literal disambiguation execute cleanly (CF-111)")
+        .assert_ok("chained or and struct literal disambiguation execute cleanly")
         .assert_contains("or chaining and block disambiguation passed", "test completion confirmed");
 
-    std::println("--- PASS: test_or_chaining_and_block_disambiguation (CF-111)");
+    std::println("--- PASS: test_or_chaining_and_block_disambiguation");
 }
 
 void test_lexer_exponents_keywords_and_interpolation([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_lexer_exponents_keywords_and_interpolation (CF-112)");
+    std::println("=== RUN   test_lexer_exponents_keywords_and_interpolation");
 
     // 1. Parser Negative: 'break' and 'continue' are reserved keywords and cannot be variable names
     {
@@ -2192,15 +2192,15 @@ fn main() {
 
     println("lexer exponents keywords and interpolation passed")
 }
-)CF", "cf112_conformance_test")
-        .assert_ok("CF-112 features execute cleanly")
+)CF", "lexer_interpolation_test")
+        .assert_ok("features execute cleanly")
         .assert_contains("lexer exponents keywords and interpolation passed", "test completion confirmed");
 
-    std::println("--- PASS: test_lexer_exponents_keywords_and_interpolation (CF-112)");
+    std::println("--- PASS: test_lexer_exponents_keywords_and_interpolation");
 }
 
 void test_content_hashed_pch_and_cli_flag_validation([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_content_hashed_pch_and_cli_flag_validation (CF-113)");
+    std::println("=== RUN   test_content_hashed_pch_and_cli_flag_validation");
 
     // 1. Verify argv command execution directly without shell interpretation
     {
@@ -2248,11 +2248,11 @@ void test_content_hashed_pch_and_cli_flag_validation([[maybe_unused]] const std:
         require(has_pch, "composite PCH cache contains at least one .pch file");
     }
 
-    std::println("--- PASS: test_content_hashed_pch_and_cli_flag_validation (CF-113)");
+    std::println("--- PASS: test_content_hashed_pch_and_cli_flag_validation");
 }
 
-void test_multiline_lambda_source_mapping_cf114([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_multiline_lambda_source_mapping (CF-114)");
+void test_multiline_lambda_source_mapping([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_multiline_lambda_source_mapping");
 
     // 1. Verify #line directive re-emission following a multi-line closure
     {
@@ -2280,7 +2280,7 @@ void test_multiline_lambda_source_mapping_cf114([[maybe_unused]] const std::file
         require(cpp.find("#line 5 \"test_cl.cf\"") != std::string::npos, "emits #line 5 inside closure");
         require(cpp.find("#line 6 \"test_cl.cf\"") != std::string::npos, "emits #line 6 inside closure");
         require(cpp.find("#line 7 \"test_cl.cf\"") != std::string::npos, "emits #line 7 inside closure");
-        // Crucial CF-114 check: ensure #line 9 is emitted for the statement following the multi-line closure
+        // Crucial check: ensure #line 9 is emitted for the statement following the multi-line closure
         require(cpp.find("#line 9 \"test_cl.cf\"") != std::string::npos, "emits #line 9 following multi-line closure");
         require(cpp.find("#line 10 \"test_cl.cf\"") != std::string::npos, "emits #line 10 for return statement");
     }
@@ -2341,17 +2341,17 @@ fn compute() -> i32! {
 fn main() {
     ans := compute() or 0
     assert(ans == 74, "multiline lambda and try unwrap line mappings executed accurately")
-    println("cf114 line mapping test completed")
+    println("lambda line mapping test completed")
 }
-)CF", "cf114_conformance_test")
-        .assert_ok("CF-114 features execute cleanly")
-        .assert_contains("cf114 line mapping test completed", "test completion confirmed");
+)CF", "lambda_line_mapping_test")
+        .assert_ok("features execute cleanly")
+        .assert_contains("lambda line mapping test completed", "test completion confirmed");
 
-    std::println("--- PASS: test_multiline_lambda_source_mapping (CF-114)");
+    std::println("--- PASS: test_multiline_lambda_source_mapping");
 }
 
-void test_interned_typeid_lattice_and_diagnostics_cf116([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_interned_typeid_lattice_and_diagnostics (CF-116)");
+void test_interned_typeid_lattice_and_diagnostics([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_interned_typeid_lattice_and_diagnostics");
 
     // 1. Interned TypeId Lattice canonicalization and assignability
     {
@@ -2412,7 +2412,7 @@ fn main() {
 }
 )", "cfire/TYPE-MISMATCH", "type_mismatch_binary.cf");
 
-    // 5b. Q3 canonical type identity: one package-qualified type, three internal spellings
+    // 5b. canonical type identity: one package-qualified type, three internal spellings
     // (annotation joined with '::', stdlib catalog bare return, inferred variable) are the same type.
     require_sema_ok(R"(package main
 import "ext:webui"
@@ -2433,7 +2433,7 @@ fn main() {
 }
 )", "q3_qualified_type_identity.cf");
 
-    // 5c. Q3: enum variant paths ('::') are untouched by package canonicalization.
+    // 5c. enum variant paths ('::') are untouched by package canonicalization.
     require_sema_ok(R"(package main
 import "core:log"
 
@@ -2463,7 +2463,7 @@ fn wrong() -> webui.App {
 fn main() {}
 )", "'App' is a local type, distinct from 'webui.App' (did you mean 'webui.App'?)", "q3_local_vs_package_type.cf");
 
-    // 5e. Diagnostics print the Q3 source spelling ('webui.App'), not the parser's internal 'webui::App'.
+    // 5e. Diagnostics print the source spelling ('webui.App'), not the parser's internal 'webui::App'.
     require_sema_error(R"(package main
 import "ext:webui"
 
@@ -2500,21 +2500,21 @@ fn main() {
     mut list: []Item = [it1, it2]
     total := process_slice(list)
     assert(total == 42, "type-checked struct slice operations executed accurately")
-    println("cf116 interned type system test completed")
+    println("interned type system test completed")
 }
-)CF", "cf116_conformance_test")
-        .assert_ok("CF-116 features execute cleanly")
-        .assert_contains("cf116 interned type system test completed", "test completion confirmed");
+)CF", "interned_typeid_test")
+        .assert_ok("features execute cleanly")
+        .assert_contains("interned type system test completed", "test completion confirmed");
 
-    std::println("--- PASS: test_interned_typeid_lattice_and_diagnostics (CF-116)");
+    std::println("--- PASS: test_interned_typeid_lattice_and_diagnostics");
 }
 
-void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_dir) {
+void test_unified_stdlib_metadata_table(const std::filesystem::path& rt_dir) {
     (void)rt_dir;
-    std::println("=== RUN   test_unified_stdlib_metadata_table (CF-117)");
+    std::println("=== RUN   test_unified_stdlib_metadata_table");
 
     const auto& catalog = cfire::doc::stdlib_catalog();
-    require(catalog.size() >= 35, "stdlib_catalog contains at least 35 modules (core:str and core:sort retired in W4; vendor:raylib and vendor:raygui in CF-185)");
+    require(catalog.size() >= 35, "stdlib_catalog contains at least 35 modules (core:str, core:sort, vendor:raylib, and vendor:raygui are retired)");
 
     // Verify all module paths are unique and sorted
     for (size_t i = 1; i < catalog.size(); ++i) {
@@ -2531,7 +2531,7 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
 
     // Check core and vendor namespaces
     require(cfire::modules::is_known_core_namespace("os"), "os is known core namespace");
-    require(cfire::modules::is_known_core_namespace("build"), "build is known core namespace (bug CF-117 fixed)");
+    require(cfire::modules::is_known_core_namespace("build"), "build is known core namespace in the core namespace table");
     require(cfire::modules::is_known_core_namespace("time"), "time is known core namespace");
     require(cfire::modules::is_known_core_namespace("aes"), "aes is known core namespace");
     require(cfire::modules::is_known_core_namespace("webui"), "webui is known core namespace");
@@ -2557,7 +2557,7 @@ void test_unified_stdlib_metadata_table_cf117(const std::filesystem::path& rt_di
     require(cat_idx.is_known_ns_member("http", "Response"), "cat_idx knows http.Response");
     require(cat_idx.is_known_ns_member("time", "Duration"), "cat_idx knows time.Duration");
     require(cat_idx.is_known_ns_member("json", "Value"), "cat_idx knows json.Value");
-    require(!cat_idx.is_known_ns_member("json", "JsonValue"), "CF-188: json.JsonValue is not a stdlib type (it never had a runtime type)");
+    require(!cat_idx.is_known_ns_member("json", "JsonValue"), "json.JsonValue is not a stdlib type (it never had a runtime type)");
     require(cat_idx.is_known_ns_member("sync", "Mutex"), "cat_idx knows sync.Mutex");
 
     auto fn_resp_text = cat_idx.find_ns_fn("http", "Response.text");
@@ -2588,17 +2588,17 @@ fn main() {
     assert(rep == "bonono", "str.replace_all executed correctly")
     home := os.getenv("NONEXISTENT_VAR_12345", "fallback_val")
     assert(home == "fallback_val", "os.getenv fallback")
-    println("cf117 metadata catalog unification test verified")
+    println("stdlib metadata catalog test verified")
 }
-)CF", "cf117_stdlib_catalog_test")
-        .assert_ok("CF-117 test executes cleanly")
-        .assert_contains("cf117 metadata catalog unification test verified", "CF-117 verified output");
+)CF", "stdlib_catalog_test")
+        .assert_ok("test executes cleanly")
+        .assert_contains("stdlib metadata catalog test verified", "verified output");
 
-    std::println("--- PASS: test_unified_stdlib_metadata_table (CF-117)");
+    std::println("--- PASS: test_unified_stdlib_metadata_table");
 }
 
-void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_unified_diagnostics_pipeline (CF-118)");
+void test_unified_diagnostics_pipeline(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_unified_diagnostics_pipeline");
 
     cfire::analysis::CheckOptions opts;
     opts.runtime_dir = rt_dir;
@@ -2640,7 +2640,7 @@ void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir
     require(diags_clean.empty(), "clean source yields zero diagnostics");
 
     // 5. check_path on files and directory
-    ScopedTempDir tmp("cf118_diag_test");
+    ScopedTempDir tmp("unified_diag_test");
     auto clean_file = tmp.path / "clean_mod.cf";
     {
         std::ofstream out(clean_file);
@@ -2661,13 +2661,13 @@ void test_unified_diagnostics_pipeline_cf118(const std::filesystem::path& rt_dir
     auto diags_dir = cfire::analysis::check_path(tmp.path, opts);
     require(!diags_dir.empty(), "check_path on directory detects errors in directory files");
 
-    std::println("--- PASS: test_unified_diagnostics_pipeline (CF-118)");
+    std::println("--- PASS: test_unified_diagnostics_pipeline");
 }
 
-void test_phase3_advanced_language_and_safety([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
+void test_advanced_language_and_safety([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_advanced_language_and_safety ");
 
-    // 1. CF-121: Generic struct and enum declaration AST parsing and codegen
+    // 1.: Generic struct and enum declaration AST parsing and codegen
     {
         const std::string gen_src = R"CF(package main
 type Box[T] struct {
@@ -2680,14 +2680,14 @@ type Outcome[T, E] enum {
 fn main() {}
 )CF";
         auto ast = cfire::frontend::parse_source("generic_decl.cf", gen_src);
-        require(ast.has_value(), "parse generic struct and enum succeeds (CF-121)");
+        require(ast.has_value(), "parse generic struct and enum succeeds");
         require(!ast->structs.empty() && ast->structs[0].type_params.size() == 1, "struct Box has 1 type param T");
         require(ast->structs[0].type_params[0].name == "T", "type param name is T");
         require(!ast->enums.empty() && ast->enums[0].type_params.size() == 2, "enum Outcome has 2 type params T, E");
         require(ast->enums[0].type_params[0].name == "T" && ast->enums[0].type_params[1].name == "E", "type params are T and E");
     }
 
-    // 2. CF-122: Or-patterns in match execution and exhaustiveness
+    // 2.: Or-patterns in match execution and exhaustiveness
     run_cfire_source(R"CF(package main
 
 fn check_code(code: int) -> str {
@@ -2718,13 +2718,13 @@ fn main() {
     assert(check_cmd("halt") == "term", "halt matches term")
     assert(check_cmd("help") == "unknown", "help matches wildcard")
 
-    println("phase3 or-pattern match verified")
+    println("or-pattern match verified")
 }
-)CF", "phase3_match_or_test")
-        .assert_ok("or-patterns in match execute cleanly (CF-122)")
-        .assert_contains("phase3 or-pattern match verified", "confirmation received");
+)CF", "match_or_pattern_test")
+        .assert_ok("or-patterns in match execute cleanly")
+        .assert_contains("or-pattern match verified", "confirmation received");
 
-    // CF-122 Sema Negative: Duplicate literal in or-arm triggers cfire/UNREACHABLE-MATCH-ARM
+    // Sema Negative: Duplicate literal in or-arm triggers cfire/UNREACHABLE-MATCH-ARM
     require_sema_error(R"(package main
 fn main() {
     x := 10
@@ -2735,7 +2735,7 @@ fn main() {
 }
 )", "cfire/UNREACHABLE-MATCH-ARM");
 
-    // 3. CF-123: Lint clusters of 3+ integer constants with identical prefix (cfire/PREFER-ENUM) + FixIt
+    // 3.: Lint clusters of 3+ integer constants with identical prefix (cfire/PREFER-ENUM) + FixIt
     {
         const std::string const_src = R"CF(package main
 STATE_INIT := 0
@@ -2757,10 +2757,10 @@ fn main() {}
                 }
             }
         }
-        require(found_prefer_enum, "emitted cfire/PREFER-ENUM for STATE_* cluster (CF-123)");
+        require(found_prefer_enum, "emitted cfire/PREFER-ENUM for STATE_* cluster");
     }
 
-    // 4. CF-124: cpp {} blocks and foreign C++ calls invalidate loans and null facts (F9)
+    // 4.: cpp {} blocks and foreign C++ calls invalidate loans and null facts (F9)
     // 4a. cpp {} invalidates active loan
     require_sema_error(R"(package main
 fn main() {
@@ -2773,14 +2773,14 @@ fn main() {
 }
 )", "cfire/USE-AFTER-FREE");
 
-    // 4b/4c (null facts of raw pointers after `cpp {}` and foreign calls) retired with raw pointers (CF-189).
+    // 4b/4c (null facts of raw pointers after `cpp {}` and foreign calls) retired with raw pointers.
 
 
-    std::println("--- PASS: test_phase3_advanced_language_and_safety (CF-121 - CF-124)");
+    std::println("--- PASS: test_advanced_language_and_safety ");
 }
 
-void test_phase2_concurrency_match_and_flow_control([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_phase2_concurrency_match_and_flow_control");
+void test_concurrency_match_and_flow_control([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_concurrency_match_and_flow_control");
 
     // 1. Escaping Capture Mutation Diagnostics (cfire/ESCAPING-CAPTURE-MUT)
     // 1a. Struct field mutation
@@ -2837,7 +2837,7 @@ fn main() {
     g := mu.lock()
     println("TOTAL: {}", g.value)
 }
-)", "phase2_mutex")
+)", "sync_mutex_guard_test")
         .assert_ok("concurrency mutex with_lock and lock() succeeds")
         .assert_contains("TOTAL: 10", "mutex protected 10 concurrent increments");
 
@@ -2855,7 +2855,7 @@ fn main() {
         println("TASK: {}, ATOM: {}", res, atm.load())
     }
 }
-)", "phase2_atomic_task")
+)", "sync_atomic_task_test")
         .assert_ok("atomic and task join succeed")
         .assert_contains("TASK: 77, ATOM: 123", "task result and atomic updated correctly");
 
@@ -2873,7 +2873,7 @@ fn test_guards(x: i32) -> str {
 fn main() {
     println("{},{},{},{},{}", test_guards(-5), test_guards(0), test_guards(3), test_guards(7), test_guards(100))
 }
-)", "phase2_guards_ranges")
+)", "loop_guards_ranges_test")
         .assert_ok("pattern guards and range patterns compile and run")
         .assert_contains("negative,zero,small,mid,large", "guards and ranges matched expected arms");
 
@@ -2895,7 +2895,7 @@ fn run_steps() -> i32 {
 fn main() {
     println("SUM: {}", run_steps())
 }
-)", "phase2_enum_control_flow")
+)", "enum_control_flow_test")
         .assert_ok("enum match with continue and break succeeds")
         .assert_contains("SUM: 30", "correctly skipped and broke out of loop in match arms");
 
@@ -2920,7 +2920,7 @@ fn main() {
     r2: i32! = error("failed")
     println("{}, {}, {}, {}", check_opt(o1), check_opt(o2), check_res(r1), check_res(r2))
 }
-)", "phase2_opt_res_match")
+)", "opt_res_match_test")
         .assert_ok("optional and result match blocks compile and run")
         .assert_contains("val=42, empty, ok=100, err=failed", "Some/none and Ok/Err unpacked accurately");
 
@@ -2952,7 +2952,7 @@ fn main() {
     }
     println("TOTAL_IT: {}", total)
 }
-)", "phase2_unwrapping")
+)", "optional_unwrapping_test")
         .assert_ok("if and for unwrapping compile and run")
         .assert_contains("UNWRAPPED: 50", "conditional if-unwrap evaluated correctly")
         .assert_contains("TOTAL_IT: 3", "for-unwrap loop terminated cleanly at none");
@@ -2974,11 +2974,11 @@ fn main() {
     set.insert(2)
     println("MAP: {}, SET_LEN: {}", sum, set.len())
 }
-)", "phase2_map_and_len")
+)", "map_and_len_test")
         .assert_ok("two-variable map iteration and Set .len() compile and run")
         .assert_contains("MAP: 10, SET_LEN: 2", "map iteration and set.len() produced expected results");
 
-    std::println("--- PASS: test_phase2_concurrency_match_and_flow_control");
+    std::println("--- PASS: test_concurrency_match_and_flow_control");
 }
 
 
@@ -2989,7 +2989,7 @@ fn main() {
 
 
 
-// CF-149 / Q24: golden LSP ranges per diagnostic code (1-based line/col, end_col exclusive).
+// / golden LSP ranges per diagnostic code (1-based line/col, end_col exclusive).
 void test_diagnostic_golden_ranges() {
     std::println("=== RUN   test_diagnostic_golden_ranges");
     struct Golden {

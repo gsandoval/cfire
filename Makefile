@@ -2,37 +2,40 @@ CXX      := clang++
 CFIRE_VER := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.10.0)
 GIT_SHA  ?= $(shell sh -c 'sha=$$(git rev-parse --short=7 HEAD 2>/dev/null) || { echo dev; exit 0; }; git diff --quiet --ignore-submodules HEAD 2>/dev/null && printf "%s" "$$sha" || printf "%s-dirty" "$$sha"')
 UNAME_S  := $(shell uname -s)
-IS_WIN   := $(or $(findstring MINGW,$(UNAME_S)),$(findstring MSYS,$(UNAME_S)),$(findstring CYGWIN,$(UNAME_S)),$(findstring Windows_NT,$(OS)))
+IS_WIN   := $(or $(findstring MINGW,$(UNAME_S)),$(findstring MSYS,$(UNAME_S)),$(findstring CYGWIN,$(UNAME_S)),$(findstring CLANG,$(UNAME_S)),$(findstring CLANG,$(MSYSTEM)),$(findstring Windows_NT,$(OS)))
+EXE      := $(if $(IS_WIN),.exe,)
 LINUX_CXXFLAGS := $(if $(filter Linux,$(UNAME_S)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
+PCH_INSTANTIATE := $(if $(filter Linux,$(UNAME_S)),,-fpch-instantiate-templates)
+WIN_CXXFLAGS := $(if $(IS_WIN),-static,)
 EXTRA_CXXFLAGS ?=
 EXTRA_LDFLAGS ?=
-CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc $(EXTRA_CXXFLAGS)
-LDFLAGS  := $(if $(filter Darwin,$(UNAME_S)),-framework AudioToolbox -framework CoreFoundation -framework Security,$(if $(IS_WIN),-static -lws2_32 -ladvapi32 -lshell32,-ldl -lpthread)) $(EXTRA_LDFLAGS)
+CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) $(WIN_CXXFLAGS) -Iruntime -Isrc $(EXTRA_CXXFLAGS)
+LDFLAGS  := $(if $(filter Darwin,$(UNAME_S)),-framework AudioToolbox -framework CoreFoundation -framework Security,$(if $(IS_WIN),-static -lws2_32 -ladvapi32 -lshell32 -lgdi32,-ldl -lpthread)) $(EXTRA_LDFLAGS)
 CFIRE_LDFLAGS := $(if $(filter Darwin,$(UNAME_S)),,$(if $(IS_WIN),-static -lws2_32 -ladvapi32 -lshell32,-ldl -lpthread)) $(EXTRA_LDFLAGS)
 PREFIX   ?= /usr/local
 
-CFIRE_SRCS := src/tu_codegen_body.cpp \
-              src/tu_codegen_decl.cpp \
-              src/tu_sema_stmt.cpp \
-              src/tu_parser.cpp \
-              src/tu_lsp.cpp \
-              src/tu_lsp_features.cpp \
-              src/tu_buildsys.cpp \
-              src/tu_infra.cpp \
-              src/tu_docgen.cpp \
-              src/tu_sema_expr.cpp \
-              src/tu_sema_infer.cpp \
-              src/tu_sema_call.cpp \
-              src/tu_lsp_nav.cpp \
-              src/tu_inspect_fmt.cpp \
-              src/tu_mcp.cpp \
-              src/tu_build.cpp \
-              src/tu_check_fix.cpp \
-              src/tu_scaffold.cpp \
-              src/tu_doctor.cpp \
-              src/tu_core_tables.cpp \
-              src/tu_docgen_md.cpp \
-              src/tu_catalog.cpp \
+CFIRE_SRCS := src/codegen/body_emitter.cpp \
+              src/codegen/declaration_emitter.cpp \
+              src/sema/statement_checker.cpp \
+              src/parser.cpp \
+              src/lsp/server_command.cpp \
+              src/lsp/language_features.cpp \
+              src/build/driver.cpp \
+              src/build/toolchain_and_cache.cpp \
+              src/docgen/command.cpp \
+              src/sema/expression_checker.cpp \
+              src/sema/type_inference.cpp \
+              src/sema/call_and_match_checker.cpp \
+              src/lsp/navigation_and_refactor.cpp \
+              src/cli/inspect_and_fmt_commands.cpp \
+              src/cli/mcp_and_ide_commands.cpp \
+              src/cli/build_commands.cpp \
+              src/cli/check_commands.cpp \
+              src/cli/project_commands.cpp \
+              src/cli/toolchain_commands.cpp \
+              src/diagnostics_registry.cpp \
+              src/docgen/markdown_renderer.cpp \
+              src/docgen/stdlib_catalog.cpp \
               src/main.cpp
 
 CFIRE_OBJS := $(CFIRE_SRCS:.cpp=.o)
@@ -49,24 +52,24 @@ TEST_OBJS := $(TEST_SRCS:.cpp=.o)
 
 all: build
 
-HEADERS := $(wildcard src/*.hpp src/*.inc src/*/*.hpp src/*/*.inc runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp tools/*/*.hpp)
+HEADERS := $(wildcard src/*.hpp src/*/*.hpp runtime/*.hpp runtime/*/*.hpp runtime/*/*/*.hpp tests/*.hpp tests/unit/*.hpp tools/*/*.hpp)
 
-# `cfire` is a real file target (CF-159): it relinks only when sources change or the embedded git SHA does.
+# `cfire` is a real file target: it relinks only when sources change or the embedded git SHA does.
 .cfire_gitsha: FORCE
 	@echo '$(GIT_SHA)' | cmp -s - $@ 2>/dev/null || echo '$(GIT_SHA)' > $@
 
 .cfire_host.pch: src/host_pch.hpp .cfire_gitsha
-	@$(CXX) $(CXXFLAGS) -DCFIRE_SPLIT_TUS=1 -fpch-instantiate-templates -MMD -MP -MF .cfire_host.pch.d -x c++-header src/host_pch.hpp -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -x c++-header src/host_pch.hpp (rc=$$rc)"; exit $$rc
+	@$(CXX) $(CXXFLAGS) -DCFIRE_SPLIT_TUS=1 $(PCH_INSTANTIATE) -MMD -MP -MF .cfire_host.pch.d -x c++-header src/host_pch.hpp -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -x c++-header src/host_pch.hpp (rc=$$rc)"; exit $$rc
 
-src/%.o: src/%.cpp .cfire_host.pch .cfire_gitsha
+$(CFIRE_OBJS): %.o: %.cpp .cfire_host.pch .cfire_gitsha
 	@$(CXX) $(CXXFLAGS) -DCFIRE_SPLIT_TUS=1 -include-pch .cfire_host.pch -MMD -MP -c $< -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... -c $< (rc=$$rc)"; exit $$rc
 
 # Each compile keeps its diagnostics in a .log next to its output, so `make check` can prove zero warnings even when
-# nothing needed rebuilding (CF-186).
-cfire: $(CFIRE_OBJS)
-	@$(CXX) $(CXXFLAGS) $(CFIRE_OBJS) $(CFIRE_LDFLAGS) -o cfire 2> .cfire_build.log; rc=$$?; cat .cfire_build.log >&2; echo "$(CXX) ... -o cfire (rc=$$rc)"; exit $$rc
+# nothing needed rebuilding.
+cfire$(EXE): $(CFIRE_OBJS)
+	@$(CXX) $(CXXFLAGS) $(CFIRE_OBJS) $(CFIRE_LDFLAGS) -o cfire$(EXE) 2> .cfire_build.log; rc=$$?; cat .cfire_build.log >&2; echo "$(CXX) ... -o cfire$(EXE) (rc=$$rc)"; exit $$rc
 
-build: cfire
+build: cfire$(EXE)
 
 FORCE:
 
@@ -76,13 +79,13 @@ hooks:
 install: build
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
-	cp cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire
+	cp cfire$(EXE) $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire$(EXE)
 	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
 	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > $(DESTDIR)$(PREFIX)/share/cfire/runtime/cfire-runtime.version
-	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire and runtime to $(DESTDIR)$(PREFIX)/share/cfire"
+	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire$(EXE) and runtime to $(DESTDIR)$(PREFIX)/share/cfire"
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/cfire
+	rm -f $(DESTDIR)$(PREFIX)/bin/cfire$(EXE)
 	rm -rf $(DESTDIR)$(PREFIX)/share/cfire
 
 doctor: build
@@ -97,21 +100,21 @@ setup: build
 .cfire_test_runner: $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) $(TEST_OBJS) $(LDFLAGS) -o $@
 
-# --- CF-186: the three test tiers. These are the only commands to remember (docs/planning/README.md):
+# --- The three test tiers. These are the only commands to remember (docs/planning/README.md):
 #   make check            every commit (the pre-commit hook runs it)
 #   make check-deep       sanitizers and fuzz replay; required before a CF item is marked done
 #   make check-platforms  the Linux and Windows VMs; required before a CF item is marked done, and before a release
 #   make check-all        all three in order, then a summary table; its summary goes in active.md
 check:
-	@[ -f .cfire_build.log ] || rm -f cfire
+	@[ -f .cfire_build.log ] || rm -f cfire cfire.exe
 	@[ -f .cfire_host.pch.log ] || rm -f .cfire_host.pch
 	@for o in $(CFIRE_OBJS) $(TEST_OBJS); do [ -f $$o.log ] || rm -f $$o; done
 	@$(MAKE) --no-print-directory build .cfire_test_runner
 	@$(MAKE) --no-print-directory check-warnings
 	@echo "=== Canonical formatting"
 	./cfire fmt --check examples/
-	@echo "=== Every canonical example type-checks (CF-176, CF-148)"
-	@set -e; for d in examples/*/; do ./cfire check --verify-cpp "$$d" > .cfire_check.log 2>&1 || { cat .cfire_check.log; rm -f .cfire_check.log; echo "cfire check failed: $$d"; exit 1; }; if grep -q "cfire/UNKNOWN-TYPE" .cfire_check.log; then cat .cfire_check.log; rm -f .cfire_check.log; echo "untyped expression in $$d (CF-148)"; exit 1; fi; done; rm -f .cfire_check.log
+	@echo "=== Every canonical example type-checks"
+	@set -e; for d in examples/*/; do ./cfire check --verify-cpp "$$d" > .cfire_check.log 2>&1 || { cat .cfire_check.log; rm -f .cfire_check.log; echo "cfire check failed: $$d"; exit 1; }; if grep -q "cfire/UNKNOWN-TYPE" .cfire_check.log; then cat .cfire_check.log; rm -f .cfire_check.log; echo "untyped expression in $$d"; exit 1; fi; done; rm -f .cfire_check.log
 	@$(MAKE) --no-print-directory test
 	@echo "✓ make check passed"
 
@@ -197,7 +200,7 @@ fuzz: build .cfire_test_runner
 	./.cfire_test_runner fuzz
 	./cfire test tests/stdlib_suite_test.cf --fuzz-runs 500
 
-# --- Structural fuzz targets (tests/fuzz/fuzz_*.cpp, CF-141) ---
+# --- Structural fuzz targets (tests/fuzz/fuzz_*.cpp) ---
 FUZZ_TARGETS   := parser sema fmt http url websocket json_rpc deflate
 FUZZ_CF_SEEDS  := examples tests/golden tests/conformance tests/parse_fail scripts/audit/probes tests/fuzz/corpus/sema_crashes
 FUZZ_SECONDS   ?= 60
@@ -228,8 +231,8 @@ bench: build .cfire_test_runner
 	./.cfire_test_runner bench
 	./cfire bench tests/stdlib_suite_test.cf
 
-# --- Local UTM VM gates (CF-184, Q48): the CI `linux` / `windows` jobs on the working tree. See scripts/vm/README.md.
-# The host-side driver (CF-187) is C++ like everything else; only the guest-side gate scripts are shell.
+# --- Local UTM VM gates: the CI `linux` / `windows` jobs on the working tree. See scripts/vm/README.md.
+# The host-side driver is C++ like everything else; only the guest-side gate scripts are shell.
 .vmtest: tools/vmtest/main.cpp tools/vmtest/vmtest.hpp tests/process_run.hpp
 	@$(CXX) $(CXXFLAGS) tools/vmtest/main.cpp $(LDFLAGS) -o $@ 2> $@.log; rc=$$?; cat $@.log >&2; echo "$(CXX) ... tools/vmtest/main.cpp (rc=$$rc)"; exit $$rc
 
@@ -246,6 +249,6 @@ vm-setup-windows: .vmtest
 	./.vmtest setup-windows
 
 clean:
-	rm -rf cfire .cfire_gitsha .cfire_build.log .cfire_host.pch .cfire_host.pch.log .cfire_host.pch.d $(CFIRE_OBJS) $(CFIRE_OBJS:=.log) $(CFIRE_OBJS:.o=.d) .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
+	rm -rf cfire cfire.exe .cfire_gitsha .cfire_build.log .cfire_host.pch .cfire_host.pch.log .cfire_host.pch.d $(CFIRE_OBJS) $(CFIRE_OBJS:=.log) $(CFIRE_OBJS:.o=.d) .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner.exe .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
 
 -include .cfire_host.pch.d $(CFIRE_OBJS:.o=.d)

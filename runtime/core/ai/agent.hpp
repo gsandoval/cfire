@@ -125,7 +125,7 @@ public:
             }
             for (const auto& t : tools_) {
                 if (t.spec.name == tname->as_str()) {
-                    // Exception barrier (CF-140): a throwing tool reports isError instead of killing the server.
+                    // Exception barrier: a throwing tool reports isError instead of killing the server.
                     std::expected<std::string, cfire::Error> res;
                     try {
                         res = t.handler(args_str);

@@ -59,7 +59,7 @@ type AuditLog struct {
         std::format("expected struct with standalone comment to format identically without duplicating header, got:\n{}",
             fmt_comment.value_or("<error>")));
 
-    // CF-096: Formatter string-awareness (URL with // and trailing comment) and token invariance
+    // Formatter string-awareness (URL with // and trailing comment) and token invariance
     std::string struct_with_url_cf = R"(package main
 
 type Config struct {
@@ -91,10 +91,10 @@ type Config struct {
         std::format("expected 3-line formatted range, got:\n{}", fmt_range_res.value_or("<error>")));
 
     // 2. Test `cfire lsp` JSON-RPC 2.0 server (initialize, didOpen diagnostics, hover, completion, signatureHelp, inlayHint, definition)
-    // CF-178: hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
+    // hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
     // rebased into a private dir with a workspace-root marker, so unrelated .cf files under /tmp can't leak in.
     ScopedTempDir rpc_frame_ws("cfire_lsp_ws");
-    std::filesystem::create_directory(rpc_frame_ws.path / ".git");  // workspace-root marker (Q21)
+    std::filesystem::create_directory(rpc_frame_ws.path / ".git");  // workspace-root marker
     auto rpc_frame = [ws_uri = cfire::lsp::detail::path_to_uri(rpc_frame_ws.path) + "/"](std::string_view body) {
         std::string rebased(cfire::str::replace_all(body, "file:///tmp/", ws_uri));
         return std::format("Content-Length: {}\r\n\r\n{}", rebased.size(), rebased);
@@ -475,7 +475,7 @@ fn main() {
 
         require(w_resp.contains(R"("id":401)") && w_resp.contains(R"("label":"clipboard_get")") &&
                 !w_resp.contains(R"("label":"new_app")"),
-            "LSP completion on webui. lists module functions and no retired new_app (WEBUI-P0-06, Q25)");
+            "LSP completion on webui. lists module functions and no retired new_app (WEBUI-P0-06)");
         require(w_resp.contains(R"("id":402)") &&
                 w_resp.contains(R"("label":"bind")") &&
                 w_resp.contains(R"("label":"bind_action")") &&
@@ -514,7 +514,7 @@ fn main() {
             cfire::lsp::detail::json_escape(chain_src)));
         // 501: completion on `try os.stdin().` at line 9, character 24
         c_in << rpc_frame(R"({"jsonrpc":"2.0","id":501,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":9,"character":24}}})");
-        // 502: completion on `line.` (a `str`) at line 7, character 14: builtin methods with parameter snippets (W4)
+        // 502: completion on `line.` (a `str`) at line 7, character 14: builtin methods with parameter snippets
         c_in << rpc_frame(R"({"jsonrpc":"2.0","id":502,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"},"position":{"line":7,"character":14}}})");
         // 503: inlayHint for `lines := try os.stdin().read_lines()` -> `: []str`
         c_in << rpc_frame(R"({"jsonrpc":"2.0","id":503,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/chain_lsp.cf"}}})");
@@ -539,7 +539,7 @@ fn main() {
                 c_resp.contains(R"("label":"split")") &&
                 c_resp.contains(R"("insertText":"split(${1:a})$0")") &&
                 c_resp.contains(R"("label":"trim")"),
-            "LSP completion on a str value lists builtin methods with parameter tabstop snippets (W4)");
+            "LSP completion on a str value lists builtin methods with parameter tabstop snippets");
         require(c_resp.contains(R"("id":503)") &&
                 c_resp.contains(R"("label":": []str")"),
             "LSP inlayHint infers ': []str' for 'lines := try os.stdin().read_lines()'");
@@ -568,7 +568,7 @@ fn main() {
     auto has_module = [&](std::string_view name) {
         return std::ranges::any_of(discovered, [&](const auto& m) { return m.import_path == name; });
     };
-    require(!has_module("vendor:raylib") && !has_module("vendor:raygui"), "CF-185: raylib is not in the catalog");
+    require(!has_module("vendor:raylib") && !has_module("vendor:raygui"), "raylib is not in the catalog");
     require(has_module("core:math"), "catalog discovered core:math");
     require(has_module("ext:ai"), "catalog discovered ext:ai");
     require(has_module("ext:db/sqlite"), "catalog discovered ext:db/sqlite");
@@ -590,7 +590,7 @@ fn main() {
         require(r_unit >= 0.0 && r_unit <= 1.0, "cfire::rand::f64_unit check");
         (void)r_u64;
 
-        ScopedTempDir test_tmp_file_scope("cfire_test_tmp_file");  // hermetic, mkdtemp-backed (CF-153)
+        ScopedTempDir test_tmp_file_scope("cfire_test_tmp_file");  // hermetic, mkdtemp-backed
         auto test_tmp_file = test_tmp_file_scope.path / "cfire_io_test.bin";
         std::vector<std::uint8_t> payload = {std::uint8_t{0xDE}, std::uint8_t{0xAD}, std::uint8_t{0xBE}, std::uint8_t{0xEF}};
         auto w_res = cfire::fs::write_bytes(test_tmp_file, payload);
@@ -673,7 +673,7 @@ ok
 
         // Verify runtime provenance skew detection (version and commit mismatch)
         {
-            ScopedTempDir tmp_rt_scope("cfire_tmp_rt");  // hermetic, mkdtemp-backed (CF-153)
+            ScopedTempDir tmp_rt_scope("cfire_tmp_rt");  // hermetic, mkdtemp-backed
             auto tmp_rt = tmp_rt_scope.path / "cfire_test_rt_prov";
             std::error_code rt_ec;
             std::filesystem::remove_all(tmp_rt, rt_ec);
@@ -814,7 +814,7 @@ fn main() {
                 "Showcase Tab 7 output matches telemetry");
     }
 
-    // 7. Test DOC-SYNC, LSP-SYNC & MCP-SYNC for ERG-01..ERG-05
+    // 7. Test DOC-SYNC, LSP-SYNC & MCP-SYNC for developer ergonomics
     {
         auto llm_ref = cfire::doc::generate_llm_reference();
         require(llm_ref.contains("Same-Directory Package Merging") &&
@@ -825,7 +825,7 @@ fn main() {
                 llm_ref.contains("core:tako") &&
                 !llm_ref.contains("pkg:tako") &&
                 !llm_ref.contains("@pkg("),
-            "DOC-01a: generate_llm_reference() documents ERG-01..ERG-05 and core:tako");
+            "generate_llm_reference() documents build.cf and core:tako");
 
         auto agent_rules = cfire::lsp::cfire_agent_rules_markdown("cfire");
         require(agent_rules.contains("Same-Directory Package Merging") &&
@@ -834,7 +834,7 @@ fn main() {
                 agent_rules.contains("core:tako") &&
                 !agent_rules.contains("pkg:tako") &&
                 !agent_rules.contains("@pkg("),
-            "DOC-01b: cfire_agent_rules_markdown() documents ERG-01..ERG-05 and core:tako");
+            "cfire_agent_rules_markdown() documents build.cf and core:tako");
 
         ScopedTempDir sync_tmp("cfire_lsp_mcp_sync");
         auto types_cf = sync_tmp.file("types.cf", R"CF(package main
@@ -898,7 +898,7 @@ test "counter sibling test" {
             std::format("LSP-01d: expected hover on assert_eq, got: {}", hover_assert_eq));
 
         // MCP-01a & MCP-01b: Test `cfire_check` with workspace `path` and `cfire_outline` filtering `.tako` & showing `interface`/`test`
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{sync_tmp.path, false});  // CF-160 root
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{sync_tmp.path, false});  // root
         std::string check_req = std::format(
             R"({{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"cfire_check","arguments":{{"path":"{}"}}}}}})",
             cfire::lsp::detail::json_escape(sync_tmp.path.string()));
@@ -915,11 +915,11 @@ test "counter sibling test" {
                 !outline_resp.contains("should_not_appear"),
             std::format("MCP-01b: expected cfire_outline to include interface/test and skip .tako, got: {}", outline_resp));
 
-        // CF-095: MCP security — argv exec without shell injection and isolated eval
+        // MCP security — argv exec without shell injection and isolated eval
         std::string eval_req = R"JSON({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"cfire_eval","arguments":{"code":"println(\"mcp-secure-eval-ok\")"}}})JSON";
         std::string eval_resp = mcp_srv.handle_jsonrpc(eval_req);
         require(eval_resp.contains("mcp-secure-eval-ok"),
-            std::format("CF-095: expected cfire_eval to run cleanly and output 'mcp-secure-eval-ok', got: {}", eval_resp));
+            std::format("expected cfire_eval to run cleanly and output 'mcp-secure-eval-ok', got: {}", eval_resp));
 
         std::string test_inject_req = std::format(
             R"JSON({{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"cfire_test","arguments":{{"path":"{}","filter":"$(echo injected)"}}}}}})JSON",
@@ -927,7 +927,7 @@ test "counter sibling test" {
         std::string test_inject_resp = mcp_srv.handle_jsonrpc(test_inject_req);
         // The literal filter `$(echo injected)` must NOT be expanded by a shell
         require(!test_inject_resp.contains("injected"),
-            std::format("CF-095: expected direct argv execution to prevent shell expansion, got: {}", test_inject_resp));
+            std::format("expected direct argv execution to prevent shell expansion, got: {}", test_inject_resp));
     }
 
     std::println("--- PASS: test_formatter_lsp_and_docgen");
@@ -1104,7 +1104,7 @@ fn run_demo() {
             std::format("completion on log.Level. offers Debug/Info/Warn/Error, got: {}", lvl_comp));
 
         // MCP `cfire_inspect` on `sample_val` inside `{compute_metric(sample_val, 1.5):.2f}` (1-based line 10, col 59)
-        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{interp_cf.parent_path(), false});  // CF-160 root
+        auto mcp_srv = cfire::mcp::build_compiler_mcp_server(rt_dir, cfire::mcp::McpOptions{interp_cf.parent_path(), false});  // root
         std::string inspect_req = std::format(
             R"({{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{{"name":"cfire_inspect","arguments":{{"target":"{}:10:59"}}}}}})",
             cfire::lsp::detail::json_escape(interp_cf.string()));
@@ -1130,15 +1130,15 @@ fn run_demo() {
             std::format("MCP cfire_rename updated declaration and both '{{...}}' interpolations while preserving plain string text, got:\n{}", updated_txt));
     }
 
-    // 8. CF-119: Scope-sound refactor engine, LSP validity/collision checks, atomic rollback, and CRLF preservation
+    // 8.: Scope-sound refactor engine, LSP validity/collision checks, atomic rollback, and CRLF preservation
     {
         // 8a. CRLF line ending preservation
         auto crlf_cf = tmp.file("crlf_sample.cf", "package main\r\n\r\nfn calc(n: i32) -> i32 {\r\n    temp_val := n * 2\r\n    return temp_val + 1\r\n}\r\n\r\nfn main() {\r\n    println(\"{}\", calc(10))\r\n}\r\n");
         run_cfire(std::format("refactor rename \"{}:4:5\" my_val --apply", crlf_cf.string()))
-            .assert_ok("crlf rename exit 0 (CF-119)");
+            .assert_ok("crlf rename exit 0");
 
         auto crlf_raw = cfire::build::read_file_text(crlf_cf).value_or("");
-        require(crlf_raw.contains("\r\n"), "crlf_sample.cf preserves \\r\\n line endings (CF-119)");
+        require(crlf_raw.contains("\r\n"), "crlf_sample.cf preserves \\r\\n line endings");
         // Ensure no bare \n without preceding \r exists in file
         bool has_bare_lf = false;
         for (std::size_t i = 0; i < crlf_raw.size(); ++i) {
@@ -1147,9 +1147,9 @@ fn run_demo() {
                 break;
             }
         }
-        require(!has_bare_lf, "crlf_sample.cf contains zero bare LF endings (CF-119)");
+        require(!has_bare_lf, "crlf_sample.cf contains zero bare LF endings");
         require(crlf_raw.contains("my_val := n * 2") && crlf_raw.contains("return my_val + 1"),
-            "crlf_sample.cf renamed occurrences correctly (CF-119)");
+            "crlf_sample.cf renamed occurrences correctly");
 
         // 8b. Scope-sound renaming across shadowed blocks
         auto shadow_cf = tmp.file("shadow_sample.cf", R"(package main
@@ -1169,29 +1169,29 @@ fn main() {
 )");
         // Rename outer `val` (line 4, col 5) -> `outer_number`
         run_cfire(std::format("refactor rename \"{}:4:5\" outer_number --apply", shadow_cf.string()))
-            .assert_ok("rename outer val exit 0 (CF-119)");
+            .assert_ok("rename outer val exit 0");
 
         auto shadow_after_outer = cfire::build::read_file_text(shadow_cf).value_or("");
-        require(shadow_after_outer.contains("outer_number := 100"), "outer declaration renamed to outer_number (CF-119)");
-        require(shadow_after_outer.contains("println(\"outer: {}\", outer_number)"), "outer usage renamed to outer_number (CF-119)");
-        require(shadow_after_outer.contains("val := \"inner string\""), "inner declaration preserved as val (not renamed) (CF-119)");
-        require(shadow_after_outer.contains("println(\"inner: {}\", val)"), "inner usage preserved as val (not renamed) (CF-119)");
+        require(shadow_after_outer.contains("outer_number := 100"), "outer declaration renamed to outer_number");
+        require(shadow_after_outer.contains("println(\"outer: {}\", outer_number)"), "outer usage renamed to outer_number");
+        require(shadow_after_outer.contains("val := \"inner string\""), "inner declaration preserved as val (not renamed)");
+        require(shadow_after_outer.contains("println(\"inner: {}\", val)"), "inner usage preserved as val (not renamed)");
 
         // Rename inner `val` (line 6, col 9) -> `inner_string`
         run_cfire(std::format("refactor rename \"{}:6:9\" inner_string --apply", shadow_cf.string()))
-            .assert_ok("rename inner val exit 0 (CF-119)");
+            .assert_ok("rename inner val exit 0");
 
         auto shadow_after_inner = cfire::build::read_file_text(shadow_cf).value_or("");
-        require(shadow_after_inner.contains("outer_number := 100"), "outer declaration remains outer_number (CF-119)");
-        require(shadow_after_inner.contains("println(\"outer: {}\", outer_number)"), "outer usage remains outer_number (CF-119)");
-        require(shadow_after_inner.contains("inner_string := \"inner string\""), "inner declaration renamed to inner_string (CF-119)");
-        require(shadow_after_inner.contains("println(\"inner: {}\", inner_string)"), "inner usage renamed to inner_string (CF-119)");
+        require(shadow_after_inner.contains("outer_number := 100"), "outer declaration remains outer_number");
+        require(shadow_after_inner.contains("println(\"outer: {}\", outer_number)"), "outer usage remains outer_number");
+        require(shadow_after_inner.contains("inner_string := \"inner string\""), "inner declaration renamed to inner_string");
+        require(shadow_after_inner.contains("println(\"inner: {}\", inner_string)"), "inner usage renamed to inner_string");
 
         // Verify refactored code compiles and executes cleanly
         run_cfire(std::format("run \"{}\"", shadow_cf.string()))
-            .assert_ok("scope-renamed code runs cleanly (CF-119)")
-            .assert_contains("inner: inner string", "inner execution preserved (CF-119)")
-            .assert_contains("outer: 100", "outer execution preserved (CF-119)");
+            .assert_ok("scope-renamed code runs cleanly")
+            .assert_contains("inner: inner string", "inner execution preserved")
+            .assert_contains("outer: 100", "outer execution preserved");
 
         // 8c. LSP validity and collision checks
         cfire::lsp::Server lsp_srv;
@@ -1242,20 +1242,20 @@ fn main() {
         fake_multi_res.modifications.push_back(bad_mod);
 
         auto apply_err = cfire::refactor::apply_rename(fake_multi_res);
-        require(!apply_err.has_value(), "apply_rename on partial failure returns error (CF-119)");
+        require(!apply_err.has_value(), "apply_rename on partial failure returns error");
 
         auto good_check = cfire::build::read_file_text(good_cf).value_or("");
         require(good_check == "package main\nfn main() { orig_name := 1 }\n",
-            "good_file.cf remains untouched after multi-file apply failure (CF-119)");
+            "good_file.cf remains untouched after multi-file apply failure");
     }
 
     std::println("--- PASS: test_cfire_refactor_rename");
 }
 
-void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_dir) {
-    std::println("=== RUN   test_phase4_tooling_depth");
+void test_lsp_refactor_and_docgen_depth([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_lsp_refactor_and_docgen_depth");
 
-    // 1. CF-125: LSP JSON-RPC parser compliance
+    // 1.: LSP JSON-RPC parser compliance
     {
         std::string unescaped = cfire::lsp::detail::json_unescape(R"(\u0041\u0042\u0043)");
         require(unescaped == "ABC", "json_unescape decodes basic \\uXXXX");
@@ -1278,7 +1278,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         srv.stop_worker();
     }
 
-    // 2. CF-126: Document lifecycle (didClose and workspace/didChangeWatchedFiles)
+    // 2.: Document lifecycle (didClose and workspace/didChangeWatchedFiles)
     {
         std::ostringstream ss;
         cfire::lsp::Server srv;
@@ -1302,7 +1302,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         srv.stop_worker();
     }
 
-    // 3. CF-127: UTF-16 position translations & real symbol ranges
+    // 3.: UTF-16 position translations & real symbol ranges
     {
         std::string mixed_line = "let s = \"😀 hello\"";
         int u16_len = cfire::lsp::detail::utf8_col_to_utf16_col(mixed_line, mixed_line.size());
@@ -1322,7 +1322,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         srv.stop_worker();
     }
 
-    // 4. CF-128: Incremental sync and $/cancelRequest
+    // 4.: Incremental sync and $/cancelRequest
     {
         std::ostringstream ss;
         cfire::lsp::Server srv;
@@ -1341,7 +1341,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         srv.stop_worker();
     }
 
-    // 5. CF-129: Folding ranges, selection ranges, document highlight, code actions context
+    // 5.: Folding ranges, selection ranges, document highlight, code actions context
     {
         std::ostringstream ss;
         cfire::lsp::Server srv;
@@ -1367,7 +1367,7 @@ void test_phase4_tooling_depth([[maybe_unused]] const std::filesystem::path& rt_
         srv.stop_worker();
     }
 
-    // 6. CF-130: Formatter token spacing and idempotency
+    // 6.: Formatter token spacing and idempotency
     {
         std::string unformatted = R"(package main
 
@@ -1389,5 +1389,5 @@ fn calc(a:int,b:int) -> int {
         }
     }
 
-    std::println("--- PASS: test_phase4_tooling_depth");
+    std::println("--- PASS: test_lsp_refactor_and_docgen_depth");
 }

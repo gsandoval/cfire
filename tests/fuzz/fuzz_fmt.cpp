@@ -1,4 +1,4 @@
-// Formatter invariants (CF-141): formatting never crashes, is idempotent, and its output re-parses.
+// Formatter invariants: formatting never crashes, is idempotent, and its output re-parses.
 #include "../../src/formatter.hpp"
 #include <cstdint>
 #include <cstddef>

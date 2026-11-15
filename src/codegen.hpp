@@ -22,7 +22,7 @@ struct ShardedEmission {
 
 } // namespace cfire::frontend
 
-#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_CODEGEN_DECL_IMPL) && !defined(CFIRE_TU_CODEGEN_BODY_IMPL)
+#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_CODEGEN_DECL_IMPL) && !defined(CFIRE_CODEGEN_BODY_IMPL)
 
 namespace cfire::frontend {
 
@@ -66,7 +66,7 @@ public:
     [[nodiscard]] auto emit_cpp() -> std::string;
     [[nodiscard]] auto emit_sharded() -> ShardedEmission;
 
-    // Q10: `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`); returns the C++ type.
+    // `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`); returns the C++ type.
     [[nodiscard]] auto primitive_prefix_cpp(const ExprPtr& obj) const -> std::string {
         if (!obj) return {};
         const auto* id = std::get_if<IdentExpr>(&obj->node);
@@ -79,7 +79,7 @@ public:
         return {};
     }
 
-    // Q25: the C++ for every `make(T, args...)` form. Sema has already checked arity and argument types.
+    // the C++ for every `make(T, args...)` form. Sema has already checked arity and argument types.
     [[nodiscard]] auto user_ctor_name(const TypeRef& t) const -> std::string {
         std::string leaf = t.name;
         for (auto p = leaf.find("::"); p != std::string::npos; p = leaf.find("::")) leaf.replace(p, 2, ".");
@@ -124,7 +124,7 @@ public:
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::unordered_map<std::string, std::string> core_aliases_{};
     std::vector<std::string> active_async_scopes_{};
-    // Q51 (CF-189): scope variable -> (its `cfire::async::Results<T>` collector, the lowered `T`), for the value-producing
+    // scope variable -> (its `cfire::async::Results<T>` collector, the lowered `T`), for the value-producing
     // scopes being emitted; their `scope.spawn` calls add the task to the collector.
     std::unordered_map<std::string, std::pair<std::string, std::string>> value_scope_results_{};
 
@@ -146,12 +146,12 @@ public:
     std::unordered_map<std::string, std::size_t> fixed_array_vars_{};
     std::unordered_map<std::string, std::string> loop_index_to_col_{};
     std::unordered_map<std::string, std::string> var_types_{};
-    // Q36 / Q53: read-only `str` and `[]T` params (lowered to `cfire::str_ref` / `cfire::slice_ref<T>`), with the
+    // / read-only `str` and `[]T` params (lowered to `cfire::str_ref` / `cfire::slice_ref<T>`), with the
     // owned C++ type an escaping closure copies them into.
     std::vector<std::pair<std::string, std::string>> view_params_{};
     std::unordered_map<const Expr*, std::string> hoisted_tries_{};
 
-    // CF-196: an integer constant expression (literals, unary `-`, arithmetic and bitwise operators); Sema types it `i64`.
+    // an integer constant expression (literals, unary `-`, arithmetic and bitwise operators); Sema types it `i64`.
     [[nodiscard]] static auto is_int_const_expr(const ExprPtr& e) -> bool {
         if (!e) return false;
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) return lit->kind == TokenKind::Int;
@@ -308,7 +308,7 @@ public:
     }
 
     // The type parameters in scope for the function being emitted (its own and a generic receiver's), so a
-    // `[]T` parameter of a type parameter keeps a deducible `const std::vector<T>&` (Q53).
+    // `[]T` parameter of a type parameter keeps a deducible `const std::vector<T>&`.
     std::unordered_set<std::string> generic_params_{};
     void set_generic_params(const FnDecl& fn) {
         generic_params_.clear();
@@ -390,7 +390,7 @@ public:
         }, e->node);
     }
 
-    // Q36: an escaping closure owns copies of the view parameters it uses, so it cannot outlive their text.
+    // an escaping closure owns copies of the view parameters it uses, so it cannot outlive their text.
     [[nodiscard]] auto view_param_captures(const std::vector<StmtPtr>& body) const -> std::string {
         std::string caps;
         for (const auto& [name, owned] : view_params_) {
@@ -665,10 +665,10 @@ public:
             if (tr.name == "str") return "cfire::str_ref";
             return lower_owning_type(tr);
         }
-        // Q36 (CF-182): read-only `str` is a view, so slices and literals pass without a copy.
+        // read-only `str` is a view, so slices and literals pass without a copy.
         if (tr.name == "str" && !tr.is_optional && !tr.is_fallible && tr.smart_wrap.empty()) return "cfire::str_ref";
         if (tr.is_slice && tr.elem_type) {
-            // Q53 (CF-189): so is a read-only `[]T`, which takes sub-slices too (`[]bool` has no contiguous storage).
+            // so is a read-only `[]T`, which takes sub-slices too (`[]bool` has no contiguous storage).
             const std::string elem = lower_owning_type(*tr.elem_type);
             if (elem != "bool" && !tr.is_optional && !tr.is_fallible && tr.smart_wrap.empty() && !mentions_generic_param(*tr.elem_type)) {
                 return std::format("cfire::slice_ref<{}>", elem);
@@ -753,8 +753,8 @@ public:
 
 } // namespace cfire::frontend
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_CODEGEN_DECL_IMPL)
-#include "codegen/decl.inc"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_CODEGEN_DECL_IMPL)
+#include "codegen/declarations.hpp"
 #include "codegen/reflect.hpp"
 #include "codegen/test_runner.hpp"
 
@@ -771,7 +771,7 @@ namespace cfire::frontend {
 } // namespace cfire::frontend
 #endif
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_CODEGEN_BODY_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_CODEGEN_BODY_IMPL)
 #include "codegen/stmt.hpp"
 #include "codegen/expr.hpp"
 

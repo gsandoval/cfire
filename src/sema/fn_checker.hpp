@@ -26,13 +26,13 @@ namespace cfire::frontend {
 #define CFIRE_SEMA_INLINE inline
 #endif
 
-// CF-188: why `<ns>.<name>` in a type position is not a stdlib type, or "" when it is one. `ns` is the module's
+// why `<ns>.<name>` in a type position is not a stdlib type, or "" when it is one. `ns` is the module's
 // canonical namespace (`http`, `sqlite`); `in_build_manifest` is true in a `build.cf` file, the only place where
 // the `build.*` types exist. Without this check clang rejected the generated C++ (cfire/TYPE-ERROR).
 [[nodiscard]] CFIRE_SEMA_INLINE auto stdlib_type_name_problem(std::string_view ns, std::string_view name, bool in_build_manifest) -> std::string;
 
 
-// CF-190: why a bare type name (no module qualifier) does not resolve, or "" when it does. It resolves to a
+// why a bare type name (no module qualifier) does not resolve, or "" when it does. It resolves to a
 // builtin, a struct / enum / interface of the package, or a type parameter in scope.
 [[nodiscard]] CFIRE_SEMA_INLINE auto bare_type_name_problem(std::string_view name, const std::unordered_set<std::string>& declared,
                                                  const std::unordered_set<std::string>& type_params) -> std::string;
@@ -69,7 +69,7 @@ public:
     std::unordered_map<std::string, uint64_t> last_read_expr_id{};
     std::unordered_set<std::string> read_in_loop_{};
 
-    // Q24 (CF-149): diagnostics are recorded structurally where they are detected. In non-resilient mode the
+    // diagnostics are recorded structurally where they are detected. In non-resilient mode the
     // rendered text is also returned so callers can stop early.
     [[nodiscard]] auto emit_error(cfire::diag::StructuredDiagnostic d) -> std::expected<void, std::string> {
         d.severity = "error";
@@ -94,13 +94,13 @@ public:
     // Records every owner `e` borrows from onto `name` (the first stays in borrow_origin_ for existing checks).
     void record_borrow_origins(const std::string& name, const ExprPtr& e);
 
-    // CF-144 (A3): does `call` produce a temporary owned value (as opposed to a view/pointer into storage
+    // (A3): does `call` produce a temporary owned value (as opposed to a view/pointer into storage
     // that outlives the expression)? Unknown callees are treated as owning: cfire values are owned unless
     // a signature says `&T` / `*T`.
     [[nodiscard]] auto call_returns_owned_temporary(const CallExpr& call) const -> bool;
 
     // If `e` creates a view or pointer (`x[a..b]`, `&x`, `x.data()`) whose base object is a temporary owned
-    // value, the view dangles at the end of the full expression once it is stored (CF-144 A3).
+    // value, the view dangles at the end of the full expression once it is stored (A3).
     [[nodiscard]] auto view_of_temporary(const ExprPtr& e) const -> bool;
 
     [[nodiscard]] auto check_view_of_temporary(const ExprPtr& e, std::string_view target, int line, int col)
@@ -108,7 +108,7 @@ public:
 
     [[nodiscard]] static auto returns_view_type(const TypeRef& t) -> bool;
 
-    // CF-144: all owners an expression's value borrows from.
+    // all owners an expression's value borrows from.
     //  - `&x`, `x[a..b]`, `x.data()`: the root owner of x (existing rule, see extract_borrow_source)
     //  - a call whose declared return type is a view or pointer borrows from its receiver and from every
     //    argument that is (or borrows from) a local path: `h := head(s)` keeps `s` loaned while `h` lives
@@ -141,7 +141,7 @@ public:
     // SQL statements reach `.exec` / `.query` on SQLite connections, statements and transactions.
     [[nodiscard]] auto is_sql_receiver(const ExprPtr& obj) const -> bool;
 
-    // CF-167: is `e` a string the program fully controls? Literals without interpolation, concatenations of
+    // is `e` a string the program fully controls? Literals without interpolation, concatenations of
     // constants, and locals whose every assignment was constant. Anything else (parameters, call results,
     // interpolated or concatenated runtime data) may carry external input into a shell or SQL statement.
     [[nodiscard]] auto is_constant_string_expr(const ExprPtr& e) const -> bool;
@@ -160,7 +160,7 @@ public:
 
     [[nodiscard]] auto expr_returns_optional_sema(const ExprPtr& e) const -> bool;
 
-    // Q23 (CF-148): the former string-based inference, now producing TypeIds. Only reached as the fallback
+    // the former string-based inference, now producing TypeIds. Only reached as the fallback
     // of infer_expr_type_id_sema; names for messages come from type_name_of().
     [[nodiscard]] auto infer_named_type_id_(const ExprPtr& e) const -> TypeId;
 
@@ -169,7 +169,7 @@ public:
     // Display / lookup name of an expression's type, derived from its TypeId ("" when unknown).
     [[nodiscard]] auto type_name_of(const ExprPtr& e) const -> std::string;
 
-    // Q39 (CF-183): `byte` is `u8`, so a literal in 0..=255 or a `u8` value goes into a `[]byte` as is; a wider
+    // `byte` is `u8`, so a literal in 0..=255 or a `u8` value goes into a `[]byte` as is; a wider
     // integer needs an explicit `byte(x)`, so a push never truncates silently.
     [[nodiscard]] auto is_non_byte_int_or_u8_expr(const ExprPtr& e) const -> bool;
 
@@ -187,46 +187,46 @@ public:
 
     [[nodiscard]] auto is_stdlib_ns_imported(std::string_view ns) const -> bool;
 
-    // CF-148: is `t` a type Sema fully understands (so a mismatch is certain, not a gap in inference)?
+    // is `t` a type Sema fully understands (so a mismatch is certain, not a gap in inference)?
     // Primitives, str, &str, slices/arrays of those, and nominal types declared in this program.
     [[nodiscard]] auto is_concrete_checkable_type(TypeId t) const -> bool;
 
-    // CF-145: a type argument bound to `T: Iface` must implement every method of Iface (name, parameter
+    // a type argument bound to `T: Iface` must implement every method of Iface (name, parameter
     // count and types, return type). Concepts used to be emitted without being checked anywhere.
     [[nodiscard]] auto check_interface_constraints(const CallExpr& call, const FnDecl& sig, int line, int col)
         -> std::expected<void, std::string>;
 
-    // CF-196: the column where `e` starts in the source (a binary or postfix node points at its operator).
+    // the column where `e` starts in the source (a binary or postfix node points at its operator).
     [[nodiscard]] static auto leftmost_col(const ExprPtr& e) -> int;
 
-    // CF-196: the value of an integer constant expression (literals combined with `+ - * / % << >> & | ^` and
+    // the value of an integer constant expression (literals combined with `+ - * / % << >> & | ^` and
     // unary `-`); nullopt for anything else, or when it leaves the 64-bit range.
     [[nodiscard]] static auto const_int_value(const ExprPtr& e) -> std::optional<__int128>;
 
-    // CF-196: the integer type of `e` for the narrowing check. A literal operand takes the other operand's type
+    // the integer type of `e` for the narrowing check. A literal operand takes the other operand's type
     // (`8080 + i32(i)` is `i32`, as in C++), and a shift has its left operand's type.
     [[nodiscard]] auto int_value_type(const ExprPtr& e) -> TypeId;
 
-    // CF-191 / CF-196: checks a value against the type it initializes (an argument, a field, a declaration, an
+    // checks a value against the type it initializes (an argument, a field, a declaration, an
     // assignment, a return). An array literal is checked element by element against the element type, an
     // integer literal against the target's range, and an integer value must widen: narrowing or a sign change
-    // needs an explicit, checked `T(x)` (Q9). `handled` says this check decided the case, so the caller skips
+    // needs an explicit, checked `T(x)`. `handled` says this check decided the case, so the caller skips
     // its own whole-type comparison.
     [[nodiscard]] auto check_value_for(TypeId want, const ExprPtr& e, bool& handled) -> std::expected<void, std::string>;
 
-    // CF-148: argument types of calls to functions declared in this program (clang used to report these).
+    // argument types of calls to functions declared in this program (clang used to report these).
     [[nodiscard]] auto check_call_argument_types(const CallExpr& call, const FnDecl& sig) -> std::expected<void, std::string>;
 
-    // Q11 (CF-166): a constant shift count outside [0, bit width of the promoted left operand) is rejected.
+    // a constant shift count outside [0, bit width of the promoted left operand) is rejected.
     [[nodiscard]] auto check_const_shift_count(const ExprPtr& left, const ExprPtr& count, int line, int col)
         -> std::expected<void, std::string>;
 
-    // Q9 (CF-165): an integer constant that does not fit its target type is a compile error, not a silent
+    // an integer constant that does not fit its target type is a compile error, not a silent
     // truncation (`a: u8 = 300`, `u8(300)`, `c: u32 = -1`). Runtime values are range-checked by `T(x)`.
     [[nodiscard]] auto check_int_literal_fits(const ExprPtr& e, std::string_view tname, int line, int col)
         -> std::expected<void, std::string>;
 
-    // Q14 (CF-143): methods on builtin types are a closed set. Anything else would fall through to the raw
+    // methods on builtin types are a closed set. Anything else would fall through to the raw
     // std::string / std::vector / map member of the same name, which bypasses intents and the loan tracker.
     enum class BuiltinReceiver : std::uint8_t { None, Str, Slice, Array, Map };
 
@@ -243,7 +243,7 @@ public:
         return 0;
     }
 
-    // W4: the receiver kind of a builtin method call, from the receiver's TypeId (borrows and pointers
+    // the receiver kind of a builtin method call, from the receiver's TypeId (borrows and pointers
     // auto-deref). Falls back to the receiver's spelled type when inference has no TypeId.
     [[nodiscard]] auto builtin_recv_bits(const ExprPtr& obj) const -> std::uint8_t;
 
@@ -256,7 +256,7 @@ public:
 
     [[nodiscard]] static auto builtin_method_allowed(BuiltinReceiver k, std::string_view m) -> bool;
 
-    // W4: arity, argument types and `mut` receivers of builtin method calls, all read from the table.
+    // arity, argument types and `mut` receivers of builtin method calls, all read from the table.
     [[nodiscard]] auto check_builtin_method_call(const CallExpr& call, const MemberExpr& mem, int line, int col) -> std::expected<void, std::string>;
 
     // Canonical cfire spelling for raw C++ members, used for the diagnostic hint and `cfire fix`.
@@ -283,7 +283,7 @@ public:
 
     [[nodiscard]] auto check_stdlib_ns_imported(std::string_view ns, int line, int col) -> std::expected<void, std::string>;
 
-    // `local_decl`: a local variable's type, which analyze.hpp's declaration pass does not see (CF-188 stdlib type names).
+    // `local_decl`: a local variable's type, which analyze.hpp's declaration pass does not see (stdlib type names).
     [[nodiscard]] auto check_type_ref_separators(const TypeRef& tr, int line, int col, bool local_decl = false) -> std::expected<void, std::string>;
 
     [[nodiscard]] auto is_ident_in_scope_sema(const std::string& ident) const -> bool;
@@ -293,9 +293,9 @@ public:
     [[nodiscard]] auto is_known_identifier_sema(const std::string& name) const -> bool;
 
     // ---------------------------------------------------------------------------------
-    // Canonical nominal type identity (ADR Q3)
+    // Canonical nominal type identity (canonical type identity)
     //
-    // Q3: '.' qualifies a package (`webui.App`, `rl.Rectangle`); '::' walks type-level
+    // '.' qualifies a package (`webui.App`, `rl.Rectangle`); '::' walks type-level
     // paths (`pkg.Type::Variant`, `Enum::Variant`). The same source type reaches sema in
     // different spellings: the parser joins annotations with '::' (`rl::Rectangle`),
     // struct literals keep the source separator (`rl.Rectangle`), and stdlib catalog
@@ -319,12 +319,12 @@ public:
     [[nodiscard]] auto canonical_typeref_sema(TypeRef tr) const -> TypeRef;
 
     /// Single entry point for converting a type spelling into an interned TypeId.
-    /// Strict: used for explicit annotations, which must be spelled as Q3 requires.
+    /// Strict: used for explicit annotations, which must be spelled as canonical type identity requires.
     [[nodiscard]] auto type_id_of(std::string_view name) const -> TypeId;
 
     [[nodiscard]] auto type_id_of(const TypeRef& tr) const -> TypeId;
 
-    /// Q2 hint: explain local-vs-package mismatches that share a leaf name.
+    /// Hint: explain local-vs-package mismatches that share a leaf name.
     [[nodiscard]] auto nominal_mismatch_hint_sema(TypeId a, TypeId b) const -> std::string;
 
     /// The qualifier this file uses for a stdlib/vendor module: its import alias if one
@@ -333,7 +333,7 @@ public:
 
     /// Stdlib catalog signatures name module-local types bare (`-> App`). Qualify such a
     /// return type with the module's qualifier in this file (`webui.App`), using the
-    /// CF-117 metadata table as the source of truth for which names a module declares.
+    /// metadata table as the source of truth for which names a module declares.
     [[nodiscard]] auto qualify_stdlib_type_sema(const StdFnSigInfo& sig, std::string_view qualifier) const -> std::string;
 
     [[nodiscard]] auto resolve_ident(const std::string& name) const -> std::optional<Resolution>;
@@ -359,7 +359,7 @@ public:
 
     [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string>;
 
-    // Q40 (CF-183): both branches of an `if` expression yield the same type. A bare numeric literal adapts to
+    // both branches of an `if` expression yield the same type. A bare numeric literal adapts to
     // the other branch's numeric type (`if c { n } else { 0 }`).
     std::unordered_set<const MatchExpr*> if_exprs_checked_;  // an initializer can be checked twice
 
@@ -381,13 +381,13 @@ public:
     // "own" / "shared" when `obj` is a smart pointer, "" otherwise.
     [[nodiscard]] auto smart_wrap_of(const ExprPtr& obj) const -> std::string;
 
-    // CF-181: `own[T].from_raw(p)` — the object is the type expression `own[T]` (parsed as an index).
+    // `own[T].from_raw(p)` — the object is the type expression `own[T]` (parsed as an index).
     [[nodiscard]] static auto own_type_prefix(const ExprPtr& obj) -> std::string;
 
-    // CF-148: `p.zz` on a struct declared in this program must name a field or a method.
+    // `p.zz` on a struct declared in this program must name a field or a method.
     [[nodiscard]] auto check_known_member(const MemberExpr& mem, int line, int col) -> std::expected<void, std::string>;
 
-    // CF-148: struct literal fields must exist and have compatible types.
+    // struct literal fields must exist and have compatible types.
     // `http.ServerLimits` / `h::ServerLimits` -> the stdlib struct row, resolving import aliases.
     [[nodiscard]] auto lookup_stdlib_struct(std::string_view spelled_in) const -> const StdlibStruct*;
 
@@ -399,7 +399,7 @@ public:
 
     [[nodiscard]] auto check_move_only_copy(const ExprPtr& rhs, std::string_view target_desc, int line, int col) -> std::expected<void, std::string>;
 
-    // Q10: `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`).
+    // `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`).
     [[nodiscard]] auto primitive_type_prefix(const ExprPtr& obj) const -> TypeId;
 
     [[nodiscard]] auto primitive_bits(TypeId t) const -> std::uint8_t;
@@ -410,18 +410,18 @@ public:
 
     [[nodiscard]] auto check_or_expr(const OrExpr& or_ex, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string>;
 
-    // CF-148: parameter types for untyped closure arguments, taken from the callee's `fn(A, B) -> R` parameter
+    // parameter types for untyped closure arguments, taken from the callee's `fn(A, B) -> R` parameter
     // (`router.get("/x", |req| ...)` binds `req: http.Request`).
     [[nodiscard]] static auto split_fn_type_params(std::string_view fn_type) -> std::vector<std::string>;
 
     void record_closure_param_hints(const CallExpr& call);
 
-    // Q25: the declared constructor `fn (T) make(...)` of a local type, lowered as `cfire_ctor_T`.
+    // the declared constructor `fn (T) make(...)` of a local type, lowered as `cfire_ctor_T`.
     [[nodiscard]] auto find_user_ctor(const TypeRef& t) const -> const FnDecl*;
 
     [[nodiscard]] auto find_stdlib_ctor(std::string_view spelled_in) const -> const StdlibCtor*;
 
-    // Q25: `make(T[, args])`, `make(own[T][, args])`, `make(shared[T][, args])`, `make([]T, len[, cap])`, `make(map[K]V)`.
+    // `make(T[, args])`, `make(own[T][, args])`, `make(shared[T][, args])`, `make([]T, len[, cap])`, `make(map[K]V)`.
     [[nodiscard]] auto check_make_call(const CallExpr& call, int line, int col) -> std::expected<void, std::string>;
 
     [[nodiscard]] auto check_call_expr(const CallExpr& call, int line, int col, const ExprPtr& self_expr = nullptr) -> std::expected<void, std::string>;
@@ -555,7 +555,7 @@ public:
 
     [[nodiscard]] auto get_root_variable_name(const ExprPtr& e) const -> std::string;
 
-    // CF-164 (G1): inside a `scope.spawn` closure, writing through a captured outer pointer (`*p = v`,
+    // (G1): inside a `scope.spawn` closure, writing through a captured outer pointer (`*p = v`,
     // `p.field = v` via auto-deref) races with every other task holding the same pointer. The one provably
     // disjoint form is allowed: a pointer created inside a `for` body as `&mut xs[i]` from that loop's own
     // index variable, so each task writes a different slot (examples/04-async-workers).
@@ -573,7 +573,7 @@ public:
 
     [[nodiscard]] auto check_if_stmt(const IfStmt& ifs) -> std::expected<void, std::string>;
 
-    // CF-146: conditions and logical operands must be `bool`; no implicit truthiness for numbers, strings,
+    // conditions and logical operands must be `bool`; no implicit truthiness for numbers, strings,
     // optionals or pointers. Only reported when the type is known, so inference gaps never produce errors.
     [[nodiscard]] auto check_bool_condition(const ExprPtr& e, std::string_view what) -> std::expected<void, std::string>;
 
@@ -595,7 +595,7 @@ private:
     std::vector<cfire::diag::StructuredDiagnostic> fallback_diags_{};
     bool fn_is_fallible_{false};
     bool has_cpp_imports_{false};
-    std::unordered_set<std::string> fn_type_params_{};  // CF-190: the function's and its receiver's type parameters
+    std::unordered_set<std::string> fn_type_params_{};  // the function's and its receiver's type parameters
     bool seen_cpp_block_{false};
     int scope_depth_{1};
     int in_defer_depth_{0};
@@ -606,12 +606,12 @@ private:
     int spawn_entry_scope_{0};
     std::unordered_map<std::string, int> active_loop_index_vars_{};  // name -> nesting count
     std::unordered_set<std::string> disjoint_slot_ptrs_{};
-    // Q51 (CF-189): the closure being checked and its closure depth, to type its `return` values; the first return
+    // the closure being checked and its closure depth, to type its `return` values; the first return
     // type of each closure; and, per scope variable of an active `x := async.scope`, the closures it spawns.
     std::vector<std::pair<const ClosureExpr*, int>> closure_ret_stack_{};
     std::unordered_map<const ClosureExpr*, std::string> closure_ret_types_{};
     std::unordered_map<std::string, std::vector<const ClosureExpr*>> value_scope_spawns_{};
-    // Q51 (CF-189) slot captures: closures passed to `spawn` (only those may capture a slot), the slices whose slot
+    // slot captures: closures passed to `spawn` (only those may capture a slot), the slices whose slot
     // the task being checked owns (it may write `xs[i]`), and the slices with tasks writing their slots, which the
     // scope body must not resize until the scope ends.
     std::unordered_set<const ClosureExpr*> spawn_closures_{};
@@ -621,8 +621,8 @@ private:
     // `scope.spawn |mut xs[i]| { xs[i] = v }`: each task owns one element. The index is the spawning loop's own index
     // variable (so tasks own different elements), and inside the task `xs` appears only as `xs[i]`.
     [[nodiscard]] auto check_slot_captures(const ClosureExpr& cl, int line) -> std::expected<void, std::string>;
-    std::unordered_set<std::string> const_string_vars_{};  // CF-167
-    std::unordered_map<const ClosureExpr*, std::vector<std::string>> closure_param_hints_{};  // CF-148
+    std::unordered_set<std::string> const_string_vars_{};
+    std::unordered_map<const ClosureExpr*, std::vector<std::string>> closure_param_hints_{};
     int loop_depth_{0};
     int in_invalid_unwrap_context_{0};
     std::vector<std::unordered_map<std::string, SavedVarDeclState>*> scope_stack_{};
@@ -645,8 +645,8 @@ private:
     std::unordered_set<std::string> reported_unhandled_vars_{};
     std::unordered_set<std::string> scalar_primitive_vars_{};
     std::unordered_set<std::string> reported_missing_imports_{};
-    std::unordered_set<const MemberExpr*> callee_members_{};  // Q26: member expressions that are call targets
-    std::unordered_set<std::string> shared_ptr_var_names_{};  // CF-181: smart pointers that are `shared[T]`
+    std::unordered_set<const MemberExpr*> callee_members_{};  // member expressions that are call targets
+    std::unordered_set<std::string> shared_ptr_var_names_{};  // smart pointers that are `shared[T]`
     std::unordered_set<std::string> foreign_vars_{};
     std::unordered_map<std::string, std::string> var_types_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
@@ -659,17 +659,17 @@ private:
     std::unordered_set<std::string> imm_vars_{};
 };
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_INFER_IMPL)
-#include "fn_checker_infer.inc"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_INFER_IMPL)
+#include "type_inference_impl.hpp"
 #endif
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_EXPR_IMPL)
-#include "fn_checker_expr.inc"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_EXPR_IMPL)
+#include "expression_checker_impl.hpp"
 #endif
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_CALL_IMPL)
-#include "fn_checker_call.inc"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_CALL_IMPL)
+#include "call_and_match_checker_impl.hpp"
 #endif
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_SEMA_STMT_IMPL)
-#include "fn_checker_stmt.inc"
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_STMT_IMPL)
+#include "statement_checker_impl.hpp"
 #endif
 
 } // namespace cfire::frontend

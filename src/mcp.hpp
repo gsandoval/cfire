@@ -221,7 +221,7 @@ namespace cfire::mcp {
             cmd_line += argv[i];
         }
     }
-    // CF-184: honor `timeout_seconds` like the POSIX branch: run the tool in a job object, read its combined
+    // honor `timeout_seconds` like the POSIX branch: run the tool in a job object, read its combined
     // output on a thread, and terminate the whole job if it outlives the timeout.
     SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     HANDLE read_end = nullptr;
@@ -395,7 +395,7 @@ namespace cfire::mcp {
 #endif
 }
 
-// Q15 (CF-160): every path an MCP client passes is confined to the server's workspace root, so an agent
+// every path an MCP client passes is confined to the server's workspace root, so an agent
 // (or a prompt-injected instruction it follows) cannot read, test, or rewrite files elsewhere on disk.
 struct McpOptions {
     std::filesystem::path root = std::filesystem::current_path();
@@ -539,7 +539,7 @@ struct McpOptions {
         "cfire_eval",
         "Compile and execute a cfire (.cf) program or snippet and return its stdout/stderr.",
         [runtime_dir](CodeInput in) -> std::expected<std::string, cfire::Error> {
-            // Per-call private directory (mkdtemp, 0700) for the snippet and its binary (CF-153, Q15).
+            // Per-call private directory (mkdtemp, 0700) for the snippet and its binary.
             cfire::detail::SecureTempDir eval_dir("cfire_mcp_eval");
             if (!eval_dir.ok()) return cfire::make_error("cfire_eval: could not create a private temporary directory");
             auto tmp_dir = eval_dir.path();
@@ -698,7 +698,7 @@ struct McpOptions {
                 std::error_code ec;
                 std::filesystem::create_directories(cache_dir, ec);
                 if (ec) {
-                    cache_dir = cfire::detail::user_cache_dir("mcp");  // never a shared temp-dir name (CF-153)
+                    cache_dir = cfire::detail::user_cache_dir("mcp");  // never a shared temp-dir name
                 }
                 auto idx = cfire::bridge::inspect_header(header, {}, cache_dir);
                 if (!idx) return cfire::make_error(idx.error());

@@ -38,14 +38,14 @@ struct StructuredDiagnostic {
     std::string message{};  // clean message without redundant "<file>:<line>:<col>: " prefix
     std::string source{"cfire"};
     std::vector<FixItEdit> fixits{};
-    // Q24 (CF-149): structured facts recorded where the problem is detected (an identifier, a keyword, a
+    // structured facts recorded where the problem is detected (an identifier, a keyword, a
     // replacement token, ...). Fix-it builders read these instead of re-parsing the message text.
     std::unordered_map<std::string, std::string> facts{};
 };
 
 using Diagnostic = StructuredDiagnostic;
 
-// Q24 (CF-149): every compiler diagnostic is constructed here at the point of detection. `col == 0` means
+// every compiler diagnostic is constructed here at the point of detection. `col == 0` means
 // "only the line is known": resolve_diagnostic_range() then spans the statement on that line.
 [[nodiscard]] inline auto diag(std::string_view file, int line, int col, std::string_view code, std::string message,
                                std::unordered_map<std::string, std::string> facts = {}) -> StructuredDiagnostic {
@@ -181,5 +181,5 @@ CFIRE_DIAG_INLINE auto apply_fixits(
 } // namespace cfire::diag
 
 #if !defined(CFIRE_SPLIT_TUS)
-#include "diagnostics_impl.inc"
+#include "diagnostics_registry_impl.hpp"
 #endif

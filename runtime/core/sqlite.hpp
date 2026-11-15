@@ -236,7 +236,7 @@ public:
         if (!db_) return cfire::make_error("sqlite connection is closed");
         using EnableExtFn = int(*)(sqlite3*, int);
         using LoadExtFn = int(*)(sqlite3*, const char*, const char*, char**);
-        // CF-184: found at run time, since many libsqlite3 builds omit extension loading. Windows has no
+        // found at run time, since many libsqlite3 builds omit extension loading. Windows has no
         // `dlsym(RTLD_DEFAULT)`; there the functions come from a loaded SQLite DLL, if the program uses one.
         auto find_sym = [](const char* name) -> void* {
 #if defined(_WIN32)
@@ -273,7 +273,7 @@ public:
 #endif
     }
 
-    // SQLCipher Encryption & Rekey Support (`CF-007`, `CF-069`)
+    // SQLCipher Encryption & Rekey Support
     [[nodiscard]] auto has_cipher_support() -> bool {
         if (!db_) return false;
         sqlite3_stmt* stmt = nullptr;

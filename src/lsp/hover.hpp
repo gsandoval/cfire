@@ -14,7 +14,7 @@ namespace cfire::lsp {
 #endif
 
 namespace detail {
-// CF-188: a stdlib type by module namespace and bare name (`http`, `Request`).
+// a stdlib type by module namespace and bare name (`http`, `Request`).
 [[nodiscard]] inline auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
     -> std::pair<const cfire::doc::StdModuleDoc*, const cfire::doc::StdTypeDoc*> {
     if (auto br = name.find('['); br != std::string_view::npos) name = name.substr(0, br);
@@ -87,7 +87,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         }
     }
 
-    // 0B. Check if cursor is on `@define` or retired `@pkg` attribute
+    // 0B. Check if cursor is on retired `@pkg` or `@define` attribute
     if (sym.name == "@pkg" || sym.name == "pkg") {
         if (line >= 0 && static_cast<std::size_t>(line) < lines.size() && lines[static_cast<std::size_t>(line)].contains("@pkg")) {
             return "### Retired Attribute `@pkg(\"<name>\")`\n"
@@ -98,9 +98,10 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
     }
     if (sym.name == "@define" || sym.name == "define") {
         if (line >= 0 && static_cast<std::size_t>(line) < lines.size() && lines[static_cast<std::size_t>(line)].contains("@define")) {
-            return "### Attribute `@define(\"MACRO\"[, \"VAL\"])`\n"
-                   "Emits `#define MACRO` (or `#define MACRO VAL`) immediately before `#include <header>` for an `import cpp` header.\n\n"
-                   "**Example:**\n```cf\nimport cpp \"stb_image.h\" @define(\"STB_IMAGE_IMPLEMENTATION\") as stb\n```";
+            return "### Retired Attribute `@define(\"<KEY>\"[, \"<VAL>\"])`\n"
+                   "`@define(...)` on `import` has been retired (`cfire/RETIRED-API`).\n\n"
+                   "Declare C/C++ preprocessor macro definitions declaratively in `build.cf` (`Defines: { KEY: \"VAL\" }`, `Defines: [\"KEY\"]`, or `build.Define(\"KEY\", \"VAL\")`) or pass `--define KEY=VAL` (`-DKEY=VAL`) for single-file builds.\n\n"
+                   "**Example (`build.cf`):**\n```cf\nDefines: { STB_IMAGE_IMPLEMENTATION: true }\n```";
         }
     }
 
@@ -164,7 +165,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         }
         if (sym.name == "make") {
             return "### Built-in Constructor `make(T, args...)`\n```cf\nmake(T) / make(T, args...) -> T\nmake(own[T], args...) -> own[T]\nmake(shared[T], args...) -> shared[T]\nmake([]T, len[, cap]) -> []T\nmake(map[K]V) -> map[K]V\nmake(sync.Channel[T], capacity) -> sync.Channel[T]\n```\n"
-                   "The one construction builtin (Q25); the type decides where memory lives. `make(T, args)` calls the type's constructor `fn (T) make(...) -> T` "
+                   "The one construction builtin; the type decides where memory lives. `make(T, args)` calls the type's constructor `fn (T) make(...) -> T` "
                    "(no arguments: default field values); `own[T]` / `shared[T]` place the value on the heap (`std::unique_ptr` / `std::shared_ptr`); "
                    "slices get `len` zero-filled elements and optional reserved `cap`.\n\n"
                    "**Example:**\n```cf\nnode := make(own[Node], Node{id: 1})\nbuf := make([]byte, 0, 4096)\n```";
@@ -193,7 +194,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                     }
                 }
             }
-            // CF-188: `http.Request` (a type), `http.Response.json` (an associated function), `log.Level.Debug` (a variant).
+            // `http.Request` (a type), `http.Response.json` (an associated function), `log.Level.Debug` (a variant).
             if (sym.qualifier == mod.ns_alias) {
                 if (auto [m, td] = detail::find_stdlib_type_doc(mod.ns_alias, sym.name); td != nullptr) return detail::render_stdlib_type_doc(*m, *td);
             }
@@ -330,7 +331,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
             return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::uint8_t>`) over the string's UTF-8 bytes.";
         }
         std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
-        // CF-188: a field of a stdlib struct (`req.body`, `res.exit_code`).
+        // a field of a stdlib struct (`req.body`, `res.exit_code`).
         if (auto dot = recv_type.find('.'); dot != std::string::npos) {
             if (auto [m, td] = detail::find_stdlib_type_doc(recv_type.substr(0, dot), recv_type.substr(dot + 1)); td != nullptr) {
                 for (const auto& f : td->fields) {
@@ -353,7 +354,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                 }
             }
         }
-        // W4: methods on builtin types (`s.trim()`, `xs.sort()`, `x.abs()`) from the single table.
+        // methods on builtin types (`s.trim`, `xs.sort`, `x.abs`) from the single table.
         if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(recv_type); bits != 0) {
             if (const auto* bm = cfire::frontend::find_builtin_method(bits, sym.name)) {
                 return std::format("### `{}.{}` (builtin method)\n```cf\n{}\n```\n{}\n\n**Example:**\n```cf\n{}\n```",

@@ -235,7 +235,7 @@ void test_cpp_ast_ingestion_and_overloads([[maybe_unused]] const std::filesystem
     cfire::bridge::HeaderIndex idx;
     idx.header = "<test_math.h>";
     idx.symbols = syms;
-    ScopedTempDir cache_tmp_scope("cfire_cache_tmp");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir cache_tmp_scope("cfire_cache_tmp");  // hermetic, mkdtemp-backed
     auto cache_tmp = cache_tmp_scope.path / "cfire_bs03_test.idx";
     cfire::bridge::save_cached_index(cache_tmp, idx);
 
@@ -444,10 +444,10 @@ fn main() {
         auto checked = cfire::frontend::analyze(std::move(*ast));
         require(checked.has_value(), "analyze test_borrows.cf");
         if (checked.has_value()) {
-            // Q36 / Q53 (CF-189): read-only parameters are views; `mut` is a reference; `move` takes ownership.
+            // / read-only parameters are views; `mut` is a reference; `move` takes ownership.
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("cfire::str_ref view_str"), "read-only str parameter lowers to the cfire::str_ref view (Q36)");
-            require(cpp.contains("cfire::slice_ref<std::int32_t> view_slice"), "read-only []i32 parameter lowers to the cfire::slice_ref view (Q53)");
+            require(cpp.contains("cfire::str_ref view_str"), "read-only str parameter lowers to the cfire::str_ref view");
+            require(cpp.contains("cfire::slice_ref<std::int32_t> view_slice"), "read-only []i32 parameter lowers to the cfire::slice_ref view");
             require(cpp.contains("const std::vector<bool>& flags"), "[]bool has no contiguous storage and stays a const reference");
             require(cpp.contains("std::vector<std::int32_t>& mut_slice"), "mut []i32 parameter lowers to std::vector<std::int32_t>&");
             require(cpp.contains("std::vector<std::int32_t>&& owned"), "move []i32 parameter lowers to std::vector<std::int32_t>&&");
@@ -622,7 +622,7 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
     require(cfire::u64(pi_flt) == 3, "u64(float)");
     require(cfire::f32(42) == 42.0f, "f32(int)");
     require(cfire::f64(42) == 42.0, "f64(int)");
-    // Q9 (CF-165): T(x) panics when the value doesn't fit; wrapping is explicit.
+    // T(x) panics when the value doesn't fit; wrapping is explicit.
     require(cfire::wrapping_as<std::int8_t>(300) == 44, "i8 overflow wrapping via wrapping_as");
     require(cfire::wrapping_as<std::uint8_t>(-1) == 255, "u8 underflow wrapping via wrapping_as");
     require(cfire::saturating_as<std::uint8_t>(-1) == 0, "u8 saturating_as clamps at 0");
@@ -690,7 +690,7 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
 
 void test_relocatable_cmake_ejection([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_relocatable_cmake_ejection");
-    ScopedTempDir tmp_eject_scope("cfire_tmp_eject");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir tmp_eject_scope("cfire_tmp_eject");  // hermetic, mkdtemp-backed
     auto tmp_eject = tmp_eject_scope.path / "cfire_relocatable_eject";
     std::filesystem::remove_all(tmp_eject);
     auto ej = cfire::build::eject_cmake("examples/08-multi-pkg-cc-build/main.cf", rt_dir, tmp_eject);
@@ -837,23 +837,42 @@ swap_coords(mut pt.x, pt.y)
 
 void test_preprocessor_macro_injection([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_preprocessor_macro_injection");
-    std::string_view src = R"(package main
+    // 1. Legacy @define(...) on import is retired with cfire/RETIRED-API.
+    std::string_view retired_src = R"(package main
 
 import cpp "stb_image.h" @define("STB_IMAGE_IMPLEMENTATION") @define("BUFFER_SIZE", "4096")
 
 fn main() {}
 )";
-    auto ast = cfire::frontend::parse_source("test_macro_def.cf", src);
-    require(ast.has_value(), std::format("parse @define attributes: {}", ast ? "" : ast.error()));
-    if (ast) {
-        auto checked = cfire::frontend::analyze(std::move(*ast));
-        require(checked.has_value(), "analyze @define attributes");
-        if (checked) {
-            std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("#define STB_IMAGE_IMPLEMENTATION\n#define BUFFER_SIZE 4096\n#include <stb_image.h>"),
-                "macro definitions emitted immediately before C++ #include");
+    auto diags = cfire::analysis::check_source("test_macro_def.cf", retired_src);
+    bool has_retired_code = false;
+    for (const auto& d : diags) {
+        if (d.code == "cfire/RETIRED-API" && d.message.contains("build.cf")) {
+            has_retired_code = true;
+            break;
         }
     }
+    require(has_retired_code, "retired @define emits cfire/RETIRED-API mentioning build.cf");
+
+    // 2. BuildPlan defines & extra_defines emit deterministic -D flags and track impl defines.
+    cfire::build::BuildPlan plan;
+    plan.defines = {"STB_IMAGE_IMPLEMENTATION", "BUFFER_SIZE=4096"};
+    plan.extra_defines = {"EXTRA_FLAG=1"};
+    auto res = cfire::build::resolve_plan_defines(plan);
+    require(res.has_value(), "valid BuildPlan defines resolve cleanly");
+    require(plan.has_impl_define, "IMPLEMENTATION define disables C++ TU sharding safely");
+    auto has_cflag = [&](std::string_view flag) {
+        return std::find(plan.cflags.begin(), plan.cflags.end(), flag) != plan.cflags.end();
+    };
+    require(has_cflag("-DSTB_IMAGE_IMPLEMENTATION"), "flag-only define emits -DNAME");
+    require(has_cflag("-DBUFFER_SIZE=4096"), "key=value define emits -DNAME=VALUE");
+    require(has_cflag("-DEXTRA_FLAG=1"), "CLI extra define emits -DNAME=VALUE");
+
+    // 3. Invalid C macro identifier in BuildPlan is rejected.
+    cfire::build::BuildPlan bad_plan;
+    bad_plan.defines = {"1BAD_MACRO=1"};
+    auto bad_res = cfire::build::resolve_plan_defines(bad_plan);
+    require(!bad_res.has_value(), "invalid C macro key in BuildPlan is rejected");
     std::println("--- PASS: test_preprocessor_macro_injection");
 }
 
@@ -1019,13 +1038,13 @@ void test_structured_logging_json_and_text([[maybe_unused]] const std::filesyste
 
 void test_shared_library_dynamic_linking([[maybe_unused]] const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_shared_library_dynamic_linking");
-    ScopedTempDir tmp_bs06_scope("cfire_tmp_bs06");  // hermetic, mkdtemp-backed (CF-153)
-    auto tmp_bs06 = tmp_bs06_scope.path / "cfire_bs06_test";
-    std::filesystem::remove_all(tmp_bs06);
-    std::filesystem::create_directories(tmp_bs06 / "vendor" / "sharedlib");
+    ScopedTempDir tmp_shared_scope("cfire_tmp_shared_dir");  // hermetic, mkdtemp-backed
+    auto tmp_shared_dir = tmp_shared_scope.path / "cfire_shared_test";
+    std::filesystem::remove_all(tmp_shared_dir);
+    std::filesystem::create_directories(tmp_shared_dir / "vendor" / "sharedlib");
 
     {
-        std::ofstream c_out(tmp_bs06 / "vendor" / "sharedlib" / "shared_math.c");
+        std::ofstream c_out(tmp_shared_dir / "vendor" / "sharedlib" / "shared_math.c");
         c_out << "int add_numbers(int a, int b) { return a + b; }\n";
     }
 
@@ -1036,14 +1055,14 @@ void test_shared_library_dynamic_linking([[maybe_unused]] const std::filesystem:
     dep.source = "vendor/sharedlib";
     dep.is_shared = true;
 
-    auto res = cfire::build::build_local_dep(tmp_bs06, dep, plan);
+    auto res = cfire::build::build_local_dep(tmp_shared_dir, dep, plan);
     require(res.has_value(), std::format("build_local_dep produces shared library: {}", res ? "" : res.error()));
-    require(dep.is_shared, "BS-06: dep.is_shared confirmed");
-    require(!dep.built_archive.empty(), "BS-06: built_archive path populated");
+    require(dep.is_shared, "dep.is_shared confirmed");
+    require(!dep.built_archive.empty(), "built_archive path populated");
 #if defined(__APPLE__)
-    require(dep.built_archive.ends_with(".dylib"), "BS-06: macOS produces .dylib");
+    require(dep.built_archive.ends_with(".dylib"), "macOS produces .dylib");
 #else
-    require(dep.built_archive.ends_with(".so"), "BS-06: Linux produces .so");
+    require(dep.built_archive.ends_with(".so"), "Linux produces .so");
 #endif
     bool has_rpath = false;
     for (const auto& f : plan.ldflags) {
@@ -1052,7 +1071,7 @@ void test_shared_library_dynamic_linking([[maybe_unused]] const std::filesystem:
             break;
         }
     }
-    require(has_rpath, "BS-06: automatic -Wl,-rpath added to plan.ldflags for shared library");
+    require(has_rpath, "automatic -Wl,-rpath added to plan.ldflags for shared library");
     std::println("--- PASS: test_shared_library_dynamic_linking");
 }
 
@@ -1091,9 +1110,9 @@ mut b := 0.0
     }
 
     // 2. Deprecation warning for 'out' parameters
-    // Q33 (CF-175): `out` is not a parameter intent any more (multi-return tuples replace it).
+    // `out` is not a parameter intent any more (multi-return tuples replace it).
     require(!cfire::frontend::parse_source("test_out_param.cf", "package main\nfn legacy_div(num: i32, denom: i32, out rem: i32) -> i32 {\n    return num / denom\n}\nfn main() {}\n").has_value(),
-        "out parameter intent no longer parses (CF-175)");
+        "out parameter intent no longer parses");
     std::println("--- PASS: test_multi_return_tuples_and_destructuring");
 }
 
@@ -1106,7 +1125,7 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
     require(cfire::fs::extension("source.cf") == ".cf", "fs.extension .cf");
 
     // 2. Streaming File open, write, seek, tell, read, flush, close
-    ScopedTempDir tmp_file_scope("cfire_tmp_file");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir tmp_file_scope("cfire_tmp_file");  // hermetic, mkdtemp-backed
     auto tmp_file = tmp_file_scope.path / "cfire_stream_test.txt";
     std::filesystem::remove(tmp_file);
 
@@ -1167,7 +1186,7 @@ void test_filesystem_streaming_and_paths([[maybe_unused]] const std::filesystem:
     require(!cfire::fs::is_dir(tmp_file), "!fs.is_dir(tmp_file)");
     require(cfire::fs::is_dir(std::filesystem::temp_directory_path()), "fs.is_dir(temp_directory_path)");
     require(cfire::fs::append_text(tmp_file, "\nLine 3.").has_value(), "fs.append_text");
-    ScopedTempDir copy_path_scope("cfire_copy_path");  // hermetic, mkdtemp-backed (CF-153)
+    ScopedTempDir copy_path_scope("cfire_copy_path");  // hermetic, mkdtemp-backed
     auto copy_path = copy_path_scope.path / "cfire_stream_copy.txt";
     require(cfire::fs::copy_file(tmp_file, copy_path).has_value(), "fs.copy_file");
     auto sz = cfire::fs::file_size(copy_path);
@@ -1266,9 +1285,9 @@ mut count: i64 = 99
         }
     }
 
-    // 2. Q33 (CF-175): `var` is an identifier, not a declaration keyword.
+    // 2.: `var` is an identifier, not a declaration keyword.
     require(!cfire::frontend::parse_source("test_deprecated_var.cf", "package main\nvar global_legacy = 123\n").has_value(),
-        "`var x = ...` is not a declaration form (CF-175)");
+        "`var x = ...` is not a declaration form");
     std::println("--- PASS: test_variable_declarations_unification");
 }
 
@@ -1424,8 +1443,8 @@ fn main() {}
 #include "test_stdlib_tooling_fuzz_bench.hpp"
 #include "test_stdlib_net_sync.hpp"
 #include "test_stdlib_webui_ext.hpp"
-#include "test_cf198_199_200.hpp"
-#include "test_cf201.hpp"
-#include "test_cf202.hpp"
-#include "test_cf203_206.hpp"
-#include "test_cf207_210.hpp"
+#include "test_toolchain_pch_and_bincache.hpp"
+#include "test_single_pass_check_and_lsp.hpp"
+#include "test_sharded_cpp_codegen.hpp"
+#include "test_vendored_libs_and_release.hpp"
+#include "test_language_consistency_and_docs.hpp"

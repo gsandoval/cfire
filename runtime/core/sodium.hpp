@@ -31,7 +31,7 @@ inline void ensure_init() noexcept {
 
 } // namespace detail
 
-// --- CSPRNG & Secure Memory Wipe (`CF-006`) ---
+// --- CSPRNG & Secure Memory Wipe ---
 
 [[nodiscard]] inline auto random_bytes(std::size_t n) -> std::vector<std::uint8_t> {
     detail::ensure_init();
@@ -54,7 +54,7 @@ inline void memzero(std::string& s) noexcept {
     memzero(std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(s.data()), s.size()));
 }
 
-// --- BLAKE2b Generic Hash & Subkey Derivation (`CF-006`) ---
+// --- BLAKE2b Generic Hash & Subkey Derivation ---
 
 [[nodiscard]] inline auto blake2b(
     std::span<const std::uint8_t> data,
@@ -116,7 +116,7 @@ inline void memzero(std::string& s) noexcept {
     return subkey;
 }
 
-// --- Argon2id Key Derivation & Password Hashing (`CF-006`) ---
+// --- Argon2id Key Derivation & Password Hashing ---
 
 [[nodiscard]] inline auto argon2id(
     std::span<const std::uint8_t> password,
@@ -242,7 +242,7 @@ inline void memzero(std::string& s) noexcept {
     return ::crypto_pwhash_str_verify(enc_c.c_str(), password.data(), password.size()) == 0;
 }
 
-// --- XChaCha20-Poly1305 AEAD (`CF-006`) ---
+// --- XChaCha20-Poly1305 AEAD ---
 // Returns `nonce (24B) || ciphertext || tag (16B)` as a single authenticated packet.
 
 [[nodiscard]] inline auto xchacha20poly1305_encrypt(

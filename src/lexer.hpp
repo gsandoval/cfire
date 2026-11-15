@@ -11,7 +11,7 @@
 
 namespace cfire::frontend {
 
-// Q24 (CF-149): lexer and parser errors are structured at the point of detection. `text()` is the
+// lexer and parser errors are structured at the point of detection. `text` is the
 // rendered `file:line:col: message` form for callers that only print.
 struct SourceError {
     std::string file{};
@@ -77,5 +77,5 @@ struct CommentSpan {
 } // namespace cfire::frontend
 
 #if !defined(CFIRE_SPLIT_TUS)
-#include "lexer_impl.inc"
+#include "lexer_impl.hpp"
 #endif

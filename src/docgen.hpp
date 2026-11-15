@@ -6,7 +6,7 @@
 //   - src/docgen/markdown.hpp (`render_guide_markdown()`, `generate_reference_markdown()`, `extract_file_markdown_doc()`, `generate_llm_reference()`)
 //   - src/docgen/html.hpp     (`generate_landing_html()`, `generate_guide_html()`, `generate_reference_html()`, `sync_docs_directory()`)
 
-#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_TU_DOCGEN_IMPL) && !defined(CFIRE_TU_DOCGEN_MD_IMPL)
+#if defined(CFIRE_SPLIT_TUS) && !defined(CFIRE_DOCGEN_IMPL) && !defined(CFIRE_DOCGEN_MD_IMPL)
 
 #include "docgen/catalog_types.hpp"
 #include <expected>
@@ -39,7 +39,7 @@ namespace cfire::doc {
 #include "docgen/catalog.hpp"
 #include "docgen/styles.hpp"
 #include "docgen/markdown.hpp"
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_DOCGEN_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_DOCGEN_IMPL)
 #include "docgen/html.hpp"
 #endif
 

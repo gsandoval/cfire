@@ -49,7 +49,7 @@ struct OpenSslApi {
     int (*SSL_write)(void* ssl, const void* buf, int num) = nullptr;
     int (*SSL_shutdown)(void* ssl) = nullptr;
     long (*SSL_get_verify_result)(const void* ssl) = nullptr;
-    int (*SSL_get_error)(const void* ssl, int ret) = nullptr;  // CF-193: non-blocking handshake and reads
+    int (*SSL_get_error)(const void* ssl, int ret) = nullptr;  // non-blocking handshake and reads
     int (*SSL_pending)(const void* ssl) = nullptr;
     void (*ERR_clear_error)() = nullptr;
 
@@ -499,7 +499,7 @@ public:
         return {};
     }
 
-    // CF-193: attaches a server TLS session to `conn` (a non-blocking socket) without handshaking;
+    // attaches a server TLS session to `conn` (a non-blocking socket) without handshaking;
     // `continue_accept` then drives the handshake as the socket becomes ready.
     auto begin_accept(cfire::net::TcpConn& conn) const -> std::expected<void, cfire::Error> {
         const auto& a = detail::api();
@@ -541,7 +541,7 @@ namespace detail {
 }
 } // namespace detail
 
-// CF-193: one step of a server handshake started by `ServerContext::begin_accept`: Ok when it is complete.
+// one step of a server handshake started by `ServerContext::begin_accept`: Ok when it is complete.
 [[nodiscard]] inline auto continue_accept(cfire::net::TcpConn& conn) -> cfire::net::detail::Io {
     const auto& a = detail::api();
     void* ssl = conn.tls() ? conn.tls()->ssl : nullptr;
@@ -551,7 +551,7 @@ namespace detail {
     return ret == 1 ? cfire::net::detail::Io::Ok : detail::classify_io(ssl, ret);
 }
 
-// CF-193: one non-blocking TLS read into `buf` (Ok with `n > 0` bytes, WantRead / WantWrite, Eof, Error).
+// one non-blocking TLS read into `buf` (Ok with `n > 0` bytes, WantRead / WantWrite, Eof, Error).
 [[nodiscard]] inline auto read_some(cfire::net::TcpConn& conn, std::span<std::uint8_t> buf, std::size_t& n) -> cfire::net::detail::Io {
     const auto& a = detail::api();
     n = 0;

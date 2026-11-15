@@ -27,7 +27,7 @@ make -s build
 if ! ./cfire doc --check >/dev/null 2>&1; then
     echo "==> [pre-commit] Synchronizing documentation and version manifests via ./cfire doc..."
     SYNC_PATHS="VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/"
-    # Stage only what `cfire doc` regenerates (CF-159). If a generated file also has unstaged
+    # Stage only what `cfire doc` regenerates. If a generated file also has unstaged
     # hand edits, staging it would silently commit work the author did not stage, so stop instead.
     BEFORE="$(git diff --name-only -- $SYNC_PATHS | sort)"
     BEFORE_HASHES="$(for f in $BEFORE; do [ -f "$f" ] && git hash-object "$f"; done)"
@@ -55,7 +55,7 @@ if ! ./cfire doc --check >/dev/null 2>&1; then
     ./cfire doc --check
 fi
 
-# 3. The every-commit tier (CF-186): zero warnings, formatting, examples, unit/e2e/stdlib, GUIDE doc-tests and the
+# 3. The every-commit tier: zero warnings, formatting, examples, unit/e2e/stdlib, GUIDE doc-tests and the
 #    conformance corpus. It tests the working tree, so unstaged edits count too. A failure blocks the commit.
 #    Git exports GIT_DIR / GIT_INDEX_FILE to hooks (from a worktree); a test's `git -C <tmp> init` would then
 #    reinitialise this repository (`core.bare = true`), so the tests run without them.

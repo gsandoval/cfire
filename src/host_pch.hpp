@@ -1,5 +1,5 @@
 #pragma once
-// src/host_pch.hpp — Precompiled header for parallel multi-TU host compiler build (CF-198)
+// src/host_pch.hpp — Precompiled header for parallel multi-TU host compiler build
 
 #include <algorithm>
 #include <array>

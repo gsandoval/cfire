@@ -18,7 +18,7 @@ namespace cfire::frontend {
 struct ParseResult {
     FileAST ast;
     std::vector<std::string> errors;              // rendered text of `source_errors`
-    std::vector<SourceError> source_errors{};     // Q24 (CF-149): structured, as detected
+    std::vector<SourceError> source_errors{};     // structured, as detected
 
     [[nodiscard]] bool ok() const noexcept { return errors.empty(); }
 };
@@ -65,5 +65,5 @@ CFIRE_PARSER_INLINE void append_doctests(std::string_view path, std::string_view
 } // namespace cfire::frontend
 
 #if !defined(CFIRE_SPLIT_TUS)
-#include "parser_impl.inc"
+#include "parser_impl.hpp"
 #endif

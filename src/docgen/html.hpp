@@ -4,7 +4,7 @@
 #include "catalog.hpp"
 #include "styles.hpp"
 #include "markdown.hpp"
-#include "clang_bridge.hpp"
+#include "../clang_bridge.hpp"
 #include "../../runtime/cfire_prelude.hpp"
 #include "../parser.hpp"
 #include "../sema.hpp"
@@ -44,7 +44,7 @@ namespace cfire::doc {
     if (!rt_dir.empty()) {
         cflags.push_back("-I" + std::filesystem::absolute(rt_dir).string());
     }
-    auto cache_dir = cfire::detail::user_cache_dir("doc");  // per-user, never a shared temp-dir name (CF-153)
+    auto cache_dir = cfire::detail::user_cache_dir("doc");  // per-user, never a shared temp-dir name
     if (cache_dir.empty()) {
         static cfire::detail::SecureTempDir doc_fallback("cfire_doc_cache");
         cache_dir = doc_fallback.path();
@@ -1163,19 +1163,19 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
     };
     auto write_if_changed = [](const std::filesystem::path& p, const std::string& updated, const std::string& orig) {
         if (updated != orig) {
-            std::ofstream ofs(p, std::ios::trunc);
+            std::ofstream ofs(p, std::ios::binary | std::ios::trunc);
             ofs << updated;
         }
     };
 
-    // CF-188: the stdlib catalog documents every type and function in cfire terms.
+    // the stdlib catalog documents every type and function in cfire terms.
     if (auto problems = catalog_doc_problems(); !problems.empty()) {
         std::string msg = std::format("Documentation audit failure: {} stdlib catalog problem(s):", problems.size());
         for (const auto& pr : problems) msg += "\n  - " + pr;
         return std::unexpected(msg);
     }
 
-    // CF-158: the GUIDE's diagnostics table is generated from diagnostic_code_registry(), and docs never link to
+    // the GUIDE's diagnostics table is generated from diagnostic_code_registry, and docs never link to
     // local paths (`file://...`, `/Users/...`), which only resolve on the author's machine.
     if (std::filesystem::exists(docs_dir / "GUIDE.md")) {
         std::string guide_txt = read_all_str(docs_dir / "GUIDE.md");
@@ -1407,7 +1407,7 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
                     t.path.string(), line, line_at(on_disk, i), line_at(expected, i)));
             }
         } else {
-            std::ofstream ofs(t.path, std::ios::trunc);
+            std::ofstream ofs(t.path, std::ios::binary | std::ios::trunc);
             ofs << t.content;
         }
     }

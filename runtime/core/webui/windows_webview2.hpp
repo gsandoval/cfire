@@ -301,7 +301,7 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
 #if __has_include(<WebView2.h>)
 #include <WebView2.h>
 #else
-// --- Self-contained WebView2 COM interface declarations (W-06, W-09, W-10) ----------------
+// --- Self-contained WebView2 COM interface declarations (WebView2 host bindings) ----------------
 // Provides the frozen Microsoft WebView2 COM vtable definitions when <WebView2.h> is not
 // installed on the build machine, avoiding external NuGet SDK and EventToken.h issues.
 #if __has_include(<eventtoken.h>)
@@ -519,7 +519,7 @@ struct ICoreWebView2Environment : public IUnknown {
 };
 #endif // !__has_include(<WebView2.h>)
 
-// --- WebView2 host (CF-001.a-e, W-06, W-09, W-10) -----------------------------------------
+// --- WebView2 host (WebView2 host bindings) -----------------------------------------
 //
 // Same contract as the Linux/macOS backends: kPreloadBridgeJs at document start, messages
 // from the page (`window.chrome.webview.postMessage`) into AppState::handle_ipc_message,
@@ -635,7 +635,7 @@ using Wv2CreateInternalFn = HRESULT(STDAPICALLTYPE*)(
 
 // Invokes WebView2Loader.dll if present beside the executable or on PATH; otherwise falls
 // back to the built-in Registry locator for EmbeddedBrowserWebView.dll so no external DLL
-// is required alongside the .exe (W-10).
+// is required alongside the.exe.
 [[nodiscard]] inline auto wv2_create_environment(
     PCWSTR user_data_dir,
     ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler* handler

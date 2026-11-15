@@ -66,6 +66,7 @@ struct ExecutableSpec {
     std::vector<std::string> libraries{};
     std::vector<std::string> pkg_config{};
     std::vector<std::string> includes{};
+    std::vector<std::string> defines{};
     std::vector<std::string> url_schemes{};
     std::string sign_identity{};
     bool portable{false};
@@ -82,6 +83,7 @@ struct ParsedBuildCf {
     std::vector<std::string> libraries{};
     std::vector<std::string> frameworks{};
     std::vector<std::string> includes{};
+    std::vector<std::string> defines{};
 };
 
 struct BuildPlan {
@@ -93,6 +95,9 @@ struct BuildPlan {
     std::vector<std::string> pkg_config_deps{};
     std::vector<std::string> queried_pkg_configs{};
     std::vector<std::string> extra_pkg_configs{};
+    std::vector<std::string> defines{};
+    std::vector<std::string> extra_defines{};
+    bool has_impl_define{false};
     std::vector<std::string> cflags{};
     std::vector<std::string> ldflags{};
     std::unordered_map<std::string, bridge::HeaderIndex> cpp_headers{};
@@ -160,13 +165,41 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
     ExternalDepSpec& dep
 );
 
+[[nodiscard]] inline auto is_valid_c_macro_ident(std::string_view s) -> bool {
+    if (s.empty()) return false;
+    auto is_alpha = [](unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; };
+    if (!is_alpha(static_cast<unsigned char>(s[0]))) return false;
+    for (std::size_t i = 1; i < s.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if (!is_alpha(c) && !(c >= '0' && c <= '9')) return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline auto normalize_define_spec(std::string_view raw) -> std::expected<std::string, std::string> {
+    while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front()))) raw.remove_prefix(1);
+    while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back()))) raw.remove_suffix(1);
+    if (raw.starts_with("-D")) raw.remove_prefix(2);
+    if (raw.empty()) {
+        return std::unexpected("empty C/C++ preprocessor define; expected MACRO or MACRO=VAL");
+    }
+    auto eq = raw.find('=');
+    std::string_view key = (eq == std::string_view::npos) ? raw : raw.substr(0, eq);
+    if (!is_valid_c_macro_ident(key)) {
+        return std::unexpected(std::format(
+            "invalid C macro identifier '{}' in define '{}' (expected [A-Za-z_][A-Za-z0-9_]*)", key, raw));
+    }
+    return std::string(raw);
+}
+
 CFIRE_INFRA_INLINE void apply_manifest_pkg_fields(
     BuildPlan& plan,
     const std::filesystem::path& bcf_dir,
     const std::vector<std::string>& pkg_configs,
     const std::vector<std::string>& libraries,
     const std::vector<std::string>& frameworks,
-    const std::vector<std::string>& includes
+    const std::vector<std::string>& includes,
+    const std::vector<std::string>& defines = {}
 );
 
 CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
@@ -175,12 +208,11 @@ CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
     const std::string& pc_override = ""
 );
 
-CFIRE_INFRA_INLINE void append_imp_define_cflags(
-    const frontend::ImportDecl& imp,
-    std::vector<std::string>& cflags
-);
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_plan_defines(
+    BuildPlan& plan
+) -> std::expected<void, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto parse_build_cf(const std::filesystem::path& build_cf_path)
     -> std::expected<ParsedBuildCf, std::string> {
@@ -207,11 +239,66 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
         }
     };
 
+    std::string def_err;
+    auto push_define_raw = [&](std::vector<std::string>& out, std::string_view spec) {
+        if (!def_err.empty()) return;
+        auto norm = normalize_define_spec(spec);
+        if (!norm) {
+            def_err = norm.error();
+            return;
+        }
+        if (std::find(out.begin(), out.end(), *norm) == out.end()) {
+            out.push_back(std::move(*norm));
+        }
+    };
+    auto collect_defines_expr = [&](const frontend::Expr& expr, std::vector<std::string>& out) {
+        auto push_kv = [&](std::string_view key, const frontend::Expr* val) {
+            if (!def_err.empty()) return;
+            if (!is_valid_c_macro_ident(key)) {
+                def_err = std::format(
+                    "invalid C macro identifier '{}' in build.cf Defines (expected [A-Za-z_][A-Za-z0-9_]*)", key);
+                return;
+            }
+            if (!val) {
+                push_define_raw(out, key);
+                return;
+            }
+            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&val->node)) {
+                if (lit->kind == frontend::TokenKind::KwTrue || lit->kind == frontend::TokenKind::KwFalse) {
+                    if (lit->kind == frontend::TokenKind::KwTrue) push_define_raw(out, key);
+                    return;
+                }
+                push_define_raw(out, std::format("{}={}", key, lit->value));
+            } else if (const auto* un = std::get_if<frontend::UnaryExpr>(&val->node)) {
+                if (un->op == "-" && un->operand) {
+                    if (const auto* u_lit = std::get_if<frontend::LiteralExpr>(&un->operand->node)) {
+                        push_define_raw(out, std::format("{}=-{}", key, u_lit->value));
+                    }
+                }
+            }
+        };
+        if (const auto* map_lit = std::get_if<frontend::StructLitExpr>(&expr.node)) {
+            for (const auto& mf : map_lit->fields) {
+                push_kv(mf.name, mf.value);
+            }
+        } else if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&expr.node)) {
+            for (const auto& el : arr->elements) {
+                if (!el) continue;
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                    push_define_raw(out, lit->value);
+                }
+            }
+        } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&expr.node)) {
+            push_define_raw(out, lit->value);
+        }
+    };
+
     auto populate_pkg_fields = [&](const frontend::StructLitExpr& st_lit,
                                    std::vector<std::string>& pkg_config,
                                    std::vector<std::string>& libraries,
                                    std::vector<std::string>& frameworks,
-                                   std::vector<std::string>& includes) {
+                                   std::vector<std::string>& includes,
+                                   std::vector<std::string>& defines) {
         for (const auto& fld : st_lit.fields) {
             if (!fld.value) continue;
             if (fld.name == "Frameworks" || fld.name == "frameworks") {
@@ -222,12 +309,15 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
                 collect_str_or_arr(*fld.value, pkg_config);
             } else if (fld.name == "Includes" || fld.name == "includes") {
                 collect_str_or_arr(*fld.value, includes);
+            } else if (fld.name == "Defines" || fld.name == "defines") {
+                collect_defines_expr(*fld.value, defines);
             }
         }
     };
 
     auto populate_exe_fields = [&](ExecutableSpec& exe_spec, const frontend::StructLitExpr& st_lit) {
-        populate_pkg_fields(st_lit, exe_spec.pkg_config, exe_spec.libraries, exe_spec.frameworks, exe_spec.includes);
+        populate_pkg_fields(
+            st_lit, exe_spec.pkg_config, exe_spec.libraries, exe_spec.frameworks, exe_spec.includes, exe_spec.defines);
         for (const auto& fld : st_lit.fields) {
             if (!fld.value) continue;
             if (fld.name == "Entry" || fld.name == "entry") {
@@ -296,7 +386,8 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
         if (!gv.value) continue;
         if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&gv.value->node)) {
             if (st_lit->type_name == "Package" || st_lit->type_name == "build.Package") {
-                populate_pkg_fields(*st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes);
+                populate_pkg_fields(
+                    *st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes, parsed.defines);
                 continue;
             }
             if (st_lit->type_name == "Executable" || st_lit->type_name == "App" ||
@@ -321,7 +412,8 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
             for (const auto& arg : call->args) {
                 if (!arg.value) continue;
                 if (const auto* st_lit = std::get_if<frontend::StructLitExpr>(&arg.value->node)) {
-                    populate_pkg_fields(*st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes);
+                    populate_pkg_fields(
+                        *st_lit, parsed.pkg_config, parsed.libraries, parsed.frameworks, parsed.includes, parsed.defines);
                 }
             }
             continue;
@@ -347,6 +439,38 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
         if (mem->field == "Frameworks") {
             for (const auto& arg : call->args) {
                 if (arg.value) collect_str_or_arr(*arg.value, parsed.frameworks);
+            }
+            continue;
+        }
+        if (mem->field == "Define") {
+            if (call->args.size() == 1 && call->args[0].value) {
+                collect_defines_expr(*call->args[0].value, parsed.defines);
+            } else if (call->args.size() >= 2 && call->args[0].value && call->args[1].value) {
+                if (const auto* kl = std::get_if<frontend::LiteralExpr>(&call->args[0].value->node)) {
+                    if (!is_valid_c_macro_ident(kl->value)) {
+                        def_err = std::format(
+                            "invalid C macro identifier '{}' in build.Define (expected [A-Za-z_][A-Za-z0-9_]*)",
+                            kl->value);
+                    } else if (const auto* vl = std::get_if<frontend::LiteralExpr>(&call->args[1].value->node)) {
+                        if (vl->kind == frontend::TokenKind::KwTrue || vl->kind == frontend::TokenKind::KwFalse) {
+                            if (vl->kind == frontend::TokenKind::KwTrue) push_define_raw(parsed.defines, kl->value);
+                        } else {
+                            push_define_raw(parsed.defines, std::format("{}={}", kl->value, vl->value));
+                        }
+                    } else if (const auto* un = std::get_if<frontend::UnaryExpr>(&call->args[1].value->node)) {
+                        if (un->op == "-" && un->operand) {
+                            if (const auto* u_lit = std::get_if<frontend::LiteralExpr>(&un->operand->node)) {
+                                push_define_raw(parsed.defines, std::format("{}=-{}", kl->value, u_lit->value));
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        if (mem->field == "Defines") {
+            for (const auto& arg : call->args) {
+                if (arg.value) collect_defines_expr(*arg.value, parsed.defines);
             }
             continue;
         }
@@ -469,13 +593,43 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
                                 }
                             }
                         }
-                    } else if (fld.name == "Defines" || fld.name == "Flags") {
+                    } else if (fld.name == "Defines" || fld.name == "defines" || fld.name == "Flags") {
+                        const bool validate_keys = (fld.name == "Defines" || fld.name == "defines");
+                        auto record_dep_def = [&](std::string_view key, std::string val) {
+                            if (validate_keys && !is_valid_c_macro_ident(key)) {
+                                def_err = std::format(
+                                    "invalid C macro identifier '{}' in build.cf Defines (expected [A-Za-z_][A-Za-z0-9_]*)",
+                                    key);
+                                return;
+                            }
+                            spec.defines[std::string(key)] = std::move(val);
+                        };
                         if (const auto* map_lit = std::get_if<frontend::StructLitExpr>(&fld.value->node)) {
                             for (const auto& mf : map_lit->fields) {
-                                if (mf.value) {
-                                    if (const auto* lit = std::get_if<frontend::LiteralExpr>(&mf.value->node)) {
-                                        spec.defines[mf.name] = lit->value;
+                                if (!mf.value) continue;
+                                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&mf.value->node)) {
+                                    if (lit->kind == frontend::TokenKind::KwTrue || lit->kind == frontend::TokenKind::KwFalse) {
+                                        if (lit->kind == frontend::TokenKind::KwTrue) record_dep_def(mf.name, "1");
+                                    } else {
+                                        record_dep_def(mf.name, lit->value);
                                     }
+                                } else if (const auto* un = std::get_if<frontend::UnaryExpr>(&mf.value->node)) {
+                                    if (un->op == "-" && un->operand) {
+                                        if (const auto* u_lit = std::get_if<frontend::LiteralExpr>(&un->operand->node)) {
+                                            record_dep_def(mf.name, "-" + u_lit->value);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (validate_keys) {
+                            std::vector<std::string> arr_defs;
+                            collect_defines_expr(*fld.value, arr_defs);
+                            for (const auto& d : arr_defs) {
+                                auto eq = d.find('=');
+                                if (eq == std::string::npos) {
+                                    record_dep_def(d, "1");
+                                } else {
+                                    record_dep_def(std::string_view(d).substr(0, eq), d.substr(eq + 1));
                                 }
                             }
                         }
@@ -522,6 +676,9 @@ CFIRE_INFRA_INLINE void append_imp_define_cflags(
             }
         }
         parsed.external_deps.push_back(std::move(spec));
+    }
+    if (!def_err.empty()) {
+        return std::unexpected(def_err);
     }
     return parsed;
 }
@@ -682,7 +839,8 @@ CFIRE_INFRA_INLINE void apply_manifest_pkg_fields(
     const std::vector<std::string>& pkg_configs,
     const std::vector<std::string>& libraries,
     const std::vector<std::string>& frameworks,
-    const std::vector<std::string>& includes
+    const std::vector<std::string>& includes,
+    const std::vector<std::string>& defines
 ) {
     auto add_unique = [](std::vector<std::string>& vec, const std::string& item) {
         if (item.empty()) return;
@@ -696,6 +854,9 @@ CFIRE_INFRA_INLINE void apply_manifest_pkg_fields(
 
     for (const auto& pc : pkg_configs) {
         add_unique(plan.pkg_config_deps, pc);
+    }
+    for (const auto& def : defines) {
+        add_unique(plan.defines, def);
     }
     for (const auto& inc : includes) {
         if (inc.empty()) continue;
@@ -786,22 +947,33 @@ CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
     }
 }
 
-CFIRE_INFRA_INLINE void append_imp_define_cflags(
-    const frontend::ImportDecl& imp,
-    std::vector<std::string>& cflags
-) {
-    for (const auto& attr : imp.attrs) {
-        if (attr.name != "define" || attr.args.empty()) continue;
-        std::string flag = attr.args.size() == 1
-            ? ("-D" + attr.args[0])
-            : ("-D" + attr.args[0] + "=" + attr.args[1]);
-        if (std::find(cflags.begin(), cflags.end(), flag) == cflags.end()) {
-            cflags.push_back(std::move(flag));
+[[nodiscard]] CFIRE_INFRA_INLINE auto resolve_plan_defines(
+    BuildPlan& plan
+) -> std::expected<void, std::string> {
+    auto apply_one = [&](std::string_view raw) -> std::expected<void, std::string> {
+        auto norm = normalize_define_spec(raw);
+        if (!norm) return std::unexpected(norm.error());
+        auto eq = norm->find('=');
+        std::string_view key = (eq == std::string::npos) ? std::string_view(*norm) : std::string_view(*norm).substr(0, eq);
+        if (key.contains("IMPLEMENTATION")) {
+            plan.has_impl_define = true;
         }
+        std::string flag = "-D" + *norm;
+        if (std::find(plan.cflags.begin(), plan.cflags.end(), flag) == plan.cflags.end()) {
+            plan.cflags.push_back(std::move(flag));
+        }
+        return {};
+    };
+    for (const auto& def : plan.defines) {
+        if (auto r = apply_one(def); !r) return r;
     }
+    for (const auto& def : plan.extra_defines) {
+        if (auto r = apply_one(def); !r) return r;
+    }
+    return {};
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

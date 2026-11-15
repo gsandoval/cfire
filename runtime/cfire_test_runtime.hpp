@@ -45,7 +45,7 @@ inline thread_local std::string failure_msg;
 
 struct TestAssertionFailure {};
 
-// --- Crash & sanitizer-trap reporting (CF-157) ---
+// --- Crash & sanitizer-trap reporting ---
 // A UBSan trap (-fsanitize-trap), segfault or abort inside a test used to kill the runner with no output.
 // begin_test() records the running test and flushes stdout; the signal handler then reports it with
 // async-signal-safe write(2) calls only, and exits with status 1 like an ordinary test failure.
@@ -383,7 +383,7 @@ template <typename E>
     std::error_code ec;
     std::size_t count = 0;
 #if defined(_WIN32)
-    // CF-184: C runtime descriptors (`fopen`, `_open`, cfire's `fs`), lowest first. `_get_osfhandle` on a closed
+    // C runtime descriptors (`fopen`, `_open`, cfire's `fs`), lowest first. `_get_osfhandle` on a closed
     // descriptor calls the invalid-parameter handler, so a no-op one is installed for the scan (the process-wide
     // setter: MinGW's msvcrt has no thread-local one).
     auto prev = ::_set_invalid_parameter_handler(

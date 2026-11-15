@@ -1,5 +1,5 @@
 #pragma once
-// src/build/lib_cache.hpp — Per-Target Cached Amalgamation Archives (sqlite3 & simdjson, CF-203)
+// src/build/lib_cache.hpp — Per-Target Cached Amalgamation Archives (sqlite3 & simdjson)
 
 #include "../clang_bridge.hpp"
 #include "cache_paths.hpp"
@@ -58,7 +58,7 @@ struct VendoredArchiveSpec {
     const BuildPlan& plan
 ) -> std::expected<std::filesystem::path, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 namespace detail {
 
@@ -321,7 +321,7 @@ struct LibDirLockGuard {
         st.update(reinterpret_cast<const uint8_t*>(val.data()), val.size());
         st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
     };
-    feed("schema", "cf208-v1");
+    feed("schema", "vendor-archive-v1");
     feed("lib", spec.name);
     feed("src_sha", src_sha);
     feed("hdr_sha", hdr_sha);
@@ -358,7 +358,7 @@ struct LibDirLockGuard {
     return detail::ensure_vendored_amalgamation_archive(runtime_dir, plan, kSimdjsonSpec);
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

@@ -201,7 +201,7 @@ struct WsFrame {
 inline constexpr std::size_t kDefaultMaxFrameSize = 16 * 1024 * 1024; // 16 MiB
 
 namespace detail {
-// CF-195: frames are read through this: first the bytes that arrived with the handshake (`ahead`, consumed
+// frames are read through this: first the bytes that arrived with the handshake (`ahead`, consumed
 // from the front), then the socket or TLS stream.
 struct FrameReader {
     int fd;
@@ -378,7 +378,7 @@ public:
             auto f_opt = decode_frame(fd_, tls_, max_frame_size_, &ahead_);
             if (!f_opt) {
                 tls_.reset();
-                // Through the close guard (CF-192): `stop()` must never shut down a reused descriptor.
+                // Through the close guard: `stop` must never shut down a reused descriptor.
                 if (fd_ >= 0) cfire::net::detail::close_guarded(std::exchange(fd_, -1), guard_);
                 return cfire::make_error("websocket connection closed by peer");
             }
@@ -439,10 +439,10 @@ public:
         }
     }
 
-    // CF-195: bytes that arrived after the handshake (the peer's first frames); frames are read from them first.
+    // bytes that arrived after the handshake (the peer's first frames); frames are read from them first.
     void set_read_ahead(std::string bytes) { ahead_ = std::move(bytes); }
 
-    // CF-192: the server's handle for shutting this session down from `stop()`.
+    // the server's handle for shutting this session down from `stop`.
     void set_close_guard(std::shared_ptr<cfire::net::detail::CloseGuard> guard) noexcept { guard_ = std::move(guard); }
 
 private:
@@ -451,7 +451,7 @@ private:
     std::shared_ptr<cfire::net::TlsStream> tls_{nullptr};
     std::size_t max_frame_size_ = kDefaultMaxFrameSize;
     std::shared_ptr<cfire::net::detail::CloseGuard> guard_{nullptr};
-    std::string ahead_{};  // CF-195: bytes read past the handshake, read before the socket
+    std::string ahead_{};  // bytes read past the handshake, read before the socket
 };
 
 using WebSocket = Conn;
@@ -557,7 +557,7 @@ using WebSocket = Conn;
     if (!resp_buf.starts_with("HTTP/1.1 101") && !resp_buf.starts_with("HTTP/1.0 101")) {
         return cfire::make_error("websocket handshake failed: server did not return 101 Switching Protocols");
     }
-    // CF-195: frames the server sent right behind the 101 can arrive in the same read; they are the first bytes
+    // frames the server sent right behind the 101 can arrive in the same read; they are the first bytes
     // the connection reads, not discarded.
     const std::size_t head_end = resp_buf.find("\r\n\r\n") + 4;
     std::string ahead = resp_buf.substr(head_end);
@@ -582,7 +582,7 @@ using WebSocket = Conn;
     return connect(url_str, /*verify_peer=*/false);
 }
 
-// CF-194: limits for the standalone `websocket.Server`.
+// limits for the standalone `websocket.Server`.
 struct ServerLimits {
     // Concurrent sessions; over it a new client gets 503.
     std::size_t max_websockets = 1024;
@@ -661,7 +661,7 @@ public:
         if (limits_.max_frame_size == 0) limits_.max_frame_size = ServerLimits{}.max_frame_size;
     }
     [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
-    // CF-194: open sessions.
+    // open sessions.
     [[nodiscard]] auto sessions() const -> std::size_t { return sessions_->live(); }
 
     // Ends the accept loop, then shuts the open sessions down and joins them.
@@ -708,7 +708,7 @@ public:
         handle_conn(*conn_res, handler);
     }
 
-    // CF-194: each accepted connection runs on its own session thread (TLS handshake, upgrade request and
+    // each accepted connection runs on its own session thread (TLS handshake, upgrade request and
     // handler), so handlers run concurrently; over `max_websockets` open sessions a client gets 503.
     // The open sessions are shut down and joined before this returns.
     template <typename Handler>
@@ -751,7 +751,7 @@ private:
         }
         cfire::http::ServerLimits http_lim;
         http_lim.header_timeout_ms = limits_.header_timeout_ms;
-        // CF-195: the assembler keeps the bytes after the request (a client's first frame sent with it).
+        // the assembler keeps the bytes after the request (a client's first frame sent with it).
         cfire::http::detail::RequestAssembler as(http_lim.max_body_bytes);
         auto req_res = cfire::http::detail::read_next_request(conn, as, http_lim);
         if (!req_res) {
@@ -814,7 +814,7 @@ private:
     return Server(std::move(*l), std::move(*ctx_res));
 }
 
-// Q31: `make(websocket.Server, port, tls: cfg)`; `websocket.TlsConfig` is `http.TlsConfig`.
+// `make(websocket.Server, port, tls: cfg)`; `websocket.TlsConfig` is `http.TlsConfig`.
 using TlsConfig = cfire::http::TlsConfig;
 [[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<Server, cfire::Error> {
     if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);

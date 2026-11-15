@@ -1,5 +1,5 @@
 #pragma once
-// src/sema/builtin_methods.hpp — The single table of methods on builtin types (Q7, Q8, Q14; W4).
+// src/sema/builtin_methods.hpp — The single table of methods on builtin types (uniform builtin surface).
 //
 // Sema reads it for the closed method surface, arity, argument and return types; codegen lowers every entry
 // with a runtime name to `cfire::bm::<name>(receiver, args...)` (runtime/core/builtin_methods.hpp); docgen
@@ -34,7 +34,7 @@ struct BuiltinMethod {
     std::string_view params;
     // Return type with the same placeholders; `?` suffix = optional, `[]` prefix = slice, `&str` = view.
     std::string_view ret;
-    bool mutates;      // changes the receiver: needs a `mut` binding and invalidates loans (CF-143)
+    bool mutates;      // changes the receiver: needs a `mut` binding and invalidates loans
     bool borrows;      // the result is a view into the receiver and is loan-tracked
     bool lowered;      // lowered through `cfire::bm::<name>`; false keeps a dedicated codegen path
     std::string_view summary;
@@ -78,7 +78,7 @@ inline constexpr std::array kBuiltinMethods = {
     BuiltinMethod{"saturating_mul", BmInt, "Self", "Self", false, false, true, "Multiplication clamped to `MIN..=MAX`.", "p := a.saturating_mul(b)"},
     BuiltinMethod{"saturating_div", BmInt, "Self", "Self", false, false, true, "Division clamped to `MIN..=MAX` (`MIN / -1 == MAX`); division by zero panics.", "q := a.saturating_div(b)"},
     BuiltinMethod{"saturating_neg", BmInt, "", "Self", false, false, true, "Negation clamped to `MIN..=MAX`.", "n := a.saturating_neg()"},
-    // Shifts and explicit conversions keep their dedicated lowering (CF-165/CF-166).
+    // Shifts and explicit conversions keep their dedicated lowering.
     BuiltinMethod{"wrapping_shl", BmInt, "u32", "Self", false, false, false, "Left shift with the count taken modulo the bit width.", "x := x.wrapping_shl(n)"},
     BuiltinMethod{"wrapping_shr", BmInt, "u32", "Self", false, false, false, "Right shift with the count taken modulo the bit width.", "x := x.wrapping_shr(n)"},
     BuiltinMethod{"checked_shl", BmInt, "u32", "Self?", false, false, false, "`none` when the count is `>=` the bit width.", "x := v.checked_shl(n) or 0"},
@@ -163,8 +163,8 @@ inline constexpr std::array kBuiltinMethods = {
     BuiltinMethod{"get", BmMap, "K", "V?", false, false, true, "Copy of the value for `k`, or `none`.", "port := cfg.get(\"port\") or 8080"},
     BuiltinMethod{"insert", BmMap, "K, V", "V?", true, false, true, "Sets `k` to `v`; returns the previous value, or `none`.", "old := m.insert(k, v)"},
     BuiltinMethod{"remove", BmMap, "K", "V?", true, false, true, "Removes `k`; returns its value, or `none` if absent.", "gone := m.remove(k)"},
-    BuiltinMethod{"keys", BmMap, "", "[]K", false, false, true, "Copy of the keys, in unspecified order (Q27).", "for k in m.keys() { ... }"},
-    BuiltinMethod{"values", BmMap, "", "[]V", false, false, true, "Copy of the values, in unspecified order (Q27).", "total := m.values().len()"},
+    BuiltinMethod{"keys", BmMap, "", "[]K", false, false, true, "Copy of the keys, in unspecified order.", "for k in m.keys() { ... }"},
+    BuiltinMethod{"values", BmMap, "", "[]V", false, false, true, "Copy of the values, in unspecified order.", "total := m.values().len()"},
 
     // --- Raw access for C interop (dedicated lowering) ---
     BuiltinMethod{"bytes", BmSlice, "", "[]byte", false, false, false, "Byte view of the slice's storage.", "raw := xs.bytes()"},
@@ -199,7 +199,7 @@ inline constexpr std::array kBuiltinMethods = {
     return n;
 }
 
-// Builtin associated items on numeric types (Q10): `i32.MAX`, `f64.NAN`. `{}` is the lowered C++ type.
+// Builtin associated items on numeric types: `i32.MAX`, `f64.NAN`. `{}` is the lowered C++ type.
 struct BuiltinAssocConst {
     std::string_view name;
     std::uint8_t recv;
@@ -228,15 +228,15 @@ inline constexpr std::array kBuiltinAssocConsts = {
     return nullptr;
 }
 
-// Q16 migration: retired module functions and the replacement `cfire fix` applies.
+// migration: retired module functions and the replacement `cfire fix` applies.
 enum class ApiMigrationKind : std::uint8_t {
     CallToMethod,  // `ns.f(recv, rest...)`  ->  `recv.to(rest...)`
     Rename,        // `ns.f(`                ->  `to(`
     CallToConst,   // `ns.f()`               ->  `to`
     RenameFn,      // `ns.f(args)`           ->  `ns.to(args)` (keeps the caller's module alias)
     SwapToFn,      // `ns.f(a, b)`           ->  `ns.to(b, a)` (`ns.f(a)` -> `ns.to(0, a)`)
-    AppendVerifyOff,  // `ns.f(args)`        ->  `ns.to(args, verify_peer: false)` (Q30)
-    TlsServerFiles,   // `ns.make_tls_server(p, c, k)` -> `make(ns.Server, p, tls: ns.TlsConfig{cert_file: c, key_file: k})` (Q31)
+    AppendVerifyOff,  // `ns.f(args)`        ->  `ns.to(args, verify_peer: false)`
+    TlsServerFiles,   // `ns.make_tls_server(p, c, k)` -> `make(ns.Server, p, tls: ns.TlsConfig{cert_file: c, key_file: k})`
     TlsServerPem,     // the same with `cert_pem` / `key_pem`
 };
 struct ApiMigration {
@@ -307,7 +307,7 @@ inline constexpr std::array kApiMigrations = {
     return nullptr;
 }
 
-// Q25: `make(ns.Type, args...)` for stdlib types lowers to the runtime constructor `cpp`. `old_fn` is the
+// `make(ns.Type, args...)` for stdlib types lowers to the runtime constructor `cpp`. `old_fn` is the
 // retired constructor function (`http.make_router()`), which `cfire fix` rewrites to `make(http.Router)`.
 struct StdlibCtor {
     std::string_view ns;
@@ -348,7 +348,7 @@ inline constexpr std::array kStdlibCtors = {
     return nullptr;
 }
 
-// Stdlib struct types usable from `.cf` code (CF-180, Q31). `fields` lists `name: type = default` entries in
+// Stdlib struct types usable from `.cf` code. `fields` lists `name: type = default` entries in
 // C++ declaration order, separated by `;` (codegen reorders designated initializers to match).
 struct StdlibStruct {
     std::string_view ns;
@@ -362,7 +362,7 @@ inline constexpr std::array kStdlibStructs = {
     StdlibStruct{"http", "ServerLimits", "cfire::http::ServerLimits",
         "header_timeout_ms: i32 = 10000; body_timeout_ms: i32 = 30000; max_body_bytes: usize = 10485760; workers: usize = 0; max_pending: usize = 128; "
         "keepalive_timeout_ms: i32 = 5000; max_requests_per_conn: usize = 1000; max_websockets: usize = 1024; max_connections: usize = 10000",
-        "Per-connection limits for `http.Server` (Q22, CF-192, CF-193); pass to `server.set_limits(...)`. The server waits on idle and slow "
+        "Per-connection limits for `http.Server` (with keep-alive and event-loop limits); pass to `server.set_limits(...)`. The server waits on idle and slow "
         "connections in an event loop, so `workers` is only how many handlers run at once; "
         "`workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive "
         "connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket "
@@ -370,21 +370,22 @@ inline constexpr std::array kStdlibStructs = {
         "waiting for a worker, a client gets 503."},
     StdlibStruct{"http", "TlsConfig", "cfire::http::TlsConfig",
         "cert_file: str = \"\"; key_file: str = \"\"; cert_pem: str = \"\"; key_pem: str = \"\"",
-        "Server certificate for `make(http.Server, port, tls: ...)` (Q31): set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM."},
+        "Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM."},
     StdlibStruct{"websocket", "TlsConfig", "cfire::http::TlsConfig",
         "cert_file: str = \"\"; key_file: str = \"\"; cert_pem: str = \"\"; key_pem: str = \"\"",
-        "Server certificate for `make(websocket.Server, port, tls: ...)` (Q31); the same type as `http.TlsConfig`."},
+        "Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`."},
     StdlibStruct{"websocket", "ServerLimits", "cfire::websocket::ServerLimits",
         "max_websockets: usize = 1024; header_timeout_ms: i32 = 10000; max_frame_size: usize = 16777216",
-        "Limits for `websocket.Server` (CF-194); pass to `server.set_limits(...)`. Each connection runs on its own session "
+        "Limits for `websocket.Server`; pass to `server.set_limits(...)`. Each connection runs on its own session "
         "thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the "
         "upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default."},
-    // CF-207: declarative build.cf manifest configuration structs (`build.Executable`, `build.Package`, etc.)
+    // declarative build.cf manifest configuration structs (`build.Executable`, `build.Package`, etc.)
     StdlibStruct{"build", "Package", "cfire::build::PackageSpec",
         "Name: str = \"\"; name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; "
-        "Libs: any = \"\"; libs: any = \"\"; Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"",
-        "Package-level manifest metadata and default native `PkgConfig`, `Libraries`, `Frameworks`, and `Includes` in `build.cf`."},
+        "Libs: any = \"\"; libs: any = \"\"; Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
+        "Defines: any = \"\"; defines: any = \"\"",
+        "Package-level manifest metadata and default native `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, and `Defines` in `build.cf`."},
     StdlibStruct{"build", "Executable", "cfire::build::ExecutableSpec",
         "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
         "Subsystem: str = \"\"; subsystem: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
@@ -395,7 +396,7 @@ inline constexpr std::array kStdlibStructs = {
         "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
         "Executable target configuration in `build.cf` (`build.Executable(...)` / `build.Executable{...}`)."},
     StdlibStruct{"build", "App", "cfire::build::ExecutableSpec",
         "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
@@ -407,13 +408,13 @@ inline constexpr std::array kStdlibStructs = {
         "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
         "Alias for `build.Executable` configuration in `build.cf`."},
     StdlibStruct{"build", "Library", "cfire::build::LibrarySpec",
         "Name: str = \"\"; name: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; Static: bool = false; static: bool = false; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
         "Library target configuration in `build.cf`."},
     StdlibStruct{"build", "Step", "cfire::build::CommandHook",
         "Command: str = \"\"; command: str = \"\"; Args: any = \"\"; args: any = \"\"; "
@@ -424,32 +425,32 @@ inline constexpr std::array kStdlibStructs = {
         "Inputs: any = \"\"; inputs: any = \"\"; Outputs: any = \"\"; outputs: any = \"\"; WorkDir: str = \"\"; work_dir: str = \"\"",
         "Pre-build command step configuration in `build.cf`."},
     StdlibStruct{"build", "CC", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "C/C++ source target configuration in `build.cf` (`build.CC(...)`)."},
     StdlibStruct{"build", "CMake", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "External CMake dependency configuration in `build.cf` (`build.CMake(...)`)."},
     StdlibStruct{"build", "Make", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "External Make dependency configuration in `build.cf` (`build.Make(...)`)."},
     StdlibStruct{"build", "Ninja", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "External Ninja dependency configuration in `build.cf` (`build.Ninja(...)`)."},
     StdlibStruct{"build", "Git", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "External Git dependency configuration in `build.cf` (`build.Git(...)`)."},
     StdlibStruct{"build", "Archive", "cfire::build::ExternalDepSpec",
-        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; Flags: any = \"\"; "
+        "Target: str = \"\"; Sources: any = \"\"; Includes: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"; "
         "Url: str = \"\"; URL: str = \"\"; Tag: str = \"\"; Ref: str = \"\"; Commit: str = \"\"; Branch: str = \"\"; "
         "Sha256: str = \"\"; Hash: str = \"\"; Checksum: str = \"\"; Policy: str = \"\"; Driver: str = \"\"; Static: bool = false",
         "External archive dependency configuration in `build.cf` (`build.Archive(...)`)."},
@@ -492,7 +493,7 @@ struct StdlibStructField {
     return out;
 }
 
-// CF-188: type names the catalog used to list although no runtime type implements them. Using one is
+// type names the catalog used to list although no runtime type implements them. Using one is
 // `cfire/UNKNOWN-STDLIB-TYPE`, naming the real replacement when there is one (`use` empty: none).
 struct RemovedStdlibType {
     std::string_view ns;
@@ -538,7 +539,7 @@ inline constexpr std::array kRemovedStdlibTypes = {
     return nullptr;
 }
 
-// Modules whose whole surface moved to methods (Q7); importing them is an error whose fix deletes the line.
+// Modules whose whole surface moved to methods; importing them is an error whose fix deletes the line.
 inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", "core:sort"};
 
 // Receiver kind of a spelled `.cf` type (`str`, `&str`, `[]i32`, `[4]u8`, `map[str]i32`, `i64`, `f32`), for the
@@ -575,12 +576,12 @@ inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", 
     }
     std::string out = "fn " + std::string(m.name) + "(" + params + ")";
     if (!m.ret.empty() && m.ret != "void") out += " -> " + std::string(m.ret);
-    // The table writes a view as `&str`; in `.cf` terms that is a `str` (CF-189: there is no `&T` type).
+    // The table writes a view as `&str`; in `.cf` terms that is a `str` (there is no `&T` type).
     for (std::size_t at; (at = out.find("&str")) != std::string::npos;) out.erase(at, 1);
     return out;
 }
 
-// Retired spellings (Q16/Q26): a hard error with a fix-it that renames the method.
+// Retired spellings: a hard error with a fix-it that renames the method.
 struct RetiredBuiltinMethod {
     std::string_view name;
     std::uint8_t recv;

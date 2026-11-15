@@ -777,7 +777,7 @@ private:
     if (host.empty()) {
         return std::unexpected(Error("ssh.dial: empty host"));
     }
-    // CF-168: no privileged default. Like ssh(1), an empty user means the local login name.
+    // no privileged default. Like ssh(1), an empty user means the local login name.
     std::string effective_user(user);
     if (effective_user.empty()) {
         for (const char* var : {"USER", "LOGNAME", "USERNAME"}) {
@@ -839,7 +839,7 @@ private:
 #endif
 }
 
-// Q29: `ssh.connect` is the client verb, like `net.connect` / `tls.connect` / `websocket.connect`.
+// `ssh.connect` is the client verb, like `net.connect` / `tls.connect` / `websocket.connect`.
 [[nodiscard]] inline auto connect(std::string_view host, std::uint16_t port = 22, std::string_view user = "", std::int64_t timeout_ms = 10000)
     -> std::expected<Session, Error> {
     return dial(host, port, user, timeout_ms);

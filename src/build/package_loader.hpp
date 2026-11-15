@@ -43,7 +43,7 @@ namespace cfire::build {
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string>;
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto ast_has_top_level_main(const frontend::FileAST& ast) -> bool {
     for (const auto& fn : ast.functions) {
@@ -216,7 +216,7 @@ namespace cfire::build {
             std::vector<std::filesystem::path> cf_files;
             std::filesystem::path pkg_dir;
 
-            // Subpackage build.cf check (BS-07 & BS-08)
+            // Subpackage build.cf check (subpackage manifest checks)
             std::filesystem::path candidate_dir = std::filesystem::is_directory(target) ? target : target.parent_path();
             if (!candidate_dir.empty()) {
                 auto sub_build_cf = candidate_dir / "build.cf";
@@ -231,7 +231,8 @@ namespace cfire::build {
                         parsed->pkg_config,
                         parsed->libraries,
                         parsed->frameworks,
-                        parsed->includes
+                        parsed->includes,
+                        parsed->defines
                     );
                     for (const auto& ex : parsed->executables) {
                         apply_manifest_pkg_fields(
@@ -240,7 +241,8 @@ namespace cfire::build {
                             ex.pkg_config,
                             ex.libraries,
                             ex.frameworks,
-                            ex.includes
+                            ex.includes,
+                            ex.defines
                         );
                     }
                     for (auto& dep : parsed->external_deps) {
@@ -323,7 +325,7 @@ namespace cfire::build {
                 }
                 visited_files.insert(canon);
 
-                // Recursively enqueue subpackage imports (BS-07)
+                // Recursively enqueue subpackage imports (subpackage imports)
                 for (const auto& simp : sub_ast->imports) {
                     queue.push_back({fpath.parent_path(), simp, false});
                 }
@@ -375,7 +377,7 @@ namespace cfire::build {
                 }
             }
         } else {
-            // Deduplicate non-local imports (C++ or core imports), preserving & merging attributes (Q60)
+            // Deduplicate non-local imports (C++ or core imports), preserving & merging attributes
             std::string imp_key = (imp.is_cpp ? "cpp:" : "cf:") + imp.path + (imp.alias.empty() ? "" : ":" + imp.alias);
             if (!seen_non_local_imports.contains(imp_key)) {
                 seen_non_local_imports.insert(imp_key);
@@ -402,7 +404,7 @@ namespace cfire::build {
         }
     }
 
-    // Disambiguate colliding struct/enum names across packages (CF-017)
+    // Disambiguate colliding struct/enum names across packages
     std::unordered_map<std::string, std::size_t> type_counts;
     for (const auto& st : root_ast.structs) type_counts[st.name]++;
     for (const auto& en : root_ast.enums) type_counts[en.name]++;
@@ -637,7 +639,7 @@ namespace cfire::build {
 #endif
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

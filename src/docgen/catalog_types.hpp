@@ -2,7 +2,7 @@
 // src/docgen/catalog_types.hpp — Lightweight Metadata Catalog Types & Static Tables (`stdlib_catalog` & `diagnostics_catalog`)
 
 #include "catalog_type_docs.hpp"
-#include "sema/builtin_methods.hpp"
+#include "../sema/builtin_methods.hpp"
 #include <algorithm>
 #include <format>
 #include <string>
@@ -26,7 +26,7 @@ struct StdModuleDoc {
     std::string link_flags;
     std::string overview;
     std::vector<StdFnDoc> functions;
-    std::vector<StdTypeDoc> type_docs{};  // CF-188: one per name in `types`, filled from catalog_type_docs.hpp
+    std::vector<StdTypeDoc> type_docs{};  // one per name in `types`, filled from catalog_type_docs.hpp
 
     // Authoritative unified metadata for compilation, sema, module registry & codegen:
     std::string header_path{};
@@ -48,8 +48,8 @@ struct DiagnosticDoc {
     std::string good_example;
 };
 
-// CF-158: one line for every diagnostic code the compiler can emit. Codes with a detailed entry in
-// diagnostics_catalog() take their summary from there; the unit test `test_cf158_doc_integrity` fails when the
+// one line for every diagnostic code the compiler can emit. Codes with a detailed entry in
+// diagnostics_catalog() take their summary from there; the unit test `test_unified_stdlib_metadata_table` fails when the
 // sources emit a code that is in neither list. The GUIDE's diagnostics table is generated from this.
 struct DiagnosticCodeDoc {
     std::string code;
@@ -72,5 +72,5 @@ struct DiagnosticCodeDoc {
 } // namespace cfire::doc
 
 #if !defined(CFIRE_SPLIT_TUS)
-#include "catalog_types_impl.inc"
+#include "stdlib_catalog_entries.hpp"
 #endif

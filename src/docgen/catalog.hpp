@@ -3,9 +3,9 @@
 
 #include "catalog_types.hpp"
 #include "catalog_examples.hpp"
-#include "lexer.hpp"
-#include "parser.hpp"
-#include "sema/builtin_methods.hpp"
+#include "../lexer.hpp"
+#include "../parser.hpp"
+#include "../sema/builtin_methods.hpp"
 #include <algorithm>
 #include <expected>
 #include <filesystem>
@@ -17,7 +17,7 @@
 
 namespace cfire::doc {
 
-// W4: the builtin-type surface (methods, associated items, `make`), rendered from src/sema/builtin_methods.hpp
+// the builtin-type surface (methods, associated items, `make`), rendered from src/sema/builtin_methods.hpp
 // as a documentation-only module. It is not importable and is not part of stdlib_catalog().
 [[nodiscard]] inline auto builtin_types_doc() -> const StdModuleDoc& {
     static const StdModuleDoc doc = [] {
@@ -26,9 +26,9 @@ namespace cfire::doc {
         m.ns_alias = "builtin";
         m.title = "Builtin Types: Methods, Associated Items & make";
         m.link_flags = "(always available)";
-        m.overview = "Operations on values of builtin types are methods on the value (Q7): `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. "
-                     "Searches return `T?`, never `-1` (Q8). Limits and parsing belong to the type (Q10): `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. "
-                     "`make` is the one construction builtin, and the type decides where memory lives (Q25): `make(T, args)` is a value, "
+        m.overview = "Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. "
+                     "Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. "
+                     "`make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, "
                      "`make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, "
                      "`T` the element type and `K`/`V` the map key/value types.";
         struct Kind { std::uint8_t bit; std::string_view recv; std::string_view cpp; };
@@ -65,20 +65,20 @@ namespace cfire::doc {
         m.functions.push_back({"make([]T)", "make([]T, len) / make([]T, len, cap)", "cfire::make_slice<T>(len[, cap])",
                                "`len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics.",
                                "buf := make([]byte, 0, 4096)"});
-        m.functions.push_back({"make(map[K]V)", "make(map[K]V)", "cfire::Map<K, V>{}", "An empty map (iteration order is unspecified, Q27).",
+        m.functions.push_back({"make(map[K]V)", "make(map[K]V)", "cfire::Map<K, V>{}", "An empty map (iteration order is unspecified).",
                                "counts := make(map[str]i32)"});
         m.functions.push_back({"own.release", "fn (o: own[T]) release() -> *mut T", "o.release()",
-                               "Gives up ownership for C interop (CF-181): returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.",
+                               "Gives up ownership for C interop: returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`.",
                                "c_api_take(buf.release())"});
         m.functions.push_back({"own.from_raw", "fn own[T].from_raw(p: *mut T) -> own[T]", "std::unique_ptr<T>(p)",
-                               "Takes ownership of a pointer produced by `release` (CF-181). Adopting any other pointer is undefined behavior.",
+                               "Takes ownership of a pointer produced by `release`. Adopting any other pointer is undefined behavior.",
                                "buf := own[Buffer].from_raw(c_api_give())"});
         return m;
     }();
     return doc;
 }
 
-// CF-188: what `cfire doc` and `cfire doc --check` refuse in the stdlib catalog. Every type a module lists has a
+// what `cfire doc` and `cfire doc --check` refuse in the stdlib catalog. Every type a module lists has a
 // cfire-terms description and nothing is described that the module does not list; every function has a summary
 // and an example; no signature uses a C++ spelling (`std::`, a `T&` reference return, a `*` raw pointer).
 [[nodiscard]] inline auto catalog_doc_problems() -> std::vector<std::string> {

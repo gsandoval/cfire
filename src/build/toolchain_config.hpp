@@ -146,7 +146,7 @@ CFIRE_INFRA_INLINE std::string format_linker_flag_from_pref(std::string_view ld_
 
 CFIRE_INFRA_INLINE std::string compiler_binary_fingerprint(const std::string& command);
 
-#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 CFIRE_INFRA_INLINE std::string normalize_config_key(std::string_view raw_key) {
     if (raw_key.starts_with("toolchains.")) {
@@ -649,7 +649,7 @@ CFIRE_INFRA_INLINE std::string compiler_binary_fingerprint(const std::string& co
     return out.empty() ? command : out;
 }
 
-#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_INFRA_IMPL)
+#endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_INFRA_IMPL)
 
 } // namespace cfire::build
 

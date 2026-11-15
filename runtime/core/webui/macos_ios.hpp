@@ -242,7 +242,7 @@ namespace cfire::webui::detail {
 inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
     if (!config || !config.preferences) return;
     [config.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
-    // CF-050: Set WKPreferences.inactiveSchedulingPolicy = WKInactiveSchedulingPolicyNone (0) on macOS 14+
+    // Set WKPreferences.inactiveSchedulingPolicy = WKInactiveSchedulingPolicyNone (0) on macOS 14+
     // so timers (setTimeout/setInterval) and requestAnimationFrame run at full speed even when offscreen.
     @try {
         if ([config.preferences respondsToSelector:NSSelectorFromString(@"setInactiveSchedulingPolicy:")]) {
@@ -260,7 +260,7 @@ inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
         [NSApplication sharedApplication];
         state_->quit_requested.store(false, std::memory_order_relaxed);
 
-        // CF-050: Prevent App Nap & background timer throttling during headless WebView tests
+        // Prevent App Nap & background timer throttling during headless WebView tests
         id activityToken = [[NSProcessInfo processInfo]
             beginActivityWithOptions:(NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical)
                               reason:@"cfire WebUI headless test runner"];
@@ -370,12 +370,12 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
-        // CF-050: Prevent App Nap / background timer throttling for active terminal/SSH/audio sessions
+        // Prevent App Nap / background timer throttling for active terminal/SSH/audio sessions
         id activityToken = [[NSProcessInfo processInfo]
             beginActivityWithOptions:(NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical)
                               reason:@"cfire WebUI active session"];
 
-        // CF-052: Set application icon if configured via build.cf or app.set_icon()
+        // Set application icon if configured via build.cf or app.set_icon
         if (!state_->icon_path.empty()) {
             NSString* nsIconPath = [NSString stringWithUTF8String:state_->icon_path.c_str()];
             if (nsIconPath) {
@@ -389,7 +389,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         CfireWebUIMenuTarget* menuTarget = [[CfireWebUIMenuTarget alloc] init];
         menuTarget->state = state_;
 
-        // CF-051: Install standard macOS Application, Edit, Window, and custom menus
+        // Install standard macOS Application, Edit, Window, and custom menus
         if ([NSApp mainMenu] == nil) {
             NSMenu* mainBar = [[NSMenu alloc] init];
 
@@ -466,7 +466,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             [NSApp setMainMenu:mainBar];
         }
 
-        // CF-082: System Tray / Menu Bar Icon (`NSStatusBar` / `NSStatusItem`)
+        // System Tray / Menu Bar Icon (`NSStatusBar` / `NSStatusItem`)
         NSStatusItem* statusItem = nil;
         if (state_->has_tray) {
             statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];

@@ -16,7 +16,7 @@ jobs:
       - name: Build cfire Toolchain
         run: make build
 
-      - name: make check (every-commit tier, CF-186)
+      - name: make check (every-commit tier)
         run: make check
 
       - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
@@ -38,7 +38,7 @@ jobs:
       - name: Build cfire Toolchain
         run: make build
 
-      - name: Pollute /tmp to prove the LSP suites are hermetic (CF-178)
+      - name: Pollute /tmp to prove the LSP suites are hermetic
         run: |
           mkdir -p /tmp/.cfire /tmp/cfire_ci_pollution
           for i in $(seq 1 200); do
@@ -46,7 +46,7 @@ jobs:
           done
           cp /tmp/cfire_ci_pollution/junk_1.cf /tmp/junk_root.cf
 
-      - name: make check (every-commit tier, CF-186)
+      - name: make check (every-commit tier)
         run: make check
 
       - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
@@ -102,7 +102,10 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: |
           GIT_SHA="${GITHUB_SHA::7}"
-          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"${GIT_SHA}\" -Iruntime -Isrc src/main.cpp -o cfire.exe -lws2_32 -ladvapi32 -lshell32
+          make -j4 build GIT_SHA="${GIT_SHA}"
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -static -DCFIRE_GIT_SHA=\"${GIT_SHA}\" -Iruntime src/main.cpp -o cfire_single.exe -lws2_32 -ladvapi32 -lshell32
+          ./cfire_single.exe --version
+          rm -f cfire_single.exe
 
       - name: Verify cfire.exe Doctor, Formatting & Documentation Sync
         run: |
@@ -116,7 +119,7 @@ jobs:
 
       - name: Build & Run C++ Unit Suites on Windows
         run: |
-          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"dev\" -Iruntime -Isrc tests/unit/test_frontend.cpp tests/unit/test_sema.cpp tests/unit/test_stdlib.cpp tests/e2e/test_canonical.cpp tests/test_main.cpp -o cfire_test_runner.exe -lws2_32 -ladvapi32 -lshell32 -lgdi32
+          clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -static -DCFIRE_GIT_SHA=\"dev\" -Iruntime -Isrc tests/unit/test_frontend.cpp tests/unit/test_sema.cpp tests/unit/test_stdlib.cpp tests/e2e/test_canonical.cpp tests/test_main.cpp -o cfire_test_runner.exe -lws2_32 -ladvapi32 -lshell32 -lgdi32
           ./cfire_test_runner.exe unit
 
       - name: Run Language Conformance Corpus on Windows

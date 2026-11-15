@@ -25,7 +25,7 @@ struct ContextState {
     std::uint64_t next_cb_id = 1;
     std::vector<std::pair<std::uint64_t, std::function<void()>>> callbacks{};
     std::thread timer_thread{};
-    // Link to the parent's cancellation callback (CF-177). Held weakly: a child must never keep its
+    // Link to the parent's cancellation callback. Held weakly: a child must never keep its
     // parent alive, and a parent only keeps weak references to its children.
     std::weak_ptr<ContextState> parent{};
     std::uint64_t parent_cb_id = 0;
@@ -91,7 +91,7 @@ public:
                 return id;
             }
         }
-        // Already cancelled: run outside the lock, since callbacks may query this context (CF-177).
+        // Already cancelled: run outside the lock, since callbacks may query this context.
         cb();
         return 0;
     }
@@ -163,7 +163,7 @@ private:
         }
     };
 
-    // The parent holds only weak references (CF-177): capturing `parent` or the child strongly here
+    // The parent holds only weak references: capturing `parent` or the child strongly here
     // created a cycle that leaked every context derived from background(), including timer threads.
     std::weak_ptr<ContextState> weak_child = child_state;
     std::weak_ptr<ContextState> weak_parent = parent.raw_state();
@@ -443,7 +443,7 @@ private:
     std::shared_ptr<State> state_;
 };
 
-// Q25/CF-154: `sync.Mutex[void]` is the pure lock (no protected value); `Mutex` is kept as its C++ name.
+// `sync.Mutex[void]` is the pure lock (no protected value); `Mutex` is kept as its C++ name.
 template <>
 class MutexT<void> {
 public:

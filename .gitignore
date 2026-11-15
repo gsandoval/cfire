@@ -30,7 +30,7 @@
 *.dSYM
 __pycache__/
 
-# Fuzzing work directories (CF-141)
+# Fuzzing work directories
 /.fuzz_corpus/
 /.fuzz_crashes/
 /.fuzz_replay_*

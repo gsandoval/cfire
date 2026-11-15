@@ -244,7 +244,7 @@ public:
         state_->eval_js(std::string(js));
     }
 
-    // --- Window Chrome, Menus, Icon, Lifecycle & Appearance Controls (`CF-051`, `CF-052`) ---
+    // --- Window Chrome, Menus, Icon, Lifecycle & Appearance Controls ---
 
     void set_title(std::string_view title) {
         std::function<void(const std::string&)> fn;
@@ -374,7 +374,7 @@ public:
         if (fn) fn();
     }
 
-    // --- System Tray / Menu Bar Icon & Hide-on-Close Lifecycle (`CF-082`) ---
+    // --- System Tray / Menu Bar Icon & Hide-on-Close Lifecycle ---
 
     void set_tray(std::string_view icon_path, std::string_view tooltip = "") {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
@@ -458,7 +458,7 @@ public:
         quit();
     }
 
-    // --- Native OS Dialogs (`CF-077`) ---
+    // --- Native OS Dialogs ---
 
     [[nodiscard]] auto open_file_dialog(std::string_view dialog_title = "Open File") const -> std::string {
 #if defined(CFIRE_TEST_MODE)
@@ -604,7 +604,7 @@ public:
 #endif
     }
 
-    // --- Native Clipboard & System Fonts (`CF-045`, `CF-053`) ---
+    // --- Native Clipboard & System Fonts ---
 
     void clipboard_set(std::string_view text, bool concealed = false, std::int64_t clear_after_ms = 0) const {
         bool is_headless = false;

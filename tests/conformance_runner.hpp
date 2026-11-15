@@ -1,5 +1,5 @@
 #pragma once
-// tests/conformance_runner.hpp — Language conformance corpus runner (CF-161; C++ since CF-186).
+// tests/conformance_runner.hpp — Language conformance corpus runner.
 //
 // Each tests/conformance/**/*.cf file pins one language expectation with leading `//` directives:
 //
@@ -9,7 +9,7 @@
 //     // expect: warning cfire/CODE @L       (repeatable) warnings that must be present
 //     // expect: panic "<substring>" [@L]    program must panic (non-zero exit, stderr contains `panic`)
 //     // expect: exit N                      program exit status (default 0, or non-zero with `panic`)
-//     // expect: xfail CF-xxx <reason>       ideal expectations above are NOT met yet (tracked hole)
+//     // expect: xfail <topic>: <reason>     ideal expectations above are NOT met yet
 //     <code> //~ error cfire/CODE            inline form, preferred: expected error on this very line
 //     <code> //~ warning cfire/CODE          inline expected warning
 //     <code> //~ panic "<substring>"         inline expected panic attributed to this line
@@ -84,7 +84,7 @@ struct DirectiveError {
     static const std::regex kPanic(R"rx("([^"]*)"(?:\s+@(\d+))?)rx");
     static const std::regex kInlineDiag(R"(//~\s*(error|warning)\s+(cfire/[A-Z0-9-]+)\s*$)");
     static const std::regex kInlinePanic(R"rx(//~\s*panic\s+"([^"]*)"\s*$)rx");
-    static const std::regex kCfId(R"(CF-\d+.*)");
+    static const std::regex kXfailTopic(R"([a-z0-9][a-z0-9_-]*:\s+\S.*)");
     auto bad = [](std::string m) { return std::unexpected(DirectiveError{std::move(m)}); };
 
     Spec spec;
@@ -121,7 +121,7 @@ struct DirectiveError {
                     return bad(std::format("bad exit directive: '{}'", body));
                 }
             } else if (kind == "xfail") {
-                if (!std::regex_match(arg, kCfId)) return bad(std::format("xfail must cite a backlog ID: '{}'", body));
+                if (!std::regex_match(arg, kXfailTopic)) return bad(std::format("xfail must specify '<topic>: <reason>': '{}'", body));
                 spec.xfail = arg;
             } else {
                 return bad(std::format("unknown expectation '{}'", kind));
@@ -154,7 +154,7 @@ struct DirectiveError {
     return spec;
 }
 
-// Q47 (CF-184): clang's Windows targets have no ThreadSanitizer. Files that ask for it still run there, unsanitized,
+// clang's Windows targets have no ThreadSanitizer. Files that ask for it still run there, unsanitized,
 // so their output is checked; the summary notes how many ran without TSan.
 #if defined(_WIN32)
 inline constexpr bool kTsanUnsupported = true;
@@ -194,7 +194,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     if (has_flag(spec.flags, "--sanitize=thread") && !is_test) {
         auto r = run_process({opt.cfire, "run", "--sanitize=thread", name}, work, opt.timeout);
         if (!r.err.contains("unrecognized flag") && !r.out.contains("unrecognized flag")) return r;
-        // Fallback until CF-164 adds a native mode.
+        // Fallback until adds a native mode.
         auto cpp = run_process({opt.cfire, "emit-cpp", name}, work, opt.timeout);
         if (cpp.exit_code != 0 || cpp.timed_out) return cpp;
         (void)cfire::fs::write_text(work / "prog.cpp", cpp.out);
@@ -263,7 +263,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         }
     }
 
-    // ICE gate (CF-148): `cfire/TYPE-ERROR` means clang rejected generated C++ for a program Sema accepted. It is
+    // ICE gate: `cfire/TYPE-ERROR` means clang rejected generated C++ for a program Sema accepted. It is
     // never an acceptable expectation; Sema must report a cfire diagnostic instead.
     for (const auto& [c, l, col] : spec.errors) {
         if (c == "cfire/TYPE-ERROR") return std::unexpected(DirectiveError{"cfire/TYPE-ERROR (a clang backend error) can't be an expected diagnostic"});
@@ -471,7 +471,7 @@ inline auto run_corpus(const Options& opt, const std::filesystem::path& corpus, 
     std::println("Conformance: {} passed, {} xfail (tracked holes), {} xpass, {} failed (total {})", counts[0], counts[2], counts[3], counts[1],
                  files.size());
     if (tsan_skipped > 0)
-        std::println("note: {} file(s) asked for ThreadSanitizer, which this platform lacks; they ran unsanitized (Q47)", tsan_skipped);
+        std::println("note: {} file(s) asked for ThreadSanitizer, which this platform lacks; they ran unsanitized", tsan_skipped);
     return (counts[1] > 0 || counts[3] > 0) ? 1 : 0;
 }
 

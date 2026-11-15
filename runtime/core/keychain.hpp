@@ -105,7 +105,7 @@ inline auto utf8_to_wide(std::string_view s) -> std::wstring {
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     auto q_guard = cfire::scope_exit([&] { if (query) CFRelease(query); });
 
-    // CF-168: update in place, and only add when the item does not exist yet. The previous
+    // update in place, and only add when the item does not exist yet. The previous
     // delete-then-add lost the stored secret whenever SecItemAdd failed (e.g. a locked keychain).
     const void* upd_keys[] = { kSecValueData };
     const void* upd_vals[] = { cf_secret };
