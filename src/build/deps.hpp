@@ -2,6 +2,7 @@
 // src/build/deps.hpp — External Dependency Fetching, Lockfile Pinning & Native Archiving
 
 #include "manifest.hpp"
+#include "pch.hpp"
 #include "toolchain_config.hpp"
 
 namespace cfire::build {
@@ -345,8 +346,218 @@ inline auto resolve_external_dep_source(
     return std::filesystem::absolute(project_dir / dep.source);
 }
 
+[[nodiscard]] inline auto dep_is_shared_build(const ExternalDepSpec& dep) -> bool {
+    return dep.is_shared || dep.defines.contains("shared") || dep.defines.contains("SHARED");
+}
+
+[[nodiscard]] inline auto dep_strip_quotes(std::string_view sv) -> std::string {
+    if (sv.size() >= 2 &&
+        ((sv.front() == '"' && sv.back() == '"') || (sv.front() == '\'' && sv.back() == '\''))) {
+        return std::string(sv.substr(1, sv.size() - 2));
+    }
+    return std::string(sv);
+}
+
+[[nodiscard]] inline auto dep_effective_macos_min(const BuildPlan& plan) -> std::string {
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    if (!is_macos_target(plan.target_triple, plan.is_ios, is_wasm)) return {};
+    if (!plan.macos_min.empty()) return plan.macos_min;
+    return resolve_effective_macos_min(plan.target_triple, plan.is_ios, is_wasm);
+}
+
+[[nodiscard]] inline auto compute_dep_target_cache_key(
+    const ExternalDepSpec& dep,
+    const BuildPlan& plan
+) -> std::string {
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    std::string cxx_cmd = is_wasm
+        ? (plan.emscripten_compiler.empty() ? resolve_emscripten_compiler_cfg() : plan.emscripten_compiler)
+        : resolve_cxx_compiler(plan.target_triple);
+    std::string cc_cmd = is_wasm
+        ? resolve_emscripten_c_compiler_cfg()
+        : resolve_c_compiler(plan.target_triple);
+    std::string ar_cmd = resolve_archiver(is_wasm ? std::string_view("wasm32-unknown-emscripten") : std::string_view(plan.target_triple));
+    std::string eff_min = dep_effective_macos_min(plan);
+    std::string raw = std::format(
+        "dep={}|cxx={}|cc={}|ar={}|target={}|sysroot={}|min={}|shared={}",
+        dep.name,
+        compiler_binary_fingerprint(cxx_cmd),
+        compiler_binary_fingerprint(cc_cmd),
+        ar_cmd,
+        plan.target_triple,
+        plan.sysroot,
+        eff_min,
+        dep_is_shared_build(dep) ? 1 : 0
+    );
+    return sha256_hex(raw).substr(0, 12);
+}
+
+[[nodiscard]] inline auto build_dep_cmake_configure_cmd(
+    const std::filesystem::path& src_dir,
+    const std::filesystem::path& build_dir,
+    const ExternalDepSpec& dep,
+    const BuildPlan& plan
+) -> std::string {
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    const bool is_apple = plan.is_ios || is_apple_triple(plan.target_triple);
+    std::string cc_cmd;
+    std::string cxx_cmd;
+    if (is_wasm) {
+        cxx_cmd = plan.emscripten_compiler.empty() ? resolve_emscripten_compiler_cfg() : plan.emscripten_compiler;
+        cc_cmd = resolve_emscripten_c_compiler_cfg();
+        if (cc_cmd.empty()) cc_cmd = cxx_cmd;
+    } else {
+        auto cc_res = resolve_c_compiler_detailed(plan.target_triple);
+        auto cxx_res = resolve_cxx_compiler_detailed(plan.target_triple);
+        cc_cmd = !cc_res.executable_path.empty() ? cc_res.executable_path.string() : dep_strip_quotes(cc_res.command);
+        cxx_cmd = !cxx_res.executable_path.empty() ? cxx_res.executable_path.string() : dep_strip_quotes(cxx_res.command);
+    }
+    auto ar_res = resolve_archiver_detailed(is_wasm ? std::string_view("wasm32-unknown-emscripten") : std::string_view(plan.target_triple));
+    std::string ar_cmd = !ar_res.executable_path.empty() ? ar_res.executable_path.string() : dep_strip_quotes(ar_res.command);
+
+    std::string cfg_cmd = std::format("cmake -S \"{}\" -B \"{}\"", src_dir.string(), build_dir.string());
+    if (!cc_cmd.empty()) cfg_cmd += std::format(" \"-DCMAKE_C_COMPILER={}\"", dep_strip_quotes(cc_cmd));
+    if (!cxx_cmd.empty()) cfg_cmd += std::format(" \"-DCMAKE_CXX_COMPILER={}\"", dep_strip_quotes(cxx_cmd));
+    if (!ar_cmd.empty()) cfg_cmd += std::format(" \"-DCMAKE_AR={}\"", dep_strip_quotes(ar_cmd));
+
+    std::string eff_min = dep_effective_macos_min(plan);
+    if (!eff_min.empty()) {
+        cfg_cmd += std::format(" \"-DCMAKE_OSX_DEPLOYMENT_TARGET={}\"", eff_min);
+    }
+    if (!plan.sysroot.empty()) {
+        if (is_apple) {
+            cfg_cmd += std::format(" \"-DCMAKE_OSX_SYSROOT={}\"", plan.sysroot);
+        } else {
+            cfg_cmd += std::format(" \"-DCMAKE_SYSROOT={}\"", plan.sysroot);
+        }
+    }
+    if (!plan.target_triple.empty() && !is_wasm) {
+        if (!compiler_is_gcc_driver(cxx_cmd)) {
+            cfg_cmd += std::format(" \"-DCMAKE_C_COMPILER_TARGET={}\"", plan.target_triple);
+            cfg_cmd += std::format(" \"-DCMAKE_CXX_COMPILER_TARGET={}\"", plan.target_triple);
+        }
+        if (is_apple && !plan.is_ios) {
+            if (plan.target_triple.starts_with("x86_64-")) {
+                cfg_cmd += " \"-DCMAKE_OSX_ARCHITECTURES=x86_64\"";
+            } else if (plan.target_triple.starts_with("arm64-") || plan.target_triple.starts_with("aarch64-")) {
+                cfg_cmd += " \"-DCMAKE_OSX_ARCHITECTURES=arm64\"";
+            }
+        }
+        if (plan.is_ios) {
+            cfg_cmd += " \"-DCMAKE_SYSTEM_NAME=iOS\"";
+        }
+    }
+    for (const auto& [k, v] : dep.defines) {
+        cfg_cmd += std::format(" -D{}={}", k, v);
+    }
+    return cfg_cmd;
+}
+
+[[nodiscard]] inline auto build_dep_source_compile_cmd(
+    const std::filesystem::path& sf,
+    const std::filesystem::path& src_dir,
+    const std::filesystem::path& obj_path,
+    const ExternalDepSpec& dep,
+    const BuildPlan& plan
+) -> std::string {
+    const bool is_cpp = (sf.extension() != ".c");
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    const bool is_win = is_windows_triple(plan.target_triple);
+    const bool is_apple = plan.is_ios || is_apple_triple(plan.target_triple);
+    const bool build_shared = dep_is_shared_build(dep);
+
+    std::string cc;
+    if (is_wasm) {
+        if (is_cpp) {
+            std::string emxx = plan.emscripten_compiler.empty() ? resolve_emscripten_compiler_cfg() : plan.emscripten_compiler;
+            cc = (emxx.empty() ? std::string("em++") : emxx) + " -std=c++2b";
+        } else {
+            std::string emcc = resolve_emscripten_c_compiler_cfg();
+            cc = (emcc.empty() ? std::string("emcc") : emcc) + " -std=c17";
+        }
+    } else {
+        std::string tool = is_cpp ? resolve_cxx_compiler(plan.target_triple) : resolve_c_compiler(plan.target_triple);
+        cc = tool + (is_cpp ? " -std=c++2b" : " -std=c17");
+        if (!plan.target_triple.empty() && !compiler_is_gcc_driver(tool)) {
+            cc += " --target=" + plan.target_triple;
+        }
+        if (!plan.sysroot.empty()) {
+            if (is_apple) {
+                cc += std::format(" -isysroot \"{}\"", plan.sysroot);
+            } else {
+                cc += std::format(" --sysroot=\"{}\"", plan.sysroot);
+            }
+        }
+        std::string eff_min = dep_effective_macos_min(plan);
+        if (!eff_min.empty()) {
+            cc += " -mmacosx-version-min=" + eff_min;
+        }
+        if (build_shared || (!is_win && !plan.target_triple.empty())) {
+            if (!is_win) cc += " -fPIC";
+        }
+    }
+
+    std::string cmd = std::format("{} -O2 -c \"{}\" -o \"{}\"", cc, sf.string(), obj_path.string());
+    for (const auto& inc : dep.includes) {
+        auto inc_path = (inc == ".") ? src_dir : (src_dir / inc);
+        cmd += std::format(" -I\"{}\"", inc_path.string());
+    }
+    if (dep.includes.empty()) {
+        cmd += std::format(" -I\"{}\"", src_dir.string());
+        if (std::filesystem::is_directory(src_dir / "include")) {
+            cmd += std::format(" -I\"{}\"", (src_dir / "include").string());
+        }
+    }
+    for (const auto& [k, v] : dep.defines) {
+        if (v == "true") {
+            cmd += std::format(" -D{}=1", k);
+        } else if (v != "false") {
+            cmd += std::format(" -D{}={}", k, v);
+        }
+    }
+    return cmd;
+}
+
+[[nodiscard]] inline auto build_dep_archive_cmd(
+    const std::vector<std::filesystem::path>& obj_files,
+    const std::filesystem::path& archive_path,
+    const ExternalDepSpec& dep,
+    const BuildPlan& plan
+) -> std::string {
+    const bool build_shared = dep_is_shared_build(dep);
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    const bool is_apple = plan.is_ios || is_apple_triple(plan.target_triple);
+    std::string link_cmd;
+    if (build_shared && !is_wasm) {
+        std::string cxx = resolve_cxx_compiler(plan.target_triple);
+        link_cmd = std::format("{} -shared -o \"{}\"", cxx, archive_path.string());
+        if (!plan.target_triple.empty() && !compiler_is_gcc_driver(cxx)) {
+            link_cmd += " --target=" + plan.target_triple;
+        }
+        if (!plan.sysroot.empty()) {
+            if (is_apple) {
+                link_cmd += std::format(" -isysroot \"{}\"", plan.sysroot);
+            } else {
+                link_cmd += std::format(" --sysroot=\"{}\"", plan.sysroot);
+            }
+        }
+        std::string eff_min = dep_effective_macos_min(plan);
+        if (!eff_min.empty()) {
+            link_cmd += " -mmacosx-version-min=" + eff_min;
+        }
+    } else {
+        std::string ar_cmd = resolve_archiver(
+            is_wasm ? std::string_view("wasm32-unknown-emscripten") : std::string_view(plan.target_triple));
+        link_cmd = std::format("{} rcs \"{}\"", ar_cmd, archive_path.string());
+    }
+    for (const auto& ob : obj_files) {
+        link_cmd += std::format(" \"{}\"", ob.string());
+    }
+    return link_cmd;
+}
+
 // Compiles a local C/C++ dependency (`build.CC`, `build.CMake`, `build.Make`, or `build.Ninja`)
-// into `.cfire/cache/lib/lib<name>.a` and appends its include paths and `.a` archive to `plan`.
+// into `.cfire/cache/lib/<key>/lib<name>.a` and appends its include paths and `.a` archive to `plan`.
 [[nodiscard]] inline auto build_local_dep(
     const std::filesystem::path& project_dir,
     ExternalDepSpec& dep,
@@ -379,20 +590,21 @@ inline auto resolve_external_dep_source(
     }
 
     auto cache_root = std::filesystem::absolute(project_dir / ".cfire" / "cache");
+    const std::string dep_key = compute_dep_target_cache_key(dep, plan);
     auto obj_dir = cache_root / "objs" / dep.name;
-    auto lib_dir = cache_root / "lib";
+    auto lib_dir = cache_root / "lib" / dep_key;
     std::filesystem::create_directories(obj_dir);
     std::filesystem::create_directories(lib_dir);
 
     auto is_lib_file = [](const std::filesystem::path& p) -> bool {
         auto ext = p.extension().string();
-        if (ext == ".a" || ext == ".dylib" || ext == ".so") return true;
+        if (ext == ".a" || ext == ".dylib" || ext == ".so" || ext == ".dll") return true;
         std::string fn = p.filename().string();
         return fn.find(".so.") != std::string::npos;
     };
     auto is_shared_lib = [](const std::filesystem::path& p) -> bool {
         auto ext = p.extension().string();
-        if (ext == ".dylib" || ext == ".so") return true;
+        if (ext == ".dylib" || ext == ".so" || ext == ".dll") return true;
         std::string fn = p.filename().string();
         return fn.find(".so.") != std::string::npos;
     };
@@ -415,9 +627,15 @@ inline auto resolve_external_dep_source(
         (void)bridge::run_command_capture("which make", has_make);
 #endif
         if (has_make == 0) {
-            auto make_build_dir = cache_root / "make" / dep.name;
+            auto make_build_dir = cache_root / "make" / dep.name / dep_key;
             std::filesystem::create_directories(make_build_dir);
-            std::string make_cmd = std::format("make -C \"{}\" BUILD_DIR=\"{}\"", src_dir.string(), make_build_dir.string());
+            std::string make_cmd = std::format(
+                "make -C \"{}\" BUILD_DIR=\"{}\" CC=\"{}\" CXX=\"{}\" AR=\"{}\"",
+                src_dir.string(),
+                make_build_dir.string(),
+                dep_strip_quotes(resolve_c_compiler(plan.target_triple)),
+                dep_strip_quotes(resolve_cxx_compiler(plan.target_triple)),
+                dep_strip_quotes(resolve_archiver(plan.target_triple)));
             std::string extra_cflags;
             for (const auto& [k, v] : dep.defines) {
                 std::string val = (v == "true") ? "1" : v;
@@ -452,12 +670,9 @@ inline auto resolve_external_dep_source(
         (void)bridge::run_command_capture("which cmake", has_cmake);
 #endif
         if (has_cmake == 0) {
-            auto cmake_build_dir = cache_root / "cmake" / dep.name;
+            auto cmake_build_dir = cache_root / "cmake" / dep.name / dep_key;
             std::filesystem::create_directories(cmake_build_dir);
-            std::string cfg_cmd = std::format("cmake -S \"{}\" -B \"{}\"", src_dir.string(), cmake_build_dir.string());
-            for (const auto& [k, v] : dep.defines) {
-                cfg_cmd += std::format(" -D{}={}", k, v);
-            }
+            std::string cfg_cmd = build_dep_cmake_configure_cmd(src_dir, cmake_build_dir, dep, plan);
             int rc = 0;
             std::string out = bridge::run_command_capture(cfg_cmd + " && cmake --build \"" + cmake_build_dir.string() + "\"", rc);
             if (rc != 0) {
@@ -517,18 +732,18 @@ inline auto resolve_external_dep_source(
     }
     if (src_files.empty()) return {};
 
-    bool build_shared = dep.is_shared || dep.defines.contains("shared") || dep.defines.contains("SHARED");
+    bool build_shared = dep_is_shared_build(dep);
     std::vector<std::filesystem::path> obj_files;
     bool any_obj_recompiled = false;
     for (const auto& sf : src_files) {
-        // Disambiguate identical stems across folders by hashing the relative path
+        // Disambiguate identical stems across folders and target/ABI configs via key
         std::error_code ec;
         auto rel_p = std::filesystem::relative(sf, src_dir, ec);
         std::string rel_str = ec ? sf.string() : rel_p.string();
         std::size_t h = std::hash<std::string>{}(rel_str);
-        auto obj_path = obj_dir / std::format("{}_{:08x}.o", sf.stem().string(), static_cast<std::uint32_t>(h & 0xFFFFFFFF));
+        auto obj_path = obj_dir / std::format("{}_{:08x}_{}.o", sf.stem().string(), static_cast<std::uint32_t>(h & 0xFFFFFFFF), dep_key);
 
-        // Incremental compilation check: skip clang if object is up to date
+        // Incremental compilation check: skip compiler if object is up to date
         bool need_compile = true;
         if (std::filesystem::exists(obj_path, ec)) {
             auto src_time = std::filesystem::last_write_time(sf, ec);
@@ -542,34 +757,7 @@ inline auto resolve_external_dep_source(
 
         if (need_compile) {
             any_obj_recompiled = true;
-            bool is_cpp = (sf.extension() != ".c");
-            std::string cc = is_cpp
-                ? (resolve_cxx_compiler(plan.target_triple) + " -std=c++2b")
-                : ((plan.target_triple.empty()
-                        ? resolve_c_compiler()
-                        : (resolve_cxx_compiler(plan.target_triple) + " -x c")) + " -std=c17");
-            if (!plan.target_triple.empty()) cc += " --target=" + plan.target_triple;
-            if (!plan.sysroot.empty()) cc += " --sysroot=" + plan.sysroot;
-            if (build_shared) cc += " -fPIC";
-            std::string cmd = std::format("{} -O2 -c \"{}\" -o \"{}\"", cc, sf.string(), obj_path.string());
-
-            for (const auto& inc : dep.includes) {
-                auto inc_path = (inc == ".") ? src_dir : (src_dir / inc);
-                cmd += std::format(" -I\"{}\"", inc_path.string());
-            }
-            if (dep.includes.empty()) {
-                cmd += std::format(" -I\"{}\"", src_dir.string());
-                if (std::filesystem::is_directory(src_dir / "include")) {
-                    cmd += std::format(" -I\"{}\"", (src_dir / "include").string());
-                }
-            }
-            for (const auto& [k, v] : dep.defines) {
-                if (v == "true") {
-                    cmd += std::format(" -D{}=1", k);
-                } else if (v != "false") {
-                    cmd += std::format(" -D{}={}", k, v);
-                }
-            }
+            std::string cmd = build_dep_source_compile_cmd(sf, src_dir, obj_path, dep, plan);
 
             int rc = 0;
             std::string out = bridge::run_command_capture(cmd, rc);
@@ -581,12 +769,10 @@ inline auto resolve_external_dep_source(
         obj_files.push_back(std::move(obj_path));
     }
 
-    std::string lib_ext = build_shared ?
-#if defined(__APPLE__)
-        ".dylib"
-#else
-        ".so"
-#endif
+    const bool is_win = is_windows_triple(plan.target_triple);
+    const bool is_apple = plan.is_ios || is_apple_triple(plan.target_triple);
+    std::string lib_ext = build_shared
+        ? (is_win ? ".dll" : (is_apple ? ".dylib" : ".so"))
         : ".a";
     auto archive_path = lib_dir / std::format("lib{}{}", dep.name, lib_ext);
     bool need_archive = any_obj_recompiled || !std::filesystem::exists(archive_path);
@@ -608,20 +794,7 @@ inline auto resolve_external_dep_source(
 
     if (need_archive) {
         std::filesystem::remove(archive_path);
-        std::string link_cmd;
-        if (build_shared) {
-            link_cmd = std::format("{} -shared -o \"{}\"", resolve_cxx_compiler(plan.target_triple), archive_path.string());
-            if (!plan.target_triple.empty()) link_cmd += " --target=" + plan.target_triple;
-            if (!plan.sysroot.empty()) link_cmd += " --sysroot=" + plan.sysroot;
-            for (const auto& ob : obj_files) {
-                link_cmd += std::format(" \"{}\"", ob.string());
-            }
-        } else {
-            link_cmd = std::format("{} rcs \"{}\"", resolve_archiver(), archive_path.string());
-            for (const auto& ob : obj_files) {
-                link_cmd += std::format(" \"{}\"", ob.string());
-            }
-        }
+        std::string link_cmd = build_dep_archive_cmd(obj_files, archive_path, dep, plan);
         int ar_rc = 0;
         std::string ar_out = bridge::run_command_capture(link_cmd, ar_rc);
         if (ar_rc != 0) {

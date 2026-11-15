@@ -321,6 +321,7 @@ struct CheckItem {
     // --- 3. Native `ext:*` & `vendor:*` Engine Libraries ---
     {
         std::string det;
+        const bool has_vendored_sj = std::filesystem::is_regular_file(runtime_dir / "vendor" / "simdjson" / "simdjson.cpp");
         if (check_pkg_or_header("simdjson", "simdjson.h", det)) {
             bool sj_compat_err = false;
             if (det.find("~/.local") == std::string::npos && !build::find_executable_in_path("pkg-config").empty()) {
@@ -334,18 +335,36 @@ struct CheckItem {
                 if (sj_pc.found && cl_maj >= 19 &&
                     (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."))) {
                     sj_compat_err = true;
-                    items.push_back({
-                        "Native Engine Libraries",
-                        "simdjson (`core:json`, `ext:ai`)",
-                        "warn",
-                        std::format("{} is incompatible with Clang {} (requires simdjson >= 4.0)", det, cl_maj),
-                        "Install simdjson >= 4.0 into ~/.local/{include,lib} or upgrade libsimdjson-dev"
-                    });
+                    if (has_vendored_sj) {
+                        items.push_back({
+                            "Native Engine Libraries",
+                            "simdjson (`core:json`, `ext:ai`)",
+                            "ok",
+                            std::format("vendored amalgamation (runtime/vendor/simdjson, cached on demand; system {} < 4.0 skipped on Clang {})", det, cl_maj),
+                            ""
+                        });
+                    } else {
+                        items.push_back({
+                            "Native Engine Libraries",
+                            "simdjson (`core:json`, `ext:ai`)",
+                            "warn",
+                            std::format("{} is incompatible with Clang {} (requires simdjson >= 4.0)", det, cl_maj),
+                            "Install simdjson >= 4.0 into ~/.local/{include,lib} or upgrade libsimdjson-dev"
+                        });
+                    }
                 }
             }
             if (!sj_compat_err) {
                 items.push_back({"Native Engine Libraries", "simdjson (`core:json`, `ext:ai`)", "ok", det, ""});
             }
+        } else if (has_vendored_sj) {
+            items.push_back({
+                "Native Engine Libraries",
+                "simdjson (`core:json`, `ext:ai`)",
+                "ok",
+                "vendored amalgamation (runtime/vendor/simdjson, cached on demand)",
+                ""
+            });
         } else {
             items.push_back({
                 "Native Engine Libraries",
@@ -402,8 +421,17 @@ struct CheckItem {
         }
 
         det.clear();
+        const bool has_vendored_sq = std::filesystem::is_regular_file(runtime_dir / "vendor" / "sqlite3" / "sqlite3.c");
         if (check_pkg_or_header("sqlite3", "sqlite3.h", det)) {
             items.push_back({"Native Engine Libraries", "sqlite3 (`ext:db/sqlite`)", "ok", det, ""});
+        } else if (has_vendored_sq) {
+            items.push_back({
+                "Native Engine Libraries",
+                "sqlite3 (`ext:db/sqlite`)",
+                "ok",
+                "vendored amalgamation (runtime/vendor/sqlite3, cached on demand)",
+                ""
+            });
         } else {
 #if defined(__APPLE__)
             items.push_back({"Native Engine Libraries", "sqlite3 (`ext:db/sqlite`)", "ok", "macOS SDK libsqlite3", ""});
@@ -743,12 +771,12 @@ inline auto run_install(
     if (!target_dir_arg.empty()) {
         target_root = std::filesystem::path(target_dir_arg);
     } else if (user_mode) {
-        const char* home = std::getenv("HOME");
-        if (!home) {
-            std::println(stderr, "error: HOME environment variable is not set for --user install");
+        auto home = build::user_home_dir();
+        if (home.empty()) {
+            std::println(stderr, "error: HOME / USERPROFILE environment variable is not set for --user install");
             return 1;
         }
-        target_root = std::filesystem::path(home) / ".local";
+        target_root = home / ".local";
     } else if (portable_mode) {
         std::println(stderr, "error: --portable requires a destination directory (e.g. `cfire install --portable ./dist/cfire`)");
         return 1;
@@ -758,8 +786,8 @@ inline auto run_install(
             target_root = "/usr/local";
         } else
 #endif
-        if (const char* home = std::getenv("HOME")) {
-            target_root = std::filesystem::path(home) / ".local";
+        if (auto home = build::user_home_dir(); !home.empty()) {
+            target_root = home / ".local";
         } else {
             target_root = "/usr/local";
         }
@@ -767,13 +795,18 @@ inline auto run_install(
 
     std::filesystem::path dest_bin;
     std::filesystem::path dest_rt;
+#if defined(_WIN32)
+    const char* exe_name = "cfire.exe";
+#else
+    const char* exe_name = "cfire";
+#endif
     if (portable_mode) {
-        // Self-contained portable directory layout: <dest>/cfire + <dest>/runtime/
-        dest_bin = target_root / "cfire";
+        // Self-contained portable directory layout: <dest>/cfire[.exe] + <dest>/runtime/
+        dest_bin = target_root / exe_name;
         dest_rt = target_root / "runtime";
     } else {
-        // Standard FHS prefix layout: <prefix>/bin/cfire + <prefix>/share/cfire/runtime/
-        dest_bin = target_root / "bin" / "cfire";
+        // Standard FHS prefix layout: <prefix>/bin/cfire[.exe] + <prefix>/share/cfire/runtime/
+        dest_bin = target_root / "bin" / exe_name;
         dest_rt = target_root / "share" / "cfire" / "runtime";
     }
 
@@ -822,6 +855,18 @@ inline auto run_install(
     {
         std::error_code rm_ec;
         std::filesystem::remove(dest_rt / "VERSION", rm_ec);  // shadows <version> on case-insensitive filesystems
+        std::vector<std::filesystem::path> stale_artifacts;
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_rt, rm_ec)) {
+            if (rm_ec) break;
+            if (!entry.is_regular_file(rm_ec)) continue;
+            auto ext = entry.path().extension();
+            if (ext == ".pch" || ext == ".a" || ext == ".o") {
+                stale_artifacts.push_back(entry.path());
+            }
+        }
+        for (const auto& sp : stale_artifacts) {
+            std::filesystem::remove(sp, rm_ec);
+        }
         std::ofstream ver_ofs(dest_rt / "cfire-runtime.version", std::ios::trunc);
         if (ver_ofs) {
             ver_ofs << std::format("{} {}\n", kCfireVersion, kCfireGitSha);

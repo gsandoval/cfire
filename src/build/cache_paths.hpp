@@ -142,6 +142,10 @@ inline std::filesystem::path cache_subdir(std::string_view name) {
     return dir;
 }
 
+[[nodiscard]] inline auto user_libs_cache_dir() -> std::filesystem::path {
+    return cache_subdir("libs");
+}
+
 inline std::filesystem::path config_file_path() {
     if (const char* override_cfg = std::getenv("CFIRE_CONFIG_PATH");
         override_cfg && *override_cfg) {

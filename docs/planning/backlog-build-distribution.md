@@ -34,7 +34,7 @@ It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` �
     - Enforce **3 Mandatory C++ Interop Guardrails**:
       1. *No Header/Symbol Shadowing*: Never add `runtime/vendor/sqlite3` or `runtime/vendor/simdjson` unconditionally to global `-I` (`src/buildsys.hpp:44-46`); yield automatically whenever the user selects `sqlcipher`, `#[pkg(...)]`, `--link-lib`, `build.cf` deps, or `~/.local` overrides.
       2. *Toolchain & C++ Stdlib ABI Forwarding (`src/build/deps.hpp`)*: Forward resolved `ToolchainConfig` (`cc`, `cxx`, `ar`, `--target`, `--sysroot`, `-mmacosx-version-min`, `-DCMAKE_C_COMPILER`, `-DCMAKE_CXX_COMPILER`, `-DCMAKE_OSX_DEPLOYMENT_TARGET`) into C/C++ and CMake dependency builds so user C++ libraries match the C++ stdlib ABI (`libc++` vs `libstdc++` vs UCRT).
-      3. *Graceful `--portable` vs Strict `--static`*: Under `--portable`, resolve `.a` archives per library where available while falling back gracefully to dynamic linking (with a concise diagnostic note) for OS frameworks and shared-only user C++ libraries; reserve hard failure when static linkage is unavailable for `--static`. Support `--macos-min=<ver>` (default `13.0` on macOS release builds) and `--universal` (`arm64` + `x86_64` `lipo` fat binary on macOS).
+      3. *Graceful `--portable` vs Strict `--static`*: Under `--portable`, resolve `.a` archives per library where available while falling back gracefully to dynamic linking (with a concise diagnostic note) for OS frameworks and shared-only user C++ libraries; reserve hard failure when static linkage is unavailable for `--static`. Support `--macos-min=<ver>` (default `13.3` on macOS release builds — the Ventura floor where `libc++.1.dylib` exports floating-point `std::to_chars` needed by C++23 `<format>`/`<print>`) and `--universal` (`arm64` + `x86_64` `lipo` fat binary on macOS).
 
 57. **Dev/Debug vs. Release Build Profiles & LLDB `.o` DWARF Fidelity (`Q57`, Option 3A)**:
     - `cfire run` and `cfire test` default to **Dev/Debug** (`-O0 -g` + Debug Composite PCH + arithmetic traps `-fsanitize=signed-integer-overflow,shift,integer-divide-by-zero -fsanitize-trap=all`, with `--no-trap` opt-out and `--release` / `-r` override).
@@ -108,12 +108,12 @@ flowchart TD
 | 1 | `CF-198` | B1 | **P0** | M | `src/build/toolchain_layout.hpp`, `src/tu_*.cpp`, `Makefile` | **Decouple `src/` from `cfire_core_stdlib.hpp` & Parallel Self-Build**: Remove 28-header pull-in and unused AudioToolbox framework; split compiler into parallel TUs (`35.5s` -> `~5s`) | `Q59` | None | `[DONE]` |
 | 2 | `CF-199` | B1 | **P0** | M | `src/build/{toolchain_config,probe_cache}.hpp`, `src/{buildsys,clang_bridge,doctor,main}.hpp/cpp` | **Unified `ToolchainConfig`, `cfire config` & Persistent `ProbeCache`**: Single compiler precedence chain (`--cxx`/`--cc`/`--emxx`, `CFIRE_*`, `~/.cfire/config.json`) + `probes.json` + `mold`/`lld` probe | `Q55`, `Q59` | `CF-198` | `[DONE]` |
 | 3 | `CF-200` | B1 | **P0** | L | `src/build/{pch,binary_cache}.hpp`, `src/buildsys.hpp`, `src/main.cpp` | **Dev/Debug vs Release Profiles, Composite Runtime PCH, `.o` DWARF Maps & `BinaryCache`**: Default `run`/`test` to `-O0 -g` + cheap traps; Debug & Composite Runtime PCH; LLDB `.cfire/obj/*.o`; 1 GB LRU binary cache | `Q57`, `Q59` | `CF-199` | `[DONE]` |
-| 4 | `CF-201` | B2 | **P0** | M | `src/analysis.hpp`, `src/build/syntax_check.hpp`, `src/lsp/server.hpp`, `Makefile` | **Single-Pass In-Memory `check` & Stdin Clang Gating**: Fix double-analysis/stale-disk bug; `~15 ms` pure-`.cf` short-circuit; stdin Clang for `cpp {}` / `import cpp`; `didChange` vs `didSave`; `--verify-cpp` CI gate | `Q58` | `CF-200` | `[TODO]` |
-| 5 | `CF-202` | B3 | **P1** | L | `src/codegen.hpp`, `src/buildsys.hpp`, `src/build/package_loader.hpp` | **Progressive Per-Package `.hpp`/`.cpp` -> `.o` Compilation**: `emit_sharded_cpp` (`decls.hpp` + `pkg_<id>.cpp` with non-`inline` concrete exports) + parallel dirty-unit `.o` builder | `Q59` | `CF-200`, `CF-201` | `[TODO]` |
-| 6 | `CF-203` | B4 | **P0** | L | `runtime/vendor/{sqlite3,simdjson}/`, `src/build/{lib_cache,deps}.hpp`, `runtime/core/json.hpp` | **Vendored `sqlite3` & `simdjson` Per-Target Archive Cache & C++ Interop Guardrails**: Isolated amalgamations compiled/cached for Desktop, Wasm, iOS NEON, Android; yield to `sqlcipher`/overrides; forward ABI in `deps.hpp` | `Q56` | `CF-199`, `CF-200` | `[TODO]` |
-| 7 | `CF-204` | B4 | **P1** | M | `src/buildsys.hpp`, `src/build/manifest.hpp`, `src/main.cpp` | **Portable App Build Flags (`--portable`, `--static`, `--macos-min`, `--universal`)**: Per-library `.a` resolution with shared-only C++ fallback; macOS `13.0` floor & universal `lipo` fat binaries | `Q56` | `CF-203` | `[TODO]` |
-| 8 | `CF-205` | B4 | **P0** | M | `.github/workflows/release.yml`, `scripts/release.sh`, `Dockerfile` | **6-Target Pre-Compiled `cfire` Release Matrix & Binary Linkage Gates**: Ship lean static `musl` Linux (`x64`/`arm64`), minOS `13.0` macOS (`arm64`/`x64`), `-static` UCRT Windows (`x64`/`arm64`) + `SHA256SUMS.txt` | `Q55` | `CF-198`, `CF-204` | `[TODO]` |
-| 9 | `CF-206` | B4 | **P1** | S | `docs/install.sh`, `docs/install.ps1`, `README.md` | **Pre-Compiled Binary Installers**: Fast SHA-256 verified binary download + `--from-source` fallback (`install.sh`), native Windows PowerShell installer (`install.ps1`), updated docs | `Q55`, `Q56` | `CF-205` | `[TODO]` |
+| 4 | `CF-201` | B2 | **P0** | M | `src/analysis.hpp`, `src/build/syntax_check.hpp`, `src/lsp/server.hpp`, `Makefile` | **Single-Pass In-Memory `check` & Stdin Clang Gating**: Fix double-analysis/stale-disk bug; `~15 ms` pure-`.cf` short-circuit; stdin Clang for `cpp {}` / `import cpp`; `didChange` vs `didSave`; `--verify-cpp` CI gate | `Q58` | `CF-200` | `[DONE]` |
+| 5 | `CF-202` | B3 | **P1** | L | `src/codegen.hpp`, `src/buildsys.hpp`, `src/build/package_loader.hpp` | **Progressive Per-Package `.hpp`/`.cpp` -> `.o` Compilation**: `emit_sharded_cpp` (`decls.hpp` + `pkg_<id>.cpp` with non-`inline` concrete exports) + parallel dirty-unit `.o` builder | `Q59` | `CF-200`, `CF-201` | `[DONE]` |
+| 6 | `CF-203` | B4 | **P0** | L | `runtime/vendor/{sqlite3,simdjson}/`, `src/build/{lib_cache,deps}.hpp`, `runtime/core/json.hpp` | **Vendored `sqlite3` & `simdjson` Per-Target Archive Cache & C++ Interop Guardrails**: Isolated amalgamations compiled/cached for Desktop, Wasm, iOS NEON, Android; yield to `sqlcipher`/overrides; forward ABI in `deps.hpp` | `Q56` | `CF-199`, `CF-200` | `[DONE]` |
+| 7 | `CF-204` | B4 | **P1** | M | `src/buildsys.hpp`, `src/build/manifest.hpp`, `src/main.cpp` | **Portable App Build Flags (`--portable`, `--static`, `--macos-min`, `--universal`)**: Per-library `.a` resolution with shared-only C++ fallback; macOS `13.3` floor & universal `lipo` fat binaries | `Q56` | `CF-203` | `[DONE]` |
+| 8 | `CF-205` | B4 | **P0** | M | `.github/workflows/release.yml`, `scripts/release.sh`, `Dockerfile` | **6-Target Pre-Compiled `cfire` Release Matrix & Binary Linkage Gates**: Ship lean static `musl` Linux (`x64`/`arm64`), minOS `13.3` macOS (`arm64`/`x64`), `-static` UCRT Windows (`x64`/`arm64`) + `SHA256SUMS.txt` | `Q55` | `CF-198`, `CF-204` | `[DONE]` |
+| 9 | `CF-206` | B4 | **P1** | S | `docs/install.sh`, `docs/install.ps1`, `README.md` | **Pre-Compiled Binary Installers**: Fast SHA-256 verified binary download + `--from-source` fallback (`install.sh`), native Windows PowerShell installer (`install.ps1`), updated docs | `Q55`, `Q56` | `CF-205` | `[DONE]` |
 
 ---
 
@@ -237,7 +237,7 @@ flowchart TD
 
 ---
 
-### `CF-203` — Vendored `sqlite3` & `simdjson` Per-Target Archive Cache & C++ Interop Guardrails `[TODO]`
+### `CF-203` — Vendored `sqlite3` & `simdjson` Per-Target Archive Cache & C++ Interop Guardrails `[DONE]`
 - **Wave / ADR**: Wave B4 (`Q56`).
 - **Problem & Evidence**:
   - Clean user machines without Homebrew/apt/vcpkg fail to build `core:json` SIMD reflection (`simdjson`) or `ext:db/sqlite` (`sqlite3`). On Wasm (`--web`) and Android NDK, `sqlite3` is missing or broken if OS shared libs are expected; on iOS (`runtime/core/json.hpp:412`), `simdjson` is `#if`-disabled (`!(defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)`), falling back to a slower parser even though Apple ARM64 devices support `simdjson` NEON natively.
@@ -270,26 +270,26 @@ flowchart TD
 
 ---
 
-### `CF-204` — Portable User Application Build Flags (`--portable`, `--static`, `--macos-min`, `--universal`) `[TODO]`
+### `CF-204` — Portable User Application Build Flags (`--portable`, `--static`, `--macos-min`, `--universal`) `[DONE]`
 - **Wave / ADR**: Wave B4 (`Q56`).
 - **Problem & Evidence**:
   - Users running `cfire build` cannot easily distribute their own `.cf` binaries across older macOS versions, dual Intel+Apple Silicon Macs, or Linux machines missing shared `.so` dependencies (`libzstd.so`, `libsodium.so`, etc.).
 - **Implementation Plan**:
   1. Add CLI flags on `cfire build` (and matching optional `build.cf` manifest fields):
-     - `--portable`: opt into portable distribution defaults (resolve `.a` archives per library where available, apply `--macos-min=13.0` default on macOS if unset, and emit `@executable_path` / `$ORIGIN` rpath entries where dynamic C++ deps remain).
+     - `--portable`: opt into portable distribution defaults (resolve `.a` archives per library where available, apply `--macos-min=13.3` default on macOS if unset — Ventura `13.3` is the floor where `libc++.1.dylib` exports floating-point `std::to_chars` needed by C++23 `<format>`/`<print>`, and emit `@executable_path` / `$ORIGIN` rpath entries where dynamic C++ deps remain).
      - `--static`: strict full static archive linkage (fail cleanly with an actionable diagnostic naming the library if only `.so`/`.dylib` exists or target OS disallows full static libc like macOS/glibc).
-     - `--macos-min=<ver>`: pass `-mmacosx-version-min=<ver>` (default `13.0` on macOS release / `--portable` builds; forwarded to `ToolchainConfig`, `deps.hpp`, `lib_cache.hpp`, and `clang++` link step).
+     - `--macos-min=<ver>`: pass `-mmacosx-version-min=<ver>` (default `13.3` on macOS release / `--portable` builds; forwarded to `ToolchainConfig`, `deps.hpp`, `lib_cache.hpp`, and `clang++` link step).
      - `--universal`: on macOS, compile both `arm64-apple-macos<min>` and `x86_64-apple-macos<min>` slices (including cached `lib_cache.hpp` / `deps.hpp` slices) and combine with `lipo -create` (and inside `.app` bundle when GUI).
   2. **Guardrail 3 — Per-Library Archive Resolution**:
      - Implement per-library resolution under `--portable`: for each external `-l<name>` / `pkg-config` dependency, probe static archive availability (`pkg-config --static` or `<prefix>/lib/lib<name>.a` / `clang++ --print-file-name=lib<name>.a`), substituting `/path/to/lib<name>.a` cleanly while leaving OS frameworks/system libs (`CoreFoundation`, `WebKit`, `libSystem`, `libc`/`libm`) and shared-only user C++ libraries dynamic with a clear note (`note: '--portable' kept dynamic linkage for 'foo' (no libfoo.a found)`).
 - **Tests**:
   - *Unit*: Flag parsing & macOS min-version/universal validation (reject `--universal` on non-macOS targets cleanly); per-library static-resolution fallback tests.
-  - *Integration*: On macOS, build `--portable`, `--macos-min=13.0`, and `--universal` binaries and verify with `otool -l` (`LC_BUILD_VERSION minos 13.0`, zero `/opt/homebrew`/`/usr/local` third-party dylibs when static `.a` exists) and `lipo -archs` (`x86_64 arm64`). On Linux/Windows, verify `--portable` resolves static archives without failing when system OS libs stay dynamic, and `--static` rejects shared-only libraries with a clear error.
-- **Acceptance Criteria**: Users can build portable, macOS `13.0+` / universal, and static binaries directly via `cfire build`; `make check-all` passes.
+  - *Integration*: On macOS, build `--portable`, `--macos-min=13.3`, and `--universal` binaries and verify with `otool -l` (`LC_BUILD_VERSION minos 13.3`, zero `/opt/homebrew`/`/usr/local` third-party dylibs when static `.a` exists) and `lipo -archs` (`x86_64 arm64`). On Linux/Windows, verify `--portable` resolves static archives without failing when system OS libs stay dynamic, and `--static` rejects shared-only libraries with a clear error.
+- **Acceptance Criteria**: Users can build portable, macOS `13.3+` / universal, and static binaries directly via `cfire build`; `make check-all` passes.
 
 ---
 
-### `CF-205` — 6-Target Pre-Compiled `cfire` Release Matrix & Binary Linkage Gates `[TODO]`
+### `CF-205` — 6-Target Pre-Compiled `cfire` Release Matrix & Binary Linkage Gates `[DONE]`
 - **Wave / ADR**: Wave B4 (`Q55`).
 - **Problem & Evidence**:
   - `.github/workflows/release.yml:59-71` currently packages and uploads only `cfire-v${TAG_VER}-macos-arm64.tar.gz`, leaving Linux (`x86_64`, `arm64`), macOS `x86_64`, and Windows (`x86_64`, `arm64`) users without pre-compiled releases.
@@ -298,14 +298,14 @@ flowchart TD
   1. Expand `.github/workflows/release.yml` (triggered on `v*.*.*` tags & `workflow_dispatch`) to a 6-job/matrix build:
      - `linux-x86_64` (Alpine / musl container on `ubuntu-latest`): compile `cfire` with `-static` musl C++/libc (`clang++ -std=c++2b -O2 -static ...`), producing a zero-glibc, kernel-ABI-only binary. Package `cfire-v<ver>-linux-x86_64.tar.gz`.
      - `linux-arm64` (Alpine / musl on `ubuntu-24.04-arm` or QEMU/cross musl): package `cfire-v<ver>-linux-arm64.tar.gz`.
-     - `macos-arm64` (`macos-14` / `macos-latest`): compile with `-mmacosx-version-min=13.0`, arm64 target. Package `cfire-v<ver>-macos-arm64.tar.gz`.
-     - `macos-x86_64` (`macos-13` or `macos-14` cross-compiling `--target=x86_64-apple-macos13.0`): package `cfire-v<ver>-macos-x86_64.tar.gz`.
+     - `macos-arm64` (`macos-14` / `macos-latest`): compile with `-mmacosx-version-min=13.3`, arm64 target. Package `cfire-v<ver>-macos-arm64.tar.gz`.
+     - `macos-x86_64` (`macos-13` or `macos-14` cross-compiling `--target=x86_64-apple-macos13.3`): package `cfire-v<ver>-macos-x86_64.tar.gz`.
      - `windows-x86_64` (`windows-latest`, MSYS2 `CLANG64`): compile `cfire.exe` with `-static` (static UCRT / libc++ / winpthread). Package `cfire-v<ver>-windows-x86_64.zip`.
      - `windows-arm64` (MSYS2 `CLANGARM64` on `windows-11-arm` or LLVM MinGW `aarch64-w64-mingw32-clang++ -static`): package `cfire-v<ver>-windows-arm64.zip`.
   2. Each archive contains only `bin/cfire[.exe]` + `share/cfire/{runtime,pkg,docs}` (using portable layout `<root>/cfire[.exe]` + `<root>/runtime/` or `<root>/bin/cfire` + `<root>/runtime/`, verified against `src/build/toolchain_layout.hpp:171-189` — **zero** pre-built `.pch` or `.a` files).
   3. **Automated Binary Linkage Gates (in release CI before publish)**:
      - *Linux*: `file cfire` / `ldd cfire || true` must confirm static linkage (`statically linked` / `not a dynamic executable`).
-     - *macOS*: `otool -l cfire` confirms `minos 13.0` (`LC_BUILD_VERSION`), `otool -L cfire` shows **only** `/usr/lib/*` and `/System/Library/Frameworks/*` (zero Homebrew `/opt/homebrew` or `/usr/local` dylibs).
+     - *macOS*: `otool -l cfire` confirms `minos 13.3` (`LC_BUILD_VERSION`), `otool -L cfire` shows **only** `/usr/lib/*` and `/System/Library/Frameworks/*` (zero Homebrew `/opt/homebrew` or `/usr/local` dylibs).
      - *Windows*: `llvm-objdump -p cfire.exe | grep "DLL Name"` confirms **only** Windows OS system DLLs (`KERNEL32.dll`, `api-ms-win-crt-*` / `ucrtbase.dll` if UCRT, `WS2_32.dll`, etc. — zero `libstdc++*.dll`, `libc++.dll`, `libwinpthread*.dll`).
   4. **Release Smoke Tests + Checksums**: Unpack each archive into a clean directory (outside the repo checkout) and run `./cfire --version`, `./cfire check` + `./cfire run` on a `core:json` + `ext:db/sqlite` smoke program (except cross-compiled targets without native emulator, which smoke-test natively or via QEMU/VM). Publish `SHA256SUMS.txt` alongside all 6 archives on GitHub Releases. Update `Dockerfile` if needed to support multi-arch Alpine `musl` static release builds cleanly.
 - **Tests**:
@@ -314,7 +314,7 @@ flowchart TD
 
 ---
 
-### `CF-206` — Pre-Compiled Binary Installers (`docs/install.sh` & `docs/install.ps1`) `[TODO]`
+### `CF-206` — Pre-Compiled Binary Installers (`docs/install.sh` & `docs/install.ps1`) `[DONE]`
 - **Wave / ADR**: Wave B4 (`Q55`, `Q56`).
 - **Problem & Evidence**:
   - `docs/install.sh:118-225` currently downloads the `main` source tarball and compiles `cfire` from scratch on every user install (requiring `make` and waiting `35s+`), and Windows has no installer script at all.

@@ -202,6 +202,9 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
                             out_bin_path.string(),
                             bundle_info);
                     }
+                    for (const auto& note : plan->portable_notes) {
+                        std::println(stderr, "note: {}", note);
+                    }
                 }
             }
 
@@ -250,6 +253,9 @@ auto run_build_tu(std::string_view sub, int argc, char** argv, const std::filesy
         if (!plan) {
             std::println(stderr, "{}", plan.error());
             return 1;
+        }
+        for (const auto& note : plan->portable_notes) {
+            std::println(stderr, "note: {}", note);
         }
         std::string target_info = plan->target_triple.empty() ? "" : std::format(", target={}", plan->target_triple);
         std::println("✓ Built {} (generated {}, pch={}, sanitize={}{})",

@@ -18,7 +18,15 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <unistd.h>
 #endif
 #include <unordered_map>
@@ -153,16 +161,27 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
         ep[len] = '\0';
         add_exe_candidate(std::filesystem::path(ep));
     }
+#elif defined(_WIN32)
+    wchar_t wep[4096];
+    DWORD wlen = ::GetModuleFileNameW(nullptr, wep, 4096);
+    if (wlen > 0 && wlen < 4096) {
+        add_exe_candidate(std::filesystem::path(std::wstring_view(wep, wlen)));
+    }
 #endif
     if (argv0 != nullptr && argv0[0] != '\0') {
         std::filesystem::path a0(argv0);
         if (a0.has_parent_path()) {
             add_exe_candidate(a0);
         } else if (const char* path_env = std::getenv("PATH")) {
+#if defined(_WIN32)
+            constexpr char kPathSep = ';';
+#else
+            constexpr char kPathSep = ':';
+#endif
             std::string_view sv(path_env);
             std::size_t start = 0;
             while (start <= sv.size()) {
-                auto colon = sv.find(':', start);
+                auto colon = sv.find(kPathSep, start);
                 auto dir_sv = (colon == std::string_view::npos) ? sv.substr(start) : sv.substr(start, colon - start);
                 if (!dir_sv.empty()) {
                     auto cand = std::filesystem::path(dir_sv) / a0;
@@ -170,6 +189,15 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
                         add_exe_candidate(cand);
                         break;
                     }
+#if defined(_WIN32)
+                    if (!a0.has_extension()) {
+                        auto cand_exe = std::filesystem::path(dir_sv) / (a0.string() + ".exe");
+                        if (std::filesystem::exists(cand_exe, ec)) {
+                            add_exe_candidate(cand_exe);
+                            break;
+                        }
+                    }
+#endif
                 }
                 if (colon == std::string_view::npos) break;
                 start = colon + 1;
@@ -248,8 +276,7 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
 #endif
 
     // 4. User-level & Standard System FHS locations
-    if (const char* home = std::getenv("HOME")) {
-        std::filesystem::path home_p(home);
+    if (auto home_p = user_home_dir(); !home_p.empty()) {
         for (const auto& u_rt : {
             home_p / ".local" / "share" / "cfire" / "runtime",
             home_p / ".cfire" / "runtime"
@@ -333,7 +360,9 @@ CFIRE_INFRA_INLINE void query_pkg_config(
         bool has_local_lib =
             std::filesystem::exists(local_root / "lib" / (lib_stem + ".a"), ec) ||
             std::filesystem::exists(local_root / "lib" / (lib_stem + ".so"), ec) ||
-            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dylib"), ec);
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dylib"), ec) ||
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".dll.a"), ec) ||
+            std::filesystem::exists(local_root / "lib" / (lib_stem + ".lib"), ec);
         if ((std::filesystem::exists(local_inc, ec) || std::filesystem::exists(local_inc_alt, ec)) && has_local_lib) {
             if (pkg == "sqlcipher" && std::filesystem::exists(local_inc, ec)) {
                 cflags.push_back("-I" + (local_root / "include" / "sqlcipher").string());
@@ -349,7 +378,13 @@ CFIRE_INFRA_INLINE void query_pkg_config(
             }
         }
     }
-    if (pkg == "sqlcipher") {
+    const char* ig_env = std::getenv("CFIRE_IGNORE_SYSTEM_LIBS");
+    const bool ignore_sys = ig_env && (std::string_view(ig_env) == "1" || std::string_view(ig_env) == "true");
+    const char* pc_libdir = std::getenv("PKG_CONFIG_LIBDIR");
+    const char* pc_path = std::getenv("PKG_CONFIG_PATH");
+    const bool has_explicit_pc_env = (pc_libdir && *pc_libdir) || (pc_path && *pc_path);
+
+    if (!ignore_sys && pkg == "sqlcipher") {
         for (const char* keg : {"/opt/homebrew/opt/sqlcipher/lib/pkgconfig", "/usr/local/opt/sqlcipher/lib/pkgconfig"}) {
             if (std::filesystem::is_directory(keg, ec)) {
                 extra_pc_dirs.push_back(keg);
@@ -357,14 +392,17 @@ CFIRE_INFRA_INLINE void query_pkg_config(
         }
     }
 
-    auto pc_res = ProbeCache::instance().probe_pkg_config(pkg, static_link, install_root, extra_pc_dirs);
-    if (pc_res.found) {
-        for (auto& f : split_ws(pc_res.cflags)) cflags.push_back(std::move(f));
-        if (!pc_res.libs.empty()) {
-            for (auto& l : split_ws(pc_res.libs)) libs.push_back(std::move(l));
-            return;
+    if (!ignore_sys || has_explicit_pc_env) {
+        auto pc_res = ProbeCache::instance().probe_pkg_config(pkg, static_link, install_root, extra_pc_dirs);
+        if (pc_res.found) {
+            for (auto& f : split_ws(pc_res.cflags)) cflags.push_back(std::move(f));
+            if (!pc_res.libs.empty()) {
+                for (auto& l : split_ws(pc_res.libs)) libs.push_back(std::move(l));
+                return;
+            }
         }
     }
+    if (ignore_sys) return;
     // Fallback probe when pkg-config is unavailable or package has no .pc file
     if (!hdr.empty()) {
         std::vector<std::string> prefixes;

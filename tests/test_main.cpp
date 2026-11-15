@@ -97,6 +97,7 @@ auto main(int argc, char** argv) -> int {
         test_cf198_199_200_build_perf_and_caching(rt_dir);
         test_cf201_single_pass_in_memory_check(rt_dir);
         test_cf202_sharded_codegen(rt_dir);
+        test_cf203_206_portable_releases(rt_dir);
     }
     if (should_run("e2e")) {
         test_end_to_end_canonical_examples(rt_dir);

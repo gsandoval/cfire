@@ -6,4 +6,5 @@
 #include "build/toolchain_layout.hpp"
 #include "build/manifest.hpp"
 #include "build/pch.hpp"
+#include "build/lib_cache.hpp"
 #include "build/package_loader.hpp"

@@ -39,7 +39,7 @@ To keep the core language surface clear while providing batteries-included produ
 | `core:build` | Declarative `build.cf` build-graph API (`Executable`, `CC`, `CMake`, `Cargo`, `Zig`, `Tako`) | *(header-only)* |
 | `core:fs` | `<filesystem>` + `<fstream>` (`read_all`, `write_all`, `read_text`, `write_text`, `read_bytes`, `write_bytes`, streaming `open`/`File`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
 | `core:cli` | Compile-time `cli:"..."` struct-tag flag parser (`bool`, `i32`, `i64`, `usize`, `f64`, `str`, `path`) | *(header-only)* |
-| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` + compile-time JSON Schema `schema[T]()` via `json:"..."` & `desc:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | *(bundled `simdjson` fallback / `-lsimdjson`)* |
+| `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` + compile-time JSON Schema `schema[T]()` via `json:"..."` & `desc:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | *(vendored `simdjson` 5.0.5 amalgamation cached on demand; optional system override)* |
 | `core:keychain` | Native OS credential store (`set`, `get`, `delete_password`) via macOS `Security.framework`, Linux `libsecret`, or AES-256-GCM fallback vault | *(Security.framework / fallback)* |
 | `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(header-only)* |
 | `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`sha256_hex`, `sha256_bytes`, constant-time `equal`) | *(header-only)* |
@@ -68,17 +68,22 @@ To keep the core language surface clear while providing batteries-included produ
 | `ext:ai` | Multi-provider LLMs (`openai`, `anthropic`, `gemini`, `ollama`, `openai_compatible`), compile-time `generate_struct[T]` & `generate_struct_from_file[T]`, multimodal attachments (`user_with_file`, `ask_with_file`), zero-dependency document & slide extraction (`load_document`, `chunk_document` for `.pdf`, `.pptx`, `.docx`, `.xlsx`, `.odt`, `.odp`, `.ods`, `.epub`, `.html`, `.csv`, `.md`), on-device & Linux OCR (`ocr`), local/cloud text & image embeddings (`embed`, `embed_image`), and `McpServer` | *(POSIX / TLS / SIMD / Apple Frameworks / Tesseract)* |
 | `ext:compress/zstd` | Facebook `libzstd` (`<zstd.h>`) frame compressor & decompressor (`compress`, `decompress`) | `-lzstd` |
 | `ext:crypto/sodium` | Modern `libsodium` cryptography (`aead_encrypt`, `sign_detached`, `box_seal`, `pwhash_str`) | `-lsodium` |
-| `ext:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags + `AVX2`/`ARM NEON` SIMD vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`) | `-lsqlite3` |
+| `ext:db/sqlite` | `sqlite3` (`<sqlite3.h>`) WAL connection (`open`, `exec`, `query[T]`, `tx`) via `sql:"..."` struct tags + `AVX2`/`ARM NEON` SIMD vector SQL functions (`vec_cosine_similarity`, `vec_cosine_distance`, `vec_l2_distance`) | *(vendored `sqlite3` 3.54.1 amalgamation cached on demand; optional `sqlcipher` override)* |
 | `ext:net/ssh` | First-class `libssh` client (`connect`, `exec`, `sftp_read`, `sftp_write`, `forward_local`) | `-lssh` |
 | `ext:webui` | Native desktop/mobile hybrid WebView (`WKWebView` / `WebKitGTK`) with `app://localhost/` VFS and typed RPC | *(WebKit / GTK3)* |
 
 ## Quick Start
 
 ```bash
-# 1. One-line install on macOS or Linux (installs binary + runtime headers & runs cfire doctor):
+# 1. Install pre-compiled binary with SHA-256 verification:
+#    macOS (arm64 / x86_64) & Linux (x86_64 / arm64 static musl):
 curl -fsSL https://cfire.memo.engineer/install.sh | sh
+#    (or build from source: curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --from-source)
 
-# 2. Check environment health or auto-install optional native libraries (simdjson, zstd, sqlite3, openssl):
+#    Windows PowerShell (x86_64 / arm64):
+#    irm https://cfire.memo.engineer/install.ps1 | iex
+
+# 2. Check environment health or auto-install optional native libraries (zstd, sodium, openssl):
 ./cfire doctor
 ./cfire setup --yes
 
@@ -106,8 +111,11 @@ docker run --rm cfire:latest run examples/01-hello-core/main.cf
 ./cfire run examples/15-mcp-server/main.cf
 ./cfire run examples/16-audio-synth/main.cf
 
-# Build optimized native binaries or packaged desktop apps:
+# Build optimized, portable, static, or macOS Universal binaries:
 ./cfire build examples/01-hello-core/main.cf -o hello
+./cfire build --portable examples/14-ai-rag-sqlite/main.cf -o rag_app
+./cfire build --static examples/01-hello-core/main.cf -o hello_static                      # Linux / Windows
+./cfire build --universal --macos-min=13.3 examples/01-hello-core/main.cf -o hello_universal  # macOS
 ./cfire build --subsystem=gui apps/desktop/main.cf -o myapp  # Auto-creates signed .app bundle on macOS
 
 # Cross-compile to WebAssembly (HTML5 + WebGL Canvas or CLI):

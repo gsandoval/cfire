@@ -452,9 +452,9 @@ fn main() {
             auto res_obj = cfire::build::compile_windows_icon(png_path, exe_path, "x86_64-w64-mingw32");
             std::string res_arg = res_obj.empty() ? "" : std::format(" \"{}\"", res_obj);
             std::string cmd = std::format(
-                "x86_64-w64-mingw32-g++ -std=c++23 -O2 -Wall -Wextra -I\"{}\" -I\"{}\" \"{}\" -o \"{}\"{} "
+                "x86_64-w64-mingw32-g++ -std=c++23 -O2 -Wall -Wextra -I\"{}\" \"{}\" -o \"{}\"{} "
                 "-lws2_32 -ladvapi32 -luser32 -lgdi32 -lshell32 -lole32 -ldwmapi -lcomdlg32 -lshlwapi -lstdc++exp",
-                rt_dir.string(), (rt_dir / "vendor").string(), cpp_path.string(), exe_path.string(), res_arg);
+                rt_dir.string(), cpp_path.string(), exe_path.string(), res_arg);
             int mrc = 0;
             std::string mout = cfire::bridge::run_command_capture(cmd, mrc);
             require(mrc == 0 && std::filesystem::exists(exe_path),

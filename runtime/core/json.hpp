@@ -409,7 +409,7 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 
 } // namespace cfire::json
 
-#if defined(CFIRE_USE_SIMDJSON) && __has_include(<simdjson.h>) && !defined(PLATFORM_WEB) && !CFIRE_TARGET_IOS
+#if defined(CFIRE_USE_SIMDJSON) && __has_include(<simdjson.h>)
 #define CFIRE_SIMDJSON_ACTIVE 1
 #include <simdjson.h>
 #else

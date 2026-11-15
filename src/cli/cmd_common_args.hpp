@@ -25,6 +25,10 @@ struct CommonCliArgs {
     bool dry_run = false;
     bool verify_cpp = false;
     bool explicit_release = false;
+    bool portable = false;
+    bool static_link = false;
+    bool universal = false;
+    std::string macos_min;
     std::string fix_only_codes;
     bool bench_mode = false;
     std::string filter_pattern;
@@ -84,6 +88,10 @@ struct CommonCliArgs {
     cfire::build::g_no_binary_cache = false;
     cfire::build::g_no_shard = false;
     cfire::build::g_verbose_mode = false;
+    cfire::build::g_portable_mode = false;
+    cfire::build::g_static_mode = false;
+    cfire::build::g_universal_mode = false;
+    cfire::build::g_macos_min_version.clear();
     cfire::build::g_sanitizer_set = "address,undefined";
     cfire::build::explicit_entry_file_only() = false;
 
@@ -126,6 +134,47 @@ struct CommonCliArgs {
         }
         if (arg == "--no-shard") {
             cfire::build::g_no_shard = true;
+            continue;
+        }
+        if (arg == "--portable") {
+            cfire::build::g_portable_mode = true;
+            out.portable = true;
+            continue;
+        }
+        if (arg == "--static") {
+            cfire::build::g_static_mode = true;
+            out.static_link = true;
+            continue;
+        }
+        if (arg == "--universal") {
+            cfire::build::g_universal_mode = true;
+            out.universal = true;
+            continue;
+        }
+        if (arg == "--macos-min") {
+            if (i + 1 >= argc) {
+                std::println(stderr, "error: --macos-min requires a version argument (e.g. --macos-min 13.3)");
+                return 2;
+            }
+            std::string mver = argv[++i];
+            if (!cfire::build::is_macos_min_supported(mver)) {
+                std::println(stderr, "error: unsupported macOS deployment target '{}': cfire C++23 runtime (<format>/<print>) requires macOS >= {}",
+                    mver, cfire::build::kDefaultMacosMinVersion);
+                return 2;
+            }
+            cfire::build::g_macos_min_version = mver;
+            out.macos_min = std::move(mver);
+            continue;
+        }
+        if (arg.starts_with("--macos-min=")) {
+            std::string mver(arg.substr(12));
+            if (!cfire::build::is_macos_min_supported(mver)) {
+                std::println(stderr, "error: unsupported macOS deployment target '{}': cfire C++23 runtime (<format>/<print>) requires macOS >= {}",
+                    mver, cfire::build::kDefaultMacosMinVersion);
+                return 2;
+            }
+            cfire::build::g_macos_min_version = mver;
+            out.macos_min = std::move(mver);
             continue;
         }
         if (arg == "--verbose" || arg == "-v") {
@@ -359,6 +408,7 @@ struct CommonCliArgs {
                 "--no-open", "--open", "--port", "-p", "--target", "--sysroot",
                 "--link-lib", "--include", "--json", "--fix", "--dry-run", "--only",
                 "--verify-cpp", "--full", "--no-shard",
+                "--portable", "--static", "--universal", "--macos-min",
                 "--cxx", "--cc", "--emxx", "--ar", "--ld",
                 "--verbose", "-v", "--help", "-h"
             };

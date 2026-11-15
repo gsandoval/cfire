@@ -43,9 +43,6 @@ namespace cfire::doc {
     std::vector<std::string> cflags = {"-std=c++2b"};
     if (!rt_dir.empty()) {
         cflags.push_back("-I" + std::filesystem::absolute(rt_dir).string());
-        if (std::filesystem::is_directory(rt_dir / "vendor")) {
-            cflags.push_back("-I" + std::filesystem::absolute(rt_dir / "vendor").string());
-        }
     }
     auto cache_dir = cfire::detail::user_cache_dir("doc");  // per-user, never a shared temp-dir name (CF-153)
     if (cache_dir.empty()) {

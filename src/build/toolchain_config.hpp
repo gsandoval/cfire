@@ -95,23 +95,48 @@ CFIRE_INFRA_INLINE std::optional<ToolResolution> resolve_explicit_tool_override(
 
 CFIRE_INFRA_INLINE std::string quote_cmd_if_spaces(const std::filesystem::path& p);
 
+[[nodiscard]] inline bool compiler_is_gcc_driver(std::string_view command) {
+    while (!command.empty() && (command.front() == ' ' || command.front() == '\t')) command.remove_prefix(1);
+    if (command.empty()) return false;
+    std::string_view head = command;
+    if (command.front() == '"' || command.front() == '\'') {
+        char q = command.front();
+        size_t endq = command.find(q, 1);
+        head = (endq == std::string_view::npos) ? command.substr(1) : command.substr(1, endq - 1);
+    } else if (size_t sp = command.find_first_of(" \t"); sp != std::string_view::npos) {
+        head = command.substr(0, sp);
+    }
+    std::string fname = std::filesystem::path(head).filename().string();
+    std::transform(fname.begin(), fname.end(), fname.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (fname.ends_with(".exe")) fname.resize(fname.size() - 4);
+    if (fname.contains("clang")) return false;
+    return fname == "gcc" || fname == "g++" ||
+           fname.ends_with("-gcc") || fname.ends_with("-g++") ||
+           fname.starts_with("gcc-") || fname.starts_with("g++-");
+}
+
 CFIRE_INFRA_INLINE std::string resolve_cross_cxx_compiler(std::string_view target_triple);
 
 CFIRE_INFRA_INLINE ToolResolution resolve_cxx_compiler_detailed(std::string_view target_triple = "");
 
 CFIRE_INFRA_INLINE std::string resolve_cxx_compiler(std::string_view target_triple = "");
 
-CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed();
+CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed(std::string_view target_triple = "");
 
-CFIRE_INFRA_INLINE std::string resolve_c_compiler();
+CFIRE_INFRA_INLINE std::string resolve_c_compiler(std::string_view target_triple = "");
 
 CFIRE_INFRA_INLINE ToolResolution resolve_emscripten_compiler_detailed();
 
 CFIRE_INFRA_INLINE std::string resolve_emscripten_compiler_cfg();
 
-CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed();
+CFIRE_INFRA_INLINE ToolResolution resolve_emscripten_c_compiler_detailed();
 
-CFIRE_INFRA_INLINE std::string resolve_archiver();
+CFIRE_INFRA_INLINE std::string resolve_emscripten_c_compiler_cfg();
+
+CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed(std::string_view target_triple = "");
+
+CFIRE_INFRA_INLINE std::string resolve_archiver(std::string_view target_triple = "");
 
 CFIRE_INFRA_INLINE ToolResolution resolve_linker_pref_detailed();
 
@@ -367,23 +392,48 @@ CFIRE_INFRA_INLINE std::string resolve_cxx_compiler(std::string_view target_trip
     return resolve_cxx_compiler_detailed(target_triple).command;
 }
 
-CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed() {
+CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed(std::string_view target_triple) {
     if (auto ov = resolve_explicit_tool_override(
             cli_toolchain_overrides().cc, "CFIRE_CC", "cc")) {
         return *ov;
     }
-    // Check sibling C compiler next to resolved C++ compiler first (e.g. llvm/bin/clang++ -> llvm/bin/clang)
-    auto cxx = resolve_cxx_compiler_detailed();
+    if (!target_triple.empty() && !target_triple.starts_with("wasm") &&
+        target_triple != "ios" && target_triple != "ios-sim" &&
+        target_triple.find("apple-ios") == std::string_view::npos) {
+        std::string triple(target_triple);
+        for (const std::string& cand : {triple + "-clang", triple + "-gcc"}) {
+            if (auto found = find_executable_in_path(cand); !found.empty()) {
+                return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+            }
+        }
+        if (auto home = user_home_dir(); !home.empty()) {
+            std::filesystem::path opt_dir = home / ".local" / "opt";
+            std::error_code ec;
+            if (std::filesystem::is_directory(opt_dir, ec)) {
+                std::string prefixed = triple + "-clang";
+                for (const auto& entry : std::filesystem::directory_iterator(opt_dir, ec)) {
+                    if (!entry.is_directory(ec)) continue;
+                    if (auto found = probe_executable_candidate(entry.path() / "bin" / prefixed); !found.empty()) {
+                        return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+                    }
+                }
+            }
+        }
+    }
+    // Check sibling C compiler next to resolved C++ compiler (e.g. llvm/bin/clang++ -> llvm/bin/clang)
+    auto cxx = resolve_cxx_compiler_detailed(target_triple);
     if (!cxx.executable_path.empty()) {
         auto parent = cxx.executable_path.parent_path();
         std::string fname = cxx.executable_path.filename().string();
-        if (fname.starts_with("clang++")) {
-            std::string c_name = "clang" + fname.substr(7);
+        if (auto pos = fname.rfind("clang++"); pos != std::string::npos) {
+            std::string c_name = fname;
+            c_name.replace(pos, 7, "clang");
             if (auto sib = probe_executable_candidate(parent / c_name); !sib.empty()) {
                 return ToolResolution{quote_cmd_if_spaces(sib), sib, ToolSource::Auto};
             }
-        } else if (fname.starts_with("g++")) {
-            std::string c_name = "gcc" + fname.substr(3);
+        } else if (auto gpos = fname.rfind("g++"); gpos != std::string::npos) {
+            std::string c_name = fname;
+            c_name.replace(gpos, 3, "gcc");
             if (auto sib = probe_executable_candidate(parent / c_name); !sib.empty()) {
                 return ToolResolution{quote_cmd_if_spaces(sib), sib, ToolSource::Auto};
             }
@@ -403,8 +453,8 @@ CFIRE_INFRA_INLINE ToolResolution resolve_c_compiler_detailed() {
     return ToolResolution{"clang", {}, ToolSource::Auto};
 }
 
-CFIRE_INFRA_INLINE std::string resolve_c_compiler() {
-    return resolve_c_compiler_detailed().command;
+CFIRE_INFRA_INLINE std::string resolve_c_compiler(std::string_view target_triple) {
+    return resolve_c_compiler_detailed(target_triple).command;
 }
 
 CFIRE_INFRA_INLINE ToolResolution resolve_emscripten_compiler_detailed() {
@@ -444,12 +494,78 @@ CFIRE_INFRA_INLINE std::string resolve_emscripten_compiler_cfg() {
     return resolve_emscripten_compiler_detailed().command;
 }
 
-CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed() {
+CFIRE_INFRA_INLINE ToolResolution resolve_emscripten_c_compiler_detailed() {
+    if (const char* ev = std::getenv("CFIRE_EMCC"); ev && *ev) {
+        std::string val(ev);
+        return ToolResolution{val, resolve_tool_executable_path(val), ToolSource::Env};
+    }
+    auto emxx = resolve_emscripten_compiler_detailed();
+    if (!emxx.executable_path.empty()) {
+        auto sib = probe_executable_candidate(emxx.executable_path.parent_path() / "emcc");
+        if (!sib.empty()) {
+            return ToolResolution{quote_cmd_if_spaces(sib), sib, emxx.source};
+        }
+    }
+    if (auto found = find_executable_in_path("emcc"); !found.empty()) {
+        return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+    }
+    static constexpr const char* kEmccPaths[] = {
+        "/opt/homebrew/opt/emscripten/libexec/emcc",
+        "/usr/local/opt/emscripten/libexec/emcc",
+        "/usr/lib/emscripten/emcc"
+    };
+    for (const char* cand : kEmccPaths) {
+        if (auto found = probe_executable_candidate(std::filesystem::path(cand)); !found.empty()) {
+            return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+        }
+    }
+    return ToolResolution{"", {}, ToolSource::Auto};
+}
+
+CFIRE_INFRA_INLINE std::string resolve_emscripten_c_compiler_cfg() {
+    return resolve_emscripten_c_compiler_detailed().command;
+}
+
+CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed(std::string_view target_triple) {
     if (auto ov = resolve_explicit_tool_override(
             cli_toolchain_overrides().ar, "CFIRE_AR", "ar")) {
         return *ov;
     }
-    auto cxx = resolve_cxx_compiler_detailed();
+    if (target_triple == "wasm" || target_triple == "web" ||
+        target_triple.find("wasm") != std::string_view::npos) {
+        auto emxx = resolve_emscripten_compiler_detailed();
+        if (!emxx.executable_path.empty()) {
+            auto sib = probe_executable_candidate(emxx.executable_path.parent_path() / "emar");
+            if (!sib.empty()) {
+                return ToolResolution{quote_cmd_if_spaces(sib), sib, ToolSource::Auto};
+            }
+        }
+        if (auto found = find_executable_in_path("emar"); !found.empty()) {
+            return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+        }
+    }
+    bool is_non_apple_cross = !target_triple.empty() &&
+        target_triple.find("apple") == std::string_view::npos &&
+        target_triple != "ios" && target_triple != "ios-sim";
+    if (is_non_apple_cross) {
+        std::string triple(target_triple);
+        for (const std::string& cand : {triple + "-llvm-ar", triple + "-ar"}) {
+            if (auto found = find_executable_in_path(cand); !found.empty()) {
+                return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+            }
+        }
+        auto cxx = resolve_cxx_compiler_detailed(target_triple);
+        if (!cxx.executable_path.empty()) {
+            auto sib = probe_executable_candidate(cxx.executable_path.parent_path() / "llvm-ar");
+            if (!sib.empty()) {
+                return ToolResolution{quote_cmd_if_spaces(sib), sib, ToolSource::Auto};
+            }
+        }
+        if (auto found = find_executable_in_path("llvm-ar"); !found.empty()) {
+            return ToolResolution{quote_cmd_if_spaces(found), found, ToolSource::Auto};
+        }
+    }
+    auto cxx = resolve_cxx_compiler_detailed(target_triple);
     if (!cxx.executable_path.empty()) {
         auto sib = probe_executable_candidate(cxx.executable_path.parent_path() / "llvm-ar");
         if (!sib.empty()) {
@@ -464,8 +580,8 @@ CFIRE_INFRA_INLINE ToolResolution resolve_archiver_detailed() {
     return ToolResolution{"ar", {}, ToolSource::Auto};
 }
 
-CFIRE_INFRA_INLINE std::string resolve_archiver() {
-    return resolve_archiver_detailed().command;
+CFIRE_INFRA_INLINE std::string resolve_archiver(std::string_view target_triple) {
+    return resolve_archiver_detailed(target_triple).command;
 }
 
 CFIRE_INFRA_INLINE ToolResolution resolve_linker_pref_detailed() {

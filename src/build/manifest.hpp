@@ -66,6 +66,10 @@ struct ExecutableSpec {
     std::vector<std::string> libraries{};
     std::vector<std::string> url_schemes{};
     std::string sign_identity{};
+    bool portable{false};
+    bool static_link{false};
+    bool universal{false};
+    std::string macos_min{};
 };
 
 struct ParsedBuildCf {
@@ -110,6 +114,13 @@ struct BuildPlan {
     std::size_t sharded_total_units = 0;
     std::size_t sharded_recompiled_units = 0;
     std::vector<std::string> sharded_object_files{};
+    bool portable{false};
+    bool static_link{false};
+    bool universal{false};
+    std::string macos_min{};
+    bool use_vendored_sqlite3{false};
+    bool use_vendored_simdjson{false};
+    std::vector<std::string> portable_notes{};
 };
 
 struct TargetResolution {
@@ -230,6 +241,22 @@ CFIRE_INFRA_INLINE void parse_cmake_manifest(
             } else if (fld.name == "SignIdentity" || fld.name == "sign_identity") {
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.sign_identity = lit->value;
+                }
+            } else if (fld.name == "Portable" || fld.name == "portable") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.portable = (lit->value == "true");
+                }
+            } else if (fld.name == "Static" || fld.name == "static" || fld.name == "static_link") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.static_link = (lit->value == "true");
+                }
+            } else if (fld.name == "Universal" || fld.name == "universal") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.universal = (lit->value == "true");
+                }
+            } else if (fld.name == "MacosMin" || fld.name == "macos_min") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.macos_min = lit->value;
                 }
             }
         }

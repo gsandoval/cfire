@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Semantic version to release (e.g. 0.10.1)'
+        description: 'Semantic version to release (e.g. 0.16.0)'
         required: true
         type: string
 
@@ -15,8 +15,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-latest
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -28,6 +31,10 @@ jobs:
         run: |
           RAW_VER="${{ inputs.version }}"
           CLEAN_VER="${RAW_VER#v}"
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           ./scripts/release.sh "${CLEAN_VER}"
@@ -49,23 +56,332 @@ jobs:
           fi
           echo "version=${TAG_VER}" >> "$GITHUB_OUTPUT"
           echo "tag=v${TAG_VER}" >> "$GITHUB_OUTPUT"
-          make build
-          ./cfire --version
-          ./cfire --version | grep -F "cfire ${TAG_VER} ($(git rev-parse --short=7 HEAD),"
 
-      - name: Run Review Check Quality Gates
+  build-linux:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            cc_pkg: clang-18
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            cc_pkg: clang-18
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Static musl Portable Bundle (${{ matrix.target }})
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+        run: |
+          GIT_SHA="$(git rev-parse --short=7 HEAD)"
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          docker run --rm -v "$PWD:/work" -w /work alpine:3.20 sh -c "
+            set -e
+            apk add --no-cache clang lld llvm make git musl-dev libc++-dev libc++-static libstdc++-dev file binutils tar
+            make -j\"\$(nproc)\" build CXX=clang++ GIT_SHA=\"${GIT_SHA}\" \
+              EXTRA_CXXFLAGS=\"-stdlib=libc++\" \
+              EXTRA_LDFLAGS=\"-static -stdlib=libc++ -fuse-ld=lld -lc++abi\"
+            file ./cfire
+            file ./cfire | grep -qE 'statically linked|static-pie'
+            ! ldd ./cfire 2>&1 | grep -q '=> /'
+            ./cfire --version | grep -F \"cfire ${TAG_VER} (${GIT_SHA},\"
+            rm -rf \"./dist/${BUNDLE}\"
+            ./cfire install --portable \"./dist/${BUNDLE}\"
+          "
+
+      - name: Verify Bundle Cleanliness & Package Archive (${{ matrix.target }})
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+        run: |
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          STRAY="$(find "./dist/${BUNDLE}" \( -name '*.pch' -o -name '*.a' -o -name '*.o' \))"
+          test -z "$STRAY"
+          test -f "./dist/${BUNDLE}/runtime/vendor/sqlite3/sqlite3.c"
+          test -f "./dist/${BUNDLE}/runtime/vendor/simdjson/simdjson.cpp"
+          test -f "./dist/${BUNDLE}/runtime/cfire-runtime.version"
+          tar -czf "${BUNDLE}.tar.gz" -C ./dist "${BUNDLE}"
+
+      - name: Clean-Room Unpacked Smoke Test (${{ matrix.target }})
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cc_pkg }} lld
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/${{ matrix.cc_pkg }} 100 || true
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          SMOKE_DIR="$(mktemp -d)"
+          tar -xzf "${BUNDLE}.tar.gz" -C "$SMOKE_DIR"
+          cat > "$SMOKE_DIR/smoke.cf" << 'EOF'
+          package main
+          import "core:json"
+          import "ext:db/sqlite"
+
+          type Item struct {
+              Name: str `json:"name"`
+          }
+
+          fn main() {
+              obj := try json.parse[Item]("{\"name\":\"cfire\"}")
+              db := try sqlite.open(":memory:")
+              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
+              rows := try db.query("SELECT x FROM t")
+              println(obj.Name + ":" + rows[0]["x"])
+          }
+          EOF
+          HOME="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app"
+          "$SMOKE_DIR/smoke_app" | grep -Fx "cfire:ok"
+
+      - name: Upload Artifact (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: cfire-v*-${{ matrix.target }}.tar.gz
+
+  build-macos:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-14
+            arch: arm64
+            extra_flags: "-mmacosx-version-min=13.3"
+            smoke_native: "1"
+          - target: macos-x86_64
+            runner: macos-14
+            arch: x86_64
+            extra_flags: "--target=x86_64-apple-macos13.3 -mmacosx-version-min=13.3"
+            smoke_native: "0"
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Portable Bundle (${{ matrix.target }})
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+          EXTRA_FLAGS: ${{ matrix.extra_flags }}
+        run: |
+          GIT_SHA="$(git rev-parse --short=7 HEAD)"
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          make -j"$(sysctl -n hw.ncpu)" build \
+            GIT_SHA="${GIT_SHA}" \
+            EXTRA_CXXFLAGS="${EXTRA_FLAGS}" \
+            EXTRA_LDFLAGS="${EXTRA_FLAGS}"
+          otool -L ./cfire
+          otool -l ./cfire
+          ! otool -L ./cfire | grep -E '/opt/homebrew|/usr/local'
+          otool -L ./cfire | tail -n +2 | awk '{print $1}' | grep -vqE '^/usr/lib/(libc\+\+\.1|libSystem\.B)\.dylib$' && exit 1 || true
+          otool -l ./cfire | grep -A3 'LC_BUILD_VERSION' | grep -q 'minos 13\.3'
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ./cfire --version | grep -F "cfire ${TAG_VER} (${GIT_SHA},"
+            ./cfire install --portable "./dist/${BUNDLE}"
+          else
+            # Build native helper binary briefly to run install --portable, then swap in x86_64 cfire binary
+            mv ./cfire ./cfire.target_x86_64
+            make clean
+            make -j"$(sysctl -n hw.ncpu)" build GIT_SHA="${GIT_SHA}"
+            ./cfire install --portable "./dist/${BUNDLE}"
+            mv -f ./cfire.target_x86_64 "./dist/${BUNDLE}/cfire"
+            chmod 755 "./dist/${BUNDLE}/cfire"
+          fi
+          lipo -archs "./dist/${BUNDLE}/cfire" | grep -Fx "${{ matrix.arch }}"
+          STRAY="$(find "./dist/${BUNDLE}" \( -name '*.pch' -o -name '*.a' -o -name '*.o' \))"
+          test -z "$STRAY"
+          test -f "./dist/${BUNDLE}/runtime/vendor/sqlite3/sqlite3.c"
+          test -f "./dist/${BUNDLE}/runtime/vendor/simdjson/simdjson.cpp"
+          test -f "./dist/${BUNDLE}/runtime/cfire-runtime.version"
+          tar -czf "${BUNDLE}.tar.gz" -C ./dist "${BUNDLE}"
+
+      - name: Run Native Quality Gate (macos-arm64)
+        if: matrix.smoke_native == '1'
         run: make review-check
 
-      - name: Package Portable Release Bundle (macOS arm64)
+      - name: Clean-Room Unpacked Smoke Test (macos-arm64)
+        if: matrix.smoke_native == '1'
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
         run: |
-          TAG_VER="${{ steps.meta.outputs.version }}"
-          ./cfire install --portable "./dist/cfire-v${TAG_VER}-macos-arm64"
-          tar -czf "cfire-v${TAG_VER}-macos-arm64.tar.gz" -C ./dist "cfire-v${TAG_VER}-macos-arm64"
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          SMOKE_DIR="$(mktemp -d)"
+          tar -xzf "${BUNDLE}.tar.gz" -C "$SMOKE_DIR"
+          cat > "$SMOKE_DIR/smoke.cf" << 'EOF'
+          package main
+          import "core:json"
+          import "ext:db/sqlite"
+
+          type Item struct {
+              Name: str `json:"name"`
+          }
+
+          fn main() {
+              obj := try json.parse[Item]("{\"name\":\"cfire\"}")
+              db := try sqlite.open(":memory:")
+              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
+              rows := try db.query("SELECT x FROM t")
+              println(obj.Name + ":" + rows[0]["x"])
+          }
+          EOF
+          HOME="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app"
+          otool -L "$SMOKE_DIR/smoke_app"
+          ! otool -L "$SMOKE_DIR/smoke_app" | grep -E '/opt/homebrew|/usr/local'
+          otool -l "$SMOKE_DIR/smoke_app" | grep -A3 'LC_BUILD_VERSION' | grep -q 'minos 13\.3'
+          "$SMOKE_DIR/smoke_app" | grep -Fx "cfire:ok"
+
+      - name: Upload Artifact (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: cfire-v*-${{ matrix.target }}.tar.gz
+
+  build-windows:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x86_64
+            arch: x86_64
+            msystem: CLANG64
+            packages: "mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm mingw-w64-clang-x86_64-make zip"
+            extra_flags: "-static"
+            can_execute: "1"
+          - target: windows-arm64
+            arch: arm64
+            msystem: CLANGARM64
+            packages: "mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-llvm mingw-w64-clang-aarch64-make zip"
+            extra_flags: "-static"
+            can_execute: "0"
+    runs-on: windows-2022
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSYS2 (${{ matrix.msystem }})
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-llvm
+            mingw-w64-clang-x86_64-make
+            mingw-w64-clang-aarch64-libc++
+            mingw-w64-clang-aarch64-headers-git
+            mingw-w64-clang-aarch64-crt-git
+            mingw-w64-clang-aarch64-winpthreads-git
+            zip
+
+      - name: Build Static Portable Bundle (${{ matrix.target }})
+        shell: msys2 {0}
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          GIT_SHA="$(git rev-parse --short=7 HEAD)"
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          if [ "$TARGET_ARCH" = "x86_64" ]; then
+            clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality \
+              -DCFIRE_GIT_SHA="\"${GIT_SHA}\"" -Iruntime -Isrc src/main.cpp \
+              -static -lws2_32 -ladvapi32 -lshell32 -o cfire.exe
+          else
+            clang++ --target=aarch64-w64-mingw32 --sysroot=/clangarm64 -fuse-ld=lld \
+              -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality \
+              -DCFIRE_GIT_SHA="\"${GIT_SHA}\"" -Iruntime -Isrc src/main.cpp \
+              -static -lws2_32 -ladvapi32 -lshell32 -o cfire.exe
+          fi
+          llvm-objdump -p ./cfire.exe
+          ! llvm-objdump -p ./cfire.exe | grep -iE 'DLL Name:.*(libstdc\+\+|libc\+\+|libwinpthread|libgcc|libunwind)'
+          mkdir -p "./dist/${BUNDLE}/runtime" "./dist/${BUNDLE}/pkg"
+          cp ./cfire.exe "./dist/${BUNDLE}/cfire.exe"
+          cp -R runtime/* "./dist/${BUNDLE}/runtime/"
+          rm -f "./dist/${BUNDLE}/runtime/VERSION"
+          printf "%s %s\n" "${TAG_VER}" "${GIT_SHA}" > "./dist/${BUNDLE}/runtime/cfire-runtime.version"
+          cp -R pkg/* "./dist/${BUNDLE}/pkg/"
+          STRAY="$(find "./dist/${BUNDLE}" \( -name '*.pch' -o -name '*.a' -o -name '*.o' \))"
+          test -z "$STRAY"
+          test -f "./dist/${BUNDLE}/runtime/vendor/sqlite3/sqlite3.c"
+          test -f "./dist/${BUNDLE}/runtime/vendor/simdjson/simdjson.cpp"
+          test -f "./dist/${BUNDLE}/runtime/cfire-runtime.version"
+          (cd ./dist && zip -r "../${BUNDLE}.zip" "${BUNDLE}")
+
+      - name: Clean-Room Unpacked Smoke Test (windows-x86_64)
+        if: matrix.can_execute == '1'
+        shell: msys2 {0}
+        env:
+          TAG_VER: ${{ needs.prepare.outputs.version }}
+          TARGET_NAME: ${{ matrix.target }}
+        run: |
+          BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          SMOKE_DIR="$(mktemp -d)"
+          unzip -q "${BUNDLE}.zip" -d "$SMOKE_DIR"
+          cat > "$SMOKE_DIR/smoke.cf" << 'EOF'
+          package main
+          import "core:json"
+          import "ext:db/sqlite"
+
+          type Item struct {
+              Name: str `json:"name"`
+          }
+
+          fn main() {
+              obj := try json.parse[Item]("{\"name\":\"cfire\"}")
+              db := try sqlite.open(":memory:")
+              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
+              rows := try db.query("SELECT x FROM t")
+              println(obj.Name + ":" + rows[0]["x"])
+          }
+          EOF
+          USERPROFILE="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire.exe" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app.exe"
+          "$SMOKE_DIR/smoke_app.exe" | grep -Fx "cfire:ok"
+
+      - name: Upload Artifact (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: cfire-v*-${{ matrix.target }}.zip
+
+  publish:
+    needs: [prepare, build-linux, build-macos, build-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download All Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          cd artifacts
+          ls -la
+          sha256sum cfire-v* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          test "$(wc -l < SHA256SUMS.txt)" -eq 6
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
           files: |
-            cfire-v*-macos-arm64.tar.gz
+            artifacts/cfire-v*
+            artifacts/SHA256SUMS.txt

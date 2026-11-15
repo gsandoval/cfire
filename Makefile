@@ -1,10 +1,14 @@
 CXX      := clang++
 CFIRE_VER := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.10.0)
 GIT_SHA  ?= $(shell sh -c 'sha=$$(git rev-parse --short=7 HEAD 2>/dev/null) || { echo dev; exit 0; }; git diff --quiet --ignore-submodules HEAD 2>/dev/null && printf "%s" "$$sha" || printf "%s-dirty" "$$sha"')
-LINUX_CXXFLAGS := $(if $(filter Linux,$(shell uname -s)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
-CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
-LDFLAGS  := $(if $(filter Darwin,$(shell uname -s)),-framework AudioToolbox -framework CoreFoundation -framework Security,-ldl -lpthread)
-CFIRE_LDFLAGS := $(if $(filter Darwin,$(shell uname -s)),,-ldl -lpthread)
+UNAME_S  := $(shell uname -s)
+IS_WIN   := $(or $(findstring MINGW,$(UNAME_S)),$(findstring MSYS,$(UNAME_S)),$(findstring CYGWIN,$(UNAME_S)),$(findstring Windows_NT,$(OS)))
+LINUX_CXXFLAGS := $(if $(filter Linux,$(UNAME_S)),-Wno-builtin-macro-redefined -D__cpp_concepts=202002L,)
+EXTRA_CXXFLAGS ?=
+EXTRA_LDFLAGS ?=
+CXXFLAGS := -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc $(EXTRA_CXXFLAGS)
+LDFLAGS  := $(if $(filter Darwin,$(UNAME_S)),-framework AudioToolbox -framework CoreFoundation -framework Security,$(if $(IS_WIN),-static -lws2_32 -ladvapi32 -lshell32,-ldl -lpthread)) $(EXTRA_LDFLAGS)
+CFIRE_LDFLAGS := $(if $(filter Darwin,$(UNAME_S)),,$(if $(IS_WIN),-static -lws2_32 -ladvapi32 -lshell32,-ldl -lpthread)) $(EXTRA_LDFLAGS)
 PREFIX   ?= /usr/local
 
 CFIRE_SRCS := src/tu_codegen_body.cpp \

@@ -12,10 +12,12 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if !defined(_WIN32)
@@ -53,7 +55,94 @@ inline bool g_no_shard = false;
 
 inline bool g_verbose_mode = false;
 
+inline bool g_portable_mode = false;
+
+inline bool g_static_mode = false;
+
+inline bool g_universal_mode = false;
+
+inline std::string g_macos_min_version{};
+
+inline constexpr std::string_view kDefaultMacosMinVersion = "13.3";
+
 inline std::string g_sanitizer_set = "address,undefined";
+
+[[nodiscard]] inline auto parse_macos_version_pair(std::string_view ver) -> std::optional<std::pair<int, int>> {
+    if (ver.empty()) return std::nullopt;
+    int parts[3] = {0, 0, 0};
+    int part_idx = 0;
+    std::size_t pos = 0;
+    while (pos <= ver.size()) {
+        if (part_idx >= 3) return std::nullopt;
+        std::size_t dot = ver.find('.', pos);
+        std::string_view seg = (dot == std::string_view::npos) ? ver.substr(pos) : ver.substr(pos, dot - pos);
+        if (seg.empty() || seg.size() > 5) return std::nullopt;
+        int val = 0;
+        for (char c : seg) {
+            if (c < '0' || c > '9') return std::nullopt;
+            val = val * 10 + (c - '0');
+        }
+        parts[part_idx++] = val;
+        if (dot == std::string_view::npos) break;
+        pos = dot + 1;
+    }
+    return std::pair<int, int>{parts[0], parts[1]};
+}
+
+[[nodiscard]] inline auto is_macos_min_supported(std::string_view ver) -> bool {
+    auto p = parse_macos_version_pair(ver);
+    if (!p) return false;
+    return p->first > 13 || (p->first == 13 && p->second >= 3);
+}
+
+[[nodiscard]] inline auto is_apple_triple(std::string_view target_triple) noexcept -> bool {
+    if (target_triple.find("apple") != std::string_view::npos) return true;
+#if defined(__APPLE__)
+    return target_triple.empty();
+#else
+    return false;
+#endif
+}
+
+[[nodiscard]] inline auto is_wasm_triple(std::string_view target_triple) noexcept -> bool {
+    return target_triple == "wasm" || target_triple == "web" ||
+           target_triple.find("wasm") != std::string_view::npos;
+}
+
+[[nodiscard]] inline auto is_windows_triple(std::string_view target_triple) noexcept -> bool {
+    if (target_triple.find("windows") != std::string_view::npos ||
+        target_triple.find("win32") != std::string_view::npos ||
+        target_triple.find("mingw") != std::string_view::npos) {
+        return true;
+    }
+#if defined(_WIN32)
+    return target_triple.empty();
+#else
+    return false;
+#endif
+}
+
+[[nodiscard]] inline auto is_macos_target(
+    std::string_view target_triple,
+    bool is_ios,
+    bool is_wasm
+) noexcept -> bool {
+    if (is_ios || is_wasm) return false;
+    if (!target_triple.empty()) {
+        return target_triple.find("apple-macos") != std::string_view::npos ||
+               target_triple.find("apple-darwin") != std::string_view::npos;
+    }
+#if defined(__APPLE__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+[[nodiscard]] inline auto ignore_system_libs() -> bool {
+    const char* v = std::getenv("CFIRE_IGNORE_SYSTEM_LIBS");
+    return v && (std::string_view(v) == "1" || std::string_view(v) == "true");
+}
 
 [[nodiscard]] inline bool is_verbose_build() {
     if (g_verbose_mode) return true;
@@ -73,6 +162,27 @@ inline void set_build_profile(BuildProfile profile) {
 
 [[nodiscard]] inline bool is_dev_debug_profile() {
     return g_build_profile == BuildProfile::DevDebug || g_debug_mode;
+}
+
+[[nodiscard]] inline auto resolve_effective_macos_min(
+    std::string_view target_triple,
+    bool is_ios,
+    bool is_wasm,
+    std::string_view manifest_macos_min = {}
+) -> std::string {
+    if (!is_macos_target(target_triple, is_ios, is_wasm)) return {};
+    if (!g_macos_min_version.empty()) return g_macos_min_version;
+    if (!manifest_macos_min.empty()) return std::string(manifest_macos_min);
+    if (auto pos = target_triple.find("apple-macos"); pos != std::string_view::npos) {
+        std::string_view rest = target_triple.substr(pos + std::string_view("apple-macos").size());
+        if (!rest.empty() && parse_macos_version_pair(rest).has_value()) {
+            return std::string(rest);
+        }
+    }
+    if (g_portable_mode || g_universal_mode || !is_dev_debug_profile()) {
+        return std::string(kDefaultMacosMinVersion);
+    }
+    return {};
 }
 
 [[nodiscard]] inline auto sanitizer_opt_flags() -> std::string {
@@ -372,10 +482,6 @@ struct PchDirLockGuard {
     bool with_pthread
 ) -> std::pair<std::string, std::vector<std::string>> {
     std::vector<std::string> cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
-    std::error_code ec;
-    if (std::filesystem::is_directory(runtime_dir / "vendor", ec)) {
-        cflags.push_back("-I" + (runtime_dir / "vendor").string());
-    }
 #if defined(__linux__)
     cflags.push_back("-Wno-builtin-macro-redefined");
     cflags.push_back("-D__cpp_concepts=202002L");

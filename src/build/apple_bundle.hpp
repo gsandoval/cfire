@@ -2,6 +2,7 @@
 // src/build/apple_bundle.hpp — macOS `.app` & iOS `.app` Bundle Packaging, Icon Generation & Simulator Runner
 
 #include "manifest.hpp"
+#include "pch.hpp"
 
 namespace cfire::build {
 
@@ -157,10 +158,11 @@ inline void package_apple_app_bundles(
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>{}</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-)", bin_name, effective_bundle_id, effective_name);
+)", bin_name, effective_bundle_id, effective_name,
+    plan.macos_min.empty() ? std::string(kDefaultMacosMinVersion) : plan.macos_min);
 
         if (has_icon) {
             plist << "    <key>CFBundleIconFile</key>\n    <string>AppIcon</string>\n";

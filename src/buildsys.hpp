@@ -10,6 +10,7 @@
 #include "sema.hpp"
 #include "codegen.hpp"
 #include "build/deps.hpp"
+#include "build/lib_cache.hpp"
 #include "build/package_loader.hpp"
 #include "build/wasm_shell.hpp"
 #include "build/apple_bundle.hpp"
@@ -59,7 +60,8 @@ namespace cfire::build {
     frontend::CheckedFile& checked,
     BuildPlan& plan,
     const std::filesystem::path& runtime_dir,
-    bool inspect_clang_ast
+    bool inspect_clang_ast,
+    const std::vector<std::string>& extra_link_libs = {}
 ) -> std::expected<void, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto analyze_and_emit(
@@ -71,7 +73,8 @@ namespace cfire::build {
     const std::string& sysroot = "",
     const std::string& web_profile = "auto",
     const std::string& subsystem = "auto",
-    bool sanitize = false
+    bool sanitize = false,
+    const std::vector<std::string>& extra_link_libs = {}
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string>;
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
@@ -101,6 +104,22 @@ namespace cfire::build {
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_TU_BUILDSYS_IMPL)
 
+inline void sync_macos_min_flags(BuildPlan& plan) {
+    auto erase_min = [](std::vector<std::string>& flags) {
+        std::erase_if(flags, [](const std::string& f) {
+            return f.starts_with("-mmacosx-version-min=");
+        });
+    };
+    erase_min(plan.cflags);
+    erase_min(plan.ldflags);
+    if (!plan.macos_min.empty() &&
+        is_macos_target(plan.target_triple, plan.is_ios, is_wasm_triple(plan.target_triple))) {
+        const std::string flag = "-mmacosx-version-min=" + plan.macos_min;
+        plan.cflags.push_back(flag);
+        plan.ldflags.push_back(flag);
+    }
+}
+
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto init_build_plan_flags(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
@@ -126,9 +145,6 @@ namespace cfire::build {
     plan.subsystem = subsystem;
     auto install_root = derive_install_root(runtime_dir);
     plan.cflags = {"-std=c++2b", "-Wno-c++11-narrowing", "-I" + runtime_dir.string()};
-    if (std::filesystem::is_directory(runtime_dir / "vendor")) {
-        plan.cflags.push_back("-I" + (runtime_dir / "vendor").string());
-    }
     if (!install_root.empty() && install_root != "/usr") {
         std::error_code root_ec;
         if (std::filesystem::is_directory(install_root / "include", root_ec)) {
@@ -138,9 +154,13 @@ namespace cfire::build {
             plan.ldflags.push_back("-L" + (install_root / "lib").string());
         }
     }
-    bool is_wasm = plan.target_triple.starts_with("wasm");
+    bool is_wasm = is_wasm_triple(plan.target_triple);
+    plan.portable = g_portable_mode;
+    plan.static_link = g_static_mode;
+    plan.universal = g_universal_mode;
+    plan.macos_min = resolve_effective_macos_min(plan.target_triple, plan.is_ios, is_wasm);
 #if defined(__linux__)
-    if (!is_wasm) {
+    if (!is_wasm && !is_windows_target(plan.target_triple)) {
         plan.cflags.push_back("-Wno-builtin-macro-redefined");
         plan.cflags.push_back("-D__cpp_concepts=202002L");
         plan.cflags.push_back("-pthread");
@@ -149,8 +169,11 @@ namespace cfire::build {
 #endif
     if (!plan.target_triple.empty()) {
         if (!is_wasm) {
-            plan.cflags.push_back("--target=" + plan.target_triple);
-            plan.ldflags.push_back("--target=" + plan.target_triple);
+            const std::string resolved_cc = resolve_cxx_compiler(plan.target_triple);
+            if (!compiler_is_gcc_driver(resolved_cc)) {
+                plan.cflags.push_back("--target=" + plan.target_triple);
+                plan.ldflags.push_back("--target=" + plan.target_triple);
+            }
         }
     }
     if (!plan.sysroot.empty()) {
@@ -159,6 +182,7 @@ namespace cfire::build {
         plan.ldflags.push_back("-isysroot");
         plan.ldflags.push_back("\"" + plan.sysroot + "\"");
     }
+    sync_macos_min_flags(plan);
     if (is_wasm) {
         plan.cflags.push_back("-DPLATFORM_WEB");
     }
@@ -237,6 +261,26 @@ namespace cfire::build {
         if (plan.bundle_id.empty()) plan.bundle_id = matched_exe->bundle_id;
         if (plan.url_schemes.empty()) plan.url_schemes = matched_exe->url_schemes;
         if (plan.sign_identity.empty()) plan.sign_identity = matched_exe->sign_identity;
+        if (!matched_exe->macos_min.empty() && !is_macos_min_supported(matched_exe->macos_min)) {
+            return std::unexpected(std::format(
+                "unsupported macos_min '{}' in build.cf: cfire C++23 runtime (<format>/<print>) requires macOS >= {}",
+                matched_exe->macos_min, kDefaultMacosMinVersion));
+        }
+        if (matched_exe->portable) plan.portable = true;
+        if (matched_exe->static_link) plan.static_link = true;
+        if (matched_exe->universal) plan.universal = true;
+        plan.macos_min = resolve_effective_macos_min(
+            plan.target_triple,
+            plan.is_ios,
+            is_wasm,
+            matched_exe->macos_min
+        );
+        if (plan.macos_min.empty() &&
+            (plan.portable || plan.universal) &&
+            is_macos_target(plan.target_triple, plan.is_ios, is_wasm)) {
+            plan.macos_min = std::string(kDefaultMacosMinVersion);
+        }
+        sync_macos_min_flags(plan);
         if (plan.icon_path.empty() && !matched_exe->icon.empty()) {
             auto icon_cand = bcf_parent / matched_exe->icon;
             if (std::filesystem::exists(icon_cand, bcf_ec)) {
@@ -315,10 +359,16 @@ namespace cfire::build {
     frontend::CheckedFile& checked,
     BuildPlan& plan,
     const std::filesystem::path& runtime_dir,
-    bool inspect_clang_ast
+    bool inspect_clang_ast,
+    const std::vector<std::string>& extra_link_libs
 ) -> std::expected<void, std::string> {
+    if (!extra_link_libs.empty() && plan.extra_link_libs.empty()) {
+        plan.extra_link_libs = extra_link_libs;
+    }
+    const auto& effective_extra_links = extra_link_libs.empty() ? plan.extra_link_libs : extra_link_libs;
+
     auto install_root = derive_install_root(runtime_dir);
-    bool is_wasm = plan.target_triple.starts_with("wasm");
+    bool is_wasm = is_wasm_triple(plan.target_triple);
     bool is_win_target = is_windows_target(plan.target_triple);
     std::filesystem::path entry_p = plan.entry_file.empty()
         ? std::filesystem::path(checked.ast.path)
@@ -340,28 +390,93 @@ namespace cfire::build {
         {"ext:webui", "simdjson"},
     };
 
-    auto has_sqlcipher = [&]() -> bool {
-        if (is_wasm || plan.is_ios) return false;
-        std::error_code ec;
-        if (const char* home = std::getenv("HOME")) {
-            auto loc = std::filesystem::path(home) / ".local";
-            if ((std::filesystem::exists(loc / "include" / "sqlcipher" / "sqlite3.h", ec) ||
-                 std::filesystem::exists(loc / "include" / "sqlite3.h", ec)) &&
-                (std::filesystem::exists(loc / "lib" / "libsqlcipher.a", ec) ||
-                 std::filesystem::exists(loc / "lib" / "libsqlcipher.so", ec) ||
-                 std::filesystem::exists(loc / "lib" / "libsqlcipher.dylib", ec))) {
+    const bool has_explicit_pc_env =
+        (std::getenv("PKG_CONFIG_LIBDIR") != nullptr && std::getenv("PKG_CONFIG_LIBDIR")[0] != '\0') ||
+        (std::getenv("PKG_CONFIG_PATH") != nullptr && std::getenv("PKG_CONFIG_PATH")[0] != '\0');
+
+    auto has_explicit_pkg_attr = [&](std::string_view pkg_name) -> bool {
+        for (const auto& imp : checked.ast.imports) {
+            if (!imp.is_cpp) continue;
+            for (const auto& attr : imp.attrs) {
+                if (attr.name == "pkg" && !attr.args.empty() && attr.args[0] == pkg_name) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    auto has_dep_or_link_override = [&](std::string_view token) -> bool {
+        for (const auto& dep : plan.external_deps) {
+            if (dep.name.find(token) != std::string::npos ||
+                dep.target.find(token) != std::string::npos ||
+                dep.built_archive.find(token) != std::string::npos) {
                 return true;
             }
         }
-        if (ProbeCache::instance().probe_pkg_config("sqlcipher").found) return true;
-        for (const char* inc_p : {
-            "/opt/homebrew/opt/sqlcipher/include/sqlcipher/sqlite3.h",
-            "/usr/local/opt/sqlcipher/include/sqlcipher/sqlite3.h",
-            "/opt/homebrew/include/sqlcipher/sqlite3.h",
-            "/usr/local/include/sqlcipher/sqlite3.h",
-            "/usr/include/sqlcipher/sqlite3.h"
-        }) {
-            if (std::filesystem::exists(inc_p, ec)) return true;
+        for (const auto& lf : plan.ldflags) {
+            if (lf.find(token) != std::string::npos) return true;
+        }
+        for (const auto& lf : effective_extra_links) {
+            if (lf.find(token) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    auto has_local_prefix_lib = [&](std::initializer_list<const char*> headers,
+                                    std::initializer_list<const char*> libs) -> bool {
+        auto home_dir = user_home_dir();
+        if (home_dir.empty()) return false;
+        std::error_code ec;
+        auto loc = home_dir / ".local";
+        bool hdr_ok = false;
+        for (const char* h : headers) {
+            if (std::filesystem::exists(loc / "include" / h, ec)) {
+                hdr_ok = true;
+                break;
+            }
+        }
+        if (!hdr_ok) return false;
+        for (const char* dir_name : {"lib", "lib64"}) {
+            for (const char* lib_name : libs) {
+                if (std::filesystem::exists(loc / dir_name / lib_name, ec)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    auto append_unique_cflag = [&](const std::string& flag) {
+        if (std::find(plan.cflags.begin(), plan.cflags.end(), flag) == plan.cflags.end()) {
+            plan.cflags.push_back(flag);
+        }
+    };
+
+    auto has_sqlcipher = [&]() -> bool {
+        if (is_wasm || plan.is_ios) return false;
+        if (has_explicit_pkg_attr("sqlcipher") || has_dep_or_link_override("sqlcipher")) {
+            return true;
+        }
+        if (has_local_prefix_lib({"sqlcipher/sqlite3.h", "sqlite3.h"},
+                                 {"libsqlcipher.a", "libsqlcipher.so", "libsqlcipher.dylib",
+                                  "libsqlcipher.dll.a", "sqlcipher.lib"})) {
+            return true;
+        }
+        if (!ignore_system_libs() || has_explicit_pc_env) {
+            if (ProbeCache::instance().probe_pkg_config("sqlcipher").found) return true;
+        }
+        if (!ignore_system_libs()) {
+            std::error_code ec;
+            for (const char* inc_p : {
+                "/opt/homebrew/opt/sqlcipher/include/sqlcipher/sqlite3.h",
+                "/usr/local/opt/sqlcipher/include/sqlcipher/sqlite3.h",
+                "/opt/homebrew/include/sqlcipher/sqlite3.h",
+                "/usr/local/include/sqlcipher/sqlite3.h",
+                "/usr/include/sqlcipher/sqlite3.h"
+            }) {
+                if (std::filesystem::exists(inc_p, ec)) return true;
+            }
         }
         return false;
     };
@@ -389,13 +504,80 @@ namespace cfire::build {
         query_pkg_config(pc, plan.cflags, plan.ldflags, install_root, is_win_target);
     };
 
+    auto request_sqlite3_dep = [&]() {
+        if (has_sqlcipher()) {
+            add_pc("sqlcipher");
+            plan.cflags.push_back("-DSQLITE_HAS_CODEC=1");
+            return;
+        }
+        bool overridden =
+            has_explicit_pkg_attr("sqlite3") ||
+            has_dep_or_link_override("sqlite") ||
+            has_local_prefix_lib({"sqlite3.h"},
+                                 {"libsqlite3.a", "libsqlite3.so", "libsqlite3.dylib",
+                                  "libsqlite3.dll.a", "sqlite3.lib"});
+        if (!overridden && !has_explicit_pkg_attr("sqlite3") && !plan.use_vendored_sqlite3) {
+            std::error_code vec;
+            auto v_sqlite_dir = runtime_dir / "vendor" / "sqlite3";
+            if (std::filesystem::is_regular_file(v_sqlite_dir / "sqlite3.c", vec) &&
+                std::filesystem::is_regular_file(v_sqlite_dir / "sqlite3.h", vec)) {
+                plan.use_vendored_sqlite3 = true;
+                append_unique_cflag("-I" + v_sqlite_dir.string());
+                return;
+            }
+        }
+        add_pc("sqlite3");
+    };
+
+    auto request_simdjson_dep = [&]() {
+        if (plan.use_vendored_simdjson) return;
+        bool explicit_override =
+            has_explicit_pkg_attr("simdjson") ||
+            has_dep_or_link_override("simdjson") ||
+            has_local_prefix_lib({"simdjson.h"},
+                                 {"libsimdjson.a", "libsimdjson_static.a", "libsimdjson.so",
+                                  "libsimdjson.dylib", "libsimdjson.dll.a", "simdjson.lib"});
+        bool compatible_native_host = false;
+        if (!explicit_override &&
+            !is_wasm &&
+            !plan.is_ios &&
+            plan.target_triple.empty() &&
+            !plan.portable &&
+            !plan.static_link &&
+            !plan.universal &&
+            plan.macos_min.empty() &&
+            (!ignore_system_libs() || has_explicit_pc_env)) {
+            auto sj_probe = ProbeCache::instance().probe_pkg_config("simdjson");
+            if (sj_probe.found) {
+                auto sj_ver = trim_whitespace(sj_probe.modversion);
+                bool old_ver = !sj_ver.empty() &&
+                    (sj_ver.starts_with("1.") || sj_ver.starts_with("2.") || sj_ver.starts_with("3."));
+                auto cc_probe = ProbeCache::instance().probe_compiler(resolve_cxx_compiler(plan.target_triple));
+                if (!(old_ver && cc_probe.major_version >= 19)) {
+                    compatible_native_host = true;
+                }
+            }
+        }
+        if (!explicit_override && !compatible_native_host) {
+            std::error_code vec;
+            auto v_simd_dir = runtime_dir / "vendor" / "simdjson";
+            if (std::filesystem::is_regular_file(v_simd_dir / "simdjson.cpp", vec) &&
+                std::filesystem::is_regular_file(v_simd_dir / "simdjson.h", vec)) {
+                plan.use_vendored_simdjson = true;
+                append_unique_cflag("-I" + v_simd_dir.string());
+                return;
+            }
+        }
+        add_pc("simdjson");
+    };
+
     for (const auto& [sname, tags] : checked.struct_tags) {
         bool has_j = false;
         for (const auto& t : tags) {
             if (!t.json_key.empty()) { has_j = true; break; }
         }
         if (has_j) {
-            add_pc("simdjson");
+            request_simdjson_dep();
             break;
         }
     }
@@ -403,16 +585,15 @@ namespace cfire::build {
         if (!imp.is_cpp) {
             plan.auto_linked.push_back(imp.path);
             if (auto it = core_to_pc.find(imp.path); it != core_to_pc.end()) {
-                add_pc(it->second);
+                if (it->second == "simdjson") {
+                    request_simdjson_dep();
+                } else {
+                    add_pc(it->second);
+                }
             }
             if (imp.path == "core:db/sqlite" || imp.path == "ext:db/sqlite" ||
                 imp.path == "core:sqlite" || imp.path == "ext:sqlite") {
-                if (has_sqlcipher()) {
-                    add_pc("sqlcipher");
-                    plan.cflags.push_back("-DSQLITE_HAS_CODEC=1");
-                } else {
-                    add_pc("sqlite3");
-                }
+                request_sqlite3_dep();
             }
             if (imp.path == "core:tako" || imp.path == "ext:tako") {
                 if (const char* env_tako = std::getenv("TAKO_SDK_DIR")) {
@@ -579,10 +760,10 @@ namespace cfire::build {
         }
     }
 
-    if (inspect_clang_ast && !is_wasm && seen_pc.contains("simdjson")) {
+    if (inspect_clang_ast && !is_wasm && !plan.use_vendored_simdjson && seen_pc.contains("simdjson")) {
         bool has_local_simdjson = false;
-        if (const char* home = std::getenv("HOME")) {
-            auto loc = std::filesystem::path(home) / ".local";
+        if (auto home = user_home_dir(); !home.empty()) {
+            auto loc = home / ".local";
             std::error_code ec;
             if (std::filesystem::exists(loc / "include" / "simdjson.h", ec)) {
                 has_local_simdjson = true;
@@ -680,13 +861,17 @@ namespace cfire::build {
     const std::string& web_profile,
     const std::string& subsystem,
     bool sanitize,
-    frontend::ShardedEmission* sharded_out = nullptr
+    frontend::ShardedEmission* sharded_out = nullptr,
+    const std::vector<std::string>& extra_link_libs = {}
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     auto dir = cf_file.parent_path();
     if (dir.empty()) dir = ".";
     auto plan_res = init_build_plan_flags(cf_file, runtime_dir, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize);
     if (!plan_res) return std::unexpected(plan_res.error());
     BuildPlan plan = std::move(*plan_res);
+    if (!extra_link_libs.empty()) {
+        plan.extra_link_libs = extra_link_libs;
+    }
 
     if (auto bcf_res = discover_and_apply_build_cf(plan, cf_file, dir, test_mode); !bcf_res) {
         return std::unexpected(bcf_res.error());
@@ -735,7 +920,7 @@ namespace cfire::build {
     if (!checked) return std::unexpected(checked.error());
     plan.warnings = checked->warnings;
 
-    if (auto r = populate_checked_build_plan(*checked, plan, runtime_dir, inspect_clang_ast); !r) {
+    if (auto r = populate_checked_build_plan(*checked, plan, runtime_dir, inspect_clang_ast, extra_link_libs); !r) {
         return std::unexpected(r.error());
     }
 
@@ -757,12 +942,214 @@ namespace cfire::build {
     const std::string& sysroot,
     const std::string& web_profile,
     const std::string& subsystem,
-    bool sanitize
+    bool sanitize,
+    const std::vector<std::string>& extra_link_libs
 ) -> std::expected<std::pair<std::string, BuildPlan>, std::string> {
     return analyze_and_emit_impl(
         cf_file, runtime_dir, inspect_clang_ast, test_mode,
-        target_triple, sysroot, web_profile, subsystem, sanitize, nullptr
+        target_triple, sysroot, web_profile, subsystem, sanitize, nullptr, extra_link_libs
     );
+}
+
+[[nodiscard]] inline auto apply_portability_and_static_rules(
+    BuildPlan& plan,
+    const std::string& compiler
+) -> std::expected<void, std::string> {
+    const bool is_wasm = is_wasm_triple(plan.target_triple);
+    if (is_wasm) return {};
+    if (!plan.portable && !plan.static_link) return {};
+
+    const bool is_win = is_windows_target(plan.target_triple);
+    const bool is_macos = is_macos_target(plan.target_triple, plan.is_ios, is_wasm);
+    const bool is_apple = plan.is_ios || is_apple_triple(plan.target_triple);
+
+    if (plan.static_link && is_apple) {
+        return std::unexpected(
+            "--static full binary static linking is not supported on macOS/iOS (Apple does not ship a static libSystem); use --portable to statically link third-party libraries where available");
+    }
+
+    auto add_note = [&](std::string msg) {
+        if (std::find(plan.portable_notes.begin(), plan.portable_notes.end(), msg) == plan.portable_notes.end()) {
+            plan.portable_notes.push_back(std::move(msg));
+        }
+    };
+
+    if (plan.static_link) {
+        for (const auto& dep : plan.external_deps) {
+            if (dep_is_shared_build(dep) ||
+                dep.built_archive.ends_with(".so") ||
+                dep.built_archive.ends_with(".dylib") ||
+                dep.built_archive.ends_with(".dll")) {
+                return std::unexpected(std::format(
+                    "--static cannot link shared-only external dependency '{}'; switch it to static or use --portable",
+                    dep.name));
+            }
+        }
+    } else if (plan.portable) {
+        for (const auto& dep : plan.external_deps) {
+            if (dep_is_shared_build(dep) ||
+                dep.built_archive.ends_with(".so") ||
+                dep.built_archive.ends_with(".dylib")) {
+                add_note(std::format("external dependency '{}' is built as shared library ({})", dep.name, dep.built_archive));
+            }
+        }
+    }
+
+    static const std::unordered_set<std::string_view> kSystemLibs = {
+        "pthread", "dl", "m", "rt", "util", "c", "mvec", "atomic",
+        "stdc++", "stdc++exp", "c++", "c++abi", "gcc", "gcc_s",
+        "System", "resolv", "objc", "compression",
+        // Windows MinGW system DLL import libraries:
+        "ws2_32", "advapi32", "shell32", "user32", "gdi32",
+        "ole32", "oleaut32", "uuid", "comdlg32", "shlwapi", "dwmapi",
+        "bcrypt", "crypt32", "iphlpapi", "winmm", "kernel32",
+        "mingw32", "mingwex", "msvcrt", "ucrt", "psapi", "version"
+    };
+
+    std::vector<std::filesystem::path> search_dirs;
+    auto push_search_dir = [&](const std::filesystem::path& p) {
+        if (p.empty()) return;
+        std::error_code ec;
+        if (!std::filesystem::is_directory(p, ec)) return;
+        for (const auto& existing : search_dirs) {
+            if (existing == p) return;
+        }
+        search_dirs.push_back(p);
+    };
+    for (std::size_t i = 0; i < plan.ldflags.size(); ++i) {
+        const auto& lf = plan.ldflags[i];
+        if (lf == "-L" && i + 1 < plan.ldflags.size()) {
+            push_search_dir(dep_strip_quotes(plan.ldflags[++i]));
+        } else if (lf.size() > 2 && lf.starts_with("-L")) {
+            push_search_dir(dep_strip_quotes(lf.substr(2)));
+        }
+    }
+    if (auto home = user_home_dir(); !home.empty()) {
+        push_search_dir(home / ".local" / "lib");
+        push_search_dir(home / ".local" / "lib64");
+    }
+
+    std::string expected_macos_arch;
+    if (is_macos) {
+        if (plan.target_triple.starts_with("arm64") || plan.target_triple.starts_with("aarch64")) {
+            expected_macos_arch = "arm64";
+        } else if (plan.target_triple.starts_with("x86_64")) {
+            expected_macos_arch = "x86_64";
+        } else {
+#if defined(__aarch64__) || defined(__arm64__)
+            expected_macos_arch = "arm64";
+#else
+            expected_macos_arch = "x86_64";
+#endif
+        }
+    }
+
+    auto archive_matches_target = [&](const std::filesystem::path& cand) -> bool {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(cand, ec)) return false;
+#if defined(__APPLE__)
+        if (is_macos && !expected_macos_arch.empty()) {
+            int lrc = 0;
+            std::string archs = trim_whitespace(bridge::run_command_capture(
+                std::format("/usr/bin/lipo -archs {} 2>/dev/null", bridge::shell_quote(cand.string())), lrc));
+            if (lrc == 0 && !archs.empty()) {
+                std::string padded = " " + archs + " ";
+                if (padded.find(" " + expected_macos_arch + " ") == std::string::npos) {
+                    return false;
+                }
+            }
+        }
+#endif
+        return true;
+    };
+
+    auto find_static_archive = [&](std::string_view lib_name) -> std::string {
+        const std::string a_name = "lib" + std::string(lib_name) + ".a";
+        const std::string win_lib_name = std::string(lib_name) + ".lib";
+        for (const auto& dir : search_dirs) {
+            auto cand = dir / a_name;
+            if (archive_matches_target(cand)) return cand.string();
+            if (is_win) {
+                auto wcand = dir / win_lib_name;
+                if (archive_matches_target(wcand)) return wcand.string();
+            }
+        }
+        if (!ignore_system_libs() && !compiler.empty()) {
+            std::string probe_cmd = compiler;
+            if (!plan.target_triple.empty() && !compiler_is_gcc_driver(compiler)) {
+                probe_cmd += " --target=" + plan.target_triple;
+            }
+            if (!plan.sysroot.empty()) {
+                if (is_apple) probe_cmd += " -isysroot \"" + plan.sysroot + "\"";
+                else probe_cmd += " --sysroot=\"" + plan.sysroot + "\"";
+            }
+            for (const auto& dir : search_dirs) {
+                probe_cmd += " -L" + bridge::shell_quote(dir.string());
+            }
+            probe_cmd += " --print-file-name=" + bridge::shell_quote(a_name) + " 2>/dev/null";
+            int prc = 0;
+            std::string found = trim_whitespace(bridge::run_command_capture(probe_cmd, prc));
+            if (prc == 0 && !found.empty() && found != a_name &&
+                (found.find('/') != std::string::npos || found.find('\\') != std::string::npos)) {
+                std::filesystem::path fp(found);
+                if (archive_matches_target(fp)) return fp.string();
+            }
+        }
+        return {};
+    };
+
+    for (std::size_t i = 0; i < plan.ldflags.size(); ++i) {
+        if (i > 0 && plan.ldflags[i - 1] == "-framework") continue;
+        std::string& tok = plan.ldflags[i];
+        std::string unq = dep_strip_quotes(tok);
+        if (unq.size() > 2 && unq.starts_with("-l")) {
+            std::string lib_name = unq.substr(2);
+            if (kSystemLibs.contains(lib_name)) continue;
+            std::string static_path = find_static_archive(lib_name);
+            if (!static_path.empty()) {
+                tok = static_path;
+            } else if (plan.static_link) {
+                return std::unexpected(std::format(
+                    "--static: could not find static archive 'lib{}.a' for '-l{}'", lib_name, lib_name));
+            } else if (plan.portable) {
+                add_note(std::format(
+                    "library '{}' has no static archive for this target; falling back to dynamic linking", lib_name));
+            }
+        } else if (!unq.empty() && unq.front() != '-' &&
+                   (unq.ends_with(".so") || unq.ends_with(".dylib") || unq.find(".so.") != std::string::npos)) {
+            if (plan.static_link) {
+                return std::unexpected(std::format(
+                    "--static cannot link shared library '{}'", unq));
+            } else if (plan.portable) {
+                add_note(std::format("shared library '{}' linked dynamically under --portable", unq));
+            }
+        }
+    }
+
+    auto has_flag = [&](std::string_view needle) {
+        for (const auto& lf : plan.ldflags) {
+            if (lf.find(needle) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    if (plan.static_link && !is_apple && !is_wasm) {
+        if (!has_flag("-static")) {
+            plan.ldflags.push_back("-static");
+        }
+    } else if (plan.portable && !plan.static_link) {
+        if (is_macos) {
+            if (!has_flag("@executable_path")) {
+                plan.ldflags.push_back("-Wl,-rpath,@executable_path");
+            }
+        } else if (!is_win && !is_apple) {
+            if (!has_flag("$ORIGIN")) {
+                plan.ldflags.push_back("-Wl,-rpath,'$ORIGIN'");
+            }
+        }
+    }
+
+    return {};
 }
 
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
@@ -781,12 +1168,108 @@ namespace cfire::build {
     const std::string& bundle_id,
     const std::string& icon_path
 ) -> std::expected<BuildPlan, std::string> {
+    static thread_local bool in_universal_slice = false;
+    if (!in_universal_slice && g_universal_mode) {
+#if !defined(__APPLE__)
+        return std::unexpected("--universal (macOS fat binary) requires a macOS host");
+#else
+        if (!target_triple.empty()) {
+            return std::unexpected(
+                "--universal builds both arm64 and x86_64 macOS slices automatically and cannot be combined with --target");
+        }
+#endif
+    }
+
     frontend::ShardedEmission sharded;
     auto res = analyze_and_emit_impl(
-        cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize, &sharded
+        cf_file, runtime_dir, true, test_mode, target_triple, sysroot, web_profile, subsystem, sanitize, &sharded, extra_link_libs
     );
     if (!res) return std::unexpected(res.error());
     auto [cpp_code, plan] = std::move(*res);
+
+    const bool want_universal = !in_universal_slice && (g_universal_mode || (plan.universal && target_triple.empty()));
+    if (want_universal) {
+#if !defined(__APPLE__)
+        return std::unexpected("universal = true / --universal (macOS fat binary) requires a macOS host");
+#else
+        if (plan.is_ios || is_wasm_triple(plan.target_triple)) {
+            return std::unexpected("--universal is only supported for macOS desktop targets");
+        }
+        std::string eff_min = !g_macos_min_version.empty()
+            ? g_macos_min_version
+            : (!plan.macos_min.empty() ? plan.macos_min : std::string(kDefaultMacosMinVersion));
+        if (!is_macos_min_supported(eff_min)) {
+            return std::unexpected(std::format(
+                "unsupported macOS deployment target '{}': requires macOS >= {}",
+                eff_min, kDefaultMacosMinVersion));
+        }
+
+        auto cf_parent = cf_file.parent_path().empty() ? std::filesystem::path(".") : cf_file.parent_path();
+        auto uni_dir = cf_parent / ".cfire" / "gen" / "universal";
+        std::error_code uec;
+        std::filesystem::create_directories(uni_dir, uec);
+        auto stem = test_mode ? (cf_file.stem().string() + "_test") : cf_file.stem().string();
+        auto slice_arm64 = uni_dir / (stem + "_arm64");
+        auto slice_x86_64 = uni_dir / (stem + "_x86_64");
+
+        struct UniversalSliceGuard {
+            bool& flag;
+            bool prev;
+            explicit UniversalSliceGuard(bool& f) : flag(f), prev(f) { flag = true; }
+            ~UniversalSliceGuard() { flag = prev; }
+        } guard(in_universal_slice);
+
+        auto arm_res = build_native(
+            cf_file, runtime_dir, slice_arm64, test_mode, sanitize,
+            "arm64-apple-macos" + eff_min, sysroot, extra_link_libs, extra_includes,
+            web_profile, "console", app_name, bundle_id, icon_path
+        );
+        if (!arm_res) return std::unexpected(arm_res.error());
+
+        auto x86_res = build_native(
+            cf_file, runtime_dir, slice_x86_64, test_mode, sanitize,
+            "x86_64-apple-macos" + eff_min, sysroot, extra_link_libs, extra_includes,
+            web_profile, "console", app_name, bundle_id, icon_path
+        );
+        if (!x86_res) return std::unexpected(x86_res.error());
+
+        if (out_bin.has_parent_path()) {
+            std::filesystem::create_directories(out_bin.parent_path(), uec);
+        }
+        std::string lipo_cmd = std::format(
+            "/usr/bin/lipo -create {} {} -output {} 2>&1",
+            bridge::shell_quote(slice_arm64.string()),
+            bridge::shell_quote(slice_x86_64.string()),
+            bridge::shell_quote(out_bin.string())
+        );
+        int lipo_rc = 0;
+        std::string lipo_out = bridge::run_command_capture(lipo_cmd, lipo_rc);
+        if (lipo_rc != 0) {
+            return std::unexpected(std::format("failed to create universal binary via lipo:\n{}", lipo_out));
+        }
+
+        BuildPlan combined = std::move(*arm_res);
+        combined.target_triple = "";
+        combined.universal = true;
+        combined.macos_min = eff_min;
+        combined.portable = combined.portable || x86_res->portable;
+        combined.static_link = combined.static_link || x86_res->static_link;
+        for (const auto& n : x86_res->portable_notes) {
+            if (std::find(combined.portable_notes.begin(), combined.portable_notes.end(), n) == combined.portable_notes.end()) {
+                combined.portable_notes.push_back(n);
+            }
+        }
+        combined.subsystem = subsystem;
+        bool gui_subsystem = (subsystem == "gui") || (subsystem == "auto" && combined.is_gui);
+        if (gui_subsystem && !test_mode) {
+            std::string bin_stem = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
+            auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
+            combined.macos_app_bundle = app_bundle.string();
+        }
+        package_apple_app_bundles(cf_file, out_bin, combined);
+        return combined;
+#endif
+    }
     for (const auto& w : plan.warnings) {
         std::println(stderr, "{}", w);
     }
@@ -912,7 +1395,7 @@ namespace cfire::build {
         plan.ldflags.push_back("-ldl");
         plan.ldflags.push_back("-lm");
 #if defined(__APPLE__)
-        if (target_triple.empty()) {
+        if (is_macos_target(plan.target_triple, plan.is_ios, is_wasm)) {
             plan.ldflags.insert(plan.ldflags.end(), {
                 "-framework", "CoreFoundation",
                 "-framework", "Security",
@@ -941,12 +1424,32 @@ namespace cfire::build {
         return std::unexpected(wr.error());
     }
 
+    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
+
+    if (plan.use_vendored_sqlite3) {
+        std::erase_if(plan.ldflags, [](const std::string& f) { return f == "-lsqlite3"; });
+        auto sq_ar = ensure_vendored_sqlite3_archive(runtime_dir, plan);
+        if (!sq_ar) return std::unexpected(sq_ar.error());
+        plan.ldflags.push_back(sq_ar->string());
+        if (!is_wasm && !plan.is_ios && !is_windows_target(plan.target_triple) && !is_apple_triple(plan.target_triple)) {
+            plan.ldflags.push_back("-lpthread");
+            plan.ldflags.push_back("-ldl");
+            plan.ldflags.push_back("-lm");
+        }
+    }
+    if (plan.use_vendored_simdjson) {
+        std::erase_if(plan.ldflags, [](const std::string& f) { return f == "-lsimdjson"; });
+        auto sj_ar = ensure_vendored_simdjson_archive(runtime_dir, plan);
+        if (!sj_ar) return std::unexpected(sj_ar.error());
+        plan.ldflags.push_back(sj_ar->string());
+    }
+
     for (auto& l : plan.ldflags) {
         if (l == "-lsimdjson") {
             std::error_code simd_ec;
             for (const auto& d : plan.ldflags) {
                 if (d.starts_with("-L")) {
-                    auto p = std::filesystem::path(d.substr(2)) / "libsimdjson_static.a";
+                    auto p = std::filesystem::path(dep_strip_quotes(d.substr(2))) / "libsimdjson_static.a";
                     if (std::filesystem::exists(p, simd_ec)) {
                         l = p.string();
                         break;
@@ -956,12 +1459,15 @@ namespace cfire::build {
         }
     }
 
+    if (auto pr = apply_portability_and_static_rules(plan, compiler); !pr) {
+        return std::unexpected(pr.error());
+    }
+
     const bool dev_debug = is_dev_debug_profile();
     std::string opt_flags = sanitize
         ? sanitizer_opt_flags()
         : (dev_debug ? "-O0 -g" : "-O2");
 
-    std::string compiler = is_wasm ? plan.emscripten_compiler : resolve_cxx_compiler(plan.target_triple);
     std::string linker_flag;
     if (!is_wasm && !plan.is_ios && plan.target_triple.empty()) {
         linker_flag = resolve_effective_linker_flag(compiler);
@@ -1088,14 +1594,20 @@ namespace cfire::build {
     std::string bin_cache_key;
     if (allow_bin_cache) {
         std::string extra_fp = std::format(
-            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}|sharded={}",
+            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}|sharded={}|portable={}|static={}|universal={}|mmin={}|vsq={}|vsj={}",
             plan.uses_objc ? 1 : 0,
             plan.is_ios ? 1 : 0,
             sanitize ? 1 : 0,
             test_mode ? 1 : 0,
             g_emit_dsym ? 1 : 0,
             dev_debug ? 1 : 0,
-            will_shard ? 1 : 0
+            will_shard ? 1 : 0,
+            plan.portable ? 1 : 0,
+            plan.static_link ? 1 : 0,
+            plan.universal ? 1 : 0,
+            plan.macos_min,
+            plan.use_vendored_sqlite3 ? 1 : 0,
+            plan.use_vendored_simdjson ? 1 : 0
         );
         if (will_shard && dev_debug) {
             for (const auto& uo : unit_obj_paths) {
@@ -1183,7 +1695,6 @@ namespace cfire::build {
             out_cmd += " -fobjc-arc";
         }
         for (const auto& f : plan.cflags) {
-            if (is_wasm && f.find("simdjson") != std::string::npos) continue;
             out_cmd += " " + f;
         }
     };
@@ -1196,7 +1707,12 @@ namespace cfire::build {
             if (is_wasm && (l.find(".dylib") != std::string::npos || l.find(".so") != std::string::npos || l == "-lsimdjson" || l == "-lsqlite3" || l == "-lzstd")) {
                 continue;
             }
-            out_cmd += " " + l;
+            if (!l.empty() && l.front() != '-' && l.front() != '"' && l.front() != '\'' &&
+                l.find(' ') != std::string::npos) {
+                out_cmd += " \"" + l + "\"";
+            } else {
+                out_cmd += " " + l;
+            }
         }
     };
 
@@ -1500,6 +2016,15 @@ namespace cfire::build {
             cmake << "endif()\n\n";
         }
     }
+    if (plan.use_vendored_sqlite3) {
+        cmake << "add_library(cfire_sqlite3 STATIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/sqlite3/sqlite3.c\")\n";
+        cmake << "target_include_directories(cfire_sqlite3 PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/sqlite3\")\n";
+        cmake << "target_compile_definitions(cfire_sqlite3 PRIVATE SQLITE_DQS=0 SQLITE_ENABLE_FTS5=1 SQLITE_ENABLE_JSON1=1 SQLITE_ENABLE_RTREE=1 SQLITE_ENABLE_MATH_FUNCTIONS=1)\n\n";
+    }
+    if (plan.use_vendored_simdjson) {
+        cmake << "add_library(cfire_simdjson STATIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdjson/simdjson.cpp\")\n";
+        cmake << "target_include_directories(cfire_simdjson PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}/vendor/simdjson\")\n\n";
+    }
     cmake << "add_executable(app main.cpp)\n";
     cmake << "if (CMAKE_CXX_COMPILER_ID MATCHES \"Clang|AppleClang\")\n";
     cmake << "    target_compile_options(app PRIVATE -std=c++2b)\n";
@@ -1508,10 +2033,20 @@ namespace cfire::build {
     for (std::size_t i = 0; i < plan.pkg_config_deps.size(); ++i) {
         cmake << std::format("target_link_libraries(app PRIVATE PkgConfig::DEP_{})\n", i);
     }
+    if (plan.use_vendored_sqlite3) {
+        cmake << "target_link_libraries(app PRIVATE cfire_sqlite3)\n";
+    }
+    if (plan.use_vendored_simdjson) {
+        cmake << "target_link_libraries(app PRIVATE cfire_simdjson)\n";
+    }
     for (const auto& dep : plan.external_deps) {
         cmake << std::format("target_link_libraries(app PRIVATE {})\n", dep.name);
     }
     for (const auto& flag : plan.ldflags) {
+        if (flag.find("libcfire_sqlite3.a") != std::string::npos ||
+            flag.find("libcfire_simdjson.a") != std::string::npos) {
+            continue;
+        }
         cmake << std::format("target_link_libraries(app PRIVATE \"{}\")\n", flag);
     }
     return cmake.str();
