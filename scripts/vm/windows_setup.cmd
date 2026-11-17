@@ -10,5 +10,5 @@ set MSYSTEM=CLANG64
 set CHERE_INVOKING=1
 C:\msys64\usr\bin\bash.exe -lc "pacman -Syuu --noconfirm"
 C:\msys64\usr\bin\bash.exe -lc "pacman -Syuu --noconfirm"
-C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-make mingw-w64-clang-x86_64-pkgconf mingw-w64-clang-x86_64-simdjson mingw-w64-clang-x86_64-zstd mingw-w64-clang-x86_64-libsodium mingw-w64-clang-x86_64-sqlite3 make tar"
+C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-make mingw-w64-clang-x86_64-pkgconf mingw-w64-clang-x86_64-simdjson mingw-w64-clang-x86_64-zstd mingw-w64-clang-x86_64-libsodium mingw-w64-clang-x86_64-libssh mingw-w64-clang-x86_64-sqlite3 make tar"
 C:\msys64\usr\bin\bash.exe -lc "clang++ --version"

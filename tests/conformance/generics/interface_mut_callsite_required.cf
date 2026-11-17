@@ -1,0 +1,22 @@
+package main
+
+type Accum interface {
+    fn apply(mut out: i64)
+}
+
+type Adder struct {
+    n: i64
+}
+
+fn (a: Adder) apply(mut out: i64) {
+    out += a.n
+}
+
+fn run_accum[T: Accum](item: T, mut acc: i64) {
+    item.apply(acc) //~ error cfire/MUT-CALLSITE
+}
+
+fn main() {
+    mut total: i64 = 0
+    run_accum(Adder{n: 3}, mut total)
+}

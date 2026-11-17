@@ -139,6 +139,7 @@ struct DiscoveredModule {
             else if (rel == "log.hpp") discovered.push_back({"core:log", "core/" + rel, false});
             else if (rel == "net.hpp") discovered.push_back({"core:net", "core/" + rel, false});
             else if (rel == "net/http.hpp") discovered.push_back({"core:net/http", "core/" + rel, false});
+            else if (rel == "net/ipc.hpp") discovered.push_back({"core:net/ipc", "core/" + rel, false});
             else if (rel == "net/tls.hpp") discovered.push_back({"core:net/tls", "core/" + rel, false});
             else if (rel == "net/url.hpp") discovered.push_back({"core:net/url", "core/" + rel, false});
             else if (rel == "net/websocket.hpp") discovered.push_back({"core:net/websocket", "core/" + rel, false});

@@ -28,6 +28,12 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
         require(conformance::glob_match("types/slice_[ab]*", "types/slice_a.cf") && !conformance::glob_match("types/slice_[ab]*", "types/slice_c.cf") &&
                     conformance::glob_match("t/[!a]x", "t/bx") && conformance::glob_match("t/[a-c]", "t/b") && !conformance::glob_match("t/[a-c]", "t/d"),
                 "--filter supports fnmatch character classes");
+        auto rlib = conformance::parse_spec("// requires-lib: libssh\n// expect: stdout\npackage main\n");
+        require(rlib && rlib->requires_libs == std::vector<std::string>{"libssh"}, "requires-lib directive parsed");
+        require(!conformance::parse_spec("// requires-lib:\n// expect: stdout\npackage main\n").has_value(),
+                "requires-lib must name a library");
+        require(!conformance::parse_spec("// requires-lib: unknown_lib\n// expect: stdout\npackage main\n").has_value(),
+                "requires-lib rejects unknown library");
     }
 
     // Guide block extraction.
@@ -103,4 +109,11 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
         require(got[i] == cases[i].want, std::format("runner classifies {} as {} (got {})", cases[i].name, conformance::outcome_name(cases[i].want),
                                                      conformance::outcome_name(got[i])));
     }
+
+    // Missing optional library yields SKIP (never PASS or FAIL).
+    test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "libssh");
+    auto skip_file = dir.file("missing_lib.cf", "// requires-lib: libssh\n// expect: stdout\n// | ok\npackage main\nfn main() {\n    println(\"ok\")\n}\n");
+    auto skip_res = conformance::classify(opt, skip_file);
+    test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "");
+    require(skip_res.outcome == Outcome::Skip, std::format("missing requires-lib yields SKIP (got {})", conformance::outcome_name(skip_res.outcome)));
 }

@@ -23,6 +23,7 @@
 #include <condition_variable>
 #include <deque>
 #include <type_traits>
+#include <concepts>
 #include <cctype>
 #include <algorithm>
 #include <chrono>
@@ -689,8 +690,10 @@ namespace detail {
     std::string_view url_str,
     std::string_view body,
     std::string_view content_type,
-    const std::unordered_map<std::string, std::string>& extra_headers
+    const std::unordered_map<std::string, std::string>& extra_headers,
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
+    if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
     void* objc_lib = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_GLOBAL);
     (void)::dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", RTLD_LAZY | RTLD_GLOBAL);
     (void)::dlopen("/System/Library/Frameworks/CFNetwork.framework/CFNetwork", RTLD_LAZY | RTLD_GLOBAL);
@@ -719,6 +722,7 @@ namespace detail {
     using FnStrUTF8 = void*(*)(void*, void*, const char*);
     using FnObj1 = void*(*)(void*, void*, void*);
     using FnVoid1 = void(*)(void*, void*, void*);
+    using FnVoidDouble = void(*)(void*, void*, double);
     using FnVoid2 = void(*)(void*, void*, void*, void*);
     using FnDataBytes = void*(*)(void*, void*, const void*, unsigned long);
     using FnSyncReq = void*(*)(void*, void*, void*, void**, void**);
@@ -736,6 +740,9 @@ namespace detail {
 
     void* req = reinterpret_cast<FnObj1>(msg_send)(nsReqCls, sel_reg("requestWithURL:"), nsUrl);
     if (!req) return cfire::make_error("failed to allocate NSMutableURLRequest");
+
+    double timeout_sec = (timeout_ms == 0) ? 86400.0 : std::max(0.001, static_cast<double>(timeout_ms) / 1000.0);
+    reinterpret_cast<FnVoidDouble>(msg_send)(req, sel_reg("setTimeoutInterval:"), timeout_sec);
 
     std::string m_s(method);
     void* mNsStr = fnStr(nsStrCls, selUTF8, m_s.c_str());
@@ -791,6 +798,97 @@ namespace detail {
 } // namespace detail
 #endif
 
+namespace detail {
+[[nodiscard]] inline auto client_read_chunk(
+    cfire::net::TcpConn& conn,
+    bool has_deadline,
+    std::chrono::steady_clock::time_point deadline
+) -> std::expected<std::string, cfire::Error> {
+    if (!has_deadline) {
+        conn.set_timeout_ms(0);
+        return conn.read_text(4096);
+    }
+    auto rem_fn = [&]() -> std::int64_t {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+    };
+    for (;;) {
+        std::int64_t rem = rem_fn();
+        if (rem <= 0) return cfire::make_error("http request timed out", 408);
+        conn.set_timeout_ms(static_cast<int>(std::clamp<std::int64_t>(rem, 1, 2000000000LL)));
+        auto t0 = std::chrono::steady_clock::now();
+        auto chunk = conn.read_text(4096);
+        if (chunk) return chunk;
+        std::int64_t new_rem = rem_fn();
+        if (new_rem <= 0) return cfire::make_error("http request timed out", 408);
+        auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        // Guard against OS timer waking 1-5ms before `deadline` on SO_RCVTIMEO
+        if (waited >= rem / 2 && waited > 0) {
+            continue;
+        }
+        return std::unexpected(chunk.error());
+    }
+}
+
+[[nodiscard]] inline auto response_complete_on_wire(std::string_view method, std::string_view raw) -> bool {
+    std::size_t hdr_end = raw.find("\r\n\r\n");
+    std::size_t sep_len = 4;
+    if (hdr_end == std::string_view::npos) {
+        hdr_end = raw.find("\n\n");
+        sep_len = 2;
+    }
+    if (hdr_end == std::string_view::npos) return false;
+    std::string_view hdr = raw.substr(0, hdr_end);
+    std::string_view body = raw.substr(hdr_end + sep_len);
+    std::string upper_m(method);
+    for (char& c : upper_m) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (upper_m == "HEAD") return true;
+
+    std::size_t first_nl = hdr.find('\n');
+    std::string_view first_line = (first_nl == std::string_view::npos) ? hdr : hdr.substr(0, first_nl);
+    if (auto sp1 = first_line.find(' '); sp1 != std::string_view::npos) {
+        auto sp2 = first_line.find(' ', sp1 + 1);
+        int code = cfire::detail::parse_int<int>(first_line.substr(sp1 + 1, sp2 == std::string_view::npos ? sp2 : sp2 - sp1 - 1)).value_or(0);
+        if (code == 204 || code == 304) return true;
+    }
+
+    std::optional<std::size_t> content_len;
+    bool chunked = false;
+    std::size_t pos = (first_nl == std::string_view::npos) ? hdr.size() : first_nl + 1;
+    while (pos < hdr.size()) {
+        std::size_t nl = hdr.find('\n', pos);
+        if (nl == std::string_view::npos) nl = hdr.size();
+        std::string_view line = hdr.substr(pos, nl - pos);
+        pos = nl + 1;
+        while (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        std::size_t col = line.find(':');
+        if (col == std::string_view::npos) continue;
+        std::string_view k = line.substr(0, col);
+        std::string_view v = line.substr(col + 1);
+        while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.remove_prefix(1);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
+        std::string lk;
+        lk.reserve(k.size());
+        for (char c : k) lk.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        if (lk == "content-length") {
+            if (auto parsed = cfire::detail::parse_int<std::size_t>(v)) content_len = *parsed;
+        } else if (lk == "transfer-encoding") {
+            std::string lv;
+            for (char c : v) lv.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            if (lv.contains("chunked")) chunked = true;
+        }
+    }
+    if (chunked) {
+        std::string dummy;
+        std::size_t consumed = 0;
+        return decode_chunked_strict(body, body.size() + 64, dummy, &consumed) == ChunkStatus::Done;
+    }
+    if (content_len.has_value()) {
+        return body.size() >= *content_len;
+    }
+    return false;
+}
+} // namespace detail
+
 [[nodiscard]] inline auto request(
     std::string_view method,
     std::string_view url_str,
@@ -798,11 +896,13 @@ namespace detail {
     std::string_view content_type = "",
     const std::unordered_map<std::string, std::string>& extra_headers = {},
     bool verify_peer = true,
-    std::string_view ca_file = ""
+    std::string_view ca_file = "",
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
     (void)verify_peer;
     (void)ca_file;
+    if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
     std::string m_str(method);
     std::string u_str(url_str);
     std::string b_str(body);
@@ -867,27 +967,50 @@ namespace detail {
     res.body = (nl != std::string::npos) ? combined.substr(nl + 1) : std::move(combined);
     return res;
 #else
+    if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
+    const bool has_deadline = (timeout_ms != 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(has_deadline ? timeout_ms : 0);
+    auto rem_ms = [&]() -> std::int64_t {
+        if (!has_deadline) return 0;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+    };
+    auto apply_sock_rem = [&](cfire::net::TcpConn& c) -> bool {
+        if (!has_deadline) {
+            c.set_timeout_ms(0);
+            return true;
+        }
+        std::int64_t r = rem_ms();
+        if (r <= 0) return false;
+        c.set_timeout_ms(static_cast<int>(std::clamp<std::int64_t>(r, 1, 2000000000LL)));
+        return true;
+    };
+
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
 #if CFIRE_TARGET_IOS
     if (u->scheme == "https") {
-        return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
+        std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
+        return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem);
     }
 #endif
 
-    auto conn_res = cfire::net::connect_tcp(u->host, u->port);
+    auto conn_res = cfire::net::connect_tcp_timeout(u->host, u->port, has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0);
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
 
     if (u->scheme == "https") {
+        if (!apply_sock_rem(conn)) return cfire::make_error("http request timed out", 408);
         auto tls_res = cfire::tls::wrap_client(conn, u->host, verify_peer, std::string(ca_file));
         if (!tls_res) {
 #if defined(__APPLE__)
-            return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers);
-#else
-            return std::unexpected(tls_res.error());
+            if (!cfire::tls::available() && (!has_deadline || rem_ms() > 0)) {
+                std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
+                return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem);
+            }
 #endif
+            if (has_deadline && rem_ms() <= 0) return cfire::make_error("http request timed out", 408);
+            return std::unexpected(tls_res.error());
         }
     }
 
@@ -916,14 +1039,20 @@ namespace detail {
         req += body;
     }
 
+    if (!apply_sock_rem(conn)) return cfire::make_error("http request timed out", 408);
     auto wr = conn.write_text(req);
-    if (!wr) return std::unexpected(wr.error());
+    if (!wr) {
+        if (has_deadline && rem_ms() <= 0) return cfire::make_error("http request timed out", 408);
+        return std::unexpected(wr.error());
+    }
 
     std::string full_response;
     for (;;) {
-        auto chunk = conn.read_text(4096);
-        if (!chunk || chunk->empty()) break;
+        auto chunk = detail::client_read_chunk(conn, has_deadline, deadline);
+        if (!chunk) return std::unexpected(chunk.error());
+        if (chunk->empty()) break;
         full_response.append(*chunk);
+        if (detail::response_complete_on_wire(method, full_response)) break;
     }
 
     return parse_response(full_response);
@@ -933,16 +1062,18 @@ namespace detail {
 [[nodiscard]] inline auto get(
     std::string_view url_str,
     const std::unordered_map<std::string, std::string>& headers = {},
-    bool verify_peer = true
+    bool verify_peer = true,
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
-    return request("GET", url_str, "", "", headers, verify_peer);
+    return request("GET", url_str, "", "", headers, verify_peer, "", timeout_ms);
 }
 
 [[nodiscard]] inline auto get_insecure(
     std::string_view url_str,
-    const std::unordered_map<std::string, std::string>& headers = {}
+    const std::unordered_map<std::string, std::string>& headers = {},
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
-    return request("GET", url_str, "", "", headers, false);
+    return request("GET", url_str, "", "", headers, false, "", timeout_ms);
 }
 
 [[nodiscard]] inline auto post(
@@ -950,28 +1081,32 @@ namespace detail {
     std::string_view body,
     std::string_view content_type = "application/json",
     const std::unordered_map<std::string, std::string>& headers = {},
-    bool verify_peer = true
+    bool verify_peer = true,
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
-    return request("POST", url_str, body, content_type, headers, verify_peer);
+    return request("POST", url_str, body, content_type, headers, verify_peer, "", timeout_ms);
 }
 
 [[nodiscard]] inline auto post_insecure(
     std::string_view url_str,
     std::string_view body,
     std::string_view content_type = "application/json",
-    const std::unordered_map<std::string, std::string>& headers = {}
+    const std::unordered_map<std::string, std::string>& headers = {},
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
-    return request("POST", url_str, body, content_type, headers, false);
+    return request("POST", url_str, body, content_type, headers, false, "", timeout_ms);
 }
 
 template <typename Callback>
+requires std::invocable<Callback&, const SseEvent&>
 [[nodiscard]] inline auto post_sse(
     std::string_view url_str,
     std::string_view body,
     const std::unordered_map<std::string, std::string>& extra_headers,
     Callback&& on_event,
     bool verify_peer = true,
-    std::string_view ca_file = ""
+    std::string_view ca_file = "",
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
     auto dispatch_sse_text = [&](std::string_view text, SseEvent& cur_ev, Response& res_acc, bool& stop_flag) {
         std::size_t pos = 0;
@@ -1016,7 +1151,7 @@ template <typename Callback>
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
     auto hdrs = extra_headers;
     hdrs["Accept"] = "text/event-stream";
-    auto res = request("POST", url_str, body, "application/json", hdrs, verify_peer);
+    auto res = request("POST", url_str, body, "application/json", hdrs, verify_peer, ca_file, timeout_ms);
     if (!res) return res;
     std::string raw_sse = std::move(res->body);
     if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
@@ -1026,6 +1161,24 @@ template <typename Callback>
     (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
     return res;
 #else
+    if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
+    const bool has_deadline = (timeout_ms != 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(has_deadline ? timeout_ms : 0);
+    auto rem_ms = [&]() -> std::int64_t {
+        if (!has_deadline) return 0;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+    };
+    auto apply_sock_rem = [&](cfire::net::TcpConn& c) -> bool {
+        if (!has_deadline) {
+            c.set_timeout_ms(0);
+            return true;
+        }
+        std::int64_t r = rem_ms();
+        if (r <= 0) return false;
+        c.set_timeout_ms(static_cast<int>(std::clamp<std::int64_t>(r, 1, 2000000000LL)));
+        return true;
+    };
+
     auto u = cfire::url::parse(url_str);
     if (!u) return std::unexpected(u.error());
 
@@ -1033,7 +1186,8 @@ template <typename Callback>
     if (u->scheme == "https") {
         auto hdrs = extra_headers;
         hdrs["Accept"] = "text/event-stream";
-        auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs);
+        std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
+        auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs, rem);
         if (!res) return res;
         std::string raw_sse = std::move(res->body);
         if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
@@ -1045,28 +1199,32 @@ template <typename Callback>
     }
 #endif
 
-    auto conn_res = cfire::net::connect_tcp(u->host, u->port);
+    auto conn_res = cfire::net::connect_tcp_timeout(u->host, u->port, has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0);
     if (!conn_res) return std::unexpected(conn_res.error());
     auto& conn = *conn_res;
 
     if (u->scheme == "https") {
+        if (!apply_sock_rem(conn)) return cfire::make_error("http request timed out", 408);
         auto tls_res = cfire::tls::wrap_client(conn, u->host, verify_peer, std::string(ca_file));
         if (!tls_res) {
 #if defined(__APPLE__)
-            auto hdrs = extra_headers;
-            hdrs["Accept"] = "text/event-stream";
-            auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs);
-            if (!res) return res;
-            std::string raw_sse = std::move(res->body);
-            if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
-            res->body.clear();
-            SseEvent cur_ev;
-            bool stop_flag = false;
-            (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
-            return res;
-#else
-            return std::unexpected(tls_res.error());
+            if (!cfire::tls::available() && (!has_deadline || rem_ms() > 0)) {
+                auto hdrs = extra_headers;
+                hdrs["Accept"] = "text/event-stream";
+                std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
+                auto res = detail::request_apple_foundation("POST", url_str, body, "application/json", hdrs, rem);
+                if (!res) return res;
+                std::string raw_sse = std::move(res->body);
+                if (!raw_sse.ends_with("\n\n")) raw_sse += "\n\n";
+                res->body.clear();
+                SseEvent cur_ev;
+                bool stop_flag = false;
+                (void)dispatch_sse_text(raw_sse, cur_ev, *res, stop_flag);
+                return res;
+            }
 #endif
+            if (has_deadline && rem_ms() <= 0) return cfire::make_error("http request timed out", 408);
+            return std::unexpected(tls_res.error());
         }
     }
 
@@ -1089,14 +1247,19 @@ template <typename Callback>
     req += "\r\n";
     req += body;
 
-    if (auto wr = conn.write_text(req); !wr) return std::unexpected(wr.error());
+    if (!apply_sock_rem(conn)) return cfire::make_error("http request timed out", 408);
+    if (auto wr = conn.write_text(req); !wr) {
+        if (has_deadline && rem_ms() <= 0) return cfire::make_error("http request timed out", 408);
+        return std::unexpected(wr.error());
+    }
 
     std::string raw_buf;
     std::size_t hdr_end = std::string::npos;
     std::size_t body_offset = 0;
     for (;;) {
-        auto chunk = conn.read_text(4096);
-        if (!chunk || chunk->empty()) break;
+        auto chunk = detail::client_read_chunk(conn, has_deadline, deadline);
+        if (!chunk) return std::unexpected(chunk.error());
+        if (chunk->empty()) break;
         raw_buf.append(*chunk);
         hdr_end = raw_buf.find("\r\n\r\n");
         if (hdr_end != std::string::npos) {
@@ -1120,8 +1283,9 @@ template <typename Callback>
 
     if (res.status_code >= 400) {
         for (;;) {
-            auto chunk = conn.read_text(4096);
-            if (!chunk || chunk->empty()) break;
+            auto chunk = detail::client_read_chunk(conn, has_deadline, deadline);
+            if (!chunk) return std::unexpected(chunk.error());
+            if (chunk->empty()) break;
             stream_buf.append(*chunk);
         }
         if (auto it = res.headers.find("transfer-encoding"); it != res.headers.end() && it->second.contains("chunked")) {
@@ -1139,6 +1303,7 @@ template <typename Callback>
 
     SseEvent cur_ev;
     bool stop_flag = false;
+    bool chunked_done = false;
     std::string sse_pending;
 
     auto process_raw = [&]() {
@@ -1174,6 +1339,7 @@ template <typename Callback>
                 }
                 if (clen == 0) {
                     pos = stream_buf.size();
+                    chunked_done = true;
                     break;
                 }
                 std::size_t data_start = crlf + dlen;
@@ -1193,9 +1359,10 @@ template <typename Callback>
     };
 
     process_raw();
-    while (!stop_flag) {
-        auto chunk = conn.read_text(4096);
-        if (!chunk || chunk->empty()) break;
+    while (!stop_flag && !chunked_done) {
+        auto chunk = detail::client_read_chunk(conn, has_deadline, deadline);
+        if (!chunk) return std::unexpected(chunk.error());
+        if (chunk->empty()) break;
         stream_buf.append(*chunk);
         process_raw();
     }
@@ -1208,13 +1375,16 @@ template <typename Callback>
 }
 
 template <typename Callback>
+requires std::invocable<Callback&, const SseEvent&>
 [[nodiscard]] inline auto post_sse(
     std::string_view url_str,
     std::string_view body,
     Callback&& on_event,
-    bool verify_peer = true
+    bool verify_peer = true,
+    std::string_view ca_file = "",
+    std::int64_t timeout_ms = 30000
 ) -> std::expected<Response, cfire::Error> {
-    return post_sse(url_str, body, std::unordered_map<std::string, std::string>{}, std::forward<Callback>(on_event), verify_peer);
+    return post_sse(url_str, body, std::unordered_map<std::string, std::string>{}, std::forward<Callback>(on_event), verify_peer, ca_file, timeout_ms);
 }
 
 class Router {
@@ -1591,83 +1761,123 @@ struct LoopConn {
 class HttpServer {
 public:
     HttpServer(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
-        : listener_(std::move(listener)), tls_ctx_(std::move(tls_ctx)) {}
+        : state_(std::make_unique<State>(std::move(listener), std::move(tls_ctx))) {}
     ~HttpServer() {
         stop();
     }
 
-    HttpServer(HttpServer&& o) noexcept
-        : listener_(std::move(o.listener_)),
-          tls_ctx_(std::move(o.tls_ctx_)),
-          running_(o.running_.load()),
-          limits_(o.limits_),
-          ws_(std::exchange(o.ws_, std::make_unique<detail::SessionThreads>())) {
-        o.running_ = false;
-        if (o.worker_.joinable()) {
-            worker_ = std::move(o.worker_);
-        }
-    }
-
+    HttpServer(HttpServer&& o) noexcept = default;
     auto operator=(HttpServer&& o) noexcept -> HttpServer& {
         if (this != &o) {
             stop();
-            listener_ = std::move(o.listener_);
-            tls_ctx_ = std::move(o.tls_ctx_);
-            running_ = o.running_.load();
-            limits_ = o.limits_;
-            std::swap(ws_, o.ws_);
-            o.running_ = false;
-            if (o.worker_.joinable()) {
-                worker_ = std::move(o.worker_);
-            }
+            state_ = std::move(o.state_);
         }
         return *this;
     }
 
-    auto port() const noexcept -> std::uint16_t { return listener_.port(); }
-    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ctx_.has_value() && tls_ctx_->valid(); }
+    auto port() const noexcept -> std::uint16_t { return state_ ? state_->listener_.port() : 0; }
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return state_ && state_->tls_ctx_.has_value() && state_->tls_ctx_->valid(); }
 
     auto enable_tls(cfire::tls::ServerContext ctx) -> HttpServer& {
-        tls_ctx_ = std::move(ctx);
+        if (state_) state_->tls_ctx_ = std::move(ctx);
         return *this;
     }
 
     auto enable_tls_files(std::string_view cert_file, std::string_view key_file)
         -> std::expected<void, cfire::Error>
     {
+        if (!state_) return cfire::make_error("server is moved-from");
         auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
         if (!ctx_res) return std::unexpected(ctx_res.error());
-        tls_ctx_ = std::move(*ctx_res);
+        state_->tls_ctx_ = std::move(*ctx_res);
         return {};
     }
 
     auto enable_tls_pem(std::string_view cert_pem, std::string_view key_pem)
         -> std::expected<void, cfire::Error>
     {
+        if (!state_) return cfire::make_error("server is moved-from");
         auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
         if (!ctx_res) return std::unexpected(ctx_res.error());
-        tls_ctx_ = std::move(*ctx_res);
+        state_->tls_ctx_ = std::move(*ctx_res);
         return {};
     }
 
     void stop() noexcept {
-        running_ = false;
-        if (worker_.joinable()) {
-            worker_.join();
+        if (!state_) return;
+        state_->running_ = false;
+        if (state_->worker_.joinable()) {
+            state_->worker_.join();
         }
     }
 
     // One connection, one request, served on the calling thread (a WebSocket session too).
     template <typename Handler>
     void serve_once(Handler&& handler) {
-        auto conn_res = listener_.accept();
+        if (state_) serve_once_state(*state_, handler);
+    }
+
+    template <typename Handler>
+    void listen_and_serve(Handler&& handler) {
+        if (state_) listen_and_serve_state(*state_, handler);
+    }
+
+    void set_limits(const ServerLimits& lim) noexcept {
+        if (!state_) return;
+        state_->limits_ = lim;
+        // From `.cf` code `workers = 0` means "keep the default pool size" (also `max_connections`).
+        if (state_->limits_.workers == 0) state_->limits_.workers = ServerLimits{}.workers;
+        if (state_->limits_.max_connections == 0) state_->limits_.max_connections = ServerLimits{}.max_connections;
+    }
+    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& {
+        static const ServerLimits kDefault{};
+        return state_ ? state_->limits_ : kDefault;
+    }
+    // open WebSocket sessions.
+    [[nodiscard]] auto websocket_sessions() const -> std::size_t { return state_ ? state_->ws_->live() : 0; }
+
+    template <typename Handler>
+    void serve_in_background(Handler handler) {
+        if (!state_) return;
+        stop();
+        State* st = state_.get();
+        st->running_ = true;
+        st->worker_ = std::thread([st, h = std::move(handler)]() mutable {
+            listen_and_serve_state(*st, h);
+        });
+    }
+
+private:
+    struct State {
+        State(cfire::net::TcpListener l, std::optional<cfire::tls::ServerContext> ctx)
+            : listener_(std::move(l)), tls_ctx_(std::move(ctx)) {}
+
+        cfire::net::TcpListener listener_;
+        std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
+        std::atomic<bool> running_{false};
+        std::thread worker_{};
+        ServerLimits limits_{};
+        std::unique_ptr<detail::SessionThreads> ws_ = std::make_unique<detail::SessionThreads>();
+    };
+
+    [[nodiscard]] static auto error_wire(const cfire::Error& err) -> std::string {
+        int status = err.code();
+        if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
+        std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
+                                : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
+        return Response::text(status, std::format("{} {}", status, reason)).to_http_wire();
+    }
+
+    template <typename Handler>
+    static void serve_once_state(State& st, Handler& handler) {
+        auto conn_res = st.listener_.accept();
         if (!conn_res) return;
         auto& conn = *conn_res;
-        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
-            auto wr = tls_ctx_->wrap_server(conn);
+        if (st.tls_ctx_.has_value() && st.tls_ctx_->valid()) {
+            auto wr = st.tls_ctx_->wrap_server(conn);
             if (!wr) return;
         }
-        auto req_res = read_http_request(conn, limits_);
+        auto req_res = read_http_request(conn, st.limits_);
         if (!req_res) {
             if (req_res.error().code() != 0) (void)conn.write_text(error_wire(req_res.error()));
             return;
@@ -1687,17 +1897,17 @@ public:
     // worker, and 408 past the header or body deadline; an idle keep-alive connection closes after
     // `keepalive_timeout_ms`. WebSocket sessions get their own threads, shut down and joined before this returns.
     template <typename Handler>
-    void listen_and_serve(Handler&& handler) {
+    static void listen_and_serve_state(State& st, Handler& handler) {
         using clock = std::chrono::steady_clock;
         using cfire::net::detail::Io;
         using Conn = detail::LoopConn;
-        running_ = true;
+        st.running_ = true;
         cfire::net::detail::Poller poller;
         if (!poller.valid()) {
-            while (running_) serve_once(handler);
+            while (st.running_) serve_once_state(st, handler);
             return;
         }
-        const bool tls = tls_ctx_.has_value() && tls_ctx_->valid();
+        const bool tls = st.tls_ctx_.has_value() && st.tls_ctx_->valid();
         std::unordered_map<std::uint64_t, std::unique_ptr<Conn>> conns;
         std::uint64_t next_token = 1;  // 0 is the listener
         std::mutex mu;
@@ -1723,7 +1933,7 @@ public:
             c.req.remote_addr = c.conn.endpoint();
             {
                 std::lock_guard<std::mutex> lk(mu);
-                if (jobs.size() < limits_.max_pending) {
+                if (jobs.size() < st.limits_.max_pending) {
                     poller.remove(c.conn.fd());
                     c.phase = Conn::Phase::Busy;
                     jobs.push_back(&c);
@@ -1748,7 +1958,7 @@ public:
             }
             if (!c.in_body && c.as.headers_done()) {
                 c.in_body = true;
-                c.deadline = clock::now() + std::chrono::milliseconds(limits_.body_timeout_ms);
+                c.deadline = clock::now() + std::chrono::milliseconds(st.limits_.body_timeout_ms);
             }
             return true;
         };
@@ -1777,7 +1987,7 @@ public:
                 }
                 if (c.phase == Conn::Phase::Idle) {
                     c.phase = Conn::Phase::Reading;
-                    c.deadline = clock::now() + std::chrono::milliseconds(limits_.header_timeout_ms);
+                    c.deadline = clock::now() + std::chrono::milliseconds(st.limits_.header_timeout_ms);
                 }
                 c.as.feed(std::string_view(reinterpret_cast<const char*>(buf.data()), n));
                 if (!advance(c)) return;
@@ -1785,17 +1995,17 @@ public:
             watch(c, false);
         };
         auto accept_all = [&] {
-            while (auto accepted = listener_.try_accept()) {
-                if (conns.size() >= limits_.max_connections) {
+            while (auto accepted = st.listener_.try_accept()) {
+                if (conns.size() >= st.limits_.max_connections) {
                     (void)accepted->write_text(Response::text(503, "503 Service Unavailable").to_http_wire());
                     continue;
                 }
                 cfire::net::detail::set_nonblocking(accepted->fd(), true);
-                auto c = std::make_unique<Conn>(std::move(*accepted), limits_.max_body_bytes);
+                auto c = std::make_unique<Conn>(std::move(*accepted), st.limits_.max_body_bytes);
                 c->token = next_token++;
-                c->deadline = clock::now() + std::chrono::milliseconds(limits_.header_timeout_ms);
+                c->deadline = clock::now() + std::chrono::milliseconds(st.limits_.header_timeout_ms);
                 if (tls) {
-                    if (!tls_ctx_->begin_accept(c->conn)) continue;
+                    if (!st.tls_ctx_->begin_accept(c->conn)) continue;
                     c->phase = Conn::Phase::Handshake;
                 }
                 poller.add(c->conn.fd(), c->token, false);
@@ -1807,7 +2017,7 @@ public:
             c.in_body = false;
             c.want_write = false;
             c.phase = c.as.started() ? Conn::Phase::Reading : Conn::Phase::Idle;
-            c.deadline = clock::now() + std::chrono::milliseconds(c.phase == Conn::Phase::Idle ? limits_.keepalive_timeout_ms : limits_.header_timeout_ms);
+            c.deadline = clock::now() + std::chrono::milliseconds(c.phase == Conn::Phase::Idle ? st.limits_.keepalive_timeout_ms : st.limits_.header_timeout_ms);
             poller.add(c.conn.fd(), c.token, false);
             // Pipelined bytes, or decrypted bytes OpenSSL holds, that no socket event will report.
             if (c.as.started() && !advance(c)) return;
@@ -1815,7 +2025,7 @@ public:
         };
 
         std::vector<std::thread> pool;
-        const std::size_t n_workers = std::max<std::size_t>(1, limits_.workers);
+        const std::size_t n_workers = std::max<std::size_t>(1, st.limits_.workers);
         pool.reserve(n_workers);
         for (std::size_t i = 0; i < n_workers; ++i) {
             pool.emplace_back([&] {
@@ -1828,7 +2038,7 @@ public:
                         c = jobs.front();
                         jobs.pop_front();
                     }
-                    c->keep = serve_request(*c, handler);
+                    c->keep = serve_request_state(st, *c, handler);
                     {
                         std::lock_guard<std::mutex> lk(mu);
                         returned.push_back(c->token);
@@ -1838,19 +2048,19 @@ public:
             });
         }
 
-        if (listener_.fd() >= 0) {
-            cfire::net::detail::set_nonblocking(listener_.fd(), true);
-            poller.add(listener_.fd(), 0, false);
+        if (st.listener_.fd() >= 0) {
+            cfire::net::detail::set_nonblocking(st.listener_.fd(), true);
+            poller.add(st.listener_.fd(), 0, false);
         }
         // Virtual-port connections arrive through the loopback queue, not the listening socket.
         std::atomic<bool> loopback_queued{true};
-        listener_.set_wake_hook([&poller, &loopback_queued] {
+        st.listener_.set_wake_hook([&poller, &loopback_queued] {
             loopback_queued = true;
             poller.wake();
         });
         constexpr auto kSweep = std::chrono::milliseconds(100);  // deadlines are checked this often
         auto next_sweep = clock::now() + kSweep;
-        while (running_) {
+        while (st.running_) {
             const auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(next_sweep - clock::now()).count();
             const auto& events = poller.wait(static_cast<int>(std::clamp<long long>(wait_ms, 0, 100)));
             bool accept_now = loopback_queued.exchange(false);
@@ -1871,7 +2081,7 @@ public:
             for (auto token : back) {
                 auto it = conns.find(token);
                 if (it == conns.end()) continue;
-                if (it->second->keep && running_) resume(*it->second);
+                if (it->second->keep && st.running_) resume(*it->second);
                 else conns.erase(it);  // already out of the poller
             }
             const auto now = clock::now();
@@ -1890,7 +2100,7 @@ public:
                 }
             }
         }
-        listener_.set_wake_hook({});
+        st.listener_.set_wake_hook({});
         {
             std::lock_guard<std::mutex> lk(mu);
             closing = true;
@@ -1898,48 +2108,20 @@ public:
         cv.notify_all();
         for (auto& t : pool) t.join();
         conns.clear();
-        if (listener_.fd() >= 0) cfire::net::detail::set_nonblocking(listener_.fd(), false);
-        ws_->shutdown_all();
-        ws_->join_all();
-    }
-
-    void set_limits(const ServerLimits& lim) noexcept {
-        limits_ = lim;
-        // From `.cf` code `workers = 0` means "keep the default pool size" (also `max_connections`).
-        if (limits_.workers == 0) limits_.workers = ServerLimits{}.workers;
-        if (limits_.max_connections == 0) limits_.max_connections = ServerLimits{}.max_connections;
-    }
-    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
-    // open WebSocket sessions.
-    [[nodiscard]] auto websocket_sessions() const -> std::size_t { return ws_->live(); }
-
-    template <typename Handler>
-    void serve_in_background(Handler handler) {
-        stop();
-        running_ = true;
-        worker_ = std::thread([this, h = std::move(handler)]() mutable {
-            this->listen_and_serve(h);
-        });
-    }
-
-private:
-    [[nodiscard]] static auto error_wire(const cfire::Error& err) -> std::string {
-        int status = err.code();
-        if (status != 400 && status != 408 && status != 413 && status != 431) status = 400;
-        std::string_view reason = status == 408 ? "Request Timeout" : status == 413 ? "Payload Too Large"
-                                : status == 431 ? "Request Header Fields Too Large" : "Bad Request";
-        return Response::text(status, std::format("{} {}", status, reason)).to_http_wire();
+        if (st.listener_.fd() >= 0) cfire::net::detail::set_nonblocking(st.listener_.fd(), false);
+        st.ws_->shutdown_all();
+        st.ws_->join_all();
     }
 
     // A worker's part: the handler and the response, on a blocking socket. True when the connection stays
     // open for another request (it then goes back to the event loop).
     template <typename Handler>
-    auto serve_request(detail::LoopConn& c, Handler& handler) -> bool {
+    static auto serve_request_state(State& st, detail::LoopConn& c, Handler& handler) -> bool {
         cfire::net::detail::set_nonblocking(c.conn.fd(), false);
-        c.conn.set_timeout_ms(std::max(2000, limits_.body_timeout_ms));
+        c.conn.set_timeout_ms(std::max(2000, st.limits_.body_timeout_ms));
         if constexpr (std::is_same_v<std::decay_t<Handler>, Router>) {
             if (handler.is_ws_upgrade(c.req)) {
-                start_ws_session(c.conn, std::move(c.req), handler);
+                start_ws_session_state(st, c.conn, std::move(c.req), handler);
                 return false;
             }
         }
@@ -1948,45 +2130,34 @@ private:
         c.req = Request{};
         std::string conn_hdr = resp.header("connection");
         for (char& ch : conn_hdr) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        const bool keep = c.as.keep_alive() && limits_.keepalive_timeout_ms > 0 && c.served < limits_.max_requests_per_conn &&
-                          running_.load() && !conn_hdr.contains("close");
+        const bool keep = c.as.keep_alive() && st.limits_.keepalive_timeout_ms > 0 && c.served < st.limits_.max_requests_per_conn &&
+                          st.running_.load() && !conn_hdr.contains("close");
         return c.conn.write_text(resp.to_http_wire(keep)).has_value() && keep;
     }
 
-    void start_ws_session(cfire::net::TcpConn& conn, Request req, const Router& router) {
+    static void start_ws_session_state(State& st, cfire::net::TcpConn& conn, Request req, const Router& router) {
         auto guard = conn.close_guard();
         auto shared_conn = std::make_shared<cfire::net::TcpConn>(std::move(conn));
         auto session = [&router, shared_conn, r = std::move(req)]() mutable { (void)router.try_dispatch_ws(r, *shared_conn); };
-        if (!ws_->start(limits_.max_websockets, std::move(guard), session)) {
+        if (!st.ws_->start(st.limits_.max_websockets, std::move(guard), session)) {
             Response busy = Response::text(503, "503 Service Unavailable");
             (void)shared_conn->write_text(busy.to_http_wire());
         }
     }
 
-    cfire::net::TcpListener listener_;
-    std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
-    std::atomic<bool> running_{false};
-    std::thread worker_{};
-    ServerLimits limits_{};
-    std::unique_ptr<detail::SessionThreads> ws_ = std::make_unique<detail::SessionThreads>();
+    std::unique_ptr<State> state_;
 };
-
-[[nodiscard]] inline auto make_server(std::uint16_t port = 0)
-    -> std::expected<HttpServer, cfire::Error>
-{
-    auto l = cfire::net::listen_tcp(port);
-    if (!l) return std::unexpected(l.error());
-    return HttpServer(std::move(*l));
-}
 
 [[nodiscard]] inline auto make_tls_server(
     std::uint16_t port,
     std::string_view cert_file,
-    std::string_view key_file
+    std::string_view key_file,
+    std::string_view host = "0.0.0.0"
 ) -> std::expected<HttpServer, cfire::Error> {
     auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
     if (!ctx_res) return std::unexpected(ctx_res.error());
-    auto l = cfire::net::listen_tcp(port);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
     if (!l) return std::unexpected(l.error());
     return HttpServer(std::move(*l), std::move(*ctx_res));
 }
@@ -1994,20 +2165,42 @@ private:
 [[nodiscard]] inline auto make_tls_server_pem(
     std::uint16_t port,
     std::string_view cert_pem,
-    std::string_view key_pem
+    std::string_view key_pem,
+    std::string_view host = "0.0.0.0"
 ) -> std::expected<HttpServer, cfire::Error> {
     auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
     if (!ctx_res) return std::unexpected(ctx_res.error());
-    auto l = cfire::net::listen_tcp(port);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
     if (!l) return std::unexpected(l.error());
     return HttpServer(std::move(*l), std::move(*ctx_res));
 }
 
-// `make(http.Server, port, tls: cfg)`. An empty config builds a plain HTTP server.
-[[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<HttpServer, cfire::Error> {
-    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);
-    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem);
-    return make_server(port);
+// `make(http.Server, port, tls: cfg, host: addr)`. An empty config builds a plain HTTP server.
+[[nodiscard]] inline auto make_server(
+    std::uint16_t port = 0,
+    const TlsConfig& tls = {},
+    std::string_view host = "0.0.0.0"
+) -> std::expected<HttpServer, cfire::Error> {
+    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file, host);
+    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem, host);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
+    if (!l) return std::unexpected(l.error());
+    return HttpServer(std::move(*l));
+}
+
+template <typename Handler>
+[[nodiscard]] inline auto serve_in_background(
+    std::uint16_t port,
+    Handler&& handler,
+    const TlsConfig& tls = {},
+    std::string_view host = "0.0.0.0"
+) -> std::expected<HttpServer, cfire::Error> {
+    auto srv = make_server(port, tls, host);
+    if (!srv) return std::unexpected(srv.error());
+    srv->serve_in_background(std::forward<Handler>(handler));
+    return srv;
 }
 
 } // namespace cfire::http

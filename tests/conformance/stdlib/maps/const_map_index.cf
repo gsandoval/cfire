@@ -1,0 +1,15 @@
+// expect: stdout
+// | 8080 443
+package main
+
+fn read_port(m: map[str]i64, k: str) -> i64 {
+    return m[k]
+}
+
+fn main() {
+    mut ports: map[str]i64
+    ports["http"] = 8080
+    ports["https"] = 443
+    imm := ports
+    println("{} {}", read_port(ports, "http"), imm["https"])
+}

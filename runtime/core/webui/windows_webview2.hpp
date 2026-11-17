@@ -184,15 +184,96 @@ inline int CALLBACK win32_enum_mono_font_proc(
     return std::vector<std::string>(unique_fonts.begin(), unique_fonts.end());
 }
 
+[[nodiscard]] inline auto win32_enable_per_monitor_dpi_v2() -> bool {
+#if defined(_WIN32)
+    HMODULE user32 = ::GetModuleHandleW(L"user32.dll");
+    if (!user32) user32 = ::LoadLibraryW(L"user32.dll");
+    if (user32) {
+        using SetDpiCtxFn = BOOL(WINAPI*)(HANDLE);
+        void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+        if (sym) {
+            if (reinterpret_cast<SetDpiCtxFn>(sym)(reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4)))) {
+                return true;
+            }
+        }
+    }
+    HMODULE shcore = ::LoadLibraryW(L"shcore.dll");
+    if (shcore) {
+        using SetDpiAwareFn = HRESULT(WINAPI*)(int);
+        void* sym = reinterpret_cast<void*>(::GetProcAddress(shcore, "SetProcessDpiAwareness"));
+        if (sym && SUCCEEDED(reinterpret_cast<SetDpiAwareFn>(sym)(2))) {
+            return true;
+        }
+    }
+    return false;
+#else
+    if (HMODULE user32 = ::GetModuleHandleW(L"user32.dll")) {
+        using SetDpiCtxFn = BOOL(*)(HANDLE);
+        void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+        if (sym) {
+            return reinterpret_cast<SetDpiCtxFn>(sym)(reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4))) != FALSE;
+        }
+    }
+    return false;
+#endif
+}
+
+[[nodiscard]] inline auto win32_get_dpi_for_window(HWND hwnd) -> UINT {
+#if defined(_WIN32)
+    HMODULE user32 = ::GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        if (hwnd) {
+            using GetDpiWinFn = UINT(WINAPI*)(HWND);
+            void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "GetDpiForWindow"));
+            if (sym) {
+                UINT dpi = reinterpret_cast<GetDpiWinFn>(sym)(hwnd);
+                if (dpi > 0) return dpi;
+            }
+        }
+        using GetDpiSysFn = UINT(WINAPI*)();
+        void* sys_sym = reinterpret_cast<void*>(::GetProcAddress(user32, "GetDpiForSystem"));
+        if (sys_sym) {
+            UINT dpi = reinterpret_cast<GetDpiSysFn>(sys_sym)();
+            if (dpi > 0) return dpi;
+        }
+    }
+#else
+    if (HMODULE user32 = ::GetModuleHandleW(L"user32.dll")) {
+        if (hwnd) {
+            using GetDpiWinFn = UINT(*)(HWND);
+            void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "GetDpiForWindow"));
+            if (sym) {
+                UINT dpi = reinterpret_cast<GetDpiWinFn>(sym)(hwnd);
+                if (dpi > 0) return dpi;
+            }
+        }
+        using GetDpiSysFn = UINT(*)();
+        void* sys_sym = reinterpret_cast<void*>(::GetProcAddress(user32, "GetDpiForSystem"));
+        if (sys_sym) {
+            UINT dpi = reinterpret_cast<GetDpiSysFn>(sys_sym)();
+            if (dpi > 0) return dpi;
+        }
+    }
+#endif
+    return 96;
+}
+
+[[nodiscard]] inline auto win32_scale_for_dpi(int logical_px, UINT dpi) -> int {
+    if (logical_px <= 0 || dpi == 0 || dpi == 96) return logical_px;
+    return ::MulDiv(logical_px, static_cast<int>(dpi), 96);
+}
+
 struct Win32WindowContext {
     std::shared_ptr<AppState> state;
     HWND hwnd = nullptr;
     std::function<void(RECT)> on_resize;
     std::function<void(const std::string&)> on_eval;
+    std::function<void()> on_sync_settings;
 };
 
 // Posted by platform_eval with a heap std::string* in lParam; the WndProc owns and frees it.
 inline constexpr UINT kWmCfireEval = WM_APP + 2;
+inline constexpr UINT kWmCfireSyncSettings = WM_APP + 3;
 
 inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     auto* ctx = reinterpret_cast<Win32WindowContext*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -210,16 +291,54 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
             }
             return 0;
         }
+        case 0x02E0: { // WM_DPICHANGED
+            const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+            if (suggested) {
+                ::SetWindowPos(
+                    hwnd,
+                    nullptr,
+                    suggested->left,
+                    suggested->top,
+                    suggested->right - suggested->left,
+                    suggested->bottom - suggested->top,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            return 0;
+        }
+        case 0x0233: { // WM_DROPFILES
+            HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+            if (hDrop) {
+                UINT count = ::DragQueryFileW(hDrop, 0xFFFFFFFFU, nullptr, 0);
+                std::vector<std::string> paths;
+                paths.reserve(count);
+                for (UINT i = 0; i < count; ++i) {
+                    UINT needed = ::DragQueryFileW(hDrop, i, nullptr, 0);
+                    if (needed > 0) {
+                        std::wstring wbuf(needed + 1, L'\0');
+                        UINT written = ::DragQueryFileW(hDrop, i, wbuf.data(), needed + 1);
+                        wbuf.resize(written);
+                        std::string utf8 = wide_to_utf8(wbuf);
+                        if (!utf8.empty()) paths.push_back(std::move(utf8));
+                    }
+                }
+                ::DragFinish(hDrop);
+                if (ctx && ctx->state && !paths.empty()) {
+                    ctx->state->notify_file_drop(paths);
+                }
+            }
+            return 0;
+        }
         case WM_GETMINMAXINFO: {
             if (ctx && ctx->state) {
                 auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+                UINT dpi = win32_get_dpi_for_window(hwnd);
                 if (ctx->state->min_width > 0 && ctx->state->min_height > 0) {
-                    mmi->ptMinTrackSize.x = ctx->state->min_width;
-                    mmi->ptMinTrackSize.y = ctx->state->min_height;
+                    mmi->ptMinTrackSize.x = win32_scale_for_dpi(ctx->state->min_width, dpi);
+                    mmi->ptMinTrackSize.y = win32_scale_for_dpi(ctx->state->min_height, dpi);
                 }
                 if (ctx->state->max_width > 0 && ctx->state->max_height > 0) {
-                    mmi->ptMaxTrackSize.x = ctx->state->max_width;
-                    mmi->ptMaxTrackSize.y = ctx->state->max_height;
+                    mmi->ptMaxTrackSize.x = win32_scale_for_dpi(ctx->state->max_width, dpi);
+                    mmi->ptMaxTrackSize.y = win32_scale_for_dpi(ctx->state->max_height, dpi);
                 }
             }
             return 0;
@@ -232,9 +351,7 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
                         ctx->state->window_hidden = true;
                     }
                     ::ShowWindow(hwnd, SW_HIDE);
-                    ctx->state->record_emitted("window:close_requested", "{}");
-                    ctx->state->dispatch_event_internal("window:close_requested", "{}");
-                    ctx->state->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+                    ctx->state->emit_system_event("window:close_requested", "{}");
                     return 0;
                 }
                 ctx->state->quit_requested.store(true, std::memory_order_relaxed);
@@ -269,11 +386,7 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
                         pt.x, pt.y, 0, hwnd, nullptr));
                     ::DestroyMenu(hMenu);
                     if (cmd >= 1 && cmd <= events.size()) {
-                        const std::string& ev = events[cmd - 1];
-                        ctx->state->record_emitted(ev, "{}");
-                        ctx->state->dispatch_event_internal(ev, "{}");
-                        std::string ev_escaped = cfire::json::escape_string(ev);
-                        ctx->state->eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {{}});", ev_escaped));
+                        ctx->state->emit_system_event(events[cmd - 1], "{}");
                     }
                 }
                 return 0;
@@ -283,6 +396,10 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
         case kWmCfireEval: {
             std::unique_ptr<std::string> js(reinterpret_cast<std::string*>(lParam));
             if (ctx && ctx->on_eval && js) ctx->on_eval(*js);
+            return 0;
+        }
+        case kWmCfireSyncSettings: {
+            if (ctx && ctx->on_sync_settings) ctx->on_sync_settings();
             return 0;
         }
         case WM_DESTROY: {
@@ -297,8 +414,8 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
     }
 }
 
-#if defined(_WIN32)
-#if __has_include(<WebView2.h>)
+#if defined(_WIN32) || defined(CFIRE_TEST_WEBVIEW2_COM)
+#if defined(_WIN32) && __has_include(<WebView2.h>)
 #include <WebView2.h>
 #else
 // --- Self-contained WebView2 COM interface declarations (WebView2 host bindings) ----------------
@@ -322,7 +439,9 @@ struct COREWEBVIEW2_COLOR {
 enum COREWEBVIEW2_WEB_RESOURCE_CONTEXT {
     COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL = 0
 };
+#endif // defined(_WIN32) && __has_include(<WebView2.h>)
 
+#if !defined(__WebView2_h__)
 struct ICoreWebView2;
 struct ICoreWebView2Controller;
 struct ICoreWebView2Controller2;
@@ -334,7 +453,188 @@ struct ICoreWebView2WebMessageReceivedEventArgs;
 struct ICoreWebView2WebResourceRequest;
 struct ICoreWebView2WebResourceRequestedEventArgs;
 struct ICoreWebView2WebResourceResponse;
+#endif
 
+#ifndef __ICoreWebView2WebMessageReceivedEventArgs_INTERFACE_DEFINED__
+#define __ICoreWebView2WebMessageReceivedEventArgs_INTERFACE_DEFINED__
+struct ICoreWebView2WebMessageReceivedEventArgs : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_Source(LPWSTR* source) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_WebMessageAsJson(LPWSTR* webMessageAsJson) = 0;
+    virtual HRESULT STDMETHODCALLTYPE TryGetWebMessageAsString(LPWSTR* webMessageAsString) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2ObjectCollectionView_INTERFACE_DEFINED__
+#define __ICoreWebView2ObjectCollectionView_INTERFACE_DEFINED__
+struct ICoreWebView2ObjectCollectionView : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_Count(UINT* value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetValueAtIndex(UINT index, IUnknown** value) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2File_INTERFACE_DEFINED__
+#define __ICoreWebView2File_INTERFACE_DEFINED__
+struct ICoreWebView2File : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_Path(LPWSTR* path) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2WebMessageReceivedEventArgs2_INTERFACE_DEFINED__
+#define __ICoreWebView2WebMessageReceivedEventArgs2_INTERFACE_DEFINED__
+struct ICoreWebView2WebMessageReceivedEventArgs2 : public ICoreWebView2WebMessageReceivedEventArgs {
+    virtual HRESULT STDMETHODCALLTYPE get_AdditionalObjects(ICoreWebView2ObjectCollectionView** value) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2Settings_INTERFACE_DEFINED__
+#define __ICoreWebView2Settings_INTERFACE_DEFINED__
+struct ICoreWebView2Settings : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_IsScriptEnabled(BOOL* isScriptEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsScriptEnabled(BOOL isScriptEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsWebMessageEnabled(BOOL* isWebMessageEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsWebMessageEnabled(BOOL isWebMessageEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultScriptDialogsEnabled(BOOL* areDefaultScriptDialogsEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultScriptDialogsEnabled(BOOL areDefaultScriptDialogsEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsStatusBarEnabled(BOOL* isStatusBarEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsStatusBarEnabled(BOOL isStatusBarEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AreDevToolsEnabled(BOOL* areDevToolsEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_AreDevToolsEnabled(BOOL areDevToolsEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultContextMenusEnabled(BOOL* enabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultContextMenusEnabled(BOOL enabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AreHostObjectsAllowed(BOOL* allowed) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_AreHostObjectsAllowed(BOOL allowed) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsZoomControlEnabled(BOOL* enabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsZoomControlEnabled(BOOL enabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsBuiltInErrorPageEnabled(BOOL* enabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsBuiltInErrorPageEnabled(BOOL enabled) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2Settings2_INTERFACE_DEFINED__
+#define __ICoreWebView2Settings2_INTERFACE_DEFINED__
+struct ICoreWebView2Settings2 : public ICoreWebView2Settings {
+    virtual HRESULT STDMETHODCALLTYPE get_UserAgent(LPWSTR* userAgent) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_UserAgent(LPCWSTR userAgent) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2Settings3_INTERFACE_DEFINED__
+#define __ICoreWebView2Settings3_INTERFACE_DEFINED__
+struct ICoreWebView2Settings3 : public ICoreWebView2Settings2 {
+    virtual HRESULT STDMETHODCALLTYPE get_AreBrowserAcceleratorKeysEnabled(BOOL* areBrowserAcceleratorKeysEnabled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_AreBrowserAcceleratorKeysEnabled(BOOL areBrowserAcceleratorKeysEnabled) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2Settings4_INTERFACE_DEFINED__
+#define __ICoreWebView2Settings4_INTERFACE_DEFINED__
+struct ICoreWebView2Settings4 : public ICoreWebView2Settings3 {
+    virtual HRESULT STDMETHODCALLTYPE get_IsPasswordAutosaveEnabled(BOOL* value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsPasswordAutosaveEnabled(BOOL value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsGeneralAutofillEnabled(BOOL* value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_IsGeneralAutofillEnabled(BOOL value) = 0;
+};
+#endif
+
+constexpr auto wv2_hex(char c) -> unsigned {
+    return c <= '9' ? static_cast<unsigned>(c - '0') : static_cast<unsigned>((c | 0x20) - 'a' + 10);
+}
+constexpr auto wv2_iid(const char (&u)[37]) -> IID {
+    auto h = [&](int at, int n) {
+        unsigned long long v = 0;
+        for (int i = 0; i < n; ++i) v = (v << 4) | wv2_hex(u[at + i]);
+        return v;
+    };
+    IID g{};
+    g.Data1 = static_cast<unsigned long>(h(0, 8));
+    g.Data2 = static_cast<unsigned short>(h(9, 4));
+    g.Data3 = static_cast<unsigned short>(h(14, 4));
+    g.Data4[0] = static_cast<unsigned char>(h(19, 2));
+    g.Data4[1] = static_cast<unsigned char>(h(21, 2));
+    for (int i = 0; i < 6; ++i) g.Data4[2 + i] = static_cast<unsigned char>(h(24 + 2 * i, 2));
+    return g;
+}
+
+inline constexpr char kIidSettings4[] = "cb56846c-4168-4d53-b04f-03b6d6796ff2";
+inline constexpr char kIidWebMessageReceivedArgs2[] = "06fc7ab7-c90c-4297-9389-33ca01cf6d5e";
+inline constexpr char kIidFile[] = "f2c19559-6bc1-4583-a757-90021be9afec";
+
+inline void wv2_co_task_mem_free(void* p) {
+    if (!p) return;
+#if defined(_WIN32)
+    HMODULE ole = ::GetModuleHandleW(L"ole32.dll");
+    if (!ole) ole = ::LoadLibraryW(L"ole32.dll");
+    if (ole) {
+        using FreeFn = void(WINAPI*)(void*);
+        void* sym = reinterpret_cast<void*>(::GetProcAddress(ole, "CoTaskMemFree"));
+        if (sym) reinterpret_cast<FreeFn>(sym)(p);
+    }
+#else
+    ::CoTaskMemFree(p);
+#endif
+}
+
+inline void apply_webview2_settings(
+    ICoreWebView2Settings* settings,
+    bool devtools_enabled,
+    bool context_menu_enabled,
+    bool autofill_enabled
+) {
+    if (!settings) return;
+    (void)settings->put_IsStatusBarEnabled(FALSE);
+    (void)settings->put_IsWebMessageEnabled(TRUE);
+    (void)settings->put_AreDevToolsEnabled(devtools_enabled ? TRUE : FALSE);
+    (void)settings->put_AreDefaultContextMenusEnabled(context_menu_enabled ? TRUE : FALSE);
+    ICoreWebView2Settings4* settings4 = nullptr;
+    IID iid_s4 = wv2_iid(kIidSettings4);
+    if (SUCCEEDED(settings->QueryInterface(iid_s4, reinterpret_cast<void**>(&settings4))) && settings4) {
+        (void)settings4->put_IsPasswordAutosaveEnabled(autofill_enabled ? TRUE : FALSE);
+        (void)settings4->put_IsGeneralAutofillEnabled(autofill_enabled ? TRUE : FALSE);
+        settings4->Release();
+    }
+}
+
+[[nodiscard]] inline auto extract_webview2_dropped_files(
+    ICoreWebView2WebMessageReceivedEventArgs* args
+) -> std::vector<std::string> {
+    std::vector<std::string> paths;
+    if (!args) return paths;
+    ICoreWebView2WebMessageReceivedEventArgs2* args2 = nullptr;
+    IID iid_a2 = wv2_iid(kIidWebMessageReceivedArgs2);
+    if (FAILED(args->QueryInterface(iid_a2, reinterpret_cast<void**>(&args2))) || !args2) {
+        return paths;
+    }
+    ICoreWebView2ObjectCollectionView* collection = nullptr;
+    if (SUCCEEDED(args2->get_AdditionalObjects(&collection)) && collection) {
+        UINT count = 0;
+        if (SUCCEEDED(collection->get_Count(&count))) {
+            IID iid_file = wv2_iid(kIidFile);
+            for (UINT i = 0; i < count; ++i) {
+                IUnknown* unk = nullptr;
+                if (SUCCEEDED(collection->GetValueAtIndex(i, &unk)) && unk) {
+                    ICoreWebView2File* file_obj = nullptr;
+                    if (SUCCEEDED(unk->QueryInterface(iid_file, reinterpret_cast<void**>(&file_obj))) && file_obj) {
+                        LPWSTR raw_path = nullptr;
+                        if (SUCCEEDED(file_obj->get_Path(&raw_path)) && raw_path) {
+                            std::string utf8 = wide_to_utf8(raw_path);
+                            if (!utf8.empty()) paths.push_back(std::move(utf8));
+                            wv2_co_task_mem_free(raw_path);
+                        }
+                        file_obj->Release();
+                    }
+                    unk->Release();
+                }
+            }
+        }
+        collection->Release();
+    }
+    args2->Release();
+    return paths;
+}
+#endif // defined(_WIN32) || defined(CFIRE_TEST_WEBVIEW2_COM)
+
+#if defined(_WIN32)
+#if !__has_include(<WebView2.h>)
 struct ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler : public IUnknown {
     virtual HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, ICoreWebView2Environment* createdEnvironment) = 0;
 };
@@ -363,12 +663,6 @@ struct ICoreWebView2WebResourceRequestedEventHandler : public IUnknown {
     virtual HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args) = 0;
 };
 
-struct ICoreWebView2WebMessageReceivedEventArgs : public IUnknown {
-    virtual HRESULT STDMETHODCALLTYPE get_Source(LPWSTR* source) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_WebMessageAsJson(LPWSTR* webMessageAsJson) = 0;
-    virtual HRESULT STDMETHODCALLTYPE TryGetWebMessageAsString(LPWSTR* webMessageAsString) = 0;
-};
-
 struct ICoreWebView2WebResourceRequest : public IUnknown {
     virtual HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* uri) = 0;
     virtual HRESULT STDMETHODCALLTYPE put_Uri(LPCWSTR uri) = 0;
@@ -395,27 +689,6 @@ struct ICoreWebView2WebResourceRequestedEventArgs : public IUnknown {
     virtual HRESULT STDMETHODCALLTYPE put_Response(ICoreWebView2WebResourceResponse* response) = 0;
     virtual HRESULT STDMETHODCALLTYPE GetDeferral(IUnknown** deferral) = 0;
     virtual HRESULT STDMETHODCALLTYPE get_ResourceContext(COREWEBVIEW2_WEB_RESOURCE_CONTEXT* context) = 0;
-};
-
-struct ICoreWebView2Settings : public IUnknown {
-    virtual HRESULT STDMETHODCALLTYPE get_IsScriptEnabled(BOOL* isScriptEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsScriptEnabled(BOOL isScriptEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsWebMessageEnabled(BOOL* isWebMessageEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsWebMessageEnabled(BOOL isWebMessageEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultScriptDialogsEnabled(BOOL* areDefaultScriptDialogsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultScriptDialogsEnabled(BOOL areDefaultScriptDialogsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsStatusBarEnabled(BOOL* isStatusBarEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsStatusBarEnabled(BOOL isStatusBarEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDevToolsEnabled(BOOL* areDevToolsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDevToolsEnabled(BOOL areDevToolsEnabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreDefaultContextMenusEnabled(BOOL* enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreDefaultContextMenusEnabled(BOOL enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_AreHostObjectsAllowed(BOOL* allowed) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_AreHostObjectsAllowed(BOOL allowed) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsZoomControlEnabled(BOOL* enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsZoomControlEnabled(BOOL enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_IsBuiltInErrorPageEnabled(BOOL* enabled) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_IsBuiltInErrorPageEnabled(BOOL enabled) = 0;
 };
 
 struct ICoreWebView2 : public IUnknown {
@@ -527,25 +800,6 @@ struct ICoreWebView2Environment : public IUnknown {
 // evaluated on the UI thread.
 
 inline constexpr std::wstring_view kWv2Origin = L"https://app.localhost";
-
-constexpr auto wv2_hex(char c) -> unsigned {
-    return c <= '9' ? static_cast<unsigned>(c - '0') : static_cast<unsigned>((c | 0x20) - 'a' + 10);
-}
-constexpr auto wv2_iid(const char (&u)[37]) -> IID {
-    auto h = [&](int at, int n) {
-        unsigned long long v = 0;
-        for (int i = 0; i < n; ++i) v = (v << 4) | wv2_hex(u[at + i]);
-        return v;
-    };
-    IID g{};
-    g.Data1 = static_cast<unsigned long>(h(0, 8));
-    g.Data2 = static_cast<unsigned short>(h(9, 4));
-    g.Data3 = static_cast<unsigned short>(h(14, 4));
-    g.Data4[0] = static_cast<unsigned char>(h(19, 2));
-    g.Data4[1] = static_cast<unsigned char>(h(21, 2));
-    for (int i = 0; i < 6; ++i) g.Data4[2 + i] = static_cast<unsigned char>(h(24 + 2 * i, 2));
-    return g;
-}
 
 template <class I, class M>
 struct Wv2Handler;
@@ -707,6 +961,24 @@ struct Wv2Host {
         if (controller) controller->put_Bounds(rc);
     }
 
+    void sync_settings() {
+        if (!webview || !state) return;
+        bool dev = kDefaultWebUIDevExtras;
+        bool ctx_menu = kDefaultWebUIDevExtras;
+        bool autofill = true;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state->mtx);
+            dev = state->devtools_enabled;
+            ctx_menu = state->context_menu_enabled;
+            autofill = state->autofill_enabled;
+        }
+        ICoreWebView2Settings* settings = nullptr;
+        if (SUCCEEDED(webview->get_Settings(&settings)) && settings) {
+            apply_webview2_settings(settings, dev, ctx_menu, autofill);
+            settings->Release();
+        }
+    }
+
     static void report(const char* what, HRESULT hr) {
         if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
             std::fprintf(stderr, "webui: %s failed: the WebView2 Runtime is not installed "
@@ -760,18 +1032,13 @@ struct Wv2Host {
             }
         }
 
-        ICoreWebView2Settings* settings = nullptr;
-        if (SUCCEEDED(webview->get_Settings(&settings)) && settings) {
-            settings->put_IsStatusBarEnabled(FALSE);
-            settings->put_IsWebMessageEnabled(TRUE);
-            settings->Release();
-        }
+        sync_settings();
 
         RECT rc{};
         ::GetClientRect(hwnd, &rc);
         controller->put_Bounds(rc);
 
-        std::wstring preload = utf8_to_wide(kPreloadBridgeJs);
+        std::wstring preload = utf8_to_wide(build_preload_script(*state));
         webview->AddScriptToExecuteOnDocumentCreated(preload.c_str(), nullptr);
 
         EventRegistrationToken tok{};
@@ -780,7 +1047,12 @@ struct Wv2Host {
                 LPWSTR raw = nullptr;
                 if (args && SUCCEEDED(args->TryGetWebMessageAsString(&raw)) && raw) {
                     std::string m = wide_to_utf8(raw);
-                    ::CoTaskMemFree(raw);
+                    wv2_co_task_mem_free(raw);
+                    if (m.contains("\"webview2_file_drop\"")) {
+                        auto files = extract_webview2_dropped_files(args);
+                        if (!files.empty()) state->notify_file_drop(files);
+                        return S_OK;
+                    }
                     state->handle_ipc_message(m);
                 }
                 return S_OK;
@@ -848,13 +1120,7 @@ struct Wv2Host {
 
 inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool offscreen_test = false, std::int32_t timeout_ms = 3000) {
     (void)::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-#if defined(_WIN32)
-    if (HMODULE user32 = ::GetModuleHandleW(L"user32.dll")) {
-        using SetDpiCtxFn = BOOL(WINAPI*)(HANDLE);
-        void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
-        if (sym) (void)reinterpret_cast<SetDpiCtxFn>(sym)(reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4))); // PER_MONITOR_AWARE_V2
-    }
-#endif
+    (void)win32_enable_per_monitor_dpi_v2();
 
     HINSTANCE hInst = ::GetModuleHandleW(nullptr);
     const wchar_t* kClassName = L"CfireWebUIWindowClass";
@@ -874,13 +1140,16 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     wc.lpszClassName = kClassName;
     ::RegisterClassExW(&wc);
 
-    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr};
+    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr, nullptr};
     DWORD style = state_->frameless ? WS_POPUP : WS_OVERLAPPEDWINDOW;
     DWORD exStyle = state_->always_on_top ? WS_EX_TOPMOST : 0;
 
     std::wstring wtitle = utf8_to_wide(state_->title);
     int x = offscreen_test ? -2000 : CW_USEDEFAULT;
     int y = offscreen_test ? -2000 : CW_USEDEFAULT;
+    UINT init_dpi = win32_get_dpi_for_window(nullptr);
+    int scaled_w = win32_scale_for_dpi(state_->width, init_dpi);
+    int scaled_h = win32_scale_for_dpi(state_->height, init_dpi);
 
     HWND hwnd = ::CreateWindowExW(
         exStyle,
@@ -888,7 +1157,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         wtitle.c_str(),
         style,
         x, y,
-        state_->width, state_->height,
+        scaled_w, scaled_h,
         nullptr,
         nullptr,
         hInst,
@@ -898,6 +1167,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         return;
     }
     ctx.hwnd = hwnd;
+    ::DragAcceptFiles(hwnd, TRUE);
 
     if (state_->dark_mode) {
         BOOL dark = TRUE;
@@ -950,11 +1220,28 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
             ::SetWindowTextW(hwnd, wt.c_str());
         };
         state_->platform_set_size = [hwnd](std::int32_t w, std::int32_t h) {
-            ::SetWindowPos(hwnd, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+            UINT dpi = win32_get_dpi_for_window(hwnd);
+            ::SetWindowPos(
+                hwnd, nullptr, 0, 0,
+                win32_scale_for_dpi(w, dpi),
+                win32_scale_for_dpi(h, dpi),
+                SWP_NOMOVE | SWP_NOZORDER);
         };
         state_->platform_set_dark_mode = [hwnd](bool dark) {
             BOOL d = dark ? TRUE : FALSE;
             (void)::DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &d, sizeof(d));
+        };
+        state_->platform_set_devtools = [hwnd](bool) {
+            (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
+        };
+        state_->platform_set_context_menu = [hwnd](bool) {
+            (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
+        };
+        state_->platform_set_autofill = [hwnd, st = state_](bool enabled) {
+            (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
+            st->eval_js(enabled
+                ? "if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                : "if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);");
         };
 #if defined(_WIN32)
         state_->platform_center = [hwnd]() {
@@ -966,19 +1253,63 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
             int sh = ::GetSystemMetrics(SM_CYSCREEN);
             ::SetWindowPos(hwnd, nullptr, (sw - w) / 2, (sh - h) / 2, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
         };
-        state_->platform_fullscreen = [hwnd, st = state_]() {
-            DWORD cur_style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
-            if (st->is_fullscreen) {
-                ::SetWindowLongPtrW(hwnd, GWL_STYLE, cur_style & ~static_cast<DWORD>(WS_OVERLAPPEDWINDOW));
-                int sw = ::GetSystemMetrics(SM_CXSCREEN);
-                int sh = ::GetSystemMetrics(SM_CYSCREEN);
-                ::SetWindowPos(hwnd, HWND_TOP, 0, 0, sw, sh, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-            } else {
-                ::SetWindowLongPtrW(hwnd, GWL_STYLE, cur_style | WS_OVERLAPPEDWINDOW);
-                ::SetWindowPos(hwnd, nullptr, 100, 100, st->width, st->height, SWP_NOZORDER | SWP_FRAMECHANGED);
-            }
-        };
 #endif
+        struct Win32FullscreenSaved {
+            bool valid{false};
+            DWORD style{0};
+            RECT rect{100, 100, 1060, 740};
+        };
+        auto fs_saved = std::make_shared<Win32FullscreenSaved>();
+        state_->platform_fullscreen = [hwnd, st = state_, fs_saved]() {
+            bool fs = false;
+            {
+                std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                fs = st->is_fullscreen;
+            }
+            DWORD cur_style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
+            if (fs) {
+                if (!fs_saved->valid) {
+                    fs_saved->style = cur_style;
+                    ::GetWindowRect(hwnd, &fs_saved->rect);
+                    fs_saved->valid = true;
+                }
+                ::SetWindowLongPtrW(hwnd, GWL_STYLE, static_cast<LONG_PTR>(cur_style & ~static_cast<DWORD>(WS_OVERLAPPEDWINDOW)));
+                int mx = 0;
+                int my = 0;
+                int mw = ::GetSystemMetrics(SM_CXSCREEN);
+                int mh = ::GetSystemMetrics(SM_CYSCREEN);
+#if defined(_WIN32)
+                MONITORINFO mi{};
+                mi.cbSize = sizeof(mi);
+                if (HMONITOR mon = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                    mon && ::GetMonitorInfoW(mon, &mi)) {
+                    mx = mi.rcMonitor.left;
+                    my = mi.rcMonitor.top;
+                    mw = mi.rcMonitor.right - mi.rcMonitor.left;
+                    mh = mi.rcMonitor.bottom - mi.rcMonitor.top;
+                }
+#endif
+                ::SetWindowPos(hwnd, HWND_TOP, mx, my, mw, mh, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            } else {
+                DWORD restore_style = fs_saved->valid ? fs_saved->style : (cur_style | WS_OVERLAPPEDWINDOW);
+                ::SetWindowLongPtrW(hwnd, GWL_STYLE, static_cast<LONG_PTR>(restore_style));
+                if (fs_saved->valid) {
+                    int rw = fs_saved->rect.right - fs_saved->rect.left;
+                    int rh = fs_saved->rect.bottom - fs_saved->rect.top;
+                    ::SetWindowPos(hwnd, nullptr, fs_saved->rect.left, fs_saved->rect.top, rw, rh,
+                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    fs_saved->valid = false;
+                } else {
+                    UINT dpi = win32_get_dpi_for_window(hwnd);
+                    ::SetWindowPos(
+                        hwnd, nullptr, 100, 100,
+                        win32_scale_for_dpi(st->width, dpi),
+                        win32_scale_for_dpi(st->height, dpi),
+                        SWP_NOZORDER | SWP_FRAMECHANGED);
+                }
+            }
+            st->notify_fullscreen_changed(fs);
+        };
         state_->platform_minimize = [hwnd]() {
             ::ShowWindow(hwnd, SW_MINIMIZE);
         };
@@ -1007,6 +1338,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     wv2.emplace(state_, hwnd);
     ctx.on_resize = [&wv2](RECT rc) { if (wv2) wv2->resize(rc); };
     ctx.on_eval = [&wv2](const std::string& js) { if (wv2) wv2->eval(js); };
+    ctx.on_sync_settings = [&wv2]() { if (wv2) wv2->sync_settings(); };
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->platform_eval = [hwnd](const std::string& js) {
@@ -1056,6 +1388,9 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
         state_->platform_set_dark_mode = nullptr;
+        state_->platform_set_devtools = nullptr;
+        state_->platform_set_context_menu = nullptr;
+        state_->platform_set_autofill = nullptr;
         state_->platform_center = nullptr;
         state_->platform_fullscreen = nullptr;
         state_->platform_minimize = nullptr;
@@ -1066,6 +1401,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_quit = nullptr;
     }
 #if defined(_WIN32)
+    ctx.on_sync_settings = nullptr;
     ctx.on_eval = nullptr;
     ctx.on_resize = nullptr;
     wv2.reset();

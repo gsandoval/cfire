@@ -524,6 +524,9 @@ struct PchDirLockGuard {
     } else {
         cflags.push_back("-fwrapv");
     }
+    if (!test_mode && !is_dev_debug_profile()) {
+        cflags.push_back("-DCFIRE_RELEASE_BUILD=1");
+    }
 
     std::string opt_flags = sanitize
         ? sanitizer_opt_flags()

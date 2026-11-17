@@ -9,13 +9,15 @@
 #include "formatter.hpp"
 #include "lsp.hpp"
 #include "refactor.hpp"
+#include "sema/builtin_methods.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <chrono>
 #include <atomic>
+#include <cctype>
+#include <chrono>
 #include <thread>
 #if !defined(_WIN32)
 #include <unistd.h>
@@ -58,6 +60,91 @@ struct TestInput {
     std::uint64_t seed{0};
     int bench_time{200};
 };
+
+[[nodiscard]] inline auto format_builtin_receivers(std::uint8_t recv) -> std::string {
+    std::vector<std::string_view> names;
+    if (recv & cfire::frontend::BmInt) names.push_back("int");
+    if (recv & cfire::frontend::BmFloat) names.push_back("float");
+    if (recv & cfire::frontend::BmStr) names.push_back("str");
+    if (recv & cfire::frontend::BmSlice) names.push_back("[]T");
+    if (recv & cfire::frontend::BmArray) names.push_back("[N]T");
+    if (recv & cfire::frontend::BmMap) names.push_back("map[K]V");
+    if (recv & cfire::frontend::BmBool) names.push_back("bool");
+    std::string out;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        if (i > 0) out += " | ";
+        out += names[i];
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto matches_builtin_method_query(
+    const cfire::frontend::BuiltinMethod& bm,
+    std::string_view query,
+    bool exact_only = false
+) -> bool {
+    if (query.empty()) return false;
+    auto check_tag = [&](std::string_view tag) {
+        std::string qualified = std::format("{}.{}", tag, bm.name);
+        return exact_only ? (qualified == query) : (qualified.find(query) != std::string_view::npos);
+    };
+    if (exact_only ? (bm.name == query) : (bm.name.find(query) != std::string_view::npos)) {
+        return true;
+    }
+    if ((bm.recv & cfire::frontend::BmInt) && check_tag("int")) return true;
+    if ((bm.recv & cfire::frontend::BmFloat) && check_tag("float")) return true;
+    if ((bm.recv & cfire::frontend::BmStr) && check_tag("str")) return true;
+    if ((bm.recv & cfire::frontend::BmSlice) && (check_tag("slice") || check_tag("[]T"))) return true;
+    if ((bm.recv & cfire::frontend::BmArray) && (check_tag("array") || check_tag("[N]T"))) return true;
+    if ((bm.recv & cfire::frontend::BmMap) && (check_tag("map") || check_tag("map[K]V"))) return true;
+    if ((bm.recv & cfire::frontend::BmBool) && check_tag("bool")) return true;
+    return false;
+}
+
+[[nodiscard]] inline auto format_std_type_doc_md(
+    const cfire::doc::StdModuleDoc& mod,
+    const cfire::doc::StdTypeDoc& td
+) -> std::string {
+    std::ostringstream oss;
+    std::string kind_label = td.kind;
+    if (!kind_label.empty()) kind_label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(kind_label[0])));
+    oss << "### " << kind_label << " `" << mod.ns_alias << "." << td.name << "` (`" << mod.import_path << "`)\n\n"
+        << td.summary << "\n";
+    if (!td.fields.empty()) {
+        oss << "\n**Fields:**\n";
+        for (const auto& f : td.fields) {
+            oss << "- `" << f.name << ": " << f.type << "`";
+            if (!f.summary.empty()) oss << " — " << f.summary;
+            oss << "\n";
+        }
+    }
+    if (!td.variants.empty()) {
+        oss << "\n**Variants:**\n";
+        for (const auto& v : td.variants) {
+            oss << "- `" << mod.ns_alias << "." << td.bare_name() << "::" << v << "`\n";
+        }
+    }
+    std::string mprefix = std::string(td.bare_name()) + ".";
+    bool header_emitted = false;
+    for (const auto& fn : mod.functions) {
+        if (fn.name.starts_with(mprefix)) {
+            if (!header_emitted) {
+                oss << "\n**Methods:**\n";
+                header_emitted = true;
+            }
+            oss << "- `" << fn.cf_sig << "` — " << fn.summary << "\n";
+        }
+    }
+    return oss.str();
+}
+
+[[nodiscard]] inline auto format_builtin_method_md(const cfire::frontend::BuiltinMethod& bm) -> std::string {
+    std::string recvs = format_builtin_receivers(bm.recv);
+    std::string sig = std::format("fn ({}{}) {}({}) -> {}",
+        bm.mutates ? "mut self: " : "self: ", recvs, bm.name, bm.params, bm.ret);
+    return std::format("### `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
+        sig, bm.summary, bm.example);
+}
 
 [[nodiscard]] inline auto is_ignored_mcp_dir(std::string_view name) -> bool {
     return name == ".cfire" || name == ".tako" || name == ".git" ||
@@ -435,11 +522,16 @@ struct McpOptions {
 
     srv.register_tool<QueryInput>(
         "cfire_stdlib_lookup",
-        "Look up cfire standard library functions, types, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples by module path (e.g. 'core:fs', 'core:json', 'ext:ai', 'ext:webui') or symbol name.",
+        "Look up cfire standard library modules, types, methods, builtin methods, compiler diagnostic codes (e.g. 'cfire/USE-AFTER-FREE'), and examples.",
         [](QueryInput in) -> std::expected<std::string, cfire::Error> {
             std::ostringstream oss;
             bool found = false;
             std::string norm_q = in.query;
+            if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(norm_q); !canon.empty()) {
+                oss << "> Note: `" << norm_q << "` is non-canonical (`cfire/INVALID-IMPORT`); import as `"
+                    << canon << "`.\n\n";
+                norm_q = canon;
+            }
             for (const auto& d : cfire::doc::diagnostics_catalog()) {
                 if (d.code == norm_q || d.code == ("cfire/" + norm_q) ||
                     d.code.find(norm_q) != std::string_view::npos ||
@@ -453,42 +545,80 @@ struct McpOptions {
             }
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                 bool mod_match = (mod.import_path == norm_q || mod.ns_alias == norm_q ||
-                                  mod.import_path.find(norm_q) != std::string_view::npos ||
-                                  (norm_q.starts_with("core:") && mod.import_path == ("ext:" + norm_q.substr(5))) ||
-                                  (norm_q.starts_with("ext:") && mod.import_path == ("core:" + norm_q.substr(4))));
+                                  mod.import_path.find(norm_q) != std::string_view::npos);
                 if (mod_match) {
                     found = true;
                     oss << "## `" << mod.import_path << "` — " << mod.title << "\n" << mod.overview << "\n\n";
+                    if (!mod.type_docs.empty()) {
+                        oss << "**Types:**\n";
+                        for (const auto& td : mod.type_docs) {
+                            oss << "- `" << td.kind << " " << mod.ns_alias << "." << td.name << "` — " << td.summary;
+                            if (!td.fields.empty()) {
+                                oss << " Fields: ";
+                                for (std::size_t fi = 0; fi < td.fields.size(); ++fi) {
+                                    if (fi > 0) oss << ", ";
+                                    oss << "`" << td.fields[fi].name << ": " << td.fields[fi].type << "`";
+                                }
+                                oss << ".";
+                            }
+                            if (!td.variants.empty()) {
+                                oss << " Variants: ";
+                                for (std::size_t vi = 0; vi < td.variants.size(); ++vi) {
+                                    if (vi > 0) oss << ", ";
+                                    oss << "`" << mod.ns_alias << "." << td.bare_name() << "::" << td.variants[vi] << "`";
+                                }
+                                oss << ".";
+                            }
+                            oss << "\n";
+                        }
+                        oss << "\n";
+                    }
+                    oss << "**Functions & Methods:**\n";
                     for (const auto& fn : mod.functions) {
                         oss << "- `" << fn.cf_sig << "` — " << fn.summary << "\n";
-                    }
-                    if (mod.ns_alias == "log") {
-                        oss << "- `type Level enum { Debug, Info, Warn, Error }` — Minimum severity threshold (`log.Level::Debug`)\n";
-                        oss << "- `type Format enum { Text, Json }` — Output sink format (`log.Format::Text` / `log.Format::Json`)\n";
                     }
                     oss << "\n";
                     continue;
                 }
+                for (const auto& td : mod.type_docs) {
+                    std::string qname = mod.ns_alias + "." + std::string(td.bare_name());
+                    std::string qname_cc = mod.ns_alias + "::" + std::string(td.bare_name());
+                    bool type_match = (td.name == norm_q || td.bare_name() == norm_q ||
+                                       qname == norm_q || qname_cc == norm_q ||
+                                       qname.find(norm_q) != std::string::npos);
+                    if (!type_match) {
+                        for (const auto& v : td.variants) {
+                            if (v == norm_q || (qname + "::" + v) == norm_q) {
+                                type_match = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (type_match) {
+                        found = true;
+                        oss << format_std_type_doc_md(mod, td) << "\n";
+                    }
+                }
                 for (const auto& fn : mod.functions) {
-                    if (fn.name.find(in.query) != std::string_view::npos ||
-                        fn.cf_sig.find(in.query) != std::string_view::npos) {
+                    std::string qfn = mod.ns_alias + "." + fn.name;
+                    if (fn.name.find(norm_q) != std::string_view::npos ||
+                        fn.cf_sig.find(norm_q) != std::string_view::npos ||
+                        qfn.find(norm_q) != std::string_view::npos) {
                         found = true;
                         oss << "- [" << mod.import_path << "] `" << fn.cf_sig << "` — " << fn.summary << "\n";
                     }
                 }
             }
-            if (norm_q == "log.Level" || norm_q == "log::Level" || norm_q == "Level") {
-                found = true;
-                oss << "## `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n"
-                    << "Lowered C++23: `cfire::log::Level` (`uint8_t`). Pass to `log.set_level(log.Level::Debug)`.\n";
-            }
-            if (norm_q == "log.Format" || norm_q == "log::Format" || norm_q == "Format") {
-                found = true;
-                oss << "## `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n"
-                    << "Lowered C++23: `cfire::log::Format` (`uint8_t`). Pass to `log.set_format(log.Format::Json)`.\n";
+            for (const auto& bm : cfire::frontend::kBuiltinMethods) {
+                if (matches_builtin_method_query(bm, norm_q, false)) {
+                    found = true;
+                    oss << "- [builtin `" << format_builtin_receivers(bm.recv) << "`] `"
+                        << (bm.mutates ? "mut " : "") << bm.name << "(" << bm.params << ") -> " << bm.ret
+                        << "` — " << bm.summary << " (`" << bm.example << "`)\n";
+                }
             }
             if (!found) {
-                return std::format("No stdlib module, symbol, or diagnostic matching '{}'", in.query);
+                return std::format("No stdlib module, type, builtin method, or diagnostic matching '{}'", in.query);
             }
             return oss.str();
         }
@@ -555,6 +685,9 @@ struct McpOptions {
                 if (src.contains("math.")) imports += "import \"core:math\"\n";
                 if (src.contains("fs.")) imports += "import \"core:fs\"\n";
                 if (src.contains("os.")) imports += "import \"core:os\"\n";
+                if (src.contains("time.")) imports += "import \"core:time\"\n";
+                if (src.contains("http.")) imports += "import \"core:net/http\"\n";
+                if (src.contains("ipc.")) imports += "import \"core:net/ipc\"\n";
                 src = "package main\n" + imports + "\nfn main() {\n" + src + "\n}\n";
             }
             {
@@ -620,13 +753,16 @@ struct McpOptions {
                 if (!ast) continue;
                 oss << "## " << f.string() << " (package `" << ast->package_name << "`)\n";
                 for (const auto& st : ast->structs) {
-                    oss << "- struct `" << st.name << "`\n";
+                    oss << "- struct `" << st.name << cfire::fmt::format_type_params_list(st.type_params) << "`\n";
                 }
                 for (const auto& en : ast->enums) {
-                    oss << "- enum `" << en.name << "`\n";
+                    oss << "- enum `" << en.name << cfire::fmt::format_type_params_list(en.type_params) << "`\n";
                 }
                 for (const auto& iface : ast->interfaces) {
                     oss << "- interface `" << iface.name << "`\n";
+                    for (const auto& m : iface.methods) {
+                        oss << "  - `" << cfire::fmt::format_interface_method_sig(m) << "`\n";
+                    }
                 }
                 for (const auto& fn : ast->functions) {
                     oss << "- `" << cfire::fmt::format_fn_signature(fn) << "`\n";
@@ -694,18 +830,58 @@ struct McpOptions {
                 std::string header = target_str.substr(4);
                 while (!header.empty() && std::isspace(static_cast<unsigned char>(header.front()))) header.erase(header.begin());
                 while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back()))) header.pop_back();
-                auto cache_dir = runtime_dir.parent_path() / ".cfire" / "cache";
-                std::error_code ec;
-                std::filesystem::create_directories(cache_dir, ec);
-                if (ec) {
-                    cache_dir = cfire::detail::user_cache_dir("mcp");  // never a shared temp-dir name
+                if (header.empty()) {
+                    return cfire::make_error("missing header name after 'cpp '");
                 }
-                auto idx = cfire::bridge::inspect_header(header, {}, cache_dir);
+                std::error_code ec;
+                std::filesystem::path ws_root = mcp_opts.root.empty()
+                    ? std::filesystem::current_path(ec)
+                    : mcp_opts.root;
+                cfire::build::BuildPlan insp_plan;
+                auto search_d = std::filesystem::weakly_canonical(ws_root, ec);
+                if (ec || search_d.empty()) search_d = std::filesystem::absolute(ws_root, ec);
+                for (int depth = 0; depth < 8 && !search_d.empty(); ++depth) {
+                    auto bcf = search_d / "build.cf";
+                    if (std::filesystem::exists(bcf, ec)) {
+                        if (auto parsed = cfire::build::parse_build_cf(bcf)) {
+                            cfire::build::apply_manifest_pkg_fields(
+                                insp_plan, search_d, parsed->pkg_config, parsed->libraries,
+                                parsed->frameworks, parsed->includes, parsed->defines);
+                            for (const auto& ex : parsed->executables) {
+                                cfire::build::apply_manifest_pkg_fields(
+                                    insp_plan, search_d, ex.pkg_config, ex.libraries,
+                                    ex.frameworks, ex.includes, ex.defines);
+                            }
+                        }
+                        break;
+                    }
+                    if (search_d == search_d.parent_path()) break;
+                    search_d = search_d.parent_path();
+                }
+                cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
+                if (!ws_root.empty()) {
+                    insp_plan.cflags.push_back("-I" + ws_root.string());
+                }
+                if (auto dr = cfire::build::resolve_plan_defines(insp_plan); !dr) {
+                    return cfire::make_error(dr.error());
+                }
+                auto cache_dir = cfire::build::header_inspect_cache_dir(ws_root);
+                auto idx = cfire::bridge::inspect_header(
+                    header, insp_plan.cflags, cache_dir, cfire::build::resolve_cxx_compiler());
                 if (!idx) return cfire::make_error(idx.error());
+                std::vector<std::pair<std::string, cfire::bridge::CppSymbol>> sorted_syms(idx->symbols.begin(), idx->symbols.end());
+                std::sort(sorted_syms.begin(), sorted_syms.end(), [](const auto& a, const auto& b) {
+                    return a.first < b.first;
+                });
                 std::ostringstream oss;
-                oss << "Header: <" << header << "> (" << idx->symbols.size() << " symbols)\n";
-                for (const auto& [sname, sym] : idx->symbols) {
-                    oss << "  cpp." << sym.name << "(...) -> " << (sym.return_type.empty() ? "void" : sym.return_type) << "\n";
+                oss << "Header: <" << header << "> (" << sorted_syms.size() << " symbols)\n";
+                for (const auto& [sname, sym] : sorted_syms) {
+                    oss << "  cpp." << sym.name << "(";
+                    for (std::size_t p = 0; p < sym.param_types.size(); ++p) {
+                        if (p > 0) oss << ", ";
+                        oss << sym.param_types[p];
+                    }
+                    oss << ") -> " << (sym.return_type.empty() ? "void" : sym.return_type) << "\n";
                 }
                 return oss.str();
             }
@@ -761,20 +937,41 @@ struct McpOptions {
                     return oss.str();
                 }
             }
-            // 4. Fallback to stdlib lookup (including `log.Level` and `log.Format`)
-            if (target_str == "log.Level" || target_str == "log::Level" || target_str == "Level") {
-                return "### Enum `log.Level` (`core:log`)\n```cf\ntype Level enum {\n    Debug = 0\n    Info = 1\n    Warn = 2\n    Error = 3\n}\n```\n**Lowered C++23:** `cfire::log::Level` (`uint8_t`)\n\nMinimum severity threshold for structured logging (`log.set_level(log.Level::Debug)`).";
-            }
-            if (target_str == "log.Format" || target_str == "log::Format" || target_str == "Format") {
-                return "### Enum `log.Format` (`core:log`)\n```cf\ntype Format enum {\n    Text = 0\n    Json = 1\n}\n```\n**Lowered C++23:** `cfire::log::Format` (`uint8_t`)\n\nOutput sink format for structured logging (`log.set_format(log.Format::Json)` or `log.set_format(log.Format::Text)`).";
-            }
+            // 4. Fallback to stdlib types, enum variants, functions, and builtin methods
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                for (const auto& td : mod.type_docs) {
+                    std::string qname = mod.ns_alias + "." + std::string(td.bare_name());
+                    std::string qname_cc = mod.ns_alias + "::" + std::string(td.bare_name());
+                    if (td.name == target_str || td.bare_name() == target_str ||
+                        qname == target_str || qname_cc == target_str) {
+                        return format_std_type_doc_md(mod, td);
+                    }
+                    for (const auto& v : td.variants) {
+                        if ((qname + "::" + v) == target_str || (td.bare_name() == target_str) ||
+                            (std::string(td.bare_name()) + "::" + v) == target_str) {
+                            return std::format("### Enum Variant `{}.{}::{}` (`{}`)\n\nVariant of `{}.{}`: {}",
+                                mod.ns_alias, td.bare_name(), v, mod.import_path, mod.ns_alias, td.bare_name(), td.summary);
+                        }
+                    }
+                }
                 for (const auto& fn : mod.functions) {
                     if (fn.name == target_str || (mod.ns_alias + "." + fn.name) == target_str) {
                         return std::format("### {}\n\n{}\n\n**Example:**\n```cf\n{}\n```",
                             fn.cf_sig, fn.summary, fn.example);
                     }
                 }
+            }
+            {
+                std::ostringstream bm_oss;
+                bool bm_hit = false;
+                for (const auto& bm : cfire::frontend::kBuiltinMethods) {
+                    if (matches_builtin_method_query(bm, target_str, true)) {
+                        if (bm_hit) bm_oss << "\n\n";
+                        bm_oss << format_builtin_method_md(bm);
+                        bm_hit = true;
+                    }
+                }
+                if (bm_hit) return bm_oss.str();
             }
             return cfire::make_error(std::format("unknown inspect target '{}'", target_str));
         }

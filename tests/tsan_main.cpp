@@ -9,6 +9,7 @@
 #include "unit/test_http_event_loop.hpp"
 #include "unit/test_websocket_sessions.hpp"
 #include "unit/test_websocket_handshake_tail.hpp"
+#include "unit/test_fs_http_time_ipc.hpp"
 
 auto main() -> int {
     ::signal(SIGPIPE, SIG_IGN);
@@ -20,6 +21,8 @@ auto main() -> int {
     test_http_server_event_loop(rt_dir);  // the event loop and its workers
     test_websocket_server_sessions(rt_dir);  // websocket.Server session threads
     test_websocket_handshake_read_ahead(rt_dir);  // frames that arrive with the handshake
+    test_http_host_bind_and_client_timeout(rt_dir);
+    test_ipc_stream_security_and_concurrency(rt_dir);
     if (g_failures.load() > 0) {
         std::println("FAIL ({} tsan test assertion(s) failed)", g_failures.load());
         return 1;

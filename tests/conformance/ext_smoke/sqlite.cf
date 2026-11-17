@@ -1,0 +1,34 @@
+// expect: stdout
+// | ext:db/sqlite ok
+package main
+
+import "ext:db/sqlite"
+import "core:os"
+
+type ItemRow struct {
+    id:   i64 `sql:"id"`
+    name: str `sql:"name"`
+}
+
+fn compile_all_sqlite_surface(mut db: sqlite.Conn) -> void! {
+    _ = try sqlite.open_encrypted(":memory:", "key")
+    _ = try db.apply_key("key")
+    _ = try db.rekey("next")
+    _ = try db.load_extension("nonexistent_ext", "init")
+}
+
+fn main() {
+    mut db := try sqlite.open(":memory:")
+    try db.exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
+    try db.tx |mut tx| {
+        try tx.exec("INSERT INTO items (id, name) VALUES (?1, ?2)", 1, "alpha")
+    }
+    rows := try db.query[ItemRow]("SELECT id, name FROM items WHERE id = ?1", 1)
+    assert_eq(rows.len(), 1)
+    assert_eq(rows[0].name, "alpha")
+
+    if os.args().len() > 999999 {
+        _ = compile_all_sqlite_surface(mut db) or {}
+    }
+    println("ext:db/sqlite ok")
+}

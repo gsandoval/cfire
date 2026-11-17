@@ -2,6 +2,7 @@
 
 #include "../build/apple_bundle.hpp"
 #include "../build/binary_cache.hpp"
+#include "../build/clean.hpp"
 #include "../build/package_loader.hpp"
 #include "../build/probe_cache.hpp"
 #include "../buildsys.hpp"
@@ -27,14 +28,23 @@ namespace cfire::cli {
 auto run_build_commands(std::string_view sub, int argc, char** argv, const std::filesystem::path& runtime_dir) -> int {
     if (sub == "clean") {
         bool clean_cache = false;
-        std::filesystem::path target_dir = ".";
+        bool clean_all = false;
+        bool dry_run = false;
+        bool json_mode = false;
+        std::filesystem::path target_dir;
         bool saw_dir = false;
         for (int i = 2; i < argc; ++i) {
             std::string_view arg = argv[i];
             if (arg == "--cache") {
                 clean_cache = true;
+            } else if (arg == "--all") {
+                clean_all = true;
+            } else if (arg == "--dry-run") {
+                dry_run = true;
+            } else if (arg == "--json") {
+                json_mode = true;
             } else if (arg.starts_with("-")) {
-                std::println(stderr, "error: unknown flag '{}' for 'cfire clean' (expected --cache)", arg);
+                std::println(stderr, "error: unknown flag '{}' for 'cfire clean' (expected --cache, --all, --dry-run, --json)", arg);
                 return 2;
             } else if (!saw_dir) {
                 target_dir = arg;
@@ -44,32 +54,37 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                 return 2;
             }
         }
-        std::error_code ec;
-        std::filesystem::path cfire_dir = target_dir / ".cfire";
-        std::uintmax_t removed = 0;
-        if (std::filesystem::exists(cfire_dir, ec)) {
-            removed += std::filesystem::remove_all(cfire_dir, ec);
-            if (ec) {
-                std::println(stderr, "error removing '{}': {}", cfire_dir.string(), ec.message());
-                return 1;
-            }
-        }
-        if (clean_cache) {
-            cfire::build::ProbeCache::instance().clear_memory_and_disk();
-            auto cache_root = cfire::build::user_cache_root_dir();
-            if (std::filesystem::exists(cache_root, ec)) {
-                removed += std::filesystem::remove_all(cache_root, ec);
-                if (ec) {
-                    std::println(stderr, "error removing cache '{}': {}", cache_root.string(), ec.message());
-                    return 1;
-                }
-            }
-            std::println("✓ Cleaned {} and global cache {} ({} entries removed)",
-                cfire_dir.string(), cache_root.string(), removed);
+        cfire::build::CleanOptions opts;
+        opts.clean_project = clean_all || !clean_cache || saw_dir;
+        opts.clean_cache = clean_all || clean_cache;
+        opts.dry_run = dry_run;
+        opts.json = json_mode;
+        opts.has_explicit_target = saw_dir;
+        opts.target_path = saw_dir ? target_dir : std::filesystem::path{};
+        opts.runtime_dir = runtime_dir;
+
+        auto rep = cfire::build::run_clean(opts);
+        if (json_mode) {
+            std::println("{}", cfire::build::format_clean_report_json(rep));
         } else {
-            std::println("✓ Cleaned {} ({} entries removed)", cfire_dir.string(), removed);
+            const char* verb = dry_run ? "Would remove" : "Removed";
+            for (const auto& item : rep.removed) {
+                std::println("  {} {} ({} bytes)", verb, item.path, item.bytes);
+            }
+            for (const auto& sk : rep.skipped) {
+                std::println(stderr, "error: skipped '{}': {}", sk.path, sk.reason);
+            }
+            if (rep.ok) {
+                std::println("✓ Cleaned ({} {} entries, {} bytes{})",
+                    rep.entries_removed,
+                    dry_run ? "planned" : "removed",
+                    rep.bytes_freed,
+                    dry_run ? ", dry run" : "");
+            } else {
+                std::println(stderr, "✗ Clean aborted or partially skipped ({} entries processed)", rep.entries_removed);
+            }
         }
-        return 0;
+        return rep.ok ? 0 : 1;
     }
 
     cfire::cli::CommonCliArgs args;

@@ -1,0 +1,7 @@
+package main
+
+fn main() {
+    xs := [1, 2, 3]
+    ys := xs.clone() //~ error cfire/UNKNOWN-METHOD
+    println("{}", ys.len())
+}

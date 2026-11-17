@@ -815,10 +815,16 @@ fn main() {
 }
 )", "cfire/UNKNOWN-METHOD", "bad_str_find.cf");
 
-                // Reject integer literals in `[]byte` slice literal with `cfire/TYPE-MISMATCH`
+                // Accept 0..=255 hex/octal literals in `[]byte` and reject wider integer literals with `cfire/TYPE-MISMATCH`
+                require_sema_ok(R"(package main
+fn main() {
+    b: []byte = [0x61, 0o142]
+    println("{}", b.len())
+}
+)", "ok_byte_slice_lit.cf");
                 require_sema_error(R"(package main
 fn main() {
-    b: []byte = [0x61, 0x62]
+    b: []byte = [0x100, 0x101]
     println("{}", b.len())
 }
 )", "cfire/TYPE-MISMATCH", "bad_byte_slice_lit.cf");

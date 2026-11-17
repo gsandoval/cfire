@@ -1,0 +1,107 @@
+// requires-lib: webkit2gtk
+// expect: stdout
+// | ext:webui ok
+package main
+
+import "ext:webui"
+import "core:os"
+
+type EchoReq struct {
+    msg: str `json:"msg"`
+}
+
+fn compile_gui_webui_surface(mut app: webui.App) {
+    app.set_icon("icon.png")
+    app.set_tray("tray.png", "Smoke")
+    app.add_tray_item("Open", "tray:open")
+    app.hide_window()
+    app.show_window()
+    app.set_hide_on_close(true)
+    app.add_menu_item("File", "Ping", "p", "menu:ping")
+    app.serve_dir("./ui")
+    app.eval("void 0")
+    app.set_title("Smoke")
+    app.set_size(800, 600)
+    app.set_min_size(320, 240)
+    app.set_max_size(1920, 1080)
+    app.set_frameless(false)
+    app.set_transparent(false)
+    app.set_dark_mode(true)
+    app.set_always_on_top(false)
+    app.set_devtools(false)
+    _ = app.devtools_enabled()
+    app.set_context_menu(false)
+    _ = app.context_menu_enabled()
+    app.set_autofill(false)
+    _ = app.autofill_enabled()
+    app.fullscreen()
+    app.minimize()
+    app.maximize()
+    app.center()
+    app.clipboard_set("x", false, 0)
+    app.clipboard_set_secret("y", 1000)
+    _ = app.clipboard_get()
+    _ = app.monospace_fonts()
+    _ = app.open_file_dialog("Open")
+    _ = app.save_file_dialog("Save", "out.txt")
+    app.message_dialog("Info", "Hello")
+    _ = webui.clipboard_get()
+    webui.clipboard_set("a", false, 0)
+    webui.clipboard_set_secret("b", 1000)
+    _ = webui.monospace_fonts()
+    _ = app.run_webview_test(100) or false
+    app.run()
+    app.quit()
+}
+
+fn main() {
+    mut app := make(webui.App, "SmokeUI", 640, 480)
+    defer app.close()
+
+    app.set_max_history(16)
+    app.set_html("<!doctype html><html><body>smoke</body></html>")
+    app.embed_asset("/style.css", "body{}", "text/css")
+    assert_eq(app.resolve_asset_mime("/style.css"), "text/css")
+
+    app.set_state("mode", "smoke")
+    assert_eq(app.get_state("mode"), "smoke")
+
+    app.bind[EchoReq]("echo") |r| {
+        return r.msg
+    }
+    app.bind_async[EchoReq]("echo_async") |r| {
+        return r.msg
+    }
+    app.bind_action("ping") || {
+        return "pong"
+    }
+    app.bind_action_async("ping_async") || {
+        return "pong"
+    }
+    app.bind_raw("raw") |s| {
+        return s
+    }
+
+    mut seen_ev := false
+    app.on("ui:ev") |payload| {
+        if payload.contains("ok") {
+            seen_ev = true
+        }
+    }
+    app.dispatch_event("ui:ev", "{\"ok\":true}")
+    assert(seen_ev)
+
+    app.emit("ping", "v1")
+    app.emit_bytes("bin", []byte("ab"))
+    assert_eq(app.emitted_events_count("ping"), 1)
+    assert(app.last_emitted_payload("ping").contains("v1"))
+    app.clear_history()
+
+    rpc := try app.call_rpc("echo", "{\"msg\":\"hi\"}")
+    assert(rpc.contains("hi"))
+
+    if os.args().len() > 999999 {
+        compile_gui_webui_surface(mut app)
+    }
+    println("ext:webui ok")
+}

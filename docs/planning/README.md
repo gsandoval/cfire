@@ -6,9 +6,10 @@ This directory maintains the active planning state and project backlog for the `
 
 1. [`backlog.md`](./backlog.md): Main engineering backlog (`CF-001` – `CF-197`, decisions `Q1` – `Q54`).
 2. [`backlog-build-distribution.md`](./backlog-build-distribution.md): Topic-focused backlog for compiler/build performance, progressive compilation, caching, 6-target pre-compiled binary distribution, and language/documentation consistency (`CF-198` – `CF-210`, decisions `Q55` – `Q61`).
-3. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
-4. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
-5. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
+3. [`flint.md`](./flint.md): Topic-focused downstream audit and backlog (`CF-211` – `CF-239`, decisions `Q62` – `Q69`; future items start at `CF-240` and `Q70`).
+4. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
+5. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+6. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
 
 ---
 
@@ -17,7 +18,7 @@ This directory maintains the active planning state and project backlog for the `
 Whenever work is performed on this repository, the following protocol **must** be followed:
 
 ```
-[backlog.md / backlog-build-distribution.md] ──(Promote)──> [active.md] ──(Implement & Verify)
+[backlog.md / backlog-build-distribution.md / flint.md] ──(Promote)──> [active.md] ──(Implement & Verify)
 ```
 
 ### Quality Gates (Mandatory): three commands

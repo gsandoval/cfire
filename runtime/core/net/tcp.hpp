@@ -540,12 +540,12 @@ private:
 class TcpListener {
 public:
     TcpListener(int fd, std::uint16_t port) noexcept : fd_(fd), port_(port), active_(true) {
-        if (port_ != 0) {
+        if (fd_ < 0 && port_ != 0) {
             detail::register_loopback_port(port_);
         }
     }
     ~TcpListener() {
-        if (active_ && port_ != 0) {
+        if (active_ && fd_ < 0 && port_ != 0) {
             detail::unregister_loopback_port(port_);
         }
         if (fd_ >= 0) detail::close_sock(fd_);
@@ -556,7 +556,7 @@ public:
           active_(std::exchange(o.active_, false)) {}
     auto operator=(TcpListener&& o) noexcept -> TcpListener& {
         if (this != &o) {
-            if (active_ && port_ != 0) {
+            if (active_ && fd_ < 0 && port_ != 0) {
                 detail::unregister_loopback_port(port_);
             }
             if (fd_ >= 0) detail::close_sock(fd_);
@@ -573,8 +573,10 @@ public:
 
     // one connection if one is waiting, without blocking (the listening socket must be non-blocking).
     [[nodiscard]] auto try_accept() -> std::optional<TcpConn> {
-        if (int sfd = detail::pop_loopback_fd(port_); sfd >= 0) return TcpConn(sfd, "127.0.0.1");
-        if (fd_ < 0) return std::nullopt;
+        if (fd_ < 0) {
+            if (int sfd = detail::pop_loopback_fd(port_); sfd >= 0) return TcpConn(sfd, "127.0.0.1");
+            return std::nullopt;
+        }
         for (;;) {
             sockaddr_storage client_addr{};
             socklen_t len = sizeof(client_addr);
@@ -592,16 +594,17 @@ public:
 
     // Wakes `hook` whenever a virtual-port connection is queued (empty to clear).
     void set_wake_hook(std::function<void()> hook) {
-        if (port_ != 0) detail::set_loopback_wake_hook(port_, std::move(hook));
+        if (fd_ < 0 && port_ != 0) detail::set_loopback_wake_hook(port_, std::move(hook));
     }
 
     [[nodiscard]] auto accept() -> std::expected<TcpConn, cfire::Error> {
         for (int attempt = 0; attempt < 200; ++attempt) {
-            int sfd = detail::pop_loopback_fd(port_);
-            if (sfd >= 0) {
-                return TcpConn(sfd, "127.0.0.1");
-            }
-            if (fd_ >= 0) {
+            if (fd_ < 0) {
+                if (int sfd = detail::pop_loopback_fd(port_); sfd >= 0) {
+                    return TcpConn(sfd, "127.0.0.1");
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            } else {
                 if (detail::poll_sock_read(fd_, 10)) {
                     sockaddr_storage client_addr{};
                     socklen_t len = sizeof(client_addr);
@@ -616,8 +619,6 @@ public:
                         return TcpConn(client_fd, detail::peer_address_text(client_addr));
                     }
                 }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }
         return cfire::make_error("tcp accept timed out");
@@ -695,16 +696,33 @@ private:
     return listen_tcp_addr("0.0.0.0", port);
 }
 
-[[nodiscard]] inline auto connect_tcp(std::string_view host, std::uint16_t port)
+[[nodiscard]] inline auto connect_tcp_timeout(std::string_view host, std::uint16_t port, std::int64_t timeout_ms)
     -> std::expected<TcpConn, cfire::Error>
 {
     if (host.empty() || port == 0) {
         return cfire::make_error(std::format("failed to connect to {}:{}", host, port));
     }
+    if (timeout_ms < 0) {
+        return cfire::make_error(std::format("connect to {}:{} timed out", host, port), 408);
+    }
 
     detail::ensure_winsock();
     std::string host_str(host);
     std::string port_str = std::to_string(port);
+    const bool has_deadline = (timeout_ms > 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(has_deadline ? timeout_ms : 0);
+    auto rem_ms = [&]() -> std::int64_t {
+        if (!has_deadline) return 0;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+    };
+    auto apply_initial_timeout = [&](int fd) {
+        if (!has_deadline) {
+            detail::set_sock_timeout_ms(fd, 0);
+        } else {
+            std::int64_t r = std::clamp<std::int64_t>(rem_ms(), 1, 2000000000LL);
+            detail::set_sock_timeout_ms(fd, static_cast<int>(r));
+        }
+    };
 
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;  // IPv6 hosts and literals (`::1`) as well as IPv4
@@ -713,14 +731,92 @@ private:
     if (host_str.size() > 2 && host_str.front() == '[' && host_str.back() == ']') host_str = host_str.substr(1, host_str.size() - 2);
     if (::getaddrinfo(host_str.c_str(), port_str.c_str(), &hints, &res) == 0 && res != nullptr) {
         for (addrinfo* ai = res; ai != nullptr; ai = ai->ai_next) {
+            if (has_deadline && rem_ms() <= 0) {
+                ::freeaddrinfo(res);
+                return cfire::make_error(std::format("connect to {}:{} timed out", host, port), 408);
+            }
             int fd = detail::open_tcp_socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
             if (fd < 0) continue;
-            detail::set_sock_timeout_ms(fd, 2000);
-            if (::connect(fd, ai->ai_addr, static_cast<int>(ai->ai_addrlen)) == 0) {
+            detail::set_nonblocking(fd, true);
+#if defined(_WIN32)
+            int rc = ::connect(static_cast<SOCKET>(fd), ai->ai_addr, static_cast<int>(ai->ai_addrlen));
+            bool in_prog = (rc != 0) && (::WSAGetLastError() == WSAEWOULDBLOCK || ::WSAGetLastError() == WSAEINPROGRESS);
+#else
+            int rc = ::connect(fd, ai->ai_addr, static_cast<socklen_t>(ai->ai_addrlen));
+            bool in_prog = (rc != 0) && (errno == EINPROGRESS);
+#endif
+            if (rc == 0) {
+                detail::set_nonblocking(fd, false);
+                apply_initial_timeout(fd);
                 ::freeaddrinfo(res);
                 return TcpConn(fd, host_str);
             }
+            bool timed_out = false;
+            if (in_prog) {
+#if defined(_WIN32)
+                fd_set wfds, efds;
+                FD_ZERO(&wfds);
+                FD_ZERO(&efds);
+                FD_SET(static_cast<SOCKET>(fd), &wfds);
+                FD_SET(static_cast<SOCKET>(fd), &efds);
+                timeval tv{};
+                timeval* tvp = nullptr;
+                if (has_deadline) {
+                    std::int64_t r = std::max<std::int64_t>(1, rem_ms());
+                    tv.tv_sec = static_cast<long>(r / 1000);
+                    tv.tv_usec = static_cast<long>((r % 1000) * 1000);
+                    tvp = &tv;
+                }
+                int src = ::select(0, nullptr, &wfds, &efds, tvp);
+                if (src == 0) {
+                    timed_out = true;
+                } else if (src > 0 && !FD_ISSET(static_cast<SOCKET>(fd), &efds) && FD_ISSET(static_cast<SOCKET>(fd), &wfds)) {
+                    int so_err = 0;
+                    int slen = sizeof(so_err);
+                    if (::getsockopt(static_cast<SOCKET>(fd), SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_err), &slen) == 0 && so_err == 0) {
+                        detail::set_nonblocking(fd, false);
+                        apply_initial_timeout(fd);
+                        ::freeaddrinfo(res);
+                        return TcpConn(fd, host_str);
+                    }
+                }
+#else
+                for (;;) {
+                    int wait_ms = -1;
+                    if (has_deadline) {
+                        std::int64_t r = rem_ms();
+                        if (r <= 0) {
+                            timed_out = true;
+                            break;
+                        }
+                        wait_ms = static_cast<int>(std::clamp<std::int64_t>(r, 1, 2000000000LL));
+                    }
+                    pollfd pfd{.fd = fd, .events = POLLOUT, .revents = 0};
+                    int prc = ::poll(&pfd, 1, wait_ms);
+                    if (prc < 0 && errno == EINTR) continue;
+                    if (prc == 0) {
+                        timed_out = true;
+                        break;
+                    }
+                    if (prc > 0) {
+                        int so_err = 0;
+                        socklen_t slen = sizeof(so_err);
+                        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err, &slen) == 0 && so_err == 0) {
+                            detail::set_nonblocking(fd, false);
+                            apply_initial_timeout(fd);
+                            ::freeaddrinfo(res);
+                            return TcpConn(fd, host_str);
+                        }
+                    }
+                    break;
+                }
+#endif
+            }
             detail::close_sock(fd);
+            if (timed_out || (has_deadline && rem_ms() <= 0)) {
+                ::freeaddrinfo(res);
+                return cfire::make_error(std::format("connect to {}:{} timed out", host, port), 408);
+            }
         }
         ::freeaddrinfo(res);
     }
@@ -729,11 +825,24 @@ private:
         int sv[2]{-1, -1};
         if (detail::create_loopback_pair(sv)) {
             detail::push_loopback_fd(port, sv[0]);
-            return TcpConn(sv[1], host_str);
+            TcpConn c(sv[1], host_str);
+            if (has_deadline) {
+                std::int64_t r = std::clamp<std::int64_t>(rem_ms(), 1, 2000000000LL);
+                c.set_timeout_ms(static_cast<int>(r));
+            }
+            return c;
         }
     }
 
     return cfire::make_error(std::format("failed to connect to {}:{}", host, port));
+}
+
+[[nodiscard]] inline auto connect_tcp(std::string_view host, std::uint16_t port)
+    -> std::expected<TcpConn, cfire::Error>
+{
+    auto res = connect_tcp_timeout(host, port, 2000);
+    if (res) res->set_timeout_ms(2000);
+    return res;
 }
 
 [[nodiscard]] inline auto socketpair() -> std::expected<std::tuple<TcpConn, TcpConn>, cfire::Error> {

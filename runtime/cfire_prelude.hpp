@@ -407,7 +407,19 @@ public:
     }
     SecureTempDir(const SecureTempDir&) = delete;
     SecureTempDir& operator=(const SecureTempDir&) = delete;
-    SecureTempDir(SecureTempDir&& o) noexcept : path_(std::exchange(o.path_, {})), keep_(o.keep_) {}
+    SecureTempDir(SecureTempDir&& o) noexcept
+        : path_(std::exchange(o.path_, {})), keep_(std::exchange(o.keep_, false)) {}
+    SecureTempDir& operator=(SecureTempDir&& o) noexcept {
+        if (this != &o) {
+            if (!path_.empty() && !keep_) {
+                std::error_code ec;
+                std::filesystem::remove_all(path_, ec);
+            }
+            path_ = std::exchange(o.path_, {});
+            keep_ = std::exchange(o.keep_, false);
+        }
+        return *this;
+    }
 
     [[nodiscard]] auto ok() const noexcept -> bool { return !path_.empty(); }
     [[nodiscard]] auto path() const noexcept -> const std::filesystem::path& { return path_; }
@@ -420,35 +432,179 @@ private:
     bool keep_ = false;
 };
 
-// Per-user cache root for `sub` ($XDG_CACHE_HOME, ~/Library/Caches, %LOCALAPPDATA%), created with
-// mode 0700. Returns an empty path when no per-user location exists; callers must then fall back to a
-// per-process SecureTempDir rather than a shared temp-dir name.
-[[nodiscard]] inline auto user_cache_dir(std::string_view sub) -> std::filesystem::path {
+inline constexpr std::string_view kCacheMarkerName = ".cfire-cache";
+
+[[nodiscard]] inline auto is_known_cache_entry(std::string_view name) noexcept -> bool {
+    if (name == "pch" || name == "bin" || name == "libs" || name == "headers" ||
+        name == "ast" || name == "pkg" || name == "doc" || name == "mcp" ||
+        name == "emscripten" || name == "ipc" || name == "ipc-test" ||
+        name == "test-header-cache" || name == "secure-temp-test" || name == "probes.json") {
+        return true;
+    }
+    return name.starts_with(".write_probe_") || name.starts_with("probes.json.tmp.");
+}
+
+[[nodiscard]] inline auto is_same_or_ancestor_path(
+    const std::filesystem::path& candidate_anc,
+    const std::filesystem::path& target
+) -> bool {
+    if (candidate_anc.empty() || target.empty()) return false;
+    std::error_code aec, tec;
+    auto anc = std::filesystem::weakly_canonical(candidate_anc, aec);
+    if (aec || anc.empty()) anc = candidate_anc.lexically_normal();
+    auto cur = std::filesystem::weakly_canonical(target, tec);
+    if (tec || cur.empty()) cur = target.lexically_normal();
+    while (!cur.empty()) {
+        if (cur == anc) return true;
+        auto parent = cur.parent_path();
+        if (parent == cur) break;
+        cur = std::move(parent);
+    }
+    return false;
+}
+
+[[nodiscard]] inline auto is_dangerous_cache_root(const std::filesystem::path& p) -> bool {
+    if (p.empty()) return true;
+    std::error_code ec;
+    auto st = std::filesystem::symlink_status(p, ec);
+    if (std::filesystem::is_symlink(st)) return true;
+    auto canon = std::filesystem::weakly_canonical(p, ec);
+    if (ec || canon.empty()) canon = p.lexically_normal();
+    if (canon == canon.root_path()) return true;
+    auto check_home = [&](const char* env_var) -> bool {
+        if (const char* v = std::getenv(env_var); v && *v) {
+            std::filesystem::path hp(v);
+            if (is_same_or_ancestor_path(canon, hp)) return true;
+            std::error_code hec;
+            auto hcan = std::filesystem::weakly_canonical(hp / ".cfire", hec);
+            if (hec || hcan.empty()) hcan = (hp / ".cfire").lexically_normal();
+            if (canon == hcan) return true;
+        }
+        return false;
+    };
+    if (check_home("HOME")) return true;
+#if defined(_WIN32)
+    if (check_home("USERPROFILE")) return true;
+#endif
+    return false;
+}
+
+[[nodiscard]] inline auto has_foreign_cache_entries(const std::filesystem::path& root) -> bool {
+    std::error_code ec;
+    auto st = std::filesystem::symlink_status(root, ec);
+    if (!std::filesystem::exists(st)) return false;
+    if (std::filesystem::is_symlink(st) || !std::filesystem::is_directory(st)) return true;
+    for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+        if (ec) return true;
+        const std::string fname = entry.path().filename().string();
+        if (fname == kCacheMarkerName) {
+            auto mst = entry.symlink_status(ec);
+            if (ec || std::filesystem::is_symlink(mst) || !std::filesystem::is_regular_file(mst)) return true;
+            continue;
+        }
+        if (!is_known_cache_entry(fname)) return true;
+    }
+    return false;
+}
+
+// Read-only resolution of the configured user cache root (`Q63`):
+//   CFIRE_CACHE_DIR > $XDG_CACHE_HOME/cfire > OS-native user cache.
+[[nodiscard]] inline auto resolve_configured_cache_root() -> std::filesystem::path {
     auto env = [](const char* k) -> std::string {
         const char* v = std::getenv(k);
-        return v ? std::string(v) : std::string();
+        return (v && *v) ? std::string(v) : std::string();
     };
-    std::filesystem::path root;
+    if (auto override_dir = env("CFIRE_CACHE_DIR"); !override_dir.empty()) {
+        return std::filesystem::path(override_dir);
+    }
 #if defined(_WIN32)
-    if (auto la = env("LOCALAPPDATA"); !la.empty()) root = std::filesystem::path(la) / "cfire";
+    if (auto xdg = env("XDG_CACHE_HOME"); !xdg.empty()) {
+        return std::filesystem::path(xdg) / "cfire";
+    }
+    if (auto la = env("LOCALAPPDATA"); !la.empty()) {
+        return std::filesystem::path(la) / "cfire" / "cache";
+    }
+    if (auto up = env("USERPROFILE"); !up.empty()) {
+        return std::filesystem::path(up) / "AppData" / "Local" / "cfire" / "cache";
+    }
+    if (auto home = env("HOME"); !home.empty()) {
+        return std::filesystem::path(home) / ".cache" / "cfire";
+    }
 #else
     if (auto xdg = env("XDG_CACHE_HOME"); !xdg.empty() && xdg.starts_with("/")) {
-        root = std::filesystem::path(xdg) / "cfire";
-    } else if (auto home = env("HOME"); !home.empty()) {
+        return std::filesystem::path(xdg) / "cfire";
+    }
+    if (auto home = env("HOME"); !home.empty()) {
 #if defined(__APPLE__)
-        root = std::filesystem::path(home) / "Library" / "Caches" / "cfire";
+        return std::filesystem::path(home) / "Library" / "Caches" / "cfire";
 #else
-        root = std::filesystem::path(home) / ".cache" / "cfire";
+        return std::filesystem::path(home) / ".cache" / "cfire";
 #endif
     }
 #endif
-    if (root.empty()) return {};
-    auto dir = sub.empty() ? root : root / sub;
+    return {};
+}
+
+[[nodiscard]] inline auto write_cache_marker(const std::filesystem::path& root) -> bool {
+    std::filesystem::path marker = root / kCacheMarkerName;
     std::error_code ec;
+    auto mst = std::filesystem::symlink_status(marker, ec);
+    if (std::filesystem::is_symlink(mst)) return false;
+    if (std::filesystem::exists(mst)) {
+        return std::filesystem::is_regular_file(mst);
+    }
+#if defined(_WIN32)
+    std::FILE* fp = ::_wfopen(marker.wstring().c_str(), L"wb");
+#else
+    std::FILE* fp = std::fopen(marker.c_str(), "wb");
+#endif
+    if (!fp) return false;
+    static constexpr char kHeader[] = "cfire-cache-v1\n";
+    const std::size_t wrote = std::fwrite(kHeader, 1, sizeof(kHeader) - 1, fp);
+    const int closed = std::fclose(fp);
+    if (wrote != sizeof(kHeader) - 1 || closed != 0) return false;
+#if !defined(_WIN32)
+    ::chmod(marker.c_str(), 0600);
+#endif
+    return true;
+}
+
+[[nodiscard]] inline auto ensure_initialized_cache_root(const std::filesystem::path& root) -> bool {
+    if (is_dangerous_cache_root(root)) return false;
+    if (has_foreign_cache_entries(root)) return false;
+    std::error_code ec;
+    std::filesystem::create_directories(root, ec);
+    if (ec || !std::filesystem::is_directory(root, ec)) return false;
+#if !defined(_WIN32)
+    ::chmod(root.c_str(), 0700);
+#endif
+    return write_cache_marker(root);
+}
+
+[[nodiscard]] inline auto fallback_secure_cache_root() -> const std::filesystem::path& {
+    static SecureTempDir s_fallback("cfire_cache");
+    if (s_fallback.ok()) {
+        (void)write_cache_marker(s_fallback.path());
+    }
+    return s_fallback.path();
+}
+
+// Single OS-native / XDG user cache root with mode 0700 and `.cfire-cache` marker; falls back to
+// a per-process SecureTempDir rather than any shared or predictable temp-dir name.
+[[nodiscard]] inline auto user_cache_dir(std::string_view sub) -> std::filesystem::path {
+    std::filesystem::path root = resolve_configured_cache_root();
+    if (!ensure_initialized_cache_root(root)) {
+        root = fallback_secure_cache_root();
+    }
+    if (root.empty()) return {};
+    if (sub.empty()) return root;
+    std::filesystem::path dir = root / sub;
+    std::error_code ec;
+    auto st = std::filesystem::symlink_status(dir, ec);
+    if (std::filesystem::is_symlink(st)) return {};
     std::filesystem::create_directories(dir, ec);
     if (ec || !std::filesystem::is_directory(dir, ec)) return {};
 #if !defined(_WIN32)
-    ::chmod(root.c_str(), 0700);
     ::chmod(dir.c_str(), 0700);
 #endif
     return dir;
@@ -647,6 +803,27 @@ public:
         } else {
             return map_[std::forward<KeyArg>(k)];
         }
+    }
+
+    template <typename KeyArg>
+    [[nodiscard]] auto find_ptr(const KeyArg& k) const -> const V* {
+        if constexpr (std::is_same_v<K, std::string> && std::is_convertible_v<KeyArg, std::string_view>) {
+            std::string_view sv(k);
+            if (auto it = map_.find(sv); it != map_.end()) {
+                return &it->second;
+            }
+        } else {
+            if (auto it = map_.find(k); it != map_.end()) {
+                return &it->second;
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename KeyArg>
+    auto operator[](const KeyArg& k) const -> const V& {
+        if (const V* p = find_ptr(k)) return *p;
+        cfire::panic("map key not found");
     }
 
     template <typename KeyArg>
@@ -866,10 +1043,20 @@ template <typename Container, typename Key>
 [[nodiscard]] inline decltype(auto) index_at(
     Container&& c,
     Key&& k,
-    std::string_view = "",
-    int = 0
+    std::string_view file = "",
+    int line = 0
 ) {
-    return std::forward<Container>(c)[std::forward<Key>(k)];
+    if constexpr (std::is_const_v<std::remove_reference_t<Container>> &&
+                  requires(const Container& mc, const Key& mk) { mc.find_ptr(mk); }) {
+        const auto* p = c.find_ptr(k);
+        if (!p) [[unlikely]] {
+            assert_true_at(false, "map key not found", file, line, "map key not found");
+            std::abort();
+        }
+        return *p;
+    } else {
+        return std::forward<Container>(c)[std::forward<Key>(k)];
+    }
 }
 
 // --- String / Path / C-String Boundary Coercions ---

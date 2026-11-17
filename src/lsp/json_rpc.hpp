@@ -556,6 +556,12 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
             while (i < n) {
                 char cur = ln[static_cast<std::size_t>(i)];
                 if (cur == '\\') {
+                    if (i + 2 < n && ln[static_cast<std::size_t>(i + 1)] == 'u' && ln[static_cast<std::size_t>(i + 2)] == '{') {
+                        int j = i + 3;
+                        while (j < n && ln[static_cast<std::size_t>(j)] != '}') ++j;
+                        i = (j < n) ? (j + 1) : (i + 2);
+                        continue;
+                    }
                     i += 2;
                     continue;
                 }
@@ -623,6 +629,14 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
                 int depth = 0;
                 for (int k = q_open + 1; k < q_close; ++k) {
                     if (ln[static_cast<std::size_t>(k)] == '\\' && k + 1 < q_close) {
+                        if (k + 2 < q_close && ln[static_cast<std::size_t>(k + 1)] == 'u' && ln[static_cast<std::size_t>(k + 2)] == '{') {
+                            int j = k + 3;
+                            while (j < q_close && ln[static_cast<std::size_t>(j)] != '}') ++j;
+                            if (j < q_close) {
+                                k = j;
+                                continue;
+                            }
+                        }
                         ++k;
                         continue;
                     }
@@ -926,7 +940,10 @@ CFIRE_LSP_RPC_INLINE void walk_exprs(
         walk_stmt_exprs(cl->body, visitor);
     } else if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
         walk_exprs(me->target, visitor);
-        for (const auto& arm : me->arms) walk_stmt_exprs(arm.body, visitor);
+        for (const auto& arm : me->arms) {
+            if (arm.guard) walk_exprs(arm.guard, visitor);
+            walk_stmt_exprs(arm.body, visitor);
+        }
     } else if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
         walk_exprs(tr->inner, visitor);
     } else if (const auto* orex = std::get_if<OrExpr>(&e->node)) {
@@ -1001,7 +1018,10 @@ CFIRE_LSP_RPC_INLINE void walk_stmt_exprs(
             walk_stmt_exprs(fs->body, visitor);
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             if (ms->target) walk_exprs(ms->target, visitor);
-            for (const auto& arm : ms->arms) walk_stmt_exprs(arm.body, visitor);
+            for (const auto& arm : ms->arms) {
+                if (arm.guard) walk_exprs(arm.guard, visitor);
+                walk_stmt_exprs(arm.body, visitor);
+            }
         } else if (const auto* asc = std::get_if<AsyncScopeStmt>(&s->node)) {
             if (asc->workers) walk_exprs(asc->workers, visitor);
             walk_stmt_exprs(asc->body, visitor);
@@ -1085,6 +1105,24 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                 }
                 env[info.name] = info;
                 ordered_out.push_back(info);
+            }
+            if (vd->init) {
+                if (const auto* or_ex = std::get_if<OrExpr>(&vd->init->node); or_ex && !or_ex->handler_body.empty()) {
+                    int or_end = get_block_end_line(or_ex->handler_body, lines, vd->line);
+                    if (max_line <= 0 || (max_line >= vd->line && max_line <= or_end)) {
+                        auto or_env = env;
+                        if (!or_ex->err_var.empty() && or_ex->err_var != "_") {
+                            LocalBindingInfo ei;
+                            ei.name = or_ex->err_var;
+                            ei.cf_type = "Error";
+                            ei.cpp_type = "cfire::Error";
+                            ei.decl_line = vd->line;
+                            or_env[ei.name] = ei;
+                        }
+                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out);
+                        if (max_line > 0) env = std::move(or_env);
+                    }
+                }
             }
         } else if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
             std::vector<std::string> elem_types;
@@ -1202,17 +1240,92 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                 if (max_line > 0) env = std::move(as_env);
             }
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
+            std::unordered_set<std::string> known_enum_variants;
+            for (const auto& en : ast.enums) {
+                for (const auto& v : en.variants) known_enum_variants.insert(v.name);
+            }
+            auto find_variant_payload_type = [&](std::string_view enum_prefix, std::string_view vname, std::size_t idx) -> std::string {
+                auto scan_enums = [&](const std::vector<EnumDecl>& enums, std::string_view target_enum) -> std::string {
+                    for (const auto& en : enums) {
+                        if (!target_enum.empty() && target_enum != en.name) continue;
+                        for (const auto& v : en.variants) {
+                            if (v.name == vname && idx < v.payload_types.size()) {
+                                return cfire::fmt::format_type_ref(v.payload_types[idx]);
+                            }
+                        }
+                    }
+                    return {};
+                };
+                if (auto dot = enum_prefix.rfind('.'); dot != std::string_view::npos) {
+                    std::string_view pkg_alias = enum_prefix.substr(0, dot);
+                    std::string_view ename = enum_prefix.substr(dot + 1);
+                    for (const auto& pkg : ws.local_packages) {
+                        if (pkg.alias == pkg_alias) {
+                            if (auto res = scan_enums(pkg.ast.enums, ename); !res.empty()) return res;
+                        }
+                    }
+                }
+                if (auto res = scan_enums(ast.enums, enum_prefix); !res.empty()) return res;
+                for (const auto& pkg : ws.local_packages) {
+                    for (const auto& en : pkg.ast.enums) {
+                        if (!enum_prefix.empty() && enum_prefix != en.name && enum_prefix != pkg.alias + "." + en.name) continue;
+                        for (const auto& v : en.variants) {
+                            if (v.name == vname && idx < v.payload_types.size()) {
+                                return cfire::fmt::format_type_ref(v.payload_types[idx]);
+                            }
+                        }
+                    }
+                }
+                return "auto";
+            };
+            std::string target_cf = ms->target ? infer_expr_cf_type(ms->target, ast, ws, env) : "auto";
             for (const auto& arm : ms->arms) {
                 int arm_start = arm.line;
                 int arm_end = get_block_end_line(arm.body, lines, arm_start);
                 if (max_line <= 0 || (max_line >= arm_start && max_line <= arm_end)) {
                     auto arm_env = env;
-                    for (const auto& b : arm.bindings) {
-                        if (b.empty() || b == "_") continue;
-                        LocalBindingInfo bi;
-                        bi.name = b;
-                        bi.decl_line = arm.line;
-                        arm_env[b] = bi;
+                    const auto pats = arm.patterns.empty()
+                        ? std::vector<MatchPattern>{arm.to_pattern()}
+                        : arm.patterns;
+                    for (const auto& pat : pats) {
+                        for (std::size_t bi_idx = 0; bi_idx < pat.bindings.size(); ++bi_idx) {
+                            const auto& b = pat.bindings[bi_idx];
+                            if (b.empty() || b == "_") continue;
+                            LocalBindingInfo bi;
+                            bi.name = b;
+                            bi.decl_line = arm.line;
+                            bi.cf_type = (pat.is_err || pat.variant_name == "Err")
+                                ? "Error"
+                                : find_variant_payload_type(pat.enum_prefix, pat.variant_name, bi_idx);
+                            bi.cpp_type = cf_type_string_to_cpp(bi.cf_type);
+                            arm_env[b] = bi;
+                        }
+                        if (pat.is_slice_pattern) {
+                            std::string elem_cf = target_cf.starts_with("[]") ? target_cf.substr(2) : "auto";
+                            auto add_slice_var = [&](const std::string& vname, const std::string& vtype) {
+                                if (vname.empty() || vname == "_") return;
+                                LocalBindingInfo bi;
+                                bi.name = vname;
+                                bi.decl_line = arm.line;
+                                bi.cf_type = vtype;
+                                bi.cpp_type = cf_type_string_to_cpp(vtype);
+                                arm_env[vname] = bi;
+                            };
+                            for (const auto& hv : pat.slice_head) add_slice_var(hv, elem_cf);
+                            add_slice_var(pat.slice_rest, target_cf);
+                            for (const auto& tv : pat.slice_tail) add_slice_var(tv, elem_cf);
+                        } else if (pat.enum_prefix.empty() && pat.literal_val.empty() &&
+                                   !pat.is_range && !pat.is_some && !pat.is_none &&
+                                   !pat.is_ok && !pat.is_err &&
+                                   pat.bindings.empty() && !pat.variant_name.empty() &&
+                                   pat.variant_name != "_" && !known_enum_variants.contains(pat.variant_name)) {
+                            LocalBindingInfo bi;
+                            bi.name = pat.variant_name;
+                            bi.decl_line = arm.line;
+                            bi.cf_type = target_cf;
+                            bi.cpp_type = cf_type_string_to_cpp(target_cf);
+                            arm_env[pat.variant_name] = bi;
+                        }
                     }
                     collect_stmt_bindings(arm.body, ast, ws, lines, max_line, arm_env, ordered_out);
                     if (max_line > 0) env = std::move(arm_env);
@@ -1253,6 +1366,22 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                             collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, blk_env, ordered_out);
                             if (max_line > 0) env = std::move(blk_env);
                         }
+                    }
+                } else if (const auto* or_ex = std::get_if<OrExpr>(&es->expr->node); or_ex && !or_ex->handler_body.empty()) {
+                    int or_start = es->line;
+                    int or_end = get_block_end_line(or_ex->handler_body, lines, or_start);
+                    if (max_line <= 0 || (max_line >= or_start && max_line <= or_end)) {
+                        auto or_env = env;
+                        if (!or_ex->err_var.empty() && or_ex->err_var != "_") {
+                            LocalBindingInfo ei;
+                            ei.name = or_ex->err_var;
+                            ei.cf_type = "Error";
+                            ei.cpp_type = "cfire::Error";
+                            ei.decl_line = es->line;
+                            or_env[ei.name] = ei;
+                        }
+                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out);
+                        if (max_line > 0) env = std::move(or_env);
                     }
                 }
             }

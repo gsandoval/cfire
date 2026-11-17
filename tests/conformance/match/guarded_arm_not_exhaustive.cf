@@ -1,0 +1,12 @@
+package main
+
+fn classify(x: i64) -> str {
+    return match x { //~ error cfire/NON-EXHAUSTIVE-MATCH
+        n if n > 0 => "pos",
+        n if n <= 0 => "nonpos",
+    }
+}
+
+fn main() {
+    println("{}", classify(1))
+}

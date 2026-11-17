@@ -27,28 +27,29 @@ The phonetic homophone to **sapphire** captures the visual identity: crystalline
 4. **Clang AST C/C++ Interop + Unified `build.cf` Build System:** Import any C/C++ header (`import cpp "<header.h>"`) or build local/external `build.CC` and `build.CMake` dependencies into cached static archives (`.cfire/cache/lib/*.a`) with automatic `str` $\rightarrow$ `const char*` boundary coercion (`cfire::c_str`).
 5. **Intent Over Ceremony:** Replace `const T&`, `T&&`, `std::move`, `std::string_view`, and pointer hazards with read-only view parameters (default), `mut`, `move` (with definite last-use move insertion), multi-return tuples `(T1, T2)`, unified `str`/`path`/`bytes`, `own[T]`/`shared[T]`, `T!`, `defer`, `match`, and `test "..." { ... }` blocks.
 
-## 2-Namespace `core:*` & `ext:*` Standard Library Catalog (35 Modules)
+## 2-Namespace `core:*` & `ext:*` Standard Library Catalog (36 Modules)
 
 To keep the core language surface clear while providing batteries-included productivity, the standard library is separated into two explicit package namespaces based on external link requirements:
-- **`core:*` — Foundational & Platform Core (29 Modules, Zero External Setup):** Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:unicode`, `core:regex`, `core:collections`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:tako`, `core:crypto/*`). String and sort operations live directly as built-in methods on `str`, `[]T`, `[N]T`, and `map[K]V`.
+- **`core:*` — Foundational & Platform Core (30 Modules, Zero External Setup):** Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:unicode`, `core:regex`, `core:collections`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/ipc`, `core:net/websocket`, `core:audio`, `core:tako`, `core:crypto/*`). String and sort operations live directly as built-in methods on `str`, `[]T`, `[N]T`, and `map[K]V`.
 - **`ext:*` — Native C Libraries, WebUI & AI Extensions (6 Opt-In Modules):** Specialized engines requiring external C libraries, native GUI webview toolkits, or AI/OCR engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that are only included and linked when explicitly imported.
 
 | Import Path | Native Engine / C++23 Lowering | Auto-Linked Flags |
 | :--- | :--- | :--- |
 | `core:audio` | Cross-target polyphonic audio mixer, procedural SFX (`gen_sfx`), ADSR synth (`gen_tone`, `gen_chirp`), 16-bit RIFF/WAV codec (`load_wav`, `save_wav`), and real-time `f32` `Stream` DSP | *(AudioToolbox / WebAudio / ALSA fallback)* |
 | `core:build` | Declarative `build.cf` build-graph API (`Package`, `Executable`, `App`, `Library`, `Step`, `CC`, `CMake`, `Make`, `Ninja`, `Git`, `Archive`, `PkgConfig`, `Libraries`, `Includes`, `Frameworks`) | *(header-only)* |
-| `core:fs` | `<filesystem>` + `<fstream>` (`read_all`, `write_all`, `read_text`, `write_text`, `read_bytes`, `write_bytes`, streaming `open`/`File`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
+| `core:fs` | `<filesystem>` + OS descriptor I/O (`read_bytes`, `write_bytes`, `read_text`, `write_text`, `create_new`, `stat`, `realpath`, streaming `open`/`File` with `sync`, `dirname`, `basename`, `extension`, `exists`, `mkdir_all`, `remove`, `list_dir`) | *(header-only)* |
 | `core:cli` | Compile-time `cli:"..."` struct-tag flag parser (`bool`, `i32`, `i64`, `usize`, `f64`, `str`, `path`) | *(header-only)* |
 | `core:json` | `simdjson` (`<simdjson.h>`) `parse[T]` + `stringify(T)` + compile-time JSON Schema `schema[T]()` via `json:"..."` & `desc:"..."` struct tags, plus dynamic DOM (`parse_dynamic`) | *(vendored `simdjson` 5.0.5 amalgamation cached on demand; optional system override)* |
-| `core:keychain` | Native OS credential store (`set`, `get`, `delete_password`) via macOS `Security.framework`, Linux `libsecret`, or AES-256-GCM fallback vault | *(Security.framework / fallback)* |
+| `core:keychain` | Native OS credential store (`set`, `get`, `delete_password`) via macOS/iOS `Security.framework`, Windows Credential Manager, or Linux `secret-tool` CLI | *(Security.framework / Advapi32 / secret-tool)* |
 | `core:crypto/sha256` | Standard FIPS 180-4 SHA-256 digest (`hash_hex`, `hash_bytes`) | *(header-only)* |
 | `core:crypto/hmac` | RFC 2104 HMAC-SHA256 message authentication (`sha256_hex`, `sha256_bytes`, constant-time `equal`) | *(header-only)* |
 | `core:crypto/aes` | NIST FIPS 197 AES-256-GCM AEAD & CTR symmetric encryption (`encrypt_gcm`, `decrypt_gcm`, `encrypt_ctr`, `decrypt_ctr`) | *(header-only)* |
 | `core:crypto/blake3` | Fast cryptographic 256-bit digest (`hash_hex`) | *(CommonCrypto / std)* |
-| `core:net` | Real POSIX BSD TCP sockets (`listen_tcp`, `connect_tcp`, `accept`, `read_str`, `write`) | *(POSIX sockets)* |
-| `core:net/tls` | TLS 1.2/1.3 encrypted client & server streams (`connect`, `accept`, `read_str`, `write_str`) | *(OpenSSL `dlopen` / Apple Foundation / loopback)* |
+| `core:net` | Real POSIX BSD TCP sockets (`listen`, `connect`, `socketpair`, `accept`, `read_bytes`, `read_text`, `write_bytes`, `write_text`) | *(POSIX sockets)* |
+| `core:net/tls` | TLS 1.2/1.3 encrypted client & server streams (`connect`, `wrap_client`, `wrap_server`) | *(OpenSSL `dlopen` / Apple Foundation)* |
 | `core:net/url` | RFC 3986 URL parsing & percent encoding (`parse`, `encode`, `decode`) | *(header-only)* |
-| `core:net/http` | HTTP/1.1 & HTTPS client (`get`, `post`, `post_sse`), server (`make_server`, `serve_in_background`), & standalone `Router` (`make_router`, `:param`, `*wildcard`) | *(POSIX / TLS)* |
+| `core:net/http` | HTTP/1.1 & HTTPS client (`get`, `post`, `request`, `post_sse` with `timeout_ms`), server (`make(http.Server, ..., host)`), & standalone `Router` (`make(http.Router)`, `:param`, `*wildcard`) | *(POSIX / TLS)* |
+| `core:net/ipc` | Cross-platform local IPC (`endpoint`, `listen`, `connect`, `_bytes`/`_text` streams, OS-verified `peer_credentials`) | *(`0600` `AF_UNIX` / owner Named Pipes)* |
 | `core:net/websocket` | RFC 6455 WebSockets client, server & loopback pair (`connect`, `upgrade`, `pair`, `send_text`, `recv_text`, `send_binary`, `recv_binary`, `ping`, `close`) | *(POSIX / std)* |
 | `core:time` | Monotonic clocks, typed `Duration`, calendar breakdown & RFC 3339 timestamps (`now`, `since`, `sleep_ms`, `format_rfc3339`, `parse_rfc3339`) | *(header-only)* |
 | `core:os` | Environment, process args, subprocess execution, signals, and filesystem navigation (`getenv`, `setenv`, `cwd`, `chdir`, `args`, `pid`, `exit`, `exec`) | *(POSIX / stdlib)* |
@@ -109,24 +110,23 @@ docker run --rm cfire:latest run examples/01-hello-core/main.cf
 ./cfire run examples/14-ai-rag-sqlite/main.cf
 ./cfire run examples/15-mcp-server/main.cf
 ./cfire run examples/16-audio-synth/main.cf
+./cfire run examples/17-webui-studio/main.cf
 
 # Build optimized, portable, static, or macOS Universal binaries:
 ./cfire build examples/01-hello-core/main.cf -o hello
 ./cfire build --portable examples/14-ai-rag-sqlite/main.cf -o rag_app
 ./cfire build --static examples/01-hello-core/main.cf -o hello_static                      # Linux / Windows
 ./cfire build --universal --macos-min=13.3 examples/01-hello-core/main.cf -o hello_universal  # macOS
-./cfire build --subsystem=gui apps/desktop/main.cf -o myapp  # Auto-creates signed .app bundle on macOS
+./cfire build --subsystem=gui examples/17-webui-studio/main.cf -o myapp  # Auto-creates signed .app bundle on macOS
 
 # Cross-compile to WebAssembly (HTML5 + WebGL Canvas or CLI):
-./cfire build --target=wasm apps/desktop/main.cf -o web/app.html
-./cfire wasm build apps/desktop/main.cf -o web/app.html
+./cfire build --target=wasm examples/01-hello-core/main.cf -o web/app.html
 
 # Run native iOS apps directly on simulator:
-./cfire run --ios examples/13-ios-native-ui
+./cfire run --ios examples/17-webui-studio/main.cf
 
 # Serve WebAssembly applications locally with zero dependencies (application/wasm MIME + COOP/COEP isolation):
 ./cfire serve web/app.html
-./cfire wasm serve web/app.html
 
 # Evaluate one-shot expressions or statements:
 ./cfire eval -e "1 + 2 * 3"

@@ -748,7 +748,7 @@ fn main() {
     const std::vector<CategoryGroup> categories = {
         {"core:* — Text, Containers, Math & Data Formats", {"str", "unicode", "regex", "collections", "sort", "math", "rand", "json", "base64", "csv", "hex"}},
         {"core:* — OS, Filesystem, Concurrency, CLI & Build", {"fs", "os", "time", "sync", "context", "cli", "log", "keychain", "build"}},
-        {"core:* — Networking, Web Protocols & Audio", {"net", "url", "tls", "http", "websocket", "audio"}},
+        {"core:* — Networking, Web Protocols & Audio", {"net", "url", "tls", "http", "ipc", "websocket", "audio"}},
         {"core:* — Cryptography & Hashing", {"aes", "blake3", "hmac", "sha256"}},
         {"ext:* — Native C Libraries, WebUI & AI Engines", {"ai", "zstd", "sodium", "sqlite", "ssh", "webui"}},
     };

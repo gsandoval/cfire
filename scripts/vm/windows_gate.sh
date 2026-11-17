@@ -16,6 +16,6 @@ step fmt ./cfire.exe fmt --check examples/
 step doc ./cfire.exe doc --check
 step stdlib-suite ./cfire.exe test tests/stdlib_suite_test.cf
 step unit-build bash -c "clang++ $FLAGS -DCFIRE_GIT_SHA=\\\"dev\\\" tests/unit/test_frontend.cpp tests/unit/test_sema.cpp tests/unit/test_stdlib.cpp tests/e2e/test_canonical.cpp tests/test_main.cpp -o cfire_test_runner.exe $LIBS -lgdi32 2> unit_build.err; r=\$?; w=\$(grep -c 'warning:' unit_build.err); echo \"C++ warnings: \$w\"; grep -m20 -E 'error|warning:' unit_build.err; [ \$r -eq 0 ] && [ \"\$w\" -eq 0 ]"
-step unit bash -c "./cfire_test_runner.exe unit > unit.log 2>&1; r=\$?; grep -aE '\[FAIL\]|^FAIL|PASS \(all' unit.log | head -60; exit \$r"
-step conformance bash -c "./cfire_test_runner.exe conformance --cfire ./cfire.exe > conf.log 2>&1; r=\$?; grep -E '^FAIL|^ +- |^Conformance:|^note:' conf.log | head -60; exit \$r"
+step unit bash -c "./cfire_test_runner.exe unit > unit.log 2>&1; r=\$?; if [ \$r -ne 0 ]; then grep -aE -A 8 '\[FAIL\]|^FAIL' unit.log | head -120; else grep -aE 'PASS \(all' unit.log; fi; exit \$r"
+step conformance bash -c "./cfire_test_runner.exe conformance --cfire ./cfire.exe > conf.log 2>&1; r=\$?; if [ \$r -ne 0 ]; then grep -E -A 8 '^FAIL' conf.log | head -120; fi; grep -E '^Conformance:|^note:' conf.log; exit \$r"
 exit $FAILED

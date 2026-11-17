@@ -318,7 +318,8 @@ CFIRE_DIAG_IMPL_INLINE void synthesize_fixits_for_diagnostic(
             enum_name = "State";
         }
         edit.replacement = std::format("// Suggested refactoring:\n// type {} enum {{\n//     ...\n// }}\n", enum_name);
-        edit.is_preferred = true;
+        edit.is_preferred = false;
+        edit.applicability = FixApplicability::EditorOnly;
         d.fixits.push_back(std::move(edit));
         return;
     }
@@ -713,14 +714,14 @@ CFIRE_DIAG_IMPL_INLINE void synthesize_fixits_for_diagnostic(
                     d.fixits.push_back(std::move(edit));
                     return;
                 }
-            } else if (fact_of(d, "kind") == "qualifier") {
-                // Replace '::' with '.' on import qualifier
+            } else if (fact_of(d, "kind") == "qualifier" || fact_of(d, "kind") == "pkg-member") {
+                // Replace '::' with '.' on import or package-member qualifier
                 std::size_t col_idx = (d.col >= 1 && static_cast<std::size_t>(d.col - 1) < cur_ln.size()) ? static_cast<std::size_t>(d.col - 1) : 0;
                 auto dcol_pos = cur_ln.find("::", col_idx);
                 if (dcol_pos == std::string::npos && col_idx > 0) dcol_pos = cur_ln.rfind("::", col_idx);
                 if (dcol_pos != std::string::npos) {
                     FixItEdit edit;
-                    edit.title = "Replace '::' with '.' on import qualifier (cfire/DEPRECATED-SEPARATOR)";
+                    edit.title = "Replace '::' with '.' on qualifier (cfire/DEPRECATED-SEPARATOR)";
                     edit.start_line = d.line;
                     edit.start_col = static_cast<int>(dcol_pos) + 1;
                     edit.end_line = d.line;
@@ -1278,8 +1279,12 @@ CFIRE_DIAG_IMPL_INLINE auto apply_fixits(
     replace_all(s, "std::uint16_t", "u16");
     replace_all(s, "std::uint8_t", "u8");
     replace_all(s, "std::size_t", "usize");
+    replace_all(s, "cfire::fs::FileInfo", "fs.FileInfo");
     replace_all(s, "cfire::fs::File", "fs.File");
     replace_all(s, "cfire::io::File", "fs.File");
+    replace_all(s, "cfire::ipc::Listener", "ipc.Listener");
+    replace_all(s, "cfire::ipc::Conn", "ipc.Conn");
+    replace_all(s, "cfire::ipc::PeerCred", "ipc.PeerCred");
     replace_all(s, "cfire::net::TcpConn", "net.TcpConn");
     replace_all(s, "cfire::net::TcpStream", "net.TcpConn");
     replace_all(s, "cfire::net::TcpListener", "net.TcpListener");

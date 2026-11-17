@@ -45,10 +45,6 @@ inline void memzero(std::span<std::uint8_t> buf) noexcept {
     ::sodium_memzero(buf.data(), buf.size());
 }
 
-inline void memzero(std::span<std::uint8_t> buf) noexcept {
-    memzero(cfire::as_writable_u8(buf));
-}
-
 inline void memzero(std::string& s) noexcept {
     if (s.empty()) return;
     memzero(std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(s.data()), s.size()));
@@ -121,37 +117,36 @@ inline void memzero(std::string& s) noexcept {
 [[nodiscard]] inline auto argon2id(
     std::span<const std::uint8_t> password,
     std::span<const std::uint8_t> salt,
-    std::uint32_t ops_limit,
-    std::uint32_t mem_kib,
-    std::size_t key_len
+    std::size_t out_len = 32,
+    std::uint64_t opslimit = crypto_pwhash_OPSLIMIT_INTERACTIVE,
+    std::size_t memlimit = crypto_pwhash_MEMLIMIT_INTERACTIVE
 ) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
     detail::ensure_init();
-    if (salt.size() < 16) {
+    if (salt.size() < crypto_pwhash_SALTBYTES) {
         return cfire::make_error("sodium.argon2id requires at least a 16-byte salt");
     }
-    if (key_len > 1024 && ops_limit >= 16 && ops_limit <= 1024) {
-        std::size_t actual_key_len = static_cast<std::size_t>(ops_limit);
-        std::uint32_t actual_ops = std::max<std::uint32_t>(1u, mem_kib);
-        std::uint32_t actual_mem_kib = static_cast<std::uint32_t>(
-            key_len >= 1048576 ? (key_len / 1024) : key_len);
-        ops_limit = actual_ops;
-        mem_kib = actual_mem_kib;
-        key_len = actual_key_len;
+    if (out_len < crypto_pwhash_BYTES_MIN || out_len > 1024 || out_len > crypto_pwhash_BYTES_MAX) {
+        return cfire::make_error("sodium.argon2id out_len must be between 16 and 1024 bytes");
     }
-    if (key_len < 16 || key_len > 1024) {
-        return cfire::make_error("sodium.argon2id key_len must be between 16 and 1024 bytes");
+    if (opslimit < crypto_pwhash_OPSLIMIT_MIN || opslimit > crypto_pwhash_OPSLIMIT_MAX) {
+        return cfire::make_error(std::format(
+            "sodium.argon2id opslimit {} out of range [{}, {}]",
+            opslimit, crypto_pwhash_OPSLIMIT_MIN, crypto_pwhash_OPSLIMIT_MAX));
     }
-    std::vector<std::uint8_t> out(key_len);
-    unsigned long long ops = ops_limit < 1 ? 1ULL : static_cast<unsigned long long>(ops_limit);
-    std::size_t mem_bytes = static_cast<std::size_t>(std::max<std::uint32_t>(mem_kib, 8)) * 1024ULL;
+    if (memlimit < crypto_pwhash_MEMLIMIT_MIN || memlimit > crypto_pwhash_MEMLIMIT_MAX) {
+        return cfire::make_error(std::format(
+            "sodium.argon2id memlimit {} bytes out of range [{}, {}]",
+            memlimit, crypto_pwhash_MEMLIMIT_MIN, crypto_pwhash_MEMLIMIT_MAX));
+    }
+    std::vector<std::uint8_t> out(out_len);
     if (::crypto_pwhash(
             reinterpret_cast<unsigned char*>(out.data()),
-            static_cast<unsigned long long>(key_len),
+            static_cast<unsigned long long>(out_len),
             reinterpret_cast<const char*>(password.data()),
             static_cast<unsigned long long>(password.size()),
             reinterpret_cast<const unsigned char*>(salt.data()),
-            ops,
-            mem_bytes,
+            static_cast<unsigned long long>(opslimit),
+            memlimit,
             crypto_pwhash_ALG_ARGON2ID13) != 0) {
         return cfire::make_error("libsodium crypto_pwhash (Argon2id) failed");
     }
@@ -159,78 +154,44 @@ inline void memzero(std::string& s) noexcept {
 }
 
 [[nodiscard]] inline auto argon2id(
-    std::span<const std::uint8_t> password,
-    std::span<const std::uint8_t> salt,
-    std::size_t out_len = 32
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(password, salt, 2u, 4096u, out_len);
-}
-
-[[nodiscard]] inline auto argon2id(
     std::string_view password,
     std::span<const std::uint8_t> salt,
-    std::uint32_t ops_limit,
-    std::uint32_t mem_kib,
-    std::size_t key_len
+    std::size_t out_len = 32,
+    std::uint64_t opslimit = crypto_pwhash_OPSLIMIT_INTERACTIVE,
+    std::size_t memlimit = crypto_pwhash_MEMLIMIT_INTERACTIVE
 ) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), salt, ops_limit, mem_kib, key_len);
-}
-
-[[nodiscard]] inline auto argon2id(
-    std::string_view password,
-    std::span<const std::uint8_t> salt,
-    std::size_t out_len = 32
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), salt, 2u, 4096u, out_len);
-}
-
-[[nodiscard]] inline auto argon2id(
-    std::string_view password,
-    std::span<const std::uint8_t> salt,
-    std::uint32_t ops_limit,
-    std::uint32_t mem_kib,
-    std::size_t key_len
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), cfire::as_u8(salt), ops_limit, mem_kib, key_len);
-}
-
-[[nodiscard]] inline auto argon2id(
-    std::string_view password,
-    std::span<const std::uint8_t> salt,
-    std::size_t out_len = 32
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), cfire::as_u8(salt), 2u, 4096u, out_len);
+    return argon2id(cfire::to_bytes(password), salt, out_len, opslimit, memlimit);
 }
 
 [[nodiscard]] inline auto argon2id(
     std::string_view password,
     std::string_view salt,
-    std::uint32_t ops_limit,
-    std::uint32_t mem_kib,
-    std::size_t key_len
+    std::size_t out_len = 32,
+    std::uint64_t opslimit = crypto_pwhash_OPSLIMIT_INTERACTIVE,
+    std::size_t memlimit = crypto_pwhash_MEMLIMIT_INTERACTIVE
 ) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), cfire::to_bytes(salt), ops_limit, mem_kib, key_len);
-}
-
-[[nodiscard]] inline auto argon2id(
-    std::string_view password,
-    std::string_view salt,
-    std::size_t out_len = 32
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return argon2id(cfire::to_bytes(password), cfire::to_bytes(salt), 2u, 4096u, out_len);
+    return argon2id(cfire::to_bytes(password), cfire::to_bytes(salt), out_len, opslimit, memlimit);
 }
 
 [[nodiscard]] inline auto argon2id_str(
     std::string_view password,
-    std::uint32_t ops_limit = 2,
-    std::uint32_t mem_kib = 4096
+    std::uint64_t opslimit = crypto_pwhash_OPSLIMIT_INTERACTIVE,
+    std::size_t memlimit = crypto_pwhash_MEMLIMIT_INTERACTIVE
 ) -> std::expected<std::string, cfire::Error> {
     detail::ensure_init();
-    if (mem_kib >= 1048576) mem_kib /= 1024;
+    if (opslimit < crypto_pwhash_OPSLIMIT_MIN || opslimit > crypto_pwhash_OPSLIMIT_MAX) {
+        return cfire::make_error(std::format(
+            "sodium.argon2id_str opslimit {} out of range [{}, {}]",
+            opslimit, crypto_pwhash_OPSLIMIT_MIN, crypto_pwhash_OPSLIMIT_MAX));
+    }
+    if (memlimit < crypto_pwhash_MEMLIMIT_MIN || memlimit > crypto_pwhash_MEMLIMIT_MAX) {
+        return cfire::make_error(std::format(
+            "sodium.argon2id_str memlimit {} bytes out of range [{}, {}]",
+            memlimit, crypto_pwhash_MEMLIMIT_MIN, crypto_pwhash_MEMLIMIT_MAX));
+    }
     char out[crypto_pwhash_STRBYTES]{};
-    unsigned long long ops = ops_limit < 1 ? 1ULL : static_cast<unsigned long long>(ops_limit);
-    std::size_t mem_bytes = static_cast<std::size_t>(std::max<std::uint32_t>(mem_kib, 8)) * 1024ULL;
-    if (::crypto_pwhash_str(out, password.data(), password.size(), ops, mem_bytes) != 0) {
+    if (::crypto_pwhash_str(out, password.data(), password.size(),
+                            static_cast<unsigned long long>(opslimit), memlimit) != 0) {
         return cfire::make_error("libsodium crypto_pwhash_str failed");
     }
     return std::string(out);
@@ -275,14 +236,6 @@ inline void memzero(std::string& s) noexcept {
 
 [[nodiscard]] inline auto xchacha20poly1305_encrypt(
     std::span<const std::uint8_t> key,
-    std::span<const std::uint8_t> plaintext,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return xchacha20poly1305_encrypt(cfire::as_u8(key), cfire::as_u8(plaintext), cfire::as_u8(aad));
-}
-
-[[nodiscard]] inline auto xchacha20poly1305_encrypt(
-    std::span<const std::uint8_t> key,
     std::string_view plaintext,
     std::string_view aad = ""
 ) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
@@ -318,14 +271,6 @@ inline void memzero(std::string& s) noexcept {
     }
     plaintext.resize(static_cast<std::size_t>(mlen));
     return plaintext;
-}
-
-[[nodiscard]] inline auto xchacha20poly1305_decrypt(
-    std::span<const std::uint8_t> key,
-    std::span<const std::uint8_t> packet,
-    std::span<const std::uint8_t> aad = {}
-) -> std::expected<std::vector<std::uint8_t>, cfire::Error> {
-    return xchacha20poly1305_decrypt(cfire::as_u8(key), cfire::as_u8(packet), cfire::as_u8(aad));
 }
 
 } // namespace cfire::sodium

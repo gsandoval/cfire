@@ -1,0 +1,52 @@
+// expect: stdout
+// | 2 alpha 0 10 20 7 alpha beta
+package main
+
+type Pair struct {
+    key: str
+    val: i64
+}
+
+fn load_tags(ok: bool) -> []str! {
+    if !ok {
+        return error("load failed")
+    }
+    return ["alpha", "beta"]
+}
+
+fn find_ports(ok: bool) -> []i64? {
+    if !ok {
+        return none
+    }
+    return [10, 20]
+}
+
+fn make_pairs(ok: bool) -> []Pair! {
+    if !ok {
+        return error("no pairs")
+    }
+    return [Pair{key: "p", val: 7}]
+}
+
+fn run_ok() -> str! {
+    tags := try load_tags(true)
+    fallback_tags := load_tags(false) or []
+    ports := find_ports(true) or []
+    pairs := try make_pairs(true)
+    mut joined := ""
+    for i, t in tags {
+        if i > 0 {
+            joined += " "
+        }
+        joined += t
+    }
+    return format("{} {} {} {} {} {} {}", tags.len(), tags[0], fallback_tags.len(), ports[0], ports[1], pairs[0].val, joined)
+}
+
+fn main() {
+    out := run_ok() or err {
+        println("err:{}", err)
+        return
+    }
+    println("{}", out)
+}

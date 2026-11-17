@@ -1,0 +1,36 @@
+// expect: stdout
+// | pos:15 neg:-2 slice:1+2+3 big:120 small:7
+package main
+
+type Reading enum {
+    Val(i64),
+    Empty,
+}
+
+fn classify_enum(r: Reading) -> str {
+    return match r {
+        Val(x) if x > 0 => format("pos:{}", x),
+        Val(x) => format("neg:{}", x),
+        Empty => "none",
+    }
+}
+
+fn classify_slice(xs: []i64) -> str {
+    return match xs {
+        [h,..rest, t] if h < t && rest.len() == usize(2) => format("slice:{}+{}+{}", h, rest.len(), t),
+        _ => "other",
+    }
+}
+
+fn classify_num(v: i64) -> str {
+    return match v {
+        n if n > 100 => format("big:{}", n),
+        n if n < 0 => format("neg:{}", n),
+        _ => format("small:{}", v),
+    }
+}
+
+fn main() {
+    s := [1, 4, 5, 3]
+    println("{} {} {} {} {}", classify_enum(Reading::Val(15)), classify_enum(Reading::Val(-2)), classify_slice(s), classify_num(120), classify_num(7))
+}

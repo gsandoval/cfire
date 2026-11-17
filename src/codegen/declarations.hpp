@@ -182,32 +182,14 @@ namespace cfire::frontend {
         // Forward declare all structs & enums so recursive shared_ptr/pointers work
         for (const auto& en : ast.enums) {
             if (!en.type_params.empty()) {
-                std::string tparams;
-                for (std::size_t i = 0; i < en.type_params.size(); ++i) {
-                    if (i > 0) tparams += ", ";
-                    if (!en.type_params[i].constraint.empty()) {
-                        tparams += std::format("{} {}", en.type_params[i].constraint, en.type_params[i].name);
-                    } else {
-                        tparams += std::format("typename {}", en.type_params[i].name);
-                    }
-                }
-                em.writeln(std::format("template <{}> struct {};", tparams, en.name));
+                em.writeln(std::format("{} struct {};", em.format_template_clause(en.type_params), en.name));
             } else {
                 em.writeln(std::format("struct {};", en.name));
             }
         }
         for (const auto& st : ast.structs) {
             if (!st.type_params.empty()) {
-                std::string tparams;
-                for (std::size_t i = 0; i < st.type_params.size(); ++i) {
-                    if (i > 0) tparams += ", ";
-                    if (!st.type_params[i].constraint.empty()) {
-                        tparams += std::format("{} {}", st.type_params[i].constraint, st.type_params[i].name);
-                    } else {
-                        tparams += std::format("typename {}", st.type_params[i].name);
-                    }
-                }
-                em.writeln(std::format("template <{}> struct {};", tparams, st.name));
+                em.writeln(std::format("{} struct {};", em.format_template_clause(st.type_params), st.name));
             } else {
                 em.writeln(std::format("struct {};", st.name));
             }
@@ -316,6 +298,12 @@ namespace cfire::frontend {
             if (gv.line > 0) em.emit_line_directive(gv.line);
             em.cur_pkg_ = gv.package_name;
             std::string type_str = gv.type ? em.lower_owning_type(*gv.type) : "auto";
+            if (!gv.type && gv.value) {
+                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&gv.value->node); arr_lit && !arr_lit->elements.empty()) {
+                    std::string inferred = em.infer_array_lit_cpp_type(*arr_lit);
+                    if (!inferred.empty()) type_str = std::move(inferred);
+                }
+            }
             std::string mut_str = gv.is_mut ? "" : "const ";
             std::string gname = (!gv.package_name.empty() && em.colliding_gv_names_.contains(gv.name))
                 ? std::format("cfire_pkg_{}__{}", gv.package_name, em.sanitize_cpp_ident(gv.name))
@@ -549,16 +537,7 @@ namespace cfire::frontend {
         set_source_path(en.source_path);
         if (en.line > 0) emit_line_directive(en.line);
         if (!en.type_params.empty()) {
-            std::string tparams;
-            for (std::size_t i = 0; i < en.type_params.size(); ++i) {
-                if (i > 0) tparams += ", ";
-                if (!en.type_params[i].constraint.empty()) {
-                    tparams += std::format("{} {}", en.type_params[i].constraint, en.type_params[i].name);
-                } else {
-                    tparams += std::format("typename {}", en.type_params[i].name);
-                }
-            }
-            writeln(std::format("template <{}>", tparams));
+            writeln(format_template_clause(en.type_params));
         }
         writeln(std::format("struct {} {{", en.name));
         ++indent_;
@@ -688,16 +667,7 @@ namespace cfire::frontend {
         set_source_path(st.source_path);
         if (st.line > 0) emit_line_directive(st.line);
         if (!st.type_params.empty()) {
-            std::string tparams;
-            for (std::size_t i = 0; i < st.type_params.size(); ++i) {
-                if (i > 0) tparams += ", ";
-                if (!st.type_params[i].constraint.empty()) {
-                    tparams += std::format("{} {}", st.type_params[i].constraint, st.type_params[i].name);
-                } else {
-                    tparams += std::format("typename {}", st.type_params[i].name);
-                }
-            }
-            writeln(std::format("template <{}>", tparams));
+            writeln(format_template_clause(st.type_params));
         }
         writeln(std::format("struct {} {{", st.name));
         ++indent_;
@@ -748,18 +718,8 @@ namespace cfire::frontend {
         set_generic_params(fn);
 
         const auto eff_tparams = effective_type_params(fn);
-        std::string tparams_str;
         if (!eff_tparams.empty()) {
-            for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
-                if (i > 0) tparams_str += ", ";
-                const auto& tp = eff_tparams[i];
-                if (!tp.constraint.empty()) {
-                    tparams_str += std::format("{} {}", tp.constraint, tp.name);
-                } else {
-                    tparams_str += std::format("typename {}", tp.name);
-                }
-            }
-            writeln(std::format("template <{}>", tparams_str));
+            writeln(format_template_clause(eff_tparams));
         }
 
         std::string param_list;
@@ -775,7 +735,7 @@ namespace cfire::frontend {
         const std::string inline_kw = (sharded_non_inline_ && eff_tparams.empty()) ? "" : "inline ";
         if (fn.receiver) {
             writeln(std::format("{}{}auto cfire_method_{}({}) -> {};", prefix, inline_kw, fn.name, param_list, ret_str));
-            if (!tparams_str.empty()) writeln(std::format("template <{}>", tparams_str));
+            if (!eff_tparams.empty()) writeln(format_template_clause(eff_tparams));
             writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
         } else {
             writeln(std::format("{}{}auto {}({}) -> {};", prefix, inline_kw, cur_fn, param_list, ret_str));
@@ -791,6 +751,7 @@ namespace cfire::frontend {
         cur_fn_ = emitted_fn_symbol(fn);
         defer_count_ = 0;
         local_vars_.clear();
+        error_vars_.clear();
         ptr_vars_.clear();
         smart_ptr_vars_.clear();
         optional_vars_.clear();
@@ -804,9 +765,9 @@ namespace cfire::frontend {
             if (fn.receiver->type.is_ptr || fn.receiver->type.is_mut_ptr) ptr_vars_.insert(fn.receiver->name);
             if (!fn.receiver->type.smart_wrap.empty()) smart_ptr_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_optional) optional_vars_.insert(fn.receiver->name);
-            if (fn.receiver->type.is_map) map_vars_.insert(fn.receiver->name);
+            if (fn.receiver->type.is_map && fn.receiver->intent == "mut") map_vars_.insert(fn.receiver->name);
             if (fn.receiver->type.is_array && !fn.receiver->type.array_len.empty()) {
-                if (auto n = cfire::detail::parse_int<std::size_t>(fn.receiver->type.array_len)) {
+                if (auto n = parse_int_literal<std::size_t>(fn.receiver->type.array_len)) {
                     fixed_array_vars_[fn.receiver->name] = *n;
                 }
             }
@@ -822,9 +783,9 @@ namespace cfire::frontend {
             if (p.type.is_ptr || p.type.is_mut_ptr) ptr_vars_.insert(p.name);
             if (!p.type.smart_wrap.empty()) smart_ptr_vars_.insert(p.name);
             if (p.type.is_optional) optional_vars_.insert(p.name);
-            if (p.type.is_map) map_vars_.insert(p.name);
+            if (p.type.is_map && p.intent == "mut") map_vars_.insert(p.name);
             if (p.type.is_array && !p.type.array_len.empty()) {
-                if (auto n = cfire::detail::parse_int<std::size_t>(p.type.array_len)) {
+                if (auto n = parse_int_literal<std::size_t>(p.type.array_len)) {
                     fixed_array_vars_[p.name] = *n;
                 }
             }
@@ -845,6 +806,7 @@ namespace cfire::frontend {
             writeln("}");
             in_main_ = false;
             local_vars_.clear();
+            error_vars_.clear();
             ptr_vars_.clear();
             smart_ptr_vars_.clear();
             optional_vars_.clear();
@@ -856,20 +818,14 @@ namespace cfire::frontend {
         cur_fn_raw_return_type_ = (fn.return_type.is_fallible || fn.return_type.is_optional)
             ? lower_raw_owning_type(fn.return_type)
             : "";
+        cur_fn_return_typeref_ = fn.return_type;
+        cur_fn_return_typeref_.is_fallible = false;
+        cur_fn_return_typeref_.is_optional = false;
+        has_cur_fn_return_typeref_ = true;
 
         const auto eff_tparams = effective_type_params(fn);
         if (!eff_tparams.empty()) {
-            std::string tparams;
-            for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
-                if (i > 0) tparams += ", ";
-                const auto& tp = eff_tparams[i];
-                if (!tp.constraint.empty()) {
-                    tparams += std::format("{} {}", tp.constraint, tp.name);
-                } else {
-                    tparams += std::format("typename {}", tp.name);
-                }
-            }
-            writeln(std::format("template <{}>", tparams));
+            writeln(format_template_clause(eff_tparams));
         }
 
         std::string param_list;
@@ -902,30 +858,23 @@ namespace cfire::frontend {
         in_fallible_void_ = false;
         in_ptr_return_ = false;
         cur_fn_raw_return_type_.clear();
+        has_cur_fn_return_typeref_ = false;
+        cur_fn_return_typeref_ = TypeRef{};
         cur_pkg_.clear();
         local_vars_.clear();
+        error_vars_.clear();
         ptr_vars_.clear();
         smart_ptr_vars_.clear();
         optional_vars_.clear();
 
         if (fn.receiver) {
             if (!eff_tparams.empty()) {
-                std::string tparams;
                 std::string targs;
                 for (std::size_t i = 0; i < eff_tparams.size(); ++i) {
-                    if (i > 0) {
-                        tparams += ", ";
-                        targs += ", ";
-                    }
-                    const auto& tp = eff_tparams[i];
-                    if (!tp.constraint.empty()) {
-                        tparams += std::format("{} {}", tp.constraint, tp.name);
-                    } else {
-                        tparams += std::format("typename {}", tp.name);
-                    }
-                    targs += tp.name;
+                    if (i > 0) targs += ", ";
+                    targs += eff_tparams[i].name;
                 }
-                writeln(std::format("template <{}>", tparams));
+                writeln(format_template_clause(eff_tparams));
                 writeln(std::format("{}inline auto {}({}) -> {} {{", prefix, cur_fn_, param_list, ret_str));
                 ++indent_;
                 if (ret_str == "void") {
@@ -1059,7 +1008,7 @@ namespace cfire::frontend {
             return std::format("cfire::Map<{}, {}>", lower_owning_type(*tr.key_type), lower_owning_type(*tr.elem_type));
         }
         if (tr.is_array && tr.elem_type) {
-            return std::format("std::array<{}, {}>", lower_owning_type(*tr.elem_type), tr.array_len);
+            return std::format("std::array<{}, {}>", lower_owning_type(*tr.elem_type), lower_cpp_int_literal(tr.array_len));
         }
         if (tr.is_slice && tr.elem_type) {
             return std::format("std::vector<{}>", lower_owning_type(*tr.elem_type));
@@ -1084,6 +1033,19 @@ namespace cfire::frontend {
         if (tr.name == "void") return "void";
         if (!is_local_type(tr.name)) {
             if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
+            if (tr.name == "ipc::Conn" || tr.name == "ipc.Conn" ||
+                (tr.name == "Conn" && used_core_.contains("ipc") && !used_core_.contains("websocket") && !used_core_.contains("sqlite"))) {
+                return "cfire::ipc::Conn";
+            }
+            if (tr.name == "ipc::Listener" || tr.name == "ipc.Listener" || (tr.name == "Listener" && used_core_.contains("ipc"))) {
+                return "cfire::ipc::Listener";
+            }
+            if (tr.name == "ipc::PeerCred" || tr.name == "ipc.PeerCred" || (tr.name == "PeerCred" && used_core_.contains("ipc"))) {
+                return "cfire::ipc::PeerCred";
+            }
+            if (tr.name == "fs::FileInfo" || tr.name == "fs.FileInfo" || (tr.name == "FileInfo" && used_core_.contains("fs"))) {
+                return "cfire::fs::FileInfo";
+            }
             if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
             if (tr.name == "websocket::Conn" || tr.name == "Conn" || tr.name == "websocket::WebSocket" || tr.name == "websocket.WebSocket" || tr.name == "WebSocket") return "cfire::websocket::Conn";
             if (tr.name == "websocket::Server") return "cfire::websocket::Server";

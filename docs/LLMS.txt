@@ -13,7 +13,8 @@
 - Variable Declarations & Naming Conventions:
   - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
-  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` (`::` is only for enum variants; use `.` for modules, methods, and associated items).
+  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` or cross-package `pkg.Enum::Variant` (`::` is only for enum variants; use `.` for modules, bounds `pkg.Bound`, methods, and associated items).
+  - Integer literals accept decimal, `0x`/`0X` hex, `0b`/`0B` binary, and `0o`/`0O` octal (`0o600`, `0o755`). String literals decode `\xHH`, `\u{HEX}`, and preserve embedded `\x00` bytes without NUL truncation.
 - Built-in Prelude Functions & Type Constructors:
   - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
   - Interactive Terminal Input: `cli.prompt(message: str = "") -> str?` and `cli.prompt_password(message: str = "") -> str?` (`core:cli`); or stream directly from `os.stdin().read_line() -> str?` (`core:os`)
@@ -31,7 +32,7 @@
   - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
   - Optional return: `-> T?` lowers to `std::optional<T>`
   - Multi-return tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, destructuring: `(x, y) := coords()`
-  - Generic parameters: `fn process[T: Display](item: T) { ... }` (and generic receiver methods `fn (b: Box[T]) get() -> T`)
+  - Generic parameters: `fn process[T: Reader + io.Closer](item: T) { ... }` (compound bounds with `+`, package-qualified bounds `pkg.Bound`, and generic receiver methods `fn (b: Box[T]) get() -> T`)
 - Parameter Intent Rules:
   - Default: immutable read-only view (including zero-copy `str` views with implicit copies when stored or returned)
   - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
@@ -45,14 +46,14 @@
   - Foreign Interop Raw Pointers (restricted to `import cpp` FFI boundaries; rejected in pure `.cf` via `cfire/RAW-POINTER`): `*T`, `*mut T`
   - Struct: `type User struct { id: i64, name: str `json:"name"` }`
   - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
-  - Interface: `type Writer interface { write(b: []byte) -> usize! }`
+  - Interface: `type Writer interface { fn mut write(b: []byte) -> usize!; fn flush() }` (`fn mut` / `fn (mut self)` for mutable receivers and `mut`/`move` parameter intents)
 - Control Flow & RAII Defer:
   - `if cond { ... } else { ... }`
   - Exclusive numeric range loop: `for i in 0..n { ... }` (iterates `0` to `n - 1`)
   - Inclusive numeric range loop: `for i in 1..=n { ... }` (iterates `1` to `n`)
   - Collection loop: `for item in slice { ... }` / `for i, item in slice { ... }`
   - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
-  - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
+  - Exhaustive pattern match: `match val { pkg.Mode::Read(n) if n > 0 => ..., Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }` (pattern bindings are in scope inside `if` guards; guarded arms do not satisfy exhaustiveness on their own)
   - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
 - Testing, Fuzzing & Benchmarks:
   - Unit test blocks: `test "description" { ... }`
@@ -75,11 +76,12 @@
 - CLI Tooling:
   - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
   - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
-  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|cli] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire clean [--cache] [--all] [--dry-run] [--json] [path|build.cf]`: Remove project `.cfire/` & manifest outputs (and marker-guarded OS/XDG user cache with `--cache`)
   - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
   - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
   - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
-  - `cfire fix [--dry-run] [--json] [file|dir]`: Auto-fixer for imports, intents, and match arms
+  - `cfire fix [--only <code,...>] [--dry-run] [--json] [file|dir]`: Auto-fixer applying `MachineApplicable` fixes by default (`EditorOnly` assists such as `cfire/PREFER-ENUM` apply with `--only`)
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers
   - `cfire eject <file.cf> [out_dir]`: Export standalone ISO C++23 + `CMakeLists.txt`
   - `cfire outline [--json] [file|dir]`: AST symbol & test/fuzz/bench outline
@@ -430,7 +432,8 @@ Provides RAII file and directory utilities backed by `std::filesystem` and `std:
 Types:
 - `OpenMode`: How `fs.open` opens a file.
 - `SeekWhence`: The origin for `file.seek`.
-- `File`: An open file, closed automatically when it goes out of scope.
+- `File`: An unbuffered OS file handle, closed automatically when it goes out of scope.
+- `FileInfo`: File, directory, or symbolic link metadata returned by `fs.stat`.
 Functions & Methods:
 - `fn read_bytes(path: str) -> []byte!` (call: `fs.read_bytes`): Reads an entire binary file into a byte buffer.
 - `fn write_bytes(path: str, data: []byte) -> void!` (call: `fs.write_bytes`): Writes a byte slice to disk (truncating any existing file).
@@ -441,7 +444,13 @@ Functions & Methods:
 - `fn rename(from: str, to: str) -> void!` (call: `fs.rename`): Renames or moves a file or directory.
 - `fn copy_file(from: str, to: str) -> void!` (call: `fs.copy_file`): Copies a file from `from` to `to` (overwriting `to` if it exists).
 - `fn file_size(path: str) -> u64!` (call: `fs.file_size`): Returns the size of a file in bytes.
-- `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` (call: `fs.open`): Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.
+- `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` (call: `fs.open`): Opens a file with specified mode (Read, Write, Append, ReadWrite) returning an unbuffered OS descriptor `File` handle.
+- `fn create_new(path: str, mode: u32 = 0o600) -> File!` (call: `fs.create_new`): Atomically creates a new file with `O_CREAT | O_EXCL` (`CREATE_NEW`), failing with `ERR_EXISTS` if it already exists.
+- `fn stat(path: str) -> FileInfo!` (call: `fs.stat`): Inspects metadata (`size`, `mtime_ms`, `mode`, `is_dir`, `is_symlink`) for a file, directory, or symlink.
+- `fn realpath(path: str) -> str!` (call: `fs.realpath`): Resolves `.` / `..` segments and symbolic links to an existing canonical path.
+- `const ERR_EXISTS: i32` (call: `fs.ERR_EXISTS`): `Error.code()` value when a path already exists (`EEXIST`).
+- `const ERR_NOT_FOUND: i32` (call: `fs.ERR_NOT_FOUND`): `Error.code()` value when a file or directory does not exist (`ENOENT`).
+- `const ERR_PERMISSION: i32` (call: `fs.ERR_PERMISSION`): `Error.code()` value on permission denial (`EACCES` / `EPERM`).
 - `fn (f: File) fd() -> i32`: Returns the underlying OS file descriptor (`-1` if closed).
 - `fn (f: File) is_open() -> bool`: Returns `true` if the file handle holds a valid open file descriptor.
 - `fn (f: File) is_tty() -> bool`: Returns `true` if the file stream refers to an interactive terminal.
@@ -458,7 +467,8 @@ Functions & Methods:
 - `fn (mut f: File) write_text(text: str) -> usize!`: Writes a UTF-8 string to the file stream, looping across partial writes and `EINTR`.
 - `fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!`: Seeks within file to offset from Start, Current, or End.
 - `fn (mut f: File) tell() -> i64!`: Returns current byte offset within file stream.
-- `fn (mut f: File) flush() -> void!`: Flushes buffered stream data to disk.
+- `fn (mut f: File) flush() -> void!`: Flushes C stdio buffers (`stdout`/`stderr`) when wrapping standard descriptors (`fs.File` is otherwise an unbuffered OS descriptor; use `sync()` to flush OS buffers to storage).
+- `fn (mut f: File) sync() -> void!`: Flushes OS buffers for this file to durable storage (`F_FULLFSYNC`/`fsync`/`FlushFileBuffers`).
 - `fn (mut f: File) close() -> void`: Closes open file handle.
 - `fn dirname(path: str) -> str` (call: `fs.dirname`): Returns directory portion of a filesystem path.
 - `fn basename(path: str) -> str` (call: `fs.basename`): Returns file name portion of a filesystem path.
@@ -557,11 +567,12 @@ Types:
 - `ServerLimits`: Per-connection limits for `http.Server` (with keep-alive and event-loop limits); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503.
 - `TlsConfig`: Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM.
 Functions & Methods:
-- `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL.
-- `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body.
-- `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "") -> Response!` (call: `http.request`): Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).
-- `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!` (call: `http.post_sse`): Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.
-- `fn make(port: u16 = 0, tls: TlsConfig = {}) -> HttpServer!`: `make(http.Server, port)` creates an HTTP server listening on `port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) serves HTTPS.
+- `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables).
+- `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables).
+- `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> Response!` (call: `http.request`): Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables).
+- `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> void!` (call: `http.post_sse`): Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.
+- `fn serve_in_background(port: u16, handler: fn(Request) -> Response | Router, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!` (call: `http.serve_in_background`): Binds a server on `host:port`, starts its background event loop, and returns the live `HttpServer` handle.
+- `fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!`: `make(http.Server, port)` creates an HTTP server listening on `host:port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` serves HTTPS, and `host: "127.0.0.1"` restricts binding to loopback.
 - `fn make() -> Router`: `make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).
 - `fn parse_request(raw: str) -> Request!` (call: `http.parse_request`): Parses raw HTTP/1.1 wire text into a structured Request model.
 - `fn Response.text(code: i32, payload: str) -> Response`: Creates an HTTP Response with text/plain content-type and standard status reason.
@@ -570,6 +581,8 @@ Functions & Methods:
 - `fn Response.redirect(location: str, code: i32 = 302) -> Response`: Creates an HTTP redirect Response setting Location header.
 - `fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).
 - `fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP POST route handler.
+- `fn (mut r: Router) put(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP PUT route handler.
+- `fn (mut r: Router) delete_(pattern: str, handler: fn(Request) -> Response) -> Router`: Registers an HTTP DELETE route handler.
 - `fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router`: Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.
 - `fn (r: Router) dispatch(req: Request) -> Response`: Dispatches an HTTP request through the router in-memory without open network sockets.
 - `fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router`: Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.
@@ -584,6 +597,35 @@ Functions & Methods:
 - `fn (req: Request) param(key: str, fallback: str = "") -> str`: Retrieves a named route path parameter extracted by the router.
 - `fn (req: Request) query(key: str, fallback: str = "") -> str`: Retrieves a decoded URL query parameter.
 - `fn (req: Request) header(key: str, fallback: str = "") -> str`: Performs a case-insensitive header lookup.
+
+### `import "core:net/ipc"` (alias: `ipc`)
+Same-machine local IPC backed by `0600` Unix domain sockets (`AF_UNIX`) on macOS & Linux and owner-restricted Named Pipes (`PIPE_REJECT_REMOTE_CLIENTS`) on Windows, with OS-verified peer process and user credentials (`peer_credentials`) and full `_bytes`/`_text` streaming.
+Types:
+- `Listener`: A local IPC server bound to a Unix domain socket (`0600`) or Windows named pipe (same-user ACL); `accept()` returns a `Conn` per client.
+- `Conn`: A connected full-duplex local IPC stream, closed automatically when it goes out of scope.
+- `PeerCred`: Verified OS credentials of a local IPC peer from `conn.peer_credentials()`.
+Functions & Methods:
+- `fn endpoint(name: str) -> str` (call: `ipc.endpoint`): Resolves a logical service name into a private per-user OS IPC endpoint (`AF_UNIX` path on POSIX, owner-scoped Named Pipe on Windows).
+- `fn listen(endpoint: str) -> Listener!` (call: `ipc.listen`): Creates a private local IPC server (`0600` socket on POSIX after stale-socket check; owner-only Named Pipe on Windows).
+- `fn connect(endpoint: str, timeout_ms: i32 = 5000) -> Conn!` (call: `ipc.connect`): Connects to a local IPC listener endpoint within `timeout_ms`.
+- `fn (mut l: Listener) accept() -> Conn!`: Waits for and accepts an incoming local IPC client connection.
+- `fn (l: Listener) endpoint() -> str`: Returns the bound endpoint path or pipe name.
+- `fn (l: Listener) is_open() -> bool`: Returns `true` if the IPC listener is still open.
+- `fn (mut l: Listener) close() -> void`: Closes the listener and removes its POSIX socket path (existing accepted `Conn` handles remain usable).
+- `fn (c: Conn) is_open() -> bool`: Returns `true` if the IPC connection handle is open.
+- `fn (c: Conn) poll(timeout_ms: i64 = 0) -> bool`: Polls the IPC stream for readability up to `timeout_ms` milliseconds.
+- `fn (mut c: Conn) set_timeout_ms(ms: i32) -> void`: Sets read/write I/O timeout in milliseconds (`0` for blocking).
+- `fn (mut c: Conn) write_bytes(payload: []byte) -> usize!`: Writes all bytes in `payload` to the IPC stream.
+- `fn (mut c: Conn) write_text(text: str) -> usize!`: Writes a UTF-8 string to the IPC stream.
+- `fn (mut c: Conn) read_into(mut buf: []byte) -> usize!`: Reads up to `buf.len()` bytes from the IPC stream into `buf`.
+- `fn (mut c: Conn) read_bytes(max_bytes: usize = 4096) -> []byte!`: Reads up to `max_bytes` bytes from the IPC stream.
+- `fn (mut c: Conn) read_exact(exact_bytes: usize) -> []byte!`: Reads exactly `exact_bytes` from the IPC stream or fails on premature EOF.
+- `fn (mut c: Conn) read_text(max_bytes: usize = 4096) -> str!`: Reads up to `max_bytes` from the IPC stream as a UTF-8 string.
+- `fn (mut c: Conn) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!`: Reads bytes up to and including `delim` (or `max_bytes`).
+- `fn (mut c: Conn) read_text_until(delim: str, max_bytes: usize = 65536) -> str!`: Reads text up to and including `delim` (or `max_bytes`).
+- `fn (mut c: Conn) read_line(max_bytes: usize = 65536) -> str?`: Reads the next line from the IPC stream (stripping `\r\n` / `\n`), or `none` on EOF.
+- `fn (c: Conn) peer_credentials() -> PeerCred!`: Queries OS-authenticated peer credentials (`pid`, `same_user`, `uid`).
+- `fn (mut c: Conn) close() -> void`: Closes the IPC stream connection.
 
 ### `import "core:net/tls"` (alias: `tls`)
 Zero-build-flag TLS 1.2/1.3 client/server encryption, SNI hostname negotiation, X.509 peer certificate verification, PEM certificate loading, and in-memory self-signed certificate generation.
@@ -618,7 +660,7 @@ Types:
 Functions & Methods:
 - `fn connect(url: str, verify_peer: bool = true) -> Conn!` (call: `websocket.connect`): Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.
 - `type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }` (call: `websocket.TlsConfig`): Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`.
-- `fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!`: `make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`.
+- `fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = "0.0.0.0") -> Server!`: `make(websocket.Server, port)` creates a standalone WebSocket server listening on `host:port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`, and `host: "127.0.0.1"` for loopback-only.
 - `fn upgrade(req: Request, mut conn: TcpConn) -> Conn!` (call: `websocket.upgrade`): Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.
 - `fn pair() -> (Conn, Conn)!` (call: `websocket.pair`): Creates an in-process full-duplex WebSocket client/server loopback pair.
 - `fn (mut ws: Conn) send_text(msg: str) -> void!`: Sends a UTF-8 text frame to the peer (masked if client).
@@ -766,6 +808,25 @@ Functions & Methods:
 - `fn duration_hours(h: i64) -> Duration` (call: `time.duration_hours`): Constructs a Duration from hours.
 - `fn from_unix_seconds(sec: i64) -> Time` (call: `time.from_unix_seconds`): Constructs a Time instant from Unix epoch seconds.
 - `fn sleep(d: Duration)` (call: `time.sleep`): Sleeps the current thread for duration `d`.
+- `fn (t: Time) utc() -> Time`: Returns the same instant formatted with UTC (`+00:00` / `Z`).
+- `fn (t: Time) local() -> Time`: Returns the same instant tagged with the host's local timezone offset for display.
+- `fn (t: Time) format_rfc3339() -> str`: Formats `t` as RFC 3339 (`...Z` for UTC, `...+HH:MM`/`-HH:MM` when localized).
+- `fn (t: Time) format(pattern: str) -> str`: Formats `t` using `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%z`, `%:z`, `%Z`, `%a`/`%A`, `%b`/`%B`, `%%` (CRT-safe).
+- `fn (t: Time) unix_seconds() -> i64`: Returns Unix seconds since epoch.
+- `fn (t: Time) unix_millis() -> i64`: Returns Unix milliseconds since epoch.
+- `fn (t: Time) unix_nanos() -> i64`: Returns Unix nanoseconds since epoch.
+- `fn (t: Time) year() -> i32`: Returns calendar year in `t`'s offset (UTC or local).
+- `fn (t: Time) month() -> i32`: Returns calendar month (`1..=12`) in `t`'s offset.
+- `fn (t: Time) day() -> i32`: Returns day of month (`1..=31`) in `t`'s offset.
+- `fn (t: Time) hour() -> i32`: Returns hour (`0..=23`) in `t`'s offset.
+- `fn (t: Time) minute() -> i32`: Returns minute (`0..=59`) in `t`'s offset.
+- `fn (t: Time) second() -> i32`: Returns second (`0..=59`) in `t`'s offset.
+- `fn (t: Time) add(d: Duration) -> Time`: Advances `t` by duration `d`, preserving its timezone offset.
+- `fn (t: Time) sub(other: Time) -> Duration`: Returns elapsed `Duration` between `t` and `other`.
+- `fn (d: Duration) as_nanos() -> i64`: Returns total nanoseconds.
+- `fn (d: Duration) as_micros() -> i64`: Returns whole microseconds.
+- `fn (d: Duration) as_millis() -> i64`: Returns whole milliseconds.
+- `fn (d: Duration) as_seconds() -> f64`: Returns duration in seconds as `f64`.
 
 ### `import "core:unicode"` (alias: `unicode`)
 RFC 3629 compliant branchless UTF-8 decoding, codepoint extraction, rune validation, and Unicode case transformation.
@@ -848,7 +909,7 @@ Functions & Methods:
 - `fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)`: Registers a parameterless MCP tool.
 - `fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str`: Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.
 - `fn (mut s: McpServer) serve_stdio() -> i32`: Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.
-- `fn create_zip(entries: map[str]str) -> []byte` (call: `ai.create_zip`): Constructs an in-memory zip archive from filename-content pairs.
+- `fn create_zip(entries: []ZipEntry) -> []byte` (call: `ai.create_zip`): Constructs an in-memory zip archive from `ZipEntry{name, content}` entries.
 
 ### `import "ext:compress/zstd"` (alias: `zstd`)
 Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.
@@ -932,7 +993,7 @@ Functions & Methods:
 - `fn (mut app: App) bind_action(name: str, handler: fn() -> any!)`: Binds a zero-argument action closure to `window.backend.<name>()`.
 - `fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)`: Binds a zero-argument RPC action that executes asynchronously on a background worker thread.
 - `fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)`: Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.
-- `fn (mut app: App) on(event: str, handler: fn(str))`: Subscribes a backend callback to frontend events emitted via `window.runtime.EventsEmit(event, data)`.
+- `fn (mut app: App) on(event: str, handler: fn(str))`: Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop lifecycle events (`"window:close_requested"`, `"window:fullscreen"` with `{"fullscreen":bool}`, `"window:file_drop"` with `{"paths":[...]}`, and `"window:reopen"` on macOS Dock click).
 - `fn (mut app: App) emit(event: str, payload: any)`: Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.
 - `fn (mut app: App) emit_bytes(event: str, data: []byte)`: Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`.
 - `fn (mut app: App) clear_history()`: Clears the bounded in-memory ring buffer of recorded emitted events.
@@ -962,6 +1023,12 @@ Functions & Methods:
 - `fn (mut app: App) set_transparent(transparent: bool)`: Enables or disables transparent window and WebView background rendering.
 - `fn (mut app: App) set_dark_mode(dark: bool)`: Configures dark or light native window appearance.
 - `fn (mut app: App) set_always_on_top(on_top: bool)`: Floats the application window above standard desktop windows.
+- `fn (mut app: App) set_devtools(enabled: bool)`: Explicitly enables or disables the native Web Inspector / DevTools (`WKWebView`, `WebKitGTK`, `WebView2`). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).
+- `fn (app: App) devtools_enabled() -> bool`: Returns whether native Web Inspector / DevTools are currently enabled for this application.
+- `fn (mut app: App) set_context_menu(enabled: bool)`: Explicitly enables or disables the default browser right-click context menu (`WKWebView`, `WebKitGTK`, `WebView2`). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).
+- `fn (app: App) context_menu_enabled() -> bool`: Returns whether the default browser context menu is currently enabled for this application.
+- `fn (mut app: App) set_autofill(enabled: bool)`: Enables or disables browser form autofill and password autosave (WebView2 `ICoreWebView2Settings4` plus WebKit DOM `autocomplete="off"` enforcement for secret fields).
+- `fn (app: App) autofill_enabled() -> bool`: Returns whether browser form autofill / password autosave is currently enabled.
 - `fn (mut app: App) fullscreen()`: Toggles native fullscreen window mode.
 - `fn (mut app: App) minimize()`: Minimizes the native window to the dock or taskbar.
 - `fn (mut app: App) maximize()`: Zooms or maximizes the native window.
@@ -975,7 +1042,7 @@ Functions & Methods:
 - `fn (app: App) emitted_events_count(event: str) -> i64`: Returns the number of times `app.emit(event, ...)` has been triggered.
 - `fn (app: App) last_emitted_payload(event: str) -> str`: Returns the most recent JSON payload emitted for `event`.
 - `fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!`: Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.
-- `fn (mut app: App) run()`: Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux).
+- `fn (mut app: App) run()`: Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` with Dock reopen and file drop on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux, and PerMonitorV2 DPI `HWND`+`WebView2` on Windows).
 - `fn (mut app: App) quit()`: Requests termination of the native WebView event loop.
 - `fn (mut app: App) close()`: Deterministic RAII cleanup handle for `defer app.close()`.
 - `fn clipboard_get() -> str` (call: `webui.clipboard_get`): Reads plaintext from the system clipboard.
@@ -1007,7 +1074,7 @@ Functions & Methods:
 - `cfire/INDEX-OUT-OF-BOUNDS` (Detailed rule): Compile-Time Out-of-Bounds or Negative Constant Sequence Index
 - `cfire/INVALID-ATTRIBUTE` (Attributes): An attribute on a declaration is unknown, misplaced, or has invalid arguments.
 - `cfire/INVALID-CONSTRUCTOR` (Detailed rule): Associated Function Other Than `make`
-- `cfire/INVALID-IMPORT` (Imports): A module imported under the wrong tier prefix (`core:` vs `ext:`).
+- `cfire/INVALID-IMPORT` (Imports): A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`).
 - `cfire/INVALID-INDEX` (Types): Indexing a value that is not a string, slice, array or map.
 - `cfire/INVALID-INTERPOLATION` (Syntax): An interpolation `{...}` that is not a valid expression.
 - `cfire/INVALID-MAKE` (Detailed rule): Invalid `make(T, ...)` Arguments

@@ -19,7 +19,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.core_key = "buildsys";
         m.header_path.clear();
         m.defines.clear();
-        m.aliases = {"core:buildsys"};
         m.types = {"Package", "Executable", "App", "Library", "Step", "CC", "CMake", "Make", "Ninja", "Git", "Archive", "Command", "PkgConfig", "Link", "Include", "Define", "Defines", "Libraries", "Includes", "Frameworks", "Target", "StepTarget", "DepTarget", "PackageTarget"};
     } else if (m.import_path == "core:cli") {
         m.header_path = "core/cli.hpp";
@@ -32,35 +31,28 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
         m.types = {"GcmResult"};
-        m.aliases = {"core:aes"};
     } else if (m.import_path == "core:crypto/blake3") {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
-        m.aliases = {"core:blake3"};
     } else if (m.import_path == "core:crypto/hmac") {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
-        m.aliases = {"core:hmac"};
     } else if (m.import_path == "core:crypto/sha256") {
         m.header_path = "core/crypto.hpp";
         m.core_key = "crypto";
-        m.aliases = {"core:sha256", "core:crypto"};
     } else if (m.import_path == "core:encoding/base64") {
         m.header_path = "core/encoding.hpp";
         m.core_key = "encoding";
-        m.aliases = {"core:base64"};
     } else if (m.import_path == "core:encoding/csv") {
         m.header_path = "core/encoding.hpp";
         m.core_key = "encoding";
-        m.aliases = {"core:csv"};
     } else if (m.import_path == "core:encoding/hex") {
         m.header_path = "core/encoding.hpp";
         m.core_key = "encoding";
-        m.aliases = {"core:hex", "core:encoding"};
     } else if (m.import_path == "core:fs") {
         m.header_path = "core/fs.hpp";
         m.core_key = "fs";
-        m.types = {"OpenMode", "SeekWhence", "File"};
+        m.types = {"OpenMode", "SeekWhence", "File", "FileInfo"};
     } else if (m.import_path == "core:json") {
         m.header_path = "core/json.hpp";
         m.core_key = "json";
@@ -70,7 +62,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
     } else if (m.import_path == "core:keychain") {
         m.header_path = "core/keychain.hpp";
         m.core_key = "keychain";
-        m.aliases = {"core:os/keychain"};
     } else if (m.import_path == "core:log") {
         m.header_path = "core/log.hpp";
         m.core_key = "log";
@@ -86,22 +77,22 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
         m.types = {"Request", "Response", "Router", "HttpServer", "Server", "SseEvent", "ServerLimits", "TlsConfig"};
-        m.aliases = {"core:http"};
+    } else if (m.import_path == "core:net/ipc") {
+        m.header_path = "core/net/ipc.hpp";
+        m.core_key = "ipc";
+        m.types = {"Listener", "Conn", "PeerCred"};
     } else if (m.import_path == "core:net/tls") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
         m.types = {"ServerContext", "CertKeyPair"};
-        m.aliases = {"core:tls"};
     } else if (m.import_path == "core:net/url") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
         m.types = {"Url"};
-        m.aliases = {"core:url"};
     } else if (m.import_path == "core:net/websocket") {
         m.header_path = "core/net.hpp";
         m.core_key = "net";
         m.types = {"Conn", "Server", "ServerLimits", "TlsConfig"};
-        m.aliases = {"core:websocket"};
     } else if (m.import_path == "core:os") {
         m.header_path = "core/os.hpp";
         m.core_key = "os";
@@ -122,14 +113,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
         m.types = {"Context"};
-        m.aliases = {"core:context"};
     } else if (m.import_path == "core:tako") {
         m.header_path = "core/tako.hpp";
         m.core_key = "tako";
         m.extra_core_keys = {"json"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
-        m.aliases = {"ext:tako"};
     } else if (m.import_path == "core:time") {
         m.header_path = "core/time.hpp";
         m.core_key = "time";
@@ -143,32 +132,28 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.types = {"Provider", "Client", "Agent", "Document", "Message", "Tool", "McpServer", "ZipEntry", "Attachment", "ChatResponse", "DocumentSection", "ToolCall"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
-        m.aliases = {"ext:ai/agent", "ext:ai/client", "ext:ai/documents", "ext:ai/vectors", "ext:ai/vision"};
     } else if (m.import_path == "ext:compress/zstd") {
         m.header_path = "core/compress.hpp";
         m.core_key = "compress";
         m.defines = {"#define CFIRE_USE_ZSTD 1"};
         m.link_tags = {"-lzstd"};
-        m.aliases = {"ext:compress", "ext:zstd", "core:compress", "core:zstd", "core:compress/zstd"};
     } else if (m.import_path == "ext:crypto/sodium") {
         m.header_path = "core/sodium.hpp";
         m.core_key = "sodium";
         m.defines = {"#define CFIRE_USE_SODIUM 1"};
         m.link_tags = {"-lsodium"};
-        m.aliases = {"ext:sodium", "core:sodium", "core:crypto/sodium"};
     } else if (m.import_path == "ext:db/sqlite") {
         m.header_path = "core/sqlite.hpp";
         m.core_key = "sqlite";
         m.types = {"Conn"};
         m.defines = {"#define CFIRE_USE_SQLITE 1"};
         m.link_tags = {"-lsqlite3"};
-        m.aliases = {"ext:sqlite", "core:sqlite", "core:db/sqlite"};
     } else if (m.import_path == "ext:net/ssh") {
         m.header_path = "core/ssh.hpp";
         m.core_key = "ssh";
         m.types = {"Session", "Channel", "ExecResult", "SftpEntry"};
+        m.defines = {"#define CFIRE_USE_SSH 1"};
         m.link_tags = {"-lssh"};
-        m.aliases = {"ext:ssh", "core:ssh", "core:net/ssh"};
     } else if (m.import_path == "ext:webui") {
         m.header_path = "core/webui.hpp";
         m.core_key = "webui";
@@ -176,7 +161,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.types = {"App"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
-        m.aliases = {"core:webui"};
     }
 }
 
@@ -353,7 +337,13 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"rename", "fn rename(from: str, to: str) -> void!", "cfire::fs::rename(from, to)", "Renames or moves a file or directory.", "try fs.rename(\"tmp.bin\", \"final.bin\")"},
                 {"copy_file", "fn copy_file(from: str, to: str) -> void!", "cfire::fs::copy_file(from, to)", "Copies a file from `from` to `to` (overwriting `to` if it exists).", "try fs.copy_file(\"a.bin\", \"b.bin\")"},
                 {"file_size", "fn file_size(path: str) -> u64!", "cfire::fs::file_size(path)", "Returns the size of a file in bytes.", "sz := try fs.file_size(\"input.bin\")"},
-                {"open", "fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!", "cfire::fs::open(path, mode)", "Opens a file with specified mode (Read, Write, Append, ReadWrite) returning a streaming File handle.", "mut f := try fs.open(\"log.txt\", OpenMode::Append)"},
+                {"open", "fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!", "cfire::fs::open(path, mode)", "Opens a file with specified mode (Read, Write, Append, ReadWrite) returning an unbuffered OS descriptor `File` handle.", "mut f := try fs.open(\"log.txt\", OpenMode::Append)"},
+                {"create_new", "fn create_new(path: str, mode: u32 = 0o600) -> File!", "cfire::fs::create_new(path, mode)", "Atomically creates a new file with `O_CREAT | O_EXCL` (`CREATE_NEW`), failing with `ERR_EXISTS` if it already exists.", "mut lock := try fs.create_new(\"vault.lock\", 0o600)"},
+                {"stat", "fn stat(path: str) -> FileInfo!", "cfire::fs::stat(path)", "Inspects metadata (`size`, `mtime_ms`, `mode`, `is_dir`, `is_symlink`) for a file, directory, or symlink.", "info := try fs.stat(\"config.json\")"},
+                {"realpath", "fn realpath(path: str) -> str!", "cfire::fs::realpath(path)", "Resolves `.` / `..` segments and symbolic links to an existing canonical path.", "abs := try fs.realpath(\"./keys/../keys/id\")"},
+                {"ERR_EXISTS", "const ERR_EXISTS: i32", "cfire::fs::ERR_EXISTS", "`Error.code()` value when a path already exists (`EEXIST`).", "if err.code() == fs.ERR_EXISTS { return error(\"already exists\") }"},
+                {"ERR_NOT_FOUND", "const ERR_NOT_FOUND: i32", "cfire::fs::ERR_NOT_FOUND", "`Error.code()` value when a file or directory does not exist (`ENOENT`).", "if err.code() == fs.ERR_NOT_FOUND { return }"},
+                {"ERR_PERMISSION", "const ERR_PERMISSION: i32", "cfire::fs::ERR_PERMISSION", "`Error.code()` value on permission denial (`EACCES` / `EPERM`).", "if err.code() == fs.ERR_PERMISSION { return error(\"permission denied\") }"},
                 {"File.fd", "fn (f: File) fd() -> i32", "f.fd()", "Returns the underlying OS file descriptor (`-1` if closed).", "fd := f.fd()"},
                 {"File.is_open", "fn (f: File) is_open() -> bool", "f.is_open()", "Returns `true` if the file handle holds a valid open file descriptor.", "if f.is_open() { ... }"},
                 {"File.is_tty", "fn (f: File) is_tty() -> bool", "f.is_tty()", "Returns `true` if the file stream refers to an interactive terminal.", "if os.stdout().is_tty() { ... }"},
@@ -370,7 +360,8 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"File.write_text", "fn (mut f: File) write_text(text: str) -> usize!", "f.write_text(text)", "Writes a UTF-8 string to the file stream, looping across partial writes and `EINTR`.", "n := try f.write_text(\"header\\n\")"},
                 {"File.seek", "fn (mut f: File) seek(offset: i64, whence: SeekWhence = SeekWhence::Start) -> i64!", "f.seek(offset, whence)", "Seeks within file to offset from Start, Current, or End.", "pos := try f.seek(0, SeekWhence::Start)"},
                 {"File.tell", "fn (mut f: File) tell() -> i64!", "f.tell()", "Returns current byte offset within file stream.", "pos := try f.tell()"},
-                {"File.flush", "fn (mut f: File) flush() -> void!", "f.flush()", "Flushes buffered stream data to disk.", "try f.flush()"},
+                {"File.flush", "fn (mut f: File) flush() -> void!", "f.flush()", "Flushes C stdio buffers (`stdout`/`stderr`) when wrapping standard descriptors (`fs.File` is otherwise an unbuffered OS descriptor; use `sync()` to flush OS buffers to storage).", "try os.stdout().flush()"},
+                {"File.sync", "fn (mut f: File) sync() -> void!", "f.sync()", "Flushes OS buffers for this file to durable storage (`F_FULLFSYNC`/`fsync`/`FlushFileBuffers`).", "try f.sync()"},
                 {"File.close", "fn (mut f: File) close() -> void", "f.close()", "Closes open file handle.", "f.close()"},
                 {"dirname", "fn dirname(path: str) -> str", "cfire::fs::dirname(path)", "Returns directory portion of a filesystem path.", "dir := fs.dirname(\"/a/b/c.txt\")"},
                 {"basename", "fn basename(path: str) -> str", "cfire::fs::basename(path)", "Returns file name portion of a filesystem path.", "name := fs.basename(\"/a/b/c.txt\")"},
@@ -464,11 +455,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "core:net/http", "http", "HTTP/1.1 & HTTPS Client, Server & Router", "(POSIX sockets + TLS)",
             "RFC 9112 HTTP/1.1 & HTTPS client (`get`, `post`, `request`), wire parser (`parse_request`), response serializer (`Response`), HTTP/HTTPS server (`make(http.Server, port)`, `make(http.Server, port, tls: http.TlsConfig{...})`, per-connection `http.ServerLimits`), and request router (`make_router`) with integrated WebSocket route upgrade (`Router.ws`).",
             {
-                {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::get(url, headers, verify_peer)", "Executes an HTTP or HTTPS GET request against a target URL.", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false)"},
-                {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer)", "Executes an HTTP or HTTPS POST request with payload body.", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
-                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = \"\") -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
-                {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true) -> void!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
-                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}) -> HttpServer!", "cfire::http::make_server(port, tls)", "`make(http.Server, port)` creates an HTTP server listening on `port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` (or `cert_pem` / `key_pem`) serves HTTPS.", "mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"})"},
+                {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!", "cfire::http::get(url, headers, verify_peer, timeout_ms)", "Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables).", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false, timeout_ms: 5000)"},
+                {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer, timeout_ms)", "Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables).", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
+                {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = \"\", timeout_ms: i64 = 30000) -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file, timeout_ms)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
+                {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = \"\", timeout_ms: i64 = 30000) -> void!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
+                {"serve_in_background", "fn serve_in_background(port: u16, handler: fn(Request) -> Response | Router, tls: TlsConfig = {}, host: str = \"0.0.0.0\") -> HttpServer!", "cfire::http::serve_in_background(port, handler, tls, host)", "Binds a server on `host:port`, starts its background event loop, and returns the live `HttpServer` handle.", "mut srv := try http.serve_in_background(0, router, host: \"127.0.0.1\")"},
+                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = \"0.0.0.0\") -> HttpServer!", "cfire::http::make_server(port, tls, host)", "`make(http.Server, port)` creates an HTTP server listening on `host:port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` serves HTTPS, and `host: \"127.0.0.1\"` restricts binding to loopback.", "mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"}, host: \"127.0.0.1\")"},
                 {"Router.make", "fn make() -> Router", "cfire::http::make_router()", "`make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut router := make(http.Router)"},
                 {"parse_request", "fn parse_request(raw: str) -> Request!", "cfire::http::parse_request(raw)", "Parses raw HTTP/1.1 wire text into a structured Request model.", "req := try http.parse_request(raw_text)"},
                 {"Response.text", "fn Response.text(code: i32, payload: str) -> Response", "cfire::http::Response::text(code, payload)", "Creates an HTTP Response with text/plain content-type and standard status reason.", "return http.Response.text(200, \"OK\")"},
@@ -477,6 +469,8 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Response.redirect", "fn Response.redirect(location: str, code: i32 = 302) -> Response", "cfire::http::Response::redirect(location, code)", "Creates an HTTP redirect Response setting Location header.", "return http.Response.redirect(\"/login\", 302)"},
                 {"Router.get", "fn (mut r: Router) get(pattern: str, handler: fn(Request) -> Response) -> Router", "r.get(pattern, handler)", "Registers an HTTP GET route with optional path parameters (`:id`) or wildcards (`*path`).", "r.get(\"/users/:id\", |req| http.Response.text(200, req.param(\"id\")))"},
                 {"Router.post", "fn (mut r: Router) post(pattern: str, handler: fn(Request) -> Response) -> Router", "r.post(pattern, handler)", "Registers an HTTP POST route handler.", "r.post(\"/items\", |req| http.Response.json(201, \"{}\"))"},
+                {"Router.put", "fn (mut r: Router) put(pattern: str, handler: fn(Request) -> Response) -> Router", "r.put(pattern, handler)", "Registers an HTTP PUT route handler.", "r.put(\"/items/:id\", |req| http.Response.json(200, req.body))"},
+                {"Router.delete_", "fn (mut r: Router) delete_(pattern: str, handler: fn(Request) -> Response) -> Router", "r.delete_(pattern, handler)", "Registers an HTTP DELETE route handler.", "r.delete_(\"/items/:id\", |req| http.Response.text(204, \"\"))"},
                 {"Router.ws", "fn (mut r: Router) ws(pattern: str, handler: fn(Request, mut websocket.Conn) -> void) -> Router", "r.ws(pattern, handler)", "Registers a WebSocket route that automatically upgrades matching HTTP requests and invokes `handler(req, mut ws)`.", "r.ws(\"/chat/:room\", |req, mut ws| { ... })"},
                 {"Router.dispatch", "fn (r: Router) dispatch(req: Request) -> Response", "r.dispatch(req)", "Dispatches an HTTP request through the router in-memory without open network sockets.", "res := router.dispatch(test_req)"},
                 {"Router.use", "fn (mut r: Router) use(mw: fn(mut Request) -> Response?) -> Router", "r.use(mw)", "Registers pre-routing middleware that can short-circuit or validate HTTP and WebSocket upgrade requests.", "r.use(|req| { return None })"},
@@ -491,6 +485,33 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Request.param", "fn (req: Request) param(key: str, fallback: str = \"\") -> str", "req.param(key, fallback)", "Retrieves a named route path parameter extracted by the router.", "id := req.param(\"id\")"},
                 {"Request.query", "fn (req: Request) query(key: str, fallback: str = \"\") -> str", "req.query(key, fallback)", "Retrieves a decoded URL query parameter.", "page := req.query(\"page\", \"1\")"},
                 {"Request.header", "fn (req: Request) header(key: str, fallback: str = \"\") -> str", "req.header(key, fallback)", "Performs a case-insensitive header lookup.", "auth := req.header(\"Authorization\")"}
+            }
+        },
+        {
+            "core:net/ipc", "ipc", "Cross-Platform Local IPC & Peer Credentials", "(AF_UNIX on POSIX / Named Pipes on Windows)",
+            "Same-machine local IPC backed by `0600` Unix domain sockets (`AF_UNIX`) on macOS & Linux and owner-restricted Named Pipes (`PIPE_REJECT_REMOTE_CLIENTS`) on Windows, with OS-verified peer process and user credentials (`peer_credentials`) and full `_bytes`/`_text` streaming.",
+            {
+                {"endpoint", "fn endpoint(name: str) -> str", "cfire::ipc::endpoint(name)", "Resolves a logical service name into a private per-user OS IPC endpoint (`AF_UNIX` path on POSIX, owner-scoped Named Pipe on Windows).", "ep := ipc.endpoint(\"app-agent\")"},
+                {"listen", "fn listen(endpoint: str) -> Listener!", "cfire::ipc::listen(endpoint)", "Creates a private local IPC server (`0600` socket on POSIX after stale-socket check; owner-only Named Pipe on Windows).", "mut ln := try ipc.listen(ep)"},
+                {"connect", "fn connect(endpoint: str, timeout_ms: i32 = 5000) -> Conn!", "cfire::ipc::connect(endpoint, timeout_ms)", "Connects to a local IPC listener endpoint within `timeout_ms`.", "mut c := try ipc.connect(ep)"},
+                {"Listener.accept", "fn (mut l: Listener) accept() -> Conn!", "l.accept()", "Waits for and accepts an incoming local IPC client connection.", "mut conn := try ln.accept()"},
+                {"Listener.endpoint", "fn (l: Listener) endpoint() -> str", "l.endpoint()", "Returns the bound endpoint path or pipe name.", "ep := ln.endpoint()"},
+                {"Listener.is_open", "fn (l: Listener) is_open() -> bool", "l.is_open()", "Returns `true` if the IPC listener is still open.", "if ln.is_open() { ... }"},
+                {"Listener.close", "fn (mut l: Listener) close() -> void", "l.close()", "Closes the listener and removes its POSIX socket path (existing accepted `Conn` handles remain usable).", "ln.close()"},
+                {"Conn.is_open", "fn (c: Conn) is_open() -> bool", "c.is_open()", "Returns `true` if the IPC connection handle is open.", "if conn.is_open() { ... }"},
+                {"Conn.poll", "fn (c: Conn) poll(timeout_ms: i64 = 0) -> bool", "c.poll(timeout_ms)", "Polls the IPC stream for readability up to `timeout_ms` milliseconds.", "ready := conn.poll(50)"},
+                {"Conn.set_timeout_ms", "fn (mut c: Conn) set_timeout_ms(ms: i32) -> void", "c.set_timeout_ms(ms)", "Sets read/write I/O timeout in milliseconds (`0` for blocking).", "conn.set_timeout_ms(2000)"},
+                {"Conn.write_bytes", "fn (mut c: Conn) write_bytes(payload: []byte) -> usize!", "c.write_bytes(payload)", "Writes all bytes in `payload` to the IPC stream.", "_ = try conn.write_bytes(raw)"},
+                {"Conn.write_text", "fn (mut c: Conn) write_text(text: str) -> usize!", "c.write_text(text)", "Writes a UTF-8 string to the IPC stream.", "_ = try conn.write_text(\"PING\\n\")"},
+                {"Conn.read_into", "fn (mut c: Conn) read_into(mut buf: []byte) -> usize!", "c.read_into(buf)", "Reads up to `buf.len()` bytes from the IPC stream into `buf`.", "n := try conn.read_into(mut buf)"},
+                {"Conn.read_bytes", "fn (mut c: Conn) read_bytes(max_bytes: usize = 4096) -> []byte!", "c.read_bytes(max_bytes)", "Reads up to `max_bytes` bytes from the IPC stream.", "pkt := try conn.read_bytes(256)"},
+                {"Conn.read_exact", "fn (mut c: Conn) read_exact(exact_bytes: usize) -> []byte!", "c.read_exact(exact_bytes)", "Reads exactly `exact_bytes` from the IPC stream or fails on premature EOF.", "hdr := try conn.read_exact(8)"},
+                {"Conn.read_text", "fn (mut c: Conn) read_text(max_bytes: usize = 4096) -> str!", "c.read_text(max_bytes)", "Reads up to `max_bytes` from the IPC stream as a UTF-8 string.", "msg := try conn.read_text(64)"},
+                {"Conn.read_bytes_until", "fn (mut c: Conn) read_bytes_until(delim: byte, max_bytes: usize = 65536) -> []byte!", "c.read_bytes_until(delim, max_bytes)", "Reads bytes up to and including `delim` (or `max_bytes`).", "frame := try conn.read_bytes_until(byte(0))"},
+                {"Conn.read_text_until", "fn (mut c: Conn) read_text_until(delim: str, max_bytes: usize = 65536) -> str!", "c.read_text_until(delim, max_bytes)", "Reads text up to and including `delim` (or `max_bytes`).", "msg := try conn.read_text_until(\"\\n\")"},
+                {"Conn.read_line", "fn (mut c: Conn) read_line(max_bytes: usize = 65536) -> str?", "c.read_line(max_bytes)", "Reads the next line from the IPC stream (stripping `\\r\\n` / `\\n`), or `none` on EOF.", "line := conn.read_line() or { return }"},
+                {"Conn.peer_credentials", "fn (c: Conn) peer_credentials() -> PeerCred!", "c.peer_credentials()", "Queries OS-authenticated peer credentials (`pid`, `same_user`, `uid`).", "cred := try conn.peer_credentials()"},
+                {"Conn.close", "fn (mut c: Conn) close() -> void", "c.close()", "Closes the IPC stream connection.", "conn.close()"}
             }
         },
         {
@@ -521,7 +542,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {
                 {"connect", "fn connect(url: str, verify_peer: bool = true) -> Conn!", "cfire::websocket::connect(url, verify_peer)", "Establishes a `ws://` or `wss://` WebSocket connection and completes the RFC 6455 handshake.", "mut ws := try websocket.connect(\"ws://127.0.0.1:8080/ws\")"},
                 {"TlsConfig", "type TlsConfig struct { cert_file: str, key_file: str, cert_pem: str, key_pem: str }", "cfire::http::TlsConfig", "Server certificate for `make(websocket.Server, port, tls: ...)`; the same type as `http.TlsConfig`.", "tls: websocket.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"}"},
-                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}) -> Server!", "cfire::websocket::make_server(port, tls)", "`make(websocket.Server, port)` creates a standalone WebSocket server listening on `port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`.", "mut srv := try make(websocket.Server, 9001)"},
+                {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = \"0.0.0.0\") -> Server!", "cfire::websocket::make_server(port, tls, host)", "`make(websocket.Server, port)` creates a standalone WebSocket server listening on `host:port` (`0` picks an ephemeral port); add `tls: websocket.TlsConfig{...}` for `wss://`, and `host: \"127.0.0.1\"` for loopback-only.", "mut srv := try make(websocket.Server, 9001, host: \"127.0.0.1\")"},
                 {"upgrade", "fn upgrade(req: Request, mut conn: TcpConn) -> Conn!", "cfire::websocket::upgrade(req, conn)", "Upgrades an incoming HTTP or HTTPS connection to a WebSocket connection.", "mut ws := try websocket.upgrade(req, mut conn)"},
                 {"pair", "fn pair() -> (Conn, Conn)!", "cfire::websocket::pair()", "Creates an in-process full-duplex WebSocket client/server loopback pair.", "mut (client, server) := try websocket.pair()"},
                 {"Conn.send_text", "fn (mut ws: Conn) send_text(msg: str) -> void!", "ws.send_text(msg)", "Sends a UTF-8 text frame to the peer (masked if client).", "try ws.send_text(\"hello world\")"},
@@ -665,7 +686,26 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"duration_minutes", "fn duration_minutes(m: i64) -> Duration", "cfire::time::duration_minutes(m)", "Constructs a Duration from minutes.", "d := time.duration_minutes(5)"},
                 {"duration_hours", "fn duration_hours(h: i64) -> Duration", "cfire::time::duration_hours(h)", "Constructs a Duration from hours.", "d := time.duration_hours(2)"},
                 {"from_unix_seconds", "fn from_unix_seconds(sec: i64) -> Time", "cfire::time::from_unix_seconds(sec)", "Constructs a Time instant from Unix epoch seconds.", "t := time.from_unix_seconds(1700000000)"},
-                {"sleep", "fn sleep(d: Duration)", "cfire::time::sleep(d)", "Sleeps the current thread for duration `d`.", "time.sleep(time.duration_millis(50))"}
+                {"sleep", "fn sleep(d: Duration)", "cfire::time::sleep(d)", "Sleeps the current thread for duration `d`.", "time.sleep(time.duration_millis(50))"},
+                {"Time.utc", "fn (t: Time) utc() -> Time", "t.utc()", "Returns the same instant formatted with UTC (`+00:00` / `Z`).", "u := t.utc()"},
+                {"Time.local", "fn (t: Time) local() -> Time", "t.local()", "Returns the same instant tagged with the host's local timezone offset for display.", "loc := t.local()"},
+                {"Time.format_rfc3339", "fn (t: Time) format_rfc3339() -> str", "t.format_rfc3339()", "Formats `t` as RFC 3339 (`...Z` for UTC, `...+HH:MM`/`-HH:MM` when localized).", "s := t.local().format_rfc3339()"},
+                {"Time.format", "fn (t: Time) format(pattern: str) -> str", "t.format(pattern)", "Formats `t` using `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%z`, `%:z`, `%Z`, `%a`/`%A`, `%b`/`%B`, `%%` (CRT-safe).", "s := t.local().format(\"%Y-%m-%d %H:%M:%S\")"},
+                {"Time.unix_seconds", "fn (t: Time) unix_seconds() -> i64", "t.unix_seconds()", "Returns Unix seconds since epoch.", "sec := t.unix_seconds()"},
+                {"Time.unix_millis", "fn (t: Time) unix_millis() -> i64", "t.unix_millis()", "Returns Unix milliseconds since epoch.", "ms := t.unix_millis()"},
+                {"Time.unix_nanos", "fn (t: Time) unix_nanos() -> i64", "t.unix_nanos()", "Returns Unix nanoseconds since epoch.", "ns := t.unix_nanos()"},
+                {"Time.year", "fn (t: Time) year() -> i32", "t.year()", "Returns calendar year in `t`'s offset (UTC or local).", "y := t.year()"},
+                {"Time.month", "fn (t: Time) month() -> i32", "t.month()", "Returns calendar month (`1..=12`) in `t`'s offset.", "m := t.month()"},
+                {"Time.day", "fn (t: Time) day() -> i32", "t.day()", "Returns day of month (`1..=31`) in `t`'s offset.", "d := t.day()"},
+                {"Time.hour", "fn (t: Time) hour() -> i32", "t.hour()", "Returns hour (`0..=23`) in `t`'s offset.", "h := t.hour()"},
+                {"Time.minute", "fn (t: Time) minute() -> i32", "t.minute()", "Returns minute (`0..=59`) in `t`'s offset.", "min := t.minute()"},
+                {"Time.second", "fn (t: Time) second() -> i32", "t.second()", "Returns second (`0..=59`) in `t`'s offset.", "sec := t.second()"},
+                {"Time.add", "fn (t: Time) add(d: Duration) -> Time", "t.add(d)", "Advances `t` by duration `d`, preserving its timezone offset.", "t2 := t.add(time.duration_seconds(5))"},
+                {"Time.sub", "fn (t: Time) sub(other: Time) -> Duration", "t.sub(other)", "Returns elapsed `Duration` between `t` and `other`.", "diff := t2.sub(t1)"},
+                {"Duration.as_nanos", "fn (d: Duration) as_nanos() -> i64", "d.as_nanos()", "Returns total nanoseconds.", "ns := d.as_nanos()"},
+                {"Duration.as_micros", "fn (d: Duration) as_micros() -> i64", "d.as_micros()", "Returns whole microseconds.", "us := d.as_micros()"},
+                {"Duration.as_millis", "fn (d: Duration) as_millis() -> i64", "d.as_millis()", "Returns whole milliseconds.", "ms := d.as_millis()"},
+                {"Duration.as_seconds", "fn (d: Duration) as_seconds() -> f64", "d.as_seconds()", "Returns duration in seconds as `f64`.", "sec := d.as_seconds()"}
             }
         },
         {
@@ -739,7 +779,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"McpServer.register_tool_action", "fn (mut s: McpServer) register_tool_action(name: str, description: str, handler: fn() -> R!)", "s.register_tool_action(name, description, handler)", "Registers a parameterless MCP tool.", "mcp.register_tool_action(\"status\", \"Server status\", || { return \"ready\" })"},
                 {"McpServer.handle_jsonrpc", "fn (mut s: McpServer) handle_jsonrpc(req_json: str) -> str", "s.handle_jsonrpc(req_json)", "Processes a single MCP JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, `ping`) and returns the JSON-RPC response string.", "resp := mcp.handle_jsonrpc(line)"},
                 {"McpServer.serve_stdio", "fn (mut s: McpServer) serve_stdio() -> i32", "s.serve_stdio()", "Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`.", "mcp.serve_stdio()"},
-                {"create_zip", "fn create_zip(entries: map[str]str) -> []byte", "cfire::ai::create_zip(entries)", "Constructs an in-memory zip archive from filename-content pairs.", "z := ai.create_zip(entries)"}
+                {"create_zip", "fn create_zip(entries: []ZipEntry) -> []byte", "cfire::ai::create_zip(entries)", "Constructs an in-memory zip archive from `ZipEntry{name, content}` entries.", "z := ai.create_zip([ai.ZipEntry{name: \"a.txt\", content: \"hello\"}])"}
             }
         },
         {
@@ -824,7 +864,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.bind_action", "fn (mut app: App) bind_action(name: str, handler: fn() -> any!)", "app.bind_action(name, handler)", "Binds a zero-argument action closure to `window.backend.<name>()`.", "app.bind_action(\"reset_desk\") || { return \"ok\" }"},
                 {"App.bind_action_async", "fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)", "app.bind_action_async(name, handler)", "Binds a zero-argument RPC action that executes asynchronously on a background worker thread.", "app.bind_action_async(\"sync_now\") || { return run_sync() }"},
                 {"App.bind_raw", "fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)", "app.bind_raw(name, handler)", "Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.", "app.bind_raw(\"raw_op\") |raw_json| { return raw_json }"},
-                {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events emitted via `window.runtime.EventsEmit(event, data)`.", "app.on(\"fader:input\") |payload| { println(\"{}\", payload) }"},
+                {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop lifecycle events (`\"window:close_requested\"`, `\"window:fullscreen\"` with `{\"fullscreen\":bool}`, `\"window:file_drop\"` with `{\"paths\":[...]}`, and `\"window:reopen\"` on macOS Dock click).", "app.on(\"window:file_drop\") |payload| { println(\"{}\", payload) }"},
                 {"App.emit", "fn (mut app: App) emit(event: str, payload: any)", "app.emit(event, payload)", "Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.", "app.emit(\"meter:peak\", status)"},
                 {"App.emit_bytes", "fn (mut app: App) emit_bytes(event: str, data: []byte)", "app.emit_bytes(event, data)", "Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`.", "app.emit_bytes(\"pty:data\", chunk)"},
                 {"App.clear_history", "fn (mut app: App) clear_history()", "app.clear_history()", "Clears the bounded in-memory ring buffer of recorded emitted events.", "app.clear_history()"},
@@ -854,6 +894,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.set_transparent", "fn (mut app: App) set_transparent(transparent: bool)", "app.set_transparent(transparent)", "Enables or disables transparent window and WebView background rendering.", "app.set_transparent(true)"},
                 {"App.set_dark_mode", "fn (mut app: App) set_dark_mode(dark: bool)", "app.set_dark_mode(dark)", "Configures dark or light native window appearance.", "app.set_dark_mode(true)"},
                 {"App.set_always_on_top", "fn (mut app: App) set_always_on_top(on_top: bool)", "app.set_always_on_top(on_top)", "Floats the application window above standard desktop windows.", "app.set_always_on_top(true)"},
+                {"App.set_devtools", "fn (mut app: App) set_devtools(enabled: bool)", "app.set_devtools(enabled)", "Explicitly enables or disables the native Web Inspector / DevTools (`WKWebView`, `WebKitGTK`, `WebView2`). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).", "app.set_devtools(false)"},
+                {"App.devtools_enabled", "fn (app: App) devtools_enabled() -> bool", "app.devtools_enabled()", "Returns whether native Web Inspector / DevTools are currently enabled for this application.", "dev := app.devtools_enabled()"},
+                {"App.set_context_menu", "fn (mut app: App) set_context_menu(enabled: bool)", "app.set_context_menu(enabled)", "Explicitly enables or disables the default browser right-click context menu (`WKWebView`, `WebKitGTK`, `WebView2`). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).", "app.set_context_menu(false)"},
+                {"App.context_menu_enabled", "fn (app: App) context_menu_enabled() -> bool", "app.context_menu_enabled()", "Returns whether the default browser context menu is currently enabled for this application.", "ctx := app.context_menu_enabled()"},
+                {"App.set_autofill", "fn (mut app: App) set_autofill(enabled: bool)", "app.set_autofill(enabled)", "Enables or disables browser form autofill and password autosave (WebView2 `ICoreWebView2Settings4` plus WebKit DOM `autocomplete=\"off\"` enforcement for secret fields).", "app.set_autofill(false)"},
+                {"App.autofill_enabled", "fn (app: App) autofill_enabled() -> bool", "app.autofill_enabled()", "Returns whether browser form autofill / password autosave is currently enabled.", "af := app.autofill_enabled()"},
                 {"App.fullscreen", "fn (mut app: App) fullscreen()", "app.fullscreen()", "Toggles native fullscreen window mode.", "app.fullscreen()"},
                 {"App.minimize", "fn (mut app: App) minimize()", "app.minimize()", "Minimizes the native window to the dock or taskbar.", "app.minimize()"},
                 {"App.maximize", "fn (mut app: App) maximize()", "app.maximize()", "Zooms or maximizes the native window.", "app.maximize()"},
@@ -867,7 +913,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.emitted_events_count", "fn (app: App) emitted_events_count(event: str) -> i64", "app.emitted_events_count(event)", "Returns the number of times `app.emit(event, ...)` has been triggered.", "n := app.emitted_events_count(\"meter:peak\")"},
                 {"App.last_emitted_payload", "fn (app: App) last_emitted_payload(event: str) -> str", "app.last_emitted_payload(event)", "Returns the most recent JSON payload emitted for `event`.", "last := app.last_emitted_payload(\"meter:peak\")"},
                 {"App.run_webview_test", "fn (mut app: App) run_webview_test(timeout_ms: i32 = 3000) -> bool!", "app.run_webview_test(timeout_ms)", "Boots an offscreen native `WKWebView`, executes the loaded page's JavaScript and RPC calls until `window.runtime.Quit()` or `timeout_ms`, and returns `true` if `Quit()` was reached.", "ok := try app.run_webview_test(3000)"},
-                {"App.run", "fn (mut app: App) run()", "app.run()", "Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux).", "app.run()"},
+                {"App.run", "fn (mut app: App) run()", "app.run()", "Launches the native OS window and WebView event loop (`NSWindow`+`WKWebView` with Dock reopen and file drop on macOS, `UIWindow`+`WKWebView` on iOS, `GtkWindow`+`WebKitGTK` on Linux, and PerMonitorV2 DPI `HWND`+`WebView2` on Windows).", "app.run()"},
                 {"App.quit", "fn (mut app: App) quit()", "app.quit()", "Requests termination of the native WebView event loop.", "app.quit()"},
                 {"App.close", "fn (mut app: App) close()", "app.close()", "Deterministic RAII cleanup handle for `defer app.close()`.", "defer app.close()"},
                 {"clipboard_get", "fn clipboard_get() -> str", "cfire::webui::clipboard_get()", "Reads plaintext from the system clipboard.", "t := webui.clipboard_get()"},
@@ -913,7 +959,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {"cfire/ESCAPING-CAPTURE-MUT", "Concurrency", "An escaping closure mutates a captured outer variable."},
             {"cfire/FILE-NOT-FOUND", "Tooling", "A file named on the command line or imported does not exist."},
             {"cfire/INVALID-ATTRIBUTE", "Attributes", "An attribute on a declaration is unknown, misplaced, or has invalid arguments."},
-            {"cfire/INVALID-IMPORT", "Imports", "A module imported under the wrong tier prefix (`core:` vs `ext:`)."},
+            {"cfire/INVALID-IMPORT", "Imports", "A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`)."},
             {"cfire/INVALID-INDEX", "Types", "Indexing a value that is not a string, slice, array or map."},
             {"cfire/INVALID-INTERPOLATION", "Syntax", "An interpolation `{...}` that is not a valid expression."},
             {"cfire/INVALID-MEMBER", "Types", "A member access on a primitive value that has no such member."},

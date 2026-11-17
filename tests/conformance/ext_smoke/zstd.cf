@@ -1,0 +1,18 @@
+// requires-lib: libzstd
+// expect: stdout
+// | ext:compress/zstd ok
+package main
+
+import "ext:compress/zstd"
+
+fn main() {
+    raw := []byte("cfire-zstd-real-library-smoke-payload-cfire-zstd-real-library-smoke-payload")
+    comp := try zstd.compress(raw, level: 3)
+    back := try zstd.decompress(comp)
+    assert_eq(str(back), str(raw))
+
+    comp_s := try zstd.compress_str("hello real libzstd", 3)
+    back_s := try zstd.decompress_str(comp_s)
+    assert_eq(back_s, "hello real libzstd")
+    println("ext:compress/zstd ok")
+}

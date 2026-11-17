@@ -4,4 +4,5 @@
 #include "net/tls.hpp"
 #include "net/url.hpp"
 #include "net/http.hpp"
+#include "net/ipc.hpp"
 #include "net/websocket.hpp"

@@ -239,11 +239,10 @@ inline std::string probe_fast_linker_uncached(const std::string& cxx_cmd) {
     return "";
 #else
     if (cxx_cmd.empty()) return "";
-    std::error_code ec;
-    auto tmp_dir = std::filesystem::temp_directory_path(ec);
-    if (ec || tmp_dir.empty()) return "";
-    auto test_src = tmp_dir / std::format("cfire_ld_probe_{}.cpp", current_pid());
-    auto test_out = tmp_dir / std::format("cfire_ld_probe_{}.out", current_pid());
+    cfire::detail::SecureTempDir ld_tmp("cfire_ld_probe");
+    if (!ld_tmp.ok()) return "";
+    auto test_src = ld_tmp.file("probe.cpp");
+    auto test_out = ld_tmp.file("probe.out");
     if (!atomic_write_text_file(test_src, "int main() { return 0; }\n")) {
         return "";
     }
@@ -259,13 +258,12 @@ inline std::string probe_fast_linker_uncached(const std::string& cxx_cmd) {
             null_all_redirect()
         );
         run_probe_cmd_capture(cmd, out, rc);
+        std::error_code ec;
         std::filesystem::remove(test_out, ec);
         if (rc == 0) {
-            std::filesystem::remove(test_src, ec);
             return std::string(flag);
         }
     }
-    std::filesystem::remove(test_src, ec);
     return "";
 #endif
 }

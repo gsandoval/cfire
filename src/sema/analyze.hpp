@@ -105,7 +105,9 @@ namespace cfire::frontend {
     for (const auto& imp : cf.ast.imports) {
         if (!imp.is_cpp) {
             if (auto canon = cfire::modules::canonical_import_for_wrong_prefix(imp.path); !canon.empty()) {
-                if (canon == "ext:crypto/sodium") {
+                if (imp.path.starts_with("ext:") == canon.starts_with("ext:")) {
+                    cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' is a non-canonical import path and must be imported as '{}'", imp.path, canon), {{"from", imp.path}, {"to", canon}}));
+                } else if (canon == "ext:crypto/sodium") {
                     cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' requires native libsodium and must be imported as 'ext:crypto/sodium'", imp.path), {{"from", imp.path}, {"to", "ext:crypto/sodium"}}));
                 } else if (canon.starts_with("ext:")) {
                     cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/INVALID-IMPORT", std::format("module '{}' requires a native extension engine and must be imported as '{}'", imp.path, canon), {{"from", imp.path}, {"to", canon}}));
@@ -266,6 +268,16 @@ namespace cfire::frontend {
     // 1. Index Interfaces and Enums
     for (const auto& iface : cf.ast.interfaces) {
         cf.interfaces.insert(iface.name);
+        cf.interface_defs[iface.name] = iface;
+        if (!iface.package_name.empty()) {
+            std::string orig_name = iface.name;
+            if (orig_name.starts_with("cfire_pkg_")) {
+                if (auto sep = orig_name.find("__"); sep != std::string::npos) {
+                    orig_name = orig_name.substr(sep + 2);
+                }
+            }
+            cf.interface_defs[iface.package_name + "." + orig_name] = iface;
+        }
     }
     for (const auto& en : cf.ast.enums) {
         cf.enums[en.name] = en;
@@ -317,8 +329,18 @@ namespace cfire::frontend {
     };
     for (const auto& st : cf.ast.structs) declare_type_name(st.name);
     for (const auto& en : cf.ast.enums) declare_type_name(en.name);
-    for (const auto& in : cf.ast.interfaces) cf.declared_type_names.insert(in.name);
+    for (const auto& in : cf.ast.interfaces) declare_type_name(in.name);
     std::unordered_set<std::string> scope_type_params;  // type parameters of the declaration being checked
+    auto check_type_params_bounds = [&](const std::vector<TypeParam>& tps, std::string_view decl_path, int decl_line) {
+        for (const auto& tp : tps) {
+            for (const auto& bound : tp.constraints) {
+                if (bound.empty() || cf.interface_defs.contains(bound)) continue;
+                cf.add_error(cfire::diag::diag(decl_path, decl_line, 1, "cfire/UNDECLARED-TYPE",
+                    std::format("unknown interface constraint '{}' on type parameter '{}'", bound, tp.name),
+                    {{"name", bound}}));
+            }
+        }
+    };
     // Validate no dynamic slices or arrays of structural interfaces
     auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
         // no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types.
@@ -410,6 +432,7 @@ namespace cfire::frontend {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
         scope_type_params.clear();
         for (const auto& tp : st.type_params) scope_type_params.insert(tp.name);
+        check_type_params_bounds(st.type_params, st_path, st.line);
         for (const auto& fld : st.fields) {
             std::string seen_key = std::format("{}:{}:{}.{}", std::filesystem::path(st_path).lexically_normal().string(), fld.line, st.name, fld.name);
             if (std::string snake = snake_case_of(fld.name); snake != fld.name && field_case_seen.insert(seen_key).second) {
@@ -539,6 +562,7 @@ namespace cfire::frontend {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
         scope_type_params.clear();
         for (const auto& tp : fn.type_params) scope_type_params.insert(tp.name);
+        check_type_params_bounds(fn.type_params, fn_path, fn.line);
         if (fn.receiver) {
             for (const auto& ta : fn.receiver->type.type_args) scope_type_params.insert(ta.name);  // `fn (b: Box[T])`
             for (const auto& st : cf.ast.structs) {
@@ -561,8 +585,19 @@ namespace cfire::frontend {
         std::string_view en_path = en.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(en.source_path);
         scope_type_params.clear();
         for (const auto& tp : en.type_params) scope_type_params.insert(tp.name);
+        check_type_params_bounds(en.type_params, en_path, en.line);
         for (const auto& v : en.variants) {
             for (const auto& pt : v.payload_types) check_type_ref_separators_ast(check_type_ref_separators_ast, pt, en_path, v.line, 1);
+        }
+    }
+    for (const auto& iface : cf.ast.interfaces) {
+        std::string_view ifc_path = iface.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(iface.source_path);
+        scope_type_params.clear();
+        for (const auto& m : iface.methods) {
+            int mline = m.line > 0 ? m.line : iface.line;
+            int mcol = m.col > 0 ? m.col : 1;
+            for (const auto& pt : m.param_types) check_type_ref_separators_ast(check_type_ref_separators_ast, pt, ifc_path, mline, mcol);
+            check_type_ref_separators_ast(check_type_ref_separators_ast, m.return_type, ifc_path, mline, mcol);
         }
     }
     scope_type_params.clear();
@@ -642,11 +677,11 @@ namespace cfire::frontend {
                     std::string dval = trim_str(val);
                     const std::string& tname = fld.type.name;
                     if (tname == "i8" || tname == "i16" || tname == "i32" || tname == "i64" || tname == "int") {
-                        if (!cfire::detail::parse_int<std::int64_t>(dval)) {
+                        if (!parse_int_literal<std::int64_t>(dval)) {
                             cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for integer field '{}.{}' of type '{}'", dval, st.name, fld.name, tname)));
                         }
                     } else if (tname == "u8" || tname == "u16" || tname == "u32" || tname == "u64" || tname == "usize" || tname == "byte") {
-                        if (dval.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(dval)) {
+                        if (dval.starts_with('-') || !parse_int_literal<std::uint64_t>(dval)) {
                             cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid default tag value '{}' for unsigned field '{}.{}' of type '{}'", dval, st.name, fld.name, tname)));
                         }
                     } else if (tname == "bool") {
@@ -693,8 +728,8 @@ namespace cfire::frontend {
                                 char* endp = nullptr;
                                 double num = std::strtod(nstr.c_str(), &endp);
                                 bool valid_num = !nstr.empty() && endp == nstr.c_str() + nstr.size();
-                                if (is_int_type && !cfire::detail::parse_int<std::int64_t>(nstr)) valid_num = false;
-                                if (is_uint_type && (nstr.starts_with('-') || !cfire::detail::parse_int<std::uint64_t>(nstr))) valid_num = false;
+                                if (is_int_type && !parse_int_literal<std::int64_t>(nstr)) valid_num = false;
+                                if (is_uint_type && (nstr.starts_with('-') || !parse_int_literal<std::uint64_t>(nstr))) valid_num = false;
                                 if (!valid_num) {
                                     cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid numeric bound '{}' in validate tag on field '{}.{}' of type '{}'", r_tok, st.name, fld.name, tname)));
                                 } else {
@@ -716,7 +751,7 @@ namespace cfire::frontend {
                             if (!is_len_type) {
                                 cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("validate rule '{}' on field '{}.{}' requires 'str' or slice type, got '{}'", r_tok, st.name, fld.name, tname)));
                             } else {
-                                auto parsed_len = (!lstr.starts_with('-')) ? cfire::detail::parse_int<std::uint64_t>(lstr) : std::nullopt;
+                                auto parsed_len = (!lstr.starts_with('-')) ? parse_int_literal<std::uint64_t>(lstr) : std::nullopt;
                                 if (!parsed_len) {
                                     cf.add_error(cfire::diag::diag(st_path, fld.line, 0, "cfire/INVALID-STRUCT-TAG", std::format("invalid length bound '{}' in validate tag on field '{}.{}'", r_tok, st.name, fld.name)));
                                 } else {

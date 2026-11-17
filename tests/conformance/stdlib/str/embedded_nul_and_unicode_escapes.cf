@@ -1,0 +1,12 @@
+// expect: stdout
+// | 3 0 true true 1 true 5 A
+package main
+
+fn main() {
+    s := "a\x00b"
+    bs := s.bytes()
+    nul := "\x00"
+    u := "\u{0041}\u{1F600}"
+    a := "\u{0041}"
+    println("{} {} {} {} {} {} {} {}", s.len(), bs[1], s != "a\x00c", s == "a\x00b", nul.len(), nul == "\x00", u.len(), a)
+}

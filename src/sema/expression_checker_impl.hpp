@@ -196,6 +196,11 @@
             return emit_error(diag_at(line, col, "cfire/UNKNOWN-METHOD", std::format("unknown {} method '{}'", type_name, mem.field), {{"method", std::string(mem.field)}, {"replacement", ""}}));
         }
         auto kind = classify_builtin_receiver(type_name_of(mem.object));
+        if (mem.field == "clone") {
+            return emit_error(diag_at(line, col, "cfire/UNKNOWN-METHOD",
+                std::format("unknown {} method 'clone'; values copy on assignment in cfire — write 'mut copy := xs' for an owned mutable copy", type_name),
+                {{"method", "clone"}, {"replacement", ""}}));
+        }
         std::string_view repl = builtin_method_replacement(kind, mem.field);
         std::string hint = repl.empty()
             ? std::string("; raw C++ members are only available inside 'cpp { }' blocks")
@@ -409,9 +414,9 @@
     /// `TypeTable::from_name` decomposes.
     CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_type_name_sema(std::string_view name) const -> std::string {
         if (name.empty()) return {};
-        if (name.starts_with("[]")) return "[]" + canonical_type_name_sema(name.substr(2));
         if (name.ends_with('?')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "?";
         if (name.ends_with('!')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "!";
+        if (name.starts_with("[]")) return "[]" + canonical_type_name_sema(name.substr(2));
         if (name.starts_with("&mut ")) return "&mut " + canonical_type_name_sema(name.substr(5));
         if (name.starts_with('&')) return "&" + canonical_type_name_sema(name.substr(1));
         if (name.starts_with("*mut ")) return "*mut " + canonical_type_name_sema(name.substr(5));
@@ -433,7 +438,42 @@
                 }
             }
         }
-        if (name.starts_with('(') || name.starts_with("fn")) return std::string(name); // tuples / fn types
+        if (name.starts_with('(') && name.ends_with(')')) {
+            int p_depth = 0;
+            int b_depth = 0;
+            std::string out = "(";
+            std::size_t start = 1;
+            bool outer_encloses = true;
+            for (std::size_t i = 0; i < name.size(); ++i) {
+                if (name[i] == '(') ++p_depth;
+                else if (name[i] == ')') {
+                    --p_depth;
+                    if (p_depth == 0 && i + 1 < name.size()) {
+                        outer_encloses = false;
+                        break;
+                    }
+                } else if (name[i] == '[') ++b_depth;
+                else if (name[i] == ']') --b_depth;
+                else if (name[i] == ',' && p_depth == 1 && b_depth == 0) {
+                    std::string_view part = name.substr(start, i - start);
+                    while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front()))) part.remove_prefix(1);
+                    while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back()))) part.remove_suffix(1);
+                    if (out.size() > 1) out += ", ";
+                    out += canonical_type_name_sema(part);
+                    start = i + 1;
+                }
+            }
+            if (outer_encloses && p_depth == 0) {
+                std::string_view last_part = name.substr(start, (name.size() - 1) - start);
+                while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.front()))) last_part.remove_prefix(1);
+                while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.back()))) last_part.remove_suffix(1);
+                if (out.size() > 1) out += ", ";
+                out += canonical_type_name_sema(last_part);
+                out += ")";
+                return out;
+            }
+        }
+        if (name.starts_with('(') || name.starts_with("fn")) return std::string(name); // fn types
         return canonical_nominal_path_sema(name);
     }
 
@@ -785,6 +825,103 @@
     }
 
 
+    CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_interface_method_sig_sema(const MemberExpr& mem) const -> const InterfaceMethodSig* {
+        if (!mem.object) return nullptr;
+        std::string recv_t = type_name_of(mem.object);
+        if (recv_t.empty()) return nullptr;
+        auto it = fn_type_param_bounds_.find(recv_t);
+        if (it == fn_type_param_bounds_.end()) return nullptr;
+        for (const auto& bound : it->second) {
+            auto iit = cf_.interface_defs.find(bound);
+            if (iit == cf_.interface_defs.end()) continue;
+            for (const auto& m : iit->second.methods) {
+                if (m.name == mem.field) return &m;
+            }
+        }
+        return nullptr;
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_enum_by_prefix_sema(std::string_view prefix) const -> const EnumDecl* {
+        if (prefix.empty()) return nullptr;
+        std::string p_str(prefix);
+        if (auto it = cf_.enums.find(p_str); it != cf_.enums.end()) {
+            return &it->second;
+        }
+        if (auto dot = prefix.find('.'); dot != std::string_view::npos) {
+            std::string_view pkg = prefix.substr(0, dot);
+            std::string_view ename = prefix.substr(dot + 1);
+            std::string mangled = std::format("cfire_pkg_{}__{}", pkg, ename);
+            if (auto it = cf_.enums.find(mangled); it != cf_.enums.end()) {
+                return &it->second;
+            }
+            for (const auto& [k, en] : cf_.enums) {
+                (void)k;
+                std::string orig = en.name;
+                if (orig.starts_with("cfire_pkg_")) {
+                    if (auto sep = orig.find("__"); sep != std::string::npos) orig = orig.substr(sep + 2);
+                }
+                if (en.package_name == pkg && orig == ename) {
+                    return &en;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::is_expr_type_unresolved_for_redundancy_sema(const ExprPtr& inner) const -> bool {
+        if (!inner) return true;
+        auto is_resolution_code = [](std::string_view code) -> bool {
+            return code == "cfire/UNRESOLVED-PACKAGE" || code == "cfire/UNKNOWN-MODULE" ||
+                   code == "cfire/UNDECLARED-TYPE" || code == "cfire/UNDECLARED-IDENT" ||
+                   code == "cfire/UNKNOWN-METHOD" || code == "cfire/UNKNOWN-FIELD" ||
+                   code == "cfire/UNKNOWN-STDLIB-FN" || code == "cfire/UNKNOWN-STDLIB-TYPE" ||
+                   code == "cfire/SYNTAX";
+        };
+        for (const auto& d : cf_.diagnostics) {
+            if (d.severity == "error" && is_resolution_code(d.code)) return true;
+        }
+        for (const auto& d : diags_) {
+            if (d.severity == "error" && is_resolution_code(d.code)) return true;
+        }
+        TypeId t = infer_expr_type_id_sema(inner);
+        if (!t.is_unknown()) return false;
+        if (std::holds_alternative<ArrayLitExpr>(inner->node) ||
+            std::holds_alternative<TupleExpr>(inner->node) ||
+            std::holds_alternative<ClosureExpr>(inner->node)) {
+            return false;
+        }
+        if (const auto* call = std::get_if<CallExpr>(&inner->node)) {
+            if (const auto* cid = call->callee ? std::get_if<IdentExpr>(&call->callee->node) : nullptr) {
+                if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end() && it->second.return_type.name == "void" && !it->second.return_type.is_fallible && !it->second.return_type.is_optional) {
+                    return false;
+                }
+                if (!pkg_name_.empty()) {
+                    if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end() && pit->second.return_type.name == "void" && !pit->second.return_type.is_fallible && !pit->second.return_type.is_optional) {
+                        return false;
+                    }
+                }
+            } else if (const auto* mem = call->callee ? std::get_if<MemberExpr>(&call->callee->node) : nullptr) {
+                if (const auto* sig = resolve_member_call_sig(*mem); sig && sig->return_type.name == "void" && !sig->return_type.is_fallible && !sig->return_type.is_optional) {
+                    return false;
+                }
+                if (const auto* im = resolve_interface_method_sig_sema(*mem); im && im->return_type.name == "void" && !im->return_type.is_fallible && !im->return_type.is_optional) {
+                    return false;
+                }
+                const auto& idx = StdlibCatalogIndex::instance();
+                const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                if (obj_id && !is_ident_in_scope_sema(obj_id->name) && idx.has_namespace(obj_id->name)) {
+                    if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field); sfn && sfn->unwrapped_return_type == "void" && !sfn->is_fallible && !sfn->is_optional) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+
     CFIRE_SEMA_INLINE auto SemaFnChecker::expr_returns_fallible_sema(const ExprPtr& e, std::string* out_callee, std::string* out_ret) const -> bool {
         if (!e) return false;
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
@@ -838,10 +975,11 @@
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
                 const auto& idx = StdlibCatalogIndex::instance();
-                if (obj_id && idx.has_namespace(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
-                    if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) {
+                const std::string resolved_ns = obj_id ? resolve_stdlib_ns_sema(obj_id->name) : std::string{};
+                if (obj_id && !resolved_ns.empty() && !is_ident_in_scope_sema(obj_id->name)) {
+                    if (const auto* sfn = idx.find_ns_fn(resolved_ns, mem->field)) {
                         if (sfn->is_fallible) {
-                            if (out_callee) *out_callee = obj_id->name + "." + mem->field;
+                            if (out_callee) *out_callee = resolved_ns + "." + mem->field;
                             if (out_ret) *out_ret = sfn->return_type;
                             return true;
                         }
@@ -854,27 +992,47 @@
                         return true;
                     }
                 }
+                if (const auto* im = resolve_interface_method_sig_sema(*mem)) {
+                    if (im->return_type.is_fallible) {
+                        if (out_callee) *out_callee = mem->field;
+                        if (out_ret) *out_ret = format_type_ref_sema(im->return_type);
+                        return true;
+                    }
+                }
+                auto lookup_recv_fallible = [&](std::string_view raw_t) -> const StdFnSigInfo* {
+                    if (raw_t.empty()) return nullptr;
+                    if (auto mit = idx.receiver_methods.find(std::string(raw_t) + "." + mem->field);
+                        mit != idx.receiver_methods.end()) {
+                        return &mit->second;
+                    }
+                    std::string canon = canonical_nominal_path_sema(raw_t);
+                    if (auto dot = canon.find('.'); dot != std::string::npos) {
+                        if (std::string cns = resolve_stdlib_ns_sema(canon.substr(0, dot)); !cns.empty()) {
+                            canon = cns + canon.substr(dot);
+                        }
+                    }
+                    if (!canon.empty()) {
+                        if (auto mit = idx.receiver_methods.find(canon + "." + mem->field);
+                            mit != idx.receiver_methods.end()) {
+                            return &mit->second;
+                        }
+                    }
+                    return nullptr;
+                };
                 if (obj_id) {
                     if (auto vt = var_types_.find(obj_id->name); vt != var_types_.end()) {
-                        if (auto mit = idx.receiver_methods.find(vt->second + "." + mem->field); mit != idx.receiver_methods.end()) {
-                            if (mit->second.is_fallible) {
-                                if (out_callee) *out_callee = obj_id->name + "." + mem->field;
-                                if (out_ret) *out_ret = mit->second.return_type;
-                                return true;
-                            }
+                        if (const auto* m = lookup_recv_fallible(vt->second); m && m->is_fallible) {
+                            if (out_callee) *out_callee = obj_id->name + "." + mem->field;
+                            if (out_ret) *out_ret = m->return_type;
+                            return true;
                         }
                     }
                 }
                 if (mem->object) {
-                    std::string recv_t = type_name_of(mem->object);
-                    if (!recv_t.empty()) {
-                        if (auto mit = idx.receiver_methods.find(recv_t + "." + mem->field); mit != idx.receiver_methods.end()) {
-                            if (mit->second.is_fallible) {
-                                if (out_callee) *out_callee = mem->field;
-                                if (out_ret) *out_ret = mit->second.return_type;
-                                return true;
-                            }
-                        }
+                    if (const auto* m = lookup_recv_fallible(type_name_of(mem->object)); m && m->is_fallible) {
+                        if (out_callee) *out_callee = mem->field;
+                        if (out_ret) *out_ret = m->return_type;
+                        return true;
                     }
                 }
             }
@@ -935,12 +1093,13 @@
                     if (obj_id->name == "cpp") {
                         return true;
                     }
-                    if ((obj_id->name == "fs" && (mem->field == "read_all" || mem->field == "write_all")) ||
-                        (obj_id->name == "os" && mem->field == "socketpair")) {
+                    std::string resolved_ns = resolve_stdlib_ns_sema(obj_id->name);
+                    if ((resolved_ns == "fs" && (mem->field == "read_all" || mem->field == "write_all")) ||
+                        (resolved_ns == "os" && mem->field == "socketpair")) {
                         return true;
                     }
-                    if (idx.has_namespace(obj_id->name)) {
-                        if (const auto* sfn = idx.find_ns_fn(obj_id->name, mem->field)) {
+                    if (!resolved_ns.empty() && idx.has_namespace(resolved_ns)) {
+                        if (const auto* sfn = idx.find_ns_fn(resolved_ns, mem->field)) {
                             return sfn->is_fallible;
                         }
                         return false;
@@ -948,6 +1107,9 @@
                 }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
                     return sig->return_type.is_fallible;
+                }
+                if (const auto* im = resolve_interface_method_sig_sema(*mem)) {
+                    return im->return_type.is_fallible;
                 }
                 if (mem->field == "read_str" || mem->field == "write_str" ||
                     mem->field == "read_all" || mem->field == "read" || mem->field == "write" ||
@@ -1026,6 +1188,9 @@
                 }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
                     return sig->return_type.is_optional && !sig->return_type.is_fallible;
+                }
+                if (const auto* im = resolve_interface_method_sig_sema(*mem)) {
+                    return im->return_type.is_optional && !im->return_type.is_fallible;
                 }
                 if (auto uit = idx.unambiguous_methods.find(mem->field); uit != idx.unambiguous_methods.end()) {
                     if (uit->second.is_optional) return true;
@@ -1378,7 +1543,7 @@
             if (!is_expr_fallible_for_unwrap_sema(tr.inner)) {
                 if (is_expr_optional_for_unwrap_sema(tr.inner)) {
                     if (auto r = emit_error(diag_at(line, col, "cfire/TRY-ON-OPTIONAL", std::format("cannot use 'try' on optional 'T?' value; 'try' only propagates fallible 'T!' errors — use 'or fallback' or 'or {{ ... }}' instead"))); !r) return r;
-                } else {
+                } else if (!is_expr_type_unresolved_for_redundancy_sema(tr.inner)) {
                     if (auto r = emit_error(diag_at(line, col, "cfire/REDUNDANT-TRY", std::format("'try' used on non-fallible expression; remove 'try'"))); !r) return r;
                 }
             }
@@ -1621,6 +1786,10 @@
             }
         }
         std::string owner = type_name_of(mem.object);
+        if (owner == "Error" || owner == "&Error") {
+            if (mem.field == "code" || mem.field == "message") return {};
+            return emit_error(diag_at(line, col + 1, "cfire/UNKNOWN-FIELD", std::format("type 'Error' has no field or method '{}' (methods: code, message)", mem.field)));
+        }
         auto sit = cf_.struct_tags.find(owner);
         if (sit == cf_.struct_tags.end()) return {};
         for (const auto& f : sit->second) {
@@ -1936,7 +2105,7 @@
                 if (idx_lit->kind == TokenKind::Int) {
                     if (idx_lit->value.starts_with('-') && idx_lit->value != "-0") {
                         if (auto r = emit_error(diag_at(line, col, "cfire/INDEX-OUT-OF-BOUNDS", std::format("negative index {} is out of bounds", idx_lit->value))); !r) return r;
-                    } else if (auto k = cfire::detail::parse_int<std::size_t>(idx_lit->value)) {
+                    } else if (auto k = cfire::frontend::parse_int_literal<std::size_t>(idx_lit->value)) {
                         if (obj_id) {
                             if (auto fit = fixed_array_lens_.find(obj_id->name); fit != fixed_array_lens_.end()) {
                                 if (*k >= fit->second) {
@@ -1969,7 +2138,7 @@
         bool is_fall = is_expr_fallible_for_unwrap_sema(or_ex.inner);
         if (!or_ex.err_var.empty() && is_opt && !is_fall) {
             if (auto r = emit_error(diag_at(line, col, "cfire/OPTIONAL-OR-ERR", std::format("cannot bind error variable '{}' on optional 'T?' in 'or' block; use 'or {{ ... }}' or 'or fallback' instead", or_ex.err_var))); !r) return r;
-        } else if (errors_.size() == errors_before && !is_fall && !is_opt) {
+        } else if (errors_.size() == errors_before && !is_fall && !is_opt && !is_expr_type_unresolved_for_redundancy_sema(or_ex.inner)) {
             if (auto r = emit_error(diag_at(line, col, "cfire/REDUNDANT-OR", std::format("'or' used on non-fallible, non-optional expression; remove 'or' fallback"))); !r) return r;
         }
         if (or_ex.fallback_val) {
@@ -1985,6 +2154,7 @@
             ScopeGuard sg(*this);
             if (!or_ex.err_var.empty()) {
                 bind_scoped_var(or_ex.err_var, false);
+                var_types_[or_ex.err_var] = "Error";
             }
             if (auto r = check_block_stmts(or_ex.handler_body); !r) return r;
         }
@@ -2017,15 +2187,19 @@
 
     CFIRE_SEMA_INLINE void SemaFnChecker::record_closure_param_hints(const CallExpr& call) {
         std::vector<std::string> param_types;  // declared type text of each callee parameter
+        std::vector<std::string> param_names;
         std::string qualifier;
         if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node); mem && mem->object) {
             const auto& idx = StdlibCatalogIndex::instance();
             const StdFnSigInfo* sig = nullptr;
-            if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node);
-                obj_id && idx.has_namespace(obj_id->name) && !is_ident_in_scope_sema(obj_id->name)) {
-                sig = idx.find_ns_fn(obj_id->name, mem->field);
-                qualifier = obj_id->name;
-            } else {
+            if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node); obj_id && !is_ident_in_scope_sema(obj_id->name)) {
+                std::string resolved_ns = resolve_stdlib_ns_sema(obj_id->name);
+                if (!resolved_ns.empty() && idx.has_namespace(resolved_ns)) {
+                    sig = idx.find_ns_fn(resolved_ns, mem->field);
+                    qualifier = obj_id->name;
+                }
+            }
+            if (!sig && mem->object) {
                 std::string recv = type_name_of(mem->object);
                 std::string base = recv.substr(0, recv.find('['));
                 std::string unqual = base.substr(base.rfind('.') == std::string::npos ? 0 : base.rfind('.') + 1);
@@ -2034,13 +2208,24 @@
                 }
                 if (sig) qualifier = local_qualifier_for_module_sema(sig->module_import, sig->ns_alias);
             }
-            if (sig) for (const auto& p : sig->params) param_types.push_back(p.type_str);
+            if (sig) {
+                for (const auto& p : sig->params) {
+                    param_types.push_back(p.type_str);
+                    param_names.push_back(p.name);
+                }
+            }
             if (const FnDecl* user = (sig ? nullptr : resolve_member_call_sig(*mem))) {
-                for (const auto& p : user->params) param_types.push_back(format_type_ref_sema(p.type));
+                for (const auto& p : user->params) {
+                    param_types.push_back(format_type_ref_sema(p.type));
+                    param_names.push_back(p.name);
+                }
             }
         } else if (const auto* cid = std::get_if<IdentExpr>(&call.callee->node)) {
             if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
-                for (const auto& p : it->second.params) param_types.push_back(format_type_ref_sema(p.type));
+                for (const auto& p : it->second.params) {
+                    param_types.push_back(format_type_ref_sema(p.type));
+                    param_names.push_back(p.name);
+                }
             }
         }
         auto qualify = [&](std::string t) {
@@ -2056,15 +2241,32 @@
             if (builtin.contains(t) || t.starts_with("[") || t.starts_with("map[")) return t;
             return qualifier + "." + t;
         };
-        for (std::size_t i = 0; i < call.args.size() && i < param_types.size(); ++i) {
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
             const auto* cl = call.args[i].value ? std::get_if<ClosureExpr>(&call.args[i].value->node) : nullptr;
             if (!cl) continue;
-            auto hinted = split_fn_type_params(param_types[i]);
+            std::size_t slot = i;
+            if (!call.args[i].label.empty()) {
+                for (std::size_t k = 0; k < param_names.size(); ++k) {
+                    if (param_names[k] == call.args[i].label) { slot = k; break; }
+                }
+            } else if (slot < param_types.size() && split_fn_type_params(param_types[slot]).empty()) {
+                for (std::size_t k = slot + 1; k < param_types.size(); ++k) {
+                    if (!split_fn_type_params(param_types[k]).empty()) { slot = k; break; }
+                }
+            }
+            if (slot >= param_types.size()) continue;
+            auto hinted = split_fn_type_params(param_types[slot]);
             for (auto& h : hinted) h = qualify(h);
             if (!hinted.empty()) closure_param_hints_[cl] = std::move(hinted);
         }
         if (call.block_arg && !param_types.empty()) {
-            auto hinted = split_fn_type_params(param_types.back());
+            std::string ptype = param_types.back();
+            if (split_fn_type_params(ptype).empty()) {
+                for (std::size_t k = 0; k < param_types.size(); ++k) {
+                    if (!split_fn_type_params(param_types[k]).empty()) ptype = param_types[k];
+                }
+            }
+            auto hinted = split_fn_type_params(ptype);
             for (auto& h : hinted) h = qualify(h);
             if (!hinted.empty()) closure_param_hints_[&*call.block_arg] = std::move(hinted);
         }

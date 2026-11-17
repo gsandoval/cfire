@@ -5,6 +5,7 @@
 #include "../../src/mcp.hpp"
 #include <fstream>
 #include <future>
+#include <regex>
 
 namespace cfire_test_diag_audit {
 
@@ -237,8 +238,10 @@ void test_secure_temp_storage(const std::filesystem::path& rt_dir) {
         std::filesystem::remove(cache, ec);
     }
 
-    // Source gate: no predictable names under the shared temp dir, and no hard-coded /tmp locations.
+    // Source gate: no predictable names under the shared temp dir, no hard-coded /tmp locations,
+    // and no toolchain-directory .cfire cache writes.
     int hits = 0;
+    const std::regex temp_join_re(R"(temp_directory_path\([^)]*\)\s*/)");
     for (std::string_view sub : {"src", "runtime", "tests"}) {
         auto dir = cfire_test_diag_audit::find_repo_dir(rt_dir, sub);
         for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
@@ -249,10 +252,15 @@ void test_secure_temp_storage(const std::filesystem::path& rt_dir) {
             if (entry.path().filename() == "test_diagnostics_and_build_audit.hpp") continue;  // contains the patterns below
             auto text = cfire::fs::read_text(entry.path());
             if (!text) continue;
-            for (std::string_view pat : {"temp_directory_path() / \"", "std::filesystem::path(\"/tmp", "format(\"/tmp/"}) {
+            if (std::regex_search(*text, temp_join_re)) {
+                ++hits;
+                std::println(stderr, "  predictable temp path (temp_directory_path() / ...) in {}", entry.path().string());
+            }
+            for (std::string_view pat : {"std::filesystem::path(\"/tmp", "format(\"/tmp/",
+                                         "runtime_dir.parent_path() / \".cfire\"", "runtime_dir / \".cfire\""}) {
                 if (text->find(pat) != std::string::npos) {
                     ++hits;
-                    std::println(stderr, "  predictable temp path ({}) in {}", pat, entry.path().string());
+                    std::println(stderr, "  predictable temp/toolchain cache path ({}) in {}", pat, entry.path().string());
                 }
             }
         }

@@ -1,0 +1,21 @@
+// expect: stdout
+// | 2 host web 4 0 1 ok 2 x
+package main
+
+matrix := [[1, 2], [3, 4]]
+
+fn maybe_list(empty: bool) -> ([]str, i64) {
+    if empty {
+        return ([], 0)
+    }
+    return (["ok"], 1)
+}
+
+fn main() {
+    need := [["host", "list"], ["exec", "web"]]
+    (xs0, n0) := maybe_list(true)
+    (xs1, n1) := maybe_list(false)
+    pair := ([10, 20], ["x"])
+    (nums, labels) := pair
+    println("{} {} {} {} {} {} {} {} {}", need.len(), need[0][0], need[1][1], matrix[1][1], xs0.len() + usize(n0), n1, xs1[0], nums.len(), labels[0])
+}

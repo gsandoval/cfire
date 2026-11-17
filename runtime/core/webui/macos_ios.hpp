@@ -115,7 +115,10 @@ inline std::shared_ptr<AppState>& active_ios_state() {
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
     WKUserContentController* ucm = [[WKUserContentController alloc] init];
 
-    NSString* preloadSource = [NSString stringWithUTF8String:std::string(cfire::webui::detail::kPreloadBridgeJs).c_str()];
+    std::string preload_cpp = st
+        ? cfire::webui::detail::build_preload_script(*st)
+        : std::string(cfire::webui::detail::kPreloadBridgeJs);
+    NSString* preloadSource = [NSString stringWithUTF8String:preload_cpp.c_str()];
     WKUserScript* preloadScript = [[WKUserScript alloc] initWithSource:preloadSource
                                                          injectionTime:WKUserScriptInjectionTimeAtDocumentStart
                                                       forMainFrameOnly:YES];
@@ -130,11 +133,28 @@ inline std::shared_ptr<AppState>& active_ios_state() {
     schemeHandler->state = st;
     [config setURLSchemeHandler:schemeHandler forURLScheme:@"app"];
 
+    bool dev_enabled = cfire::webui::detail::kDefaultWebUIDevExtras;
+    bool ctx_enabled = cfire::webui::detail::kDefaultWebUIDevExtras;
+    if (st) {
+        std::lock_guard<std::recursive_mutex> lock(st->mtx);
+        dev_enabled = st->devtools_enabled;
+        ctx_enabled = st->context_menu_enabled;
+    }
+    [config.preferences setValue:(dev_enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
+
     self.webView = [[WKWebView alloc] initWithFrame:bounds configuration:config];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.webView.scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     self.webView.opaque = NO;
     self.webView.backgroundColor = [UIColor clearColor];
+    if (@available(iOS 16.4, *)) {
+        if ([self.webView respondsToSelector:@selector(setInspectable:)]) {
+            self.webView.inspectable = dev_enabled ? YES : NO;
+        }
+    }
+    if ([self.webView respondsToSelector:@selector(setAllowsLinkPreview:)]) {
+        self.webView.allowsLinkPreview = ctx_enabled ? YES : NO;
+    }
 
     [rootVC.view addSubview:self.webView];
     self.window.rootViewController = rootVC;
@@ -150,6 +170,31 @@ inline std::shared_ptr<AppState>& active_ios_state() {
                 [wv evaluateJavaScript:ns_js completionHandler:nil];
             });
         };
+        st->platform_set_devtools = [wv, config](bool enabled) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [config.preferences setValue:(enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
+                if (@available(iOS 16.4, *)) {
+                    if ([wv respondsToSelector:@selector(setInspectable:)]) {
+                        wv.inspectable = enabled ? YES : NO;
+                    }
+                }
+            });
+        };
+        st->platform_set_context_menu = [wv](bool enabled) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if ([wv respondsToSelector:@selector(setAllowsLinkPreview:)]) {
+                    wv.allowsLinkPreview = enabled ? YES : NO;
+                }
+            });
+        };
+        st->platform_set_autofill = [wv](bool enabled) {
+            NSString* ns_js = enabled
+                ? @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                : @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);";
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [wv evaluateJavaScript:ns_js completionHandler:nil];
+            });
+        };
     }
 
     NSURL* startURL = [NSURL URLWithString:@"app://localhost/index.html"];
@@ -159,6 +204,134 @@ inline std::shared_ptr<AppState>& active_ios_state() {
 @end
 
 #else // macOS Cocoa + WKWebView
+
+@interface CfireWKWebView : WKWebView {
+@public
+    std::shared_ptr<cfire::webui::detail::AppState> state;
+}
+@end
+
+@implementation CfireWKWebView
+- (instancetype)initWithFrame:(NSRect)frameRect configuration:(WKWebViewConfiguration*)configuration {
+    self = [super initWithFrame:frameRect configuration:configuration];
+    if (self) {
+        [self registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
+    }
+    return self;
+}
+
+- (void)willOpenMenu:(NSMenu*)menu withEvent:(NSEvent*)event {
+    bool allow = cfire::webui::detail::kDefaultWebUIDevExtras;
+    if (state) {
+        std::lock_guard<std::recursive_mutex> lock(state->mtx);
+        allow = state->context_menu_enabled;
+    }
+    if (!allow) {
+        [menu removeAllItems];
+        return;
+    }
+    if ([WKWebView instancesRespondToSelector:@selector(willOpenMenu:withEvent:)]) {
+        [super willOpenMenu:menu withEvent:event];
+    }
+}
+
+- (BOOL)hasDraggedFiles:(id<NSDraggingInfo>)sender {
+    if (!sender) return NO;
+    NSPasteboard* pb = [sender draggingPasteboard];
+    if (!pb) return NO;
+    return [pb canReadObjectForClasses:@[[NSURL class]]
+                               options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    if ([self hasDraggedFiles:sender]) {
+        return NSDragOperationCopy;
+    }
+    if ([WKWebView instancesRespondToSelector:@selector(draggingEntered:)]) {
+        return [super draggingEntered:sender];
+    }
+    return NSDragOperationNone;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    if ([self hasDraggedFiles:sender]) {
+        return NSDragOperationCopy;
+    }
+    if ([WKWebView instancesRespondToSelector:@selector(draggingUpdated:)]) {
+        return [super draggingUpdated:sender];
+    }
+    return NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    if (sender) {
+        NSPasteboard* pb = [sender draggingPasteboard];
+        if (pb) {
+            NSArray<NSURL*>* urls = [pb readObjectsForClasses:@[[NSURL class]]
+                                                      options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+            if (urls && [urls count] > 0) {
+                std::vector<std::string> paths;
+                paths.reserve([urls count]);
+                for (NSURL* url in urls) {
+                    if (url && [url isFileURL]) {
+                        NSURL* resolved = [url isFileReferenceURL] ? [url filePathURL] : url;
+                        NSString* nsPath = resolved ? resolved.path : url.path;
+                        if (nsPath) {
+                            const char* utf8 = [nsPath UTF8String];
+                            if (utf8 && utf8[0] != '\0') {
+                                paths.emplace_back(utf8);
+                            }
+                        }
+                    }
+                }
+                if (!paths.empty()) {
+                    if (state) state->notify_file_drop(paths);
+                    return YES;
+                }
+            }
+        }
+    }
+    if ([WKWebView instancesRespondToSelector:@selector(performDragOperation:)]) {
+        return [super performDragOperation:sender];
+    }
+    return NO;
+}
+@end
+
+@interface CfireWebUIMacAppDelegate : NSObject <NSApplicationDelegate> {
+@public
+    std::shared_ptr<cfire::webui::detail::AppState> state;
+    __weak NSWindow* window;
+}
+@end
+
+@implementation CfireWebUIMacAppDelegate
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender hasVisibleWindows:(BOOL)hasVisibleWindows {
+    (void)sender;
+    bool hidden = false;
+    if (state) {
+        std::lock_guard<std::recursive_mutex> lock(state->mtx);
+        hidden = state->window_hidden;
+    }
+    NSWindow* win = window;
+    if (win && (!hasVisibleWindows || hidden || ![win isVisible] || [win isMiniaturized])) {
+        if (state) {
+            std::lock_guard<std::recursive_mutex> lock(state->mtx);
+            state->window_hidden = false;
+        }
+        if ([win isMiniaturized]) {
+            [win deminiaturize:nil];
+        }
+        [win makeKeyAndOrderFront:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+        if (state) {
+            state->emit_system_event("window:reopen", "{}");
+        }
+        return NO;
+    }
+    return YES;
+}
+@end
 
 @interface CfireWebUIWindowDelegate : NSObject <NSWindowDelegate> {
 @public
@@ -175,12 +348,24 @@ inline std::shared_ptr<AppState>& active_ios_state() {
             state->window_hidden = true;
         }
         [sender orderOut:nil];
-        state->record_emitted("window:close_requested", "{}");
-        state->dispatch_event_internal("window:close_requested", "{}");
-        state->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+        state->emit_system_event("window:close_requested", "{}");
         return NO;
     }
     return YES;
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification*)notification {
+    (void)notification;
+    if (state) {
+        state->notify_fullscreen_changed(true);
+    }
+}
+
+- (void)windowDidExitFullScreen:(NSNotification*)notification {
+    (void)notification;
+    if (state) {
+        state->notify_fullscreen_changed(false);
+    }
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
@@ -239,16 +424,28 @@ inline std::shared_ptr<AppState>& active_ios_state() {
 
 namespace cfire::webui::detail {
 
-inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
-    if (!config || !config.preferences) return;
-    [config.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
-    // Set WKPreferences.inactiveSchedulingPolicy = WKInactiveSchedulingPolicyNone (0) on macOS 14+
-    // so timers (setTimeout/setInterval) and requestAnimationFrame run at full speed even when offscreen.
-    @try {
-        if ([config.preferences respondsToSelector:NSSelectorFromString(@"setInactiveSchedulingPolicy:")]) {
-            [config.preferences setValue:@0 forKey:@"inactiveSchedulingPolicy"];
+inline void apply_macos_webview_prefs(
+    WKWebViewConfiguration* config,
+    WKWebView* webView,
+    bool devtools_enabled
+) {
+    if (config && config.preferences) {
+        [config.preferences setValue:(devtools_enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
+        // Set WKPreferences.inactiveSchedulingPolicy = WKInactiveSchedulingPolicyNone (0) on macOS 14+
+        // so timers (setTimeout/setInterval) and requestAnimationFrame run at full speed even when offscreen.
+        @try {
+            if ([config.preferences respondsToSelector:NSSelectorFromString(@"setInactiveSchedulingPolicy:")]) {
+                [config.preferences setValue:@0 forKey:@"inactiveSchedulingPolicy"];
+            }
+        } @catch (NSException*) {
         }
-    } @catch (NSException*) {
+    }
+    if (webView) {
+        if (@available(macOS 13.3, *)) {
+            if ([webView respondsToSelector:@selector(setInspectable:)]) {
+                webView.inspectable = devtools_enabled ? YES : NO;
+            }
+        }
     }
 }
 
@@ -272,11 +469,18 @@ inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
                                                            defer:NO];
         [window setReleasedWhenClosed:NO];
 
+        bool init_devtools = kDefaultWebUIDevExtras;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            init_devtools = state_->devtools_enabled;
+        }
+
         WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-        apply_macos_unthrottled_prefs(config);
+        apply_macos_webview_prefs(config, nil, init_devtools);
         WKUserContentController* ucm = [[WKUserContentController alloc] init];
 
-        NSString* preloadSource = [NSString stringWithUTF8String:std::string(detail::kPreloadBridgeJs).c_str()];
+        std::string preload_cpp = detail::build_preload_script(*state_);
+        NSString* preloadSource = [NSString stringWithUTF8String:preload_cpp.c_str()];
         WKUserScript* preloadScript = [[WKUserScript alloc] initWithSource:preloadSource
                                                              injectionTime:WKUserScriptInjectionTimeAtDocumentStart
                                                           forMainFrameOnly:YES];
@@ -291,8 +495,10 @@ inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
         schemeHandler->state = state_;
         [config setURLSchemeHandler:schemeHandler forURLScheme:@"app"];
 
-        WKWebView* webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, state_->width, state_->height)
-                                                configuration:config];
+        CfireWKWebView* webView = [[CfireWKWebView alloc] initWithFrame:NSMakeRect(0, 0, state_->width, state_->height)
+                                                          configuration:config];
+        webView->state = state_;
+        apply_macos_webview_prefs(config, webView, init_devtools);
         [window setContentView:webView];
 
         {
@@ -311,6 +517,36 @@ inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
             state_->platform_set_title = [window](const std::string& new_title) {
                 NSString* ns_t = [NSString stringWithUTF8String:new_title.c_str()];
                 if (ns_t) [window setTitle:ns_t];
+            };
+            state_->platform_set_devtools = [webView, config](bool enabled) {
+                if ([NSThread isMainThread]) {
+                    apply_macos_webview_prefs(config, webView, enabled);
+                } else {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        apply_macos_webview_prefs(config, webView, enabled);
+                    });
+                }
+            };
+            state_->platform_set_context_menu = [](bool) {};
+            state_->platform_set_autofill = [webView](bool enabled) {
+                NSString* ns_js = enabled
+                    ? @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                    : @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);";
+                if ([NSThread isMainThread]) {
+                    [webView evaluateJavaScript:ns_js completionHandler:nil];
+                } else {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [webView evaluateJavaScript:ns_js completionHandler:nil];
+                    });
+                }
+            };
+            state_->platform_fullscreen = [st = state_]() {
+                bool fs = false;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                    fs = st->is_fullscreen;
+                }
+                st->notify_fullscreen_changed(fs);
             };
             state_->platform_quit = [st = state_]() {
                 st->quit_requested.store(true, std::memory_order_relaxed);
@@ -354,6 +590,10 @@ inline void apply_macos_unthrottled_prefs(WKWebViewConfiguration* config) {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
             state_->platform_eval = nullptr;
             state_->platform_set_title = nullptr;
+            state_->platform_set_devtools = nullptr;
+            state_->platform_set_context_menu = nullptr;
+            state_->platform_set_autofill = nullptr;
+            state_->platform_fullscreen = nullptr;
             state_->platform_quit = nullptr;
             state_->platform_screenshot = nullptr;
         }
@@ -526,6 +766,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                                                          backing:NSBackingStoreBuffered
                                                            defer:NO];
         [window setReleasedWhenClosed:NO];
+        [window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
         [window setTitle:[NSString stringWithUTF8String:state_->title.c_str()]];
         [window center];
 
@@ -554,16 +795,28 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             [window setLevel:NSFloatingWindowLevel];
         }
 
+        CfireWebUIMacAppDelegate* appDelegate = [[CfireWebUIMacAppDelegate alloc] init];
+        appDelegate->state = state_;
+        appDelegate->window = window;
+        [NSApp setDelegate:appDelegate];
+
         CfireWebUIWindowDelegate* winDelegate = [[CfireWebUIWindowDelegate alloc] init];
         winDelegate->state = state_;
         winDelegate->stop_nsapp_on_close = true;
         [window setDelegate:winDelegate];
 
+        bool init_devtools = kDefaultWebUIDevExtras;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            init_devtools = state_->devtools_enabled;
+        }
+
         WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-        apply_macos_unthrottled_prefs(config);
+        apply_macos_webview_prefs(config, nil, init_devtools);
 
         WKUserContentController* ucm = [[WKUserContentController alloc] init];
-        NSString* preloadSource = [NSString stringWithUTF8String:std::string(detail::kPreloadBridgeJs).c_str()];
+        std::string preload_cpp = detail::build_preload_script(*state_);
+        NSString* preloadSource = [NSString stringWithUTF8String:preload_cpp.c_str()];
         WKUserScript* preloadScript = [[WKUserScript alloc] initWithSource:preloadSource
                                                              injectionTime:WKUserScriptInjectionTimeAtDocumentStart
                                                           forMainFrameOnly:YES];
@@ -578,8 +831,10 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         schemeHandler->state = state_;
         [config setURLSchemeHandler:schemeHandler forURLScheme:@"app"];
 
-        WKWebView* webView = [[WKWebView alloc] initWithFrame:[[window contentView] bounds]
-                                                configuration:config];
+        CfireWKWebView* webView = [[CfireWKWebView alloc] initWithFrame:[[window contentView] bounds]
+                                                          configuration:config];
+        webView->state = state_;
+        apply_macos_webview_prefs(config, webView, init_devtools);
         [webView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
         if (state_->transparent) {
             [webView setValue:@NO forKey:@"drawsBackground"];
@@ -614,6 +869,20 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                     } else {
                         [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameAqua]];
                     }
+                });
+            };
+            state_->platform_set_devtools = [webView, config](bool enabled) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    apply_macos_webview_prefs(config, webView, enabled);
+                });
+            };
+            state_->platform_set_context_menu = [](bool) {};
+            state_->platform_set_autofill = [webView](bool enabled) {
+                NSString* ns_js = enabled
+                    ? @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                    : @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);";
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [webView evaluateJavaScript:ns_js completionHandler:nil];
                 });
             };
             state_->platform_fullscreen = [window]() {
@@ -688,6 +957,8 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         [NSApp activateIgnoringOtherApps:YES];
         [NSApp run];
 
+        [NSApp setDelegate:nil];
+        [window setDelegate:nil];
         [ucm removeScriptMessageHandlerForName:@"external"];
         if (statusItem) {
             [[NSStatusBar systemStatusBar] removeStatusItem:statusItem];
@@ -697,6 +968,10 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             state_->platform_eval = nullptr;
             state_->platform_set_title = nullptr;
             state_->platform_set_size = nullptr;
+            state_->platform_set_dark_mode = nullptr;
+            state_->platform_set_devtools = nullptr;
+            state_->platform_set_context_menu = nullptr;
+            state_->platform_set_autofill = nullptr;
             state_->platform_fullscreen = nullptr;
             state_->platform_minimize = nullptr;
             state_->platform_maximize = nullptr;
@@ -705,6 +980,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             state_->platform_hide_window = nullptr;
             state_->platform_show_window = nullptr;
             state_->platform_quit = nullptr;
+            state_->platform_screenshot = nullptr;
         }
         if (activityToken) {
             [[NSProcessInfo processInfo] endActivity:activityToken];

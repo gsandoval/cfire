@@ -26,7 +26,7 @@ Every contribution, refactoring, or feature addition **must** satisfy this proto
 ├────────────────────────────────────────────────────────────────────────┤
 │ TIER 3: Milestone Architectural Audit (Periodic / Major milestones)   │
 │   • Complexity hotspot sweeps (LOC, nesting depth, coupling)           │
-│   • Technical debt backlog review (docs/planning/architectural-backlog)│
+│   • Technical debt backlog review (docs/planning/backlog.md)           │
 │   • Header modularization & compilation speed checks                   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -110,7 +110,7 @@ Reviewers must inspect and verify the following criteria for all proposed code c
 | **Every local code change** | **Tier 1** | Run `make review-check`. |
 | **Pull Request / Pre-Merge** | **Tier 1 + 2** | Execute the Senior Engineer Review Checklist; inspect git diff for code smells or unnecessary allocations. |
 | **Standard Library Expansion** | **Tier 2** | Verify C++ lowering, error expected return (`T!`), POSIX / platform safety, and add conformance tests in `tests/`. |
-| **Milestone Completion** | **Tier 3** | Conduct deep architectural audit against `docs/planning/architectural-backlog.md`; measure compile time deltas. |
+| **Milestone Completion** | **Tier 3** | Conduct deep architectural audit against `docs/planning/backlog.md`; measure compile time deltas. |
 
 ---
 

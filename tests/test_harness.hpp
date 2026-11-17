@@ -90,19 +90,12 @@ struct ScopedTempDir {
     std::filesystem::path path;
 
     explicit ScopedTempDir(std::string_view prefix = "cfire_test") {
-        static std::atomic<std::uint64_t> s_id{0};
-        auto base = std::filesystem::temp_directory_path() / std::format("{}_{}_{}_XXXXXX", prefix, ::getpid(), s_id++);
-        std::string tmpl = base.string();
-#if !defined(_WIN32)
-        char* res = ::mkdtemp(tmpl.data());
-        if (res != nullptr) {
-            path = std::filesystem::path(res);
-            return;
+        cfire::detail::SecureTempDir sec(prefix);
+        if (sec.ok()) {
+            path = sec.release();
+        } else {
+            path = ".";
         }
-#endif
-        path = tmpl;
-        std::error_code ec;
-        std::filesystem::create_directories(path, ec);
     }
 
     ~ScopedTempDir() {
@@ -382,6 +375,14 @@ void test_single_pass_in_memory_check(const std::filesystem::path& rt_dir);
 void test_sharded_cpp_codegen(const std::filesystem::path& rt_dir);
 void test_vendored_archives_and_portable_releases(const std::filesystem::path& rt_dir);
 void test_language_consistency_and_docs(const std::filesystem::path& rt_dir);
+void test_ext_soundness_cache_and_clean(const std::filesystem::path& rt_dir);
+void test_package_fixes_and_generics(const std::filesystem::path& rt_dir);
+void test_error_binding_and_named_arg_validation();
+void test_fs_exclusive_create_stat_and_sync(const std::filesystem::path& rt_dir);
+void test_http_host_bind_and_client_timeout(const std::filesystem::path& rt_dir);
+void test_time_local_offset_and_format(const std::filesystem::path& rt_dir);
+void test_ipc_stream_security_and_concurrency(const std::filesystem::path& rt_dir);
+void test_webui_security_and_desktop(const std::filesystem::path& rt_dir);
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);

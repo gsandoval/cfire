@@ -1,0 +1,19 @@
+// Time offset views (.local / .utc), instant-preserving equality, RFC 3339 offset preservation, and .format tokens.
+// expect: stdout
+// | eq=true
+// | roundtrip=2026-05-01T14:30:00-04:00
+// | utc=2026-05-01T18:30:00Z
+// | custom=2026-05-01 18:30:00 +0000 UTC % %Q
+package main
+
+import "core:time"
+
+fn main() -> void! {
+    parsed := try time.parse_rfc3339("2026-05-01T14:30:00-04:00")
+    as_utc := parsed.utc()
+    as_local := parsed.local()
+    println("eq={}", parsed == as_utc && as_utc == as_local && parsed.unix_nanos() == as_utc.unix_nanos())
+    println("roundtrip={}", parsed.format_rfc3339())
+    println("utc={}", as_utc.format_rfc3339())
+    println("custom={}", as_utc.format("%Y-%m-%d %H:%M:%S %z %Z %% %Q"))
+}

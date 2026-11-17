@@ -217,6 +217,9 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     } else {
         plan.cflags.push_back("-fwrapv");
     }
+    if (!test_mode && !is_dev_debug) {
+        plan.cflags.push_back("-DCFIRE_RELEASE_BUILD=1");
+    }
     bool is_win_target = is_windows_target(plan.target_triple);
     if (is_win_target) {
         plan.ldflags.push_back("-lws2_32");
@@ -377,15 +380,10 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     auto cache_dir = dir / ".cfire" / "cache";
 
     static const std::unordered_map<std::string, std::string> core_to_pc = {
-        {"core:compress/zstd", "libzstd"},
         {"ext:compress/zstd", "libzstd"},
         {"core:json", "simdjson"},
-        {"ext:json", "simdjson"},
-        {"core:ai", "simdjson"},
         {"ext:ai", "simdjson"},
         {"core:tako", "simdjson"},
-        {"ext:tako", "simdjson"},
-        {"core:webui", "simdjson"},
         {"ext:webui", "simdjson"},
     };
 
@@ -554,11 +552,10 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     add_pc(it->second);
                 }
             }
-            if (imp.path == "core:db/sqlite" || imp.path == "ext:db/sqlite" ||
-                imp.path == "core:sqlite" || imp.path == "ext:sqlite") {
+            if (imp.path == "ext:db/sqlite") {
                 request_sqlite3_dep();
             }
-            if (imp.path == "core:tako" || imp.path == "ext:tako") {
+            if (imp.path == "core:tako") {
                 if (const char* env_tako = std::getenv("TAKO_SDK_DIR")) {
                     std::error_code tec;
                     if (std::filesystem::is_directory(env_tako, tec)) {
@@ -566,7 +563,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
-            if (imp.path == "core:ai" || imp.path == "ext:ai") {
+            if (imp.path == "ext:ai") {
                 if (!is_wasm && plan.is_ios) {
                     plan.ldflags.insert(plan.ldflags.end(), {
                         "-framework", "Foundation",
@@ -578,7 +575,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     });
                 }
             }
-            if (imp.path == "core:audio" || imp.path == "ext:audio") {
+            if (imp.path == "core:audio") {
                 if (!is_wasm) {
                     if (plan.is_ios) {
                         plan.ldflags.insert(plan.ldflags.end(), {
@@ -599,7 +596,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
-            if (imp.path == "core:webui" || imp.path == "ext:webui") {
+            if (imp.path == "ext:webui") {
                 plan.is_gui = true;
                 if (!is_wasm) {
                     if (plan.is_ios) {
@@ -635,7 +632,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
-            if (imp.path == "ext:crypto/sodium" || imp.path == "ext:sodium") {
+            if (imp.path == "ext:crypto/sodium") {
                 if (!is_wasm && !plan.is_ios) {
                     bool found_sodium = ProbeCache::instance().probe_pkg_config("libsodium").found;
                     if (!found_sodium && std::getenv("HOME")) {
@@ -666,7 +663,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
-            if (imp.path == "core:keychain" || imp.path == "ext:keychain") {
+            if (imp.path == "core:keychain") {
                 if (!is_wasm) {
                     if (is_win_target) {
                         plan.ldflags.push_back("-ladvapi32");
@@ -680,15 +677,19 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
-            if (imp.path == "core:net/ssh" || imp.path == "ext:net/ssh" || imp.path == "core:ssh") {
+            if (imp.path == "ext:net/ssh") {
                 if (!is_wasm && !plan.is_ios) {
                     bool found_libssh = ProbeCache::instance().probe_pkg_config("libssh").found;
                     if (!found_libssh && std::getenv("HOME")) {
                         auto loc_inc = std::filesystem::path(std::getenv("HOME")) / ".local" / "include" / "libssh" / "libssh.h";
                         if (std::filesystem::exists(loc_inc)) found_libssh = true;
                     }
+                    if (!found_libssh && std::getenv("MINGW_PREFIX")) {
+                        auto mp_inc = std::filesystem::path(std::getenv("MINGW_PREFIX")) / "include" / "libssh" / "libssh.h";
+                        if (std::filesystem::exists(mp_inc)) found_libssh = true;
+                    }
                     if (!found_libssh) {
-                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include"}) {
+                        for (const auto& inc_dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include", "/clang64/include", "C:/msys64/clang64/include"}) {
                             if (std::filesystem::exists(std::filesystem::path(inc_dir) / "libssh" / "libssh.h")) {
                                 found_libssh = true;
                                 break;
@@ -698,8 +699,28 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     if (found_libssh) {
                         add_pc("libssh");
                         plan.cflags.push_back("-DCFIRE_HAS_LIBSSH=1");
+                        if (is_win_target || plan.static_link || plan.portable) {
+                            if (ProbeCache::instance().probe_pkg_config("libcrypto").found) {
+                                add_pc("libcrypto");
+                            }
+                            if (ProbeCache::instance().probe_pkg_config("zlib").found) {
+                                add_pc("zlib");
+                            }
+                        }
                         if (is_win_target) {
                             plan.cflags.push_back("-DLIBSSH_STATIC=1");
+                            plan.ldflags.insert(plan.ldflags.end(), {
+                                "-liphlpapi", "-lcrypt32", "-lsecur32", "-lbcrypt",
+                                "-luserenv", "-lpthread", "-luser32", "-lgdi32",
+                                "-lws2_32", "-ladvapi32", "-lshell32"
+                            });
+                        }
+                    } else if (inspect_clang_ast) {
+                        const bool is_test_plan =
+                            std::find(plan.cflags.begin(), plan.cflags.end(), "-DCFIRE_TEST_MODE=1") != plan.cflags.end();
+                        if (!is_test_plan) {
+                            return std::unexpected(
+                                "ext:net/ssh requires libssh (install via 'brew install libssh', 'apt install libssh-dev', or 'pacman -S mingw-w64-clang-x86_64-libssh')");
                         }
                     }
                 }
@@ -993,6 +1014,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         "ws2_32", "advapi32", "shell32", "user32", "gdi32",
         "ole32", "oleaut32", "uuid", "comdlg32", "shlwapi", "dwmapi",
         "bcrypt", "crypt32", "iphlpapi", "winmm", "kernel32",
+        "secur32", "ncrypt", "userenv", "netapi32",
         "mingw32", "mingwex", "msvcrt", "ucrt", "psapi", "version"
     };
 
@@ -2214,6 +2236,10 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     for (const auto& cf_flag : plan.cflags) {
         if (cf_flag == "-DSIMDJSON_DEVELOPMENT_CHECKS=0" ||
             cf_flag.starts_with("-DCFIRE_APP_ICON_PATH")) {
+            continue;
+        }
+        if (cf_flag == "-DCFIRE_RELEASE_BUILD=1") {
+            cmake << "target_compile_definitions(app PRIVATE \"$<$<NOT:$<CONFIG:Debug>>:CFIRE_RELEASE_BUILD=1>\")\n";
             continue;
         }
         if (cf_flag.starts_with("-D") && cf_flag.size() > 2) {

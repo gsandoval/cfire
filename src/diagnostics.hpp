@@ -17,6 +17,11 @@
 
 namespace cfire::diag {
 
+enum class FixApplicability : std::uint8_t {
+    MachineApplicable,
+    EditorOnly,
+};
+
 struct FixItEdit {
     std::string title{};
     int start_line = 1; // 1-based
@@ -25,6 +30,7 @@ struct FixItEdit {
     int end_col = 1;    // 1-based
     std::string replacement{};
     bool is_preferred = true;
+    FixApplicability applicability = FixApplicability::MachineApplicable;
 };
 
 struct StructuredDiagnostic {
@@ -64,7 +70,7 @@ using Diagnostic = StructuredDiagnostic;
 
 // Structured lexer/parser error -> diagnostic (field copy, no text parsing).
 [[nodiscard]] inline auto from_source_error(const cfire::frontend::SourceError& e) -> StructuredDiagnostic {
-    auto d = diag(e.file, e.line, e.col, e.code, e.message);
+    auto d = diag(e.file, e.line, e.col, e.code, e.message, e.facts);
     d.severity = "error";
     return d;
 }

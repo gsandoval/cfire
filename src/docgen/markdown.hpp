@@ -1641,7 +1641,8 @@ window.addEventListener('hashchange', updateChapterFromHash);
 - Variable Declarations & Naming Conventions:
   - Immutable binding (including top-level constants): `x := 42`, `name: str = "cfire"` (no `const` keyword)
   - Mutable binding: `mut y := 10`, `mut count: i64 = 0`
-  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` (`::` is only for enum variants; use `.` for modules, methods, and associated items).
+  - Struct fields use `snake_case` (`cfire/FIELD-NAME-CASE`), enum variants use `UpperCamelCase` accessed as `Enum::Variant` or cross-package `pkg.Enum::Variant` (`::` is only for enum variants; use `.` for modules, bounds `pkg.Bound`, methods, and associated items).
+  - Integer literals accept decimal, `0x`/`0X` hex, `0b`/`0B` binary, and `0o`/`0O` octal (`0o600`, `0o755`). String literals decode `\xHH`, `\u{HEX}`, and preserve embedded `\x00` bytes without NUL truncation.
 - Built-in Prelude Functions & Type Constructors:
   - Standard Output & Error: `println(fmt, ...)` / `print(fmt, ...)` (`stdout`), `eprintln(fmt, ...)` / `eprint(fmt, ...)` (`stderr`)
   - Interactive Terminal Input: `cli.prompt(message: str = "") -> str?` and `cli.prompt_password(message: str = "") -> str?` (`core:cli`); or stream directly from `os.stdin().read_line() -> str?` (`core:os`)
@@ -1659,7 +1660,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Fallible return: `-> T!` lowers to `std::expected<T, cfire::Error>`
   - Optional return: `-> T?` lowers to `std::optional<T>`
   - Multi-return tuples: `fn coords() -> (f64, f64) { return (1.0, 2.0) }`, destructuring: `(x, y) := coords()`
-  - Generic parameters: `fn process[T: Display](item: T) { ... }` (and generic receiver methods `fn (b: Box[T]) get() -> T`)
+  - Generic parameters: `fn process[T: Reader + io.Closer](item: T) { ... }` (compound bounds with `+`, package-qualified bounds `pkg.Bound`, and generic receiver methods `fn (b: Box[T]) get() -> T`)
 - Parameter Intent Rules:
   - Default: immutable read-only view (including zero-copy `str` views with implicit copies when stored or returned)
   - `mut`: must pass mutable variable with `mut` at call site: `update(mut val)`
@@ -1673,14 +1674,14 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - Foreign Interop Raw Pointers (restricted to `import cpp` FFI boundaries; rejected in pure `.cf` via `cfire/RAW-POINTER`): `*T`, `*mut T`
   - Struct: `type User struct { id: i64, name: str `json:"name"` }`
   - Enum: `type Shape enum { Circle(f64), Rect(f64, f64), None }`
-  - Interface: `type Writer interface { write(b: []byte) -> usize! }`
+  - Interface: `type Writer interface { fn mut write(b: []byte) -> usize!; fn flush() }` (`fn mut` / `fn (mut self)` for mutable receivers and `mut`/`move` parameter intents)
 - Control Flow & RAII Defer:
   - `if cond { ... } else { ... }`
   - Exclusive numeric range loop: `for i in 0..n { ... }` (iterates `0` to `n - 1`)
   - Inclusive numeric range loop: `for i in 1..=n { ... }` (iterates `1` to `n`)
   - Collection loop: `for item in slice { ... }` / `for i, item in slice { ... }`
   - Conditional / unbounded loop: `for cond { ... }` / `for { ... }`
-  - Exhaustive pattern match: `match val { Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }`
+  - Exhaustive pattern match: `match val { pkg.Mode::Read(n) if n > 0 => ..., Shape::Circle(r) => 3.14 * r * r, Shape::Rect(w, h) => w * h }` (pattern bindings are in scope inside `if` guards; guarded arms do not satisfy exhaustiveness on their own)
   - Single-statement or multi-statement RAII scope cleanup: `defer resource.close()` or `defer { f.flush(); f.close() }` (`return` inside `defer { ... }` is rejected via `cfire/RETURN-IN-DEFER`)
 - Testing, Fuzzing & Benchmarks:
   - Unit test blocks: `test "description" { ... }`
@@ -1703,11 +1704,12 @@ window.addEventListener('hashchange', updateChapterFromHash);
 - CLI Tooling:
   - `cfire init [--template cli|tako|webui] [--name <pkg>]` / `cfire new <dir> [--template cli|tako|webui]`: Scaffold a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`)
   - `cfire run [--web] [--ios] [--pkg-config <name>] [target]`: Run native binary, iOS Simulator (`--ios`), or WebAssembly app (`--web`)
-  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|console] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|cli] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
+  - `cfire clean [--cache] [--all] [--dry-run] [--json] [path|build.cf]`: Remove project `.cfire/` & manifest outputs (and marker-guarded OS/XDG user cache with `--cache`)
   - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
   - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
   - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
-  - `cfire fix [--dry-run] [--json] [file|dir]`: Auto-fixer for imports, intents, and match arms
+  - `cfire fix [--only <code,...>] [--dry-run] [--json] [file|dir]`: Auto-fixer applying `MachineApplicable` fixes by default (`EditorOnly` assists such as `cfire/PREFER-ENUM` apply with `--only`)
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers
   - `cfire eject <file.cf> [out_dir]`: Export standalone ISO C++23 + `CMakeLists.txt`
   - `cfire outline [--json] [file|dir]`: AST symbol & test/fuzz/bench outline

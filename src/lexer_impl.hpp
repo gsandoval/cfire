@@ -206,10 +206,20 @@ namespace cfire::frontend {
             if (c == '0' && (peek(1) == 'o' || peek(1) == 'O')) {
                 num.push_back(advance()); // '0'
                 num.push_back(advance()); // 'o'
+                std::size_t digits = 0;
                 while (i < n && ((peek() >= '0' && peek() <= '7') || peek() == '_')) {
                     char ch = advance();
                     if (ch == '_') continue;
                     num.push_back(ch);
+                    ++digits;
+                }
+                if (i < n && (peek() == '8' || peek() == '9')) {
+                    return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col),
+                        std::format("invalid digit '{}' in octal literal '{}...'", peek(), num)});
+                }
+                if (digits == 0) {
+                    return std::unexpected(SourceError{std::string(file), static_cast<int>(start_line), static_cast<int>(start_col),
+                        std::format("expected octal digits after '{}'", num)});
                 }
                 tokens.push_back(Token{TokenKind::Int, std::move(num), start_line, start_col});
                 continue;
@@ -253,7 +263,17 @@ namespace cfire::frontend {
                 char cur_ch = peek();
                 if (cur_ch == '\\') {
                     s.push_back(advance());
-                    if (i < n) s.push_back(advance());
+                    if (i < n) {
+                        char esc = advance();
+                        s.push_back(esc);
+                        if (esc == 'u' && i < n && peek() == '{') {
+                            s.push_back(advance());
+                            while (i < n && peek() != '}' && peek() != '"' && peek() != '\n') {
+                                s.push_back(advance());
+                            }
+                            if (i < n && peek() == '}') s.push_back(advance());
+                        }
+                    }
                     continue;
                 }
                 if (in_inner_quote) {

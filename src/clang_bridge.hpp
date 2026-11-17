@@ -24,6 +24,7 @@
 #include <unistd.h>
 #endif
 
+#include "../runtime/cfire_prelude.hpp"
 #include "build/toolchain_config.hpp"
 
 #ifndef CFIRE_INFRA_INLINE
@@ -717,12 +718,11 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
         }
     }
 
-    auto [pid, seq] = next_ast_salt();
-    std::error_code tmp_ec;
-    auto tmp_dir = std::filesystem::temp_directory_path(tmp_ec) /
-                   std::format("cfire_clang_ast_{}_{}_{}", hash_key(key_str), pid, seq);
-    std::filesystem::create_directories(tmp_dir, tmp_ec);
-    auto tu_path = tmp_dir / "tu.cpp";
+    cfire::detail::SecureTempDir ast_tmp("cfire_ast");
+    if (!ast_tmp.ok()) {
+        return std::unexpected("failed to create private temporary directory for Clang AST inspection");
+    }
+    auto tu_path = ast_tmp.file("tu.cpp");
 
     {
         std::ofstream out(tu_path);
@@ -751,7 +751,6 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
             json_dump = std::move(fallback_dump);
         }
     }
-    std::filesystem::remove_all(tmp_dir, tmp_ec);
 
     if (code != 0) {
         std::string filtered;

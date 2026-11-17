@@ -55,9 +55,7 @@ inline gboolean linux_delete_event_cb(GtkWidget* widget, GdkEvent* /*event*/, gp
             st->window_hidden = true;
         }
         gtk_widget_hide(widget);
-        st->record_emitted("window:close_requested", "{}");
-        st->dispatch_event_internal("window:close_requested", "{}");
-        st->eval_js("window.__cfire_event_dispatch(\"window:close_requested\", {});");
+        st->emit_system_event("window:close_requested", "{}");
         return TRUE;
     }
     return FALSE;
@@ -166,6 +164,81 @@ inline gboolean linux_idle_eval(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
+struct LinuxDevtoolsPayload {
+    WebKitWebView* webview;
+    bool enabled;
+};
+
+inline gboolean linux_idle_set_devtools(gpointer data) {
+    auto* p = static_cast<LinuxDevtoolsPayload*>(data);
+    if (p && p->webview) {
+        if (WebKitSettings* wks = webkit_web_view_get_settings(p->webview)) {
+            webkit_settings_set_enable_developer_extras(wks, p->enabled ? TRUE : FALSE);
+        }
+    }
+    delete p;
+    return G_SOURCE_REMOVE;
+}
+
+inline gboolean linux_context_menu_cb(
+    WebKitWebView* /*webview*/,
+    WebKitContextMenu* /*menu*/,
+    GdkEvent* /*event*/,
+    WebKitHitTestResult* /*hit_test*/,
+    gpointer user_data
+) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (!st) return FALSE;
+    bool allow = kDefaultWebUIDevExtras;
+    {
+        std::lock_guard<std::recursive_mutex> lock(st->mtx);
+        allow = st->context_menu_enabled;
+    }
+    return allow ? FALSE : TRUE;
+}
+
+inline gboolean linux_window_state_event_cb(
+    GtkWidget* /*widget*/,
+    GdkEventWindowState* event,
+    gpointer user_data
+) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (st && event && (event->changed_mask & GDK_WINDOW_STATE_FULLSCREEN)) {
+        st->notify_fullscreen_changed((event->new_window_state & GDK_WINDOW_STATE_FULLSCREEN) != 0);
+    }
+    return FALSE;
+}
+
+inline void linux_drag_data_received_cb(
+    GtkWidget* widget,
+    GdkDragContext* context,
+    gint /*x*/,
+    gint /*y*/,
+    GtkSelectionData* selection_data,
+    guint /*info*/,
+    guint time,
+    gpointer user_data
+) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    char** uris = selection_data ? gtk_selection_data_get_uris(selection_data) : nullptr;
+    if (!uris) return;
+
+    std::vector<std::string> paths;
+    for (int i = 0; uris[i] != nullptr; ++i) {
+        char* local_path = g_filename_from_uri(uris[i], nullptr, nullptr);
+        if (local_path) {
+            if (local_path[0] != '\0') paths.emplace_back(local_path);
+            g_free(local_path);
+        }
+    }
+    g_strfreev(uris);
+    if (!paths.empty()) {
+        if (st) st->notify_file_drop(paths);
+        gtk_drag_finish(context, TRUE, FALSE, time);
+        if (widget) g_signal_stop_emission_by_name(widget, "drag-data-received");
+    }
+}
+
 inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     if (!gtk_init_check(nullptr, nullptr)) {
         return;
@@ -220,13 +293,15 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     G_GNUC_END_IGNORE_DEPRECATIONS
 #endif
     g_signal_connect(window, "destroy", G_CALLBACK(linux_destroy_cb), state_.get());
+    g_signal_connect(window, "window-state-event", G_CALLBACK(linux_window_state_event_cb), state_.get());
 
     WebKitWebContext* context = webkit_web_context_get_default();
     webkit_web_context_register_uri_scheme(context, "app", linux_scheme_cb, state_.get(), nullptr);
 
     WebKitUserContentManager* ucm = webkit_user_content_manager_new();
+    std::string preload_cpp = detail::build_preload_script(*state_);
     WebKitUserScript* preload = webkit_user_script_new(
-        std::string(detail::kPreloadBridgeJs).c_str(),
+        preload_cpp.c_str(),
         WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
         WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
         nullptr,
@@ -239,6 +314,17 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 
     GtkWidget* webview_widget = webkit_web_view_new_with_user_content_manager(ucm);
     WebKitWebView* webview = WEBKIT_WEB_VIEW(webview_widget);
+    bool init_devtools = kDefaultWebUIDevExtras;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        init_devtools = state_->devtools_enabled;
+    }
+    if (WebKitSettings* wks = webkit_web_view_get_settings(webview)) {
+        webkit_settings_set_enable_developer_extras(wks, init_devtools ? TRUE : FALSE);
+    }
+    g_signal_connect(webview_widget, "context-menu", G_CALLBACK(linux_context_menu_cb), state_.get());
+    gtk_drag_dest_add_uri_targets(webview_widget);
+    g_signal_connect(webview_widget, "drag-data-received", G_CALLBACK(linux_drag_data_received_cb), state_.get());
     gtk_container_add(GTK_CONTAINER(window), webview_widget);
 
     {
@@ -260,6 +346,19 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
             }
         };
 #endif
+        state_->platform_set_devtools = [webview](bool enabled) {
+            auto* payload = new LinuxDevtoolsPayload{webview, enabled};
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_set_devtools, payload, nullptr);
+        };
+        state_->platform_set_context_menu = [](bool) {};
+        state_->platform_set_autofill = [webview](bool enabled) {
+            auto* payload = new LinuxEvalPayload{
+                webview,
+                enabled ? "if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                        : "if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);"
+            };
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_eval, payload, nullptr);
+        };
         state_->platform_fullscreen = [window, st = state_]() {
             if (st->is_fullscreen) gtk_window_fullscreen(GTK_WINDOW(window));
             else gtk_window_unfullscreen(GTK_WINDOW(window));
@@ -299,6 +398,9 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
         state_->platform_set_dark_mode = nullptr;
+        state_->platform_set_devtools = nullptr;
+        state_->platform_set_context_menu = nullptr;
+        state_->platform_set_autofill = nullptr;
         state_->platform_fullscreen = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;
@@ -321,10 +423,12 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     gtk_window_set_default_size(GTK_WINDOW(window), state_->width, state_->height);
     WebKitWebContext* context = webkit_web_context_get_default();
     webkit_web_context_register_uri_scheme(context, "app", linux_scheme_cb, state_.get(), nullptr);
+    g_signal_connect(window, "window-state-event", G_CALLBACK(linux_window_state_event_cb), state_.get());
 
     WebKitUserContentManager* ucm = webkit_user_content_manager_new();
+    std::string preload_cpp = detail::build_preload_script(*state_);
     WebKitUserScript* preload = webkit_user_script_new(
-        std::string(detail::kPreloadBridgeJs).c_str(),
+        preload_cpp.c_str(),
         WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
         WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
         nullptr,
@@ -337,12 +441,36 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 
     GtkWidget* webview_widget = webkit_web_view_new_with_user_content_manager(ucm);
     WebKitWebView* webview = WEBKIT_WEB_VIEW(webview_widget);
+    bool init_devtools = kDefaultWebUIDevExtras;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        init_devtools = state_->devtools_enabled;
+    }
+    if (WebKitSettings* wks = webkit_web_view_get_settings(webview)) {
+        webkit_settings_set_enable_developer_extras(wks, init_devtools ? TRUE : FALSE);
+    }
+    g_signal_connect(webview_widget, "context-menu", G_CALLBACK(linux_context_menu_cb), state_.get());
+    gtk_drag_dest_add_uri_targets(webview_widget);
+    g_signal_connect(webview_widget, "drag-data-received", G_CALLBACK(linux_drag_data_received_cb), state_.get());
     gtk_container_add(GTK_CONTAINER(window), webview_widget);
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->platform_eval = [webview](const std::string& js) {
             auto* payload = new LinuxEvalPayload{webview, js};
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_eval, payload, nullptr);
+        };
+        state_->platform_set_devtools = [webview](bool enabled) {
+            auto* payload = new LinuxDevtoolsPayload{webview, enabled};
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_set_devtools, payload, nullptr);
+        };
+        state_->platform_set_context_menu = [](bool) {};
+        state_->platform_set_autofill = [webview](bool enabled) {
+            auto* payload = new LinuxEvalPayload{
+                webview,
+                enabled ? "if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                        : "if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);"
+            };
             g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_eval, payload, nullptr);
         };
         state_->platform_quit = [st = state_]() {
@@ -367,6 +495,9 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->platform_eval = nullptr;
+        state_->platform_set_devtools = nullptr;
+        state_->platform_set_context_menu = nullptr;
+        state_->platform_set_autofill = nullptr;
         state_->platform_quit = nullptr;
     }
     gtk_widget_destroy(window);

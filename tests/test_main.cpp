@@ -99,6 +99,10 @@ auto main(int argc, char** argv) -> int {
         test_sharded_cpp_codegen(rt_dir);
         test_vendored_archives_and_portable_releases(rt_dir);
         test_language_consistency_and_docs(rt_dir);
+        test_ext_soundness_cache_and_clean(rt_dir);
+        test_package_fixes_and_generics(rt_dir);
+        test_error_binding_and_named_arg_validation();
+        test_webui_security_and_desktop(rt_dir);
     }
     if (should_run("e2e")) {
         test_end_to_end_canonical_examples(rt_dir);
@@ -149,6 +153,10 @@ auto main(int argc, char** argv) -> int {
         test_net_websocket(rt_dir);
         test_net_http_and_router(rt_dir);
         test_webui_rpc_events_and_linux_backend(rt_dir);
+        test_fs_exclusive_create_stat_and_sync(rt_dir);
+        test_http_host_bind_and_client_timeout(rt_dir);
+        test_time_local_offset_and_format(rt_dir);
+        test_ipc_stream_security_and_concurrency(rt_dir);
         test_security_and_fuzzing(rt_dir);
     }
     if (suite == "fuzz") {

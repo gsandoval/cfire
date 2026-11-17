@@ -2514,7 +2514,7 @@ void test_unified_stdlib_metadata_table(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_unified_stdlib_metadata_table");
 
     const auto& catalog = cfire::doc::stdlib_catalog();
-    require(catalog.size() >= 35, "stdlib_catalog contains at least 35 modules (core:str, core:sort, vendor:raylib, and vendor:raygui are retired)");
+    require(catalog.size() >= 36, "stdlib_catalog contains at least 36 modules");
 
     // Verify all module paths are unique and sorted
     for (size_t i = 1; i < catalog.size(); ++i) {
@@ -2533,6 +2533,7 @@ void test_unified_stdlib_metadata_table(const std::filesystem::path& rt_dir) {
     require(cfire::modules::is_known_core_namespace("os"), "os is known core namespace");
     require(cfire::modules::is_known_core_namespace("build"), "build is known core namespace in the core namespace table");
     require(cfire::modules::is_known_core_namespace("time"), "time is known core namespace");
+    require(cfire::modules::is_known_core_namespace("ipc"), "ipc is known core namespace");
     require(cfire::modules::is_known_core_namespace("aes"), "aes is known core namespace");
     require(cfire::modules::is_known_core_namespace("webui"), "webui is known core namespace");
 
@@ -3018,4 +3019,72 @@ void test_diagnostic_golden_ranges() {
                         d.code, d.line, d.col, d.end_line, d.end_col));
     }
     std::println("--- PASS: test_diagnostic_golden_ranges");
+}
+
+void test_error_binding_and_named_arg_validation() {
+    std::println("=== RUN   test_error_binding_and_named_arg_validation");
+
+    require_sema_ok(R"CF(package main
+
+import "core:fs"
+
+fn probe_missing(p: str) -> void! {
+    _ = fs.open(p, fs.OpenMode::Read) or err {
+        if err.code() == fs.ERR_NOT_FOUND {
+            _ = err.message()
+        }
+        return err
+    }
+}
+
+fn main() {
+    _ = probe_missing("__nonexistent_sema_probe__.txt") or err {
+        _ = err.code()
+        return
+    }
+}
+)CF", "error_binding_forward_ok.cf");
+
+    require_sema_error(R"CF(package main
+
+import "core:fs"
+
+fn non_fallible(p: str) -> i32 {
+    _ = fs.open(p, fs.OpenMode::Read) or err {
+        return err
+    }
+    return 1
+}
+
+fn main() {}
+)CF", "cfire/TYPE-MISMATCH", "error_return_nonfallible.cf");
+
+    require_sema_error(R"CF(package main
+
+import "core:fs"
+
+fn bad_param(x: fs.ERR_EXISTS) {}
+
+fn main() {}
+)CF", "cfire/UNKNOWN-STDLIB-TYPE", "module_const_as_type.cf");
+
+    require_sema_error(R"CF(package main
+
+import "core:net/http"
+
+fn main() {
+    _ = try http.make_server(0)
+}
+)CF", "cfire/RETIRED-API", "retired_make_server_ref.cf");
+
+    require_sema_error(R"CF(package main
+
+import "core:net/http"
+
+fn main() {
+    _ = try make(http.Server, 0, bogus_label: "x")
+}
+)CF", "cfire/UNKNOWN-ARG-LABEL", "make_server_unknown_label.cf");
+
+    std::println("--- PASS: test_error_binding_and_named_arg_validation");
 }

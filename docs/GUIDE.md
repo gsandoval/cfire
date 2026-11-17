@@ -103,23 +103,30 @@ sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-d
 ```
 
 ### Understanding the Two Stdlib Namespaces (`core:*`, `ext:*`)
-One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 35 built-in modules into two explicit namespaces based on external link requirements:
-- **`core:*` (Foundational & Platform Core — 29 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:unicode`, `core:regex`, `core:collections`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/websocket`, `core:audio`, `core:tako`, `core:crypto/*`) with zero external C library setup required. (String and sort helpers live directly as built-in methods on `str`, `[]T`, `[N]T`, and `map[K]V`.)
-- **`ext:*` (Native C Libraries, WebUI & AI Extensions — 6 Opt-In Modules)**: Specialized domain engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported—and include built-in portable fallbacks when an optional system library isn't installed.
+One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 36 built-in modules into two explicit namespaces based on external link requirements:
+- **`core:*` (Foundational & Platform Core — 30 Modules)**: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (`core:unicode`, `core:regex`, `core:collections`, `core:math`, `core:rand`, `core:json`, `core:encoding/*`, `core:fs`, `core:os`, `core:time`, `core:sync`, `core:sync/context`, `core:cli`, `core:log`, `core:keychain`, `core:build`, `core:net`, `core:net/url`, `core:net/tls`, `core:net/http`, `core:net/ipc`, `core:net/websocket`, `core:audio`, `core:tako`, `core:crypto/*`) with zero external C library setup required. (String and sort helpers live directly as built-in methods on `str`, `[]T`, `[N]T`, and `map[K]V`.)
+- **`ext:*` (Native C Libraries, WebUI & AI Extensions — 6 Opt-In Modules)**: Specialized domain engines (`ext:ai`, `ext:compress/zstd`, `ext:crypto/sodium`, `ext:db/sqlite`, `ext:net/ssh`, `ext:webui`) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported. `ext:db/sqlite` builds from its vendored amalgamation by default, `ext:crypto/sodium` and `ext:net/ssh` require system `libsodium` / `libssh` (failing closed at build time when absent), and `ext:compress/zstd`, `ext:ai`, and `ext:webui` use native platform frameworks or built-in codecs as shown below.
 - **Any other C or C++ library** (raylib, SDL, your own code) is used through `import cpp "<header.h>"` and, when it needs building, `build.CC` / `build.CMake` in `build.cf` (see Chapter 11). `cfire` no longer bundles raylib.
 
-| Core / Extension Module | Optional System Library | `pkg-config` Name | Built-In Portable Fallback When Absent |
+#### Vendored-First Modules (`runtime/vendor/`)
+
+| Module | Vendored Source | Explicit Override (`PkgConfig` / Link / Prefix) | WebAssembly (`--web`) |
 | :--- | :--- | :--- | :--- |
-| `core:json` | `libsimdjson` | `simdjson` | Bundled single-header `simdjson` implementation in `runtime/vendor/` |
-| `core:net/tls` & `core:net/http` | `libssl` / `libcrypto` | `openssl` | Dynamic `dlopen("libssl")` on Desktop/Linux; Apple `Foundation` `NSURLConnection` on macOS/iOS; browser `XMLHttpRequest` on WASM |
-| `core:audio` | `CoreAudio` / `libasound2` | `alsa` | `AudioToolbox.framework` on macOS/iOS; dynamic `dlopen("libasound.so.2")` on Linux; `WebAudio` on WASM; deterministic software mixer in headless CI |
-| `core:keychain` | `Security.framework` / `libsecret` | `libsecret-1` | macOS `Security.framework`, Linux `secret-tool`, or AES-256-GCM fallback vault |
-| `ext:db/sqlite` | `libsqlite3` | `sqlite3` | System `libsqlite3` (pre-installed on macOS/iOS; in-memory/WASM shim on `--web`) |
-| `ext:compress/zstd` | `libzstd` | `libzstd` | Native `libcompression` (`COMPRESSION_LZFSE` / `ZLIB`) on Apple/iOS; RFC 1951 codec on WASM |
-| `ext:crypto/sodium` | `libsodium` | `libsodium` | Pure C++23 ChaCha20-Poly1305 / Ed25519 / Argon2 fallback |
-| `ext:net/ssh` | `libssh` | `libssh` | OpenSSH `ssh` / `sftp` / `scp` subprocess bridge when `libssh` is absent |
-| `ext:ai` (OCR & PDF) | `Vision` / `libtesseract` / `pdftotext` | `tesseract` | `Vision.framework` & `PDFKit` on macOS/iOS; `dlopen("libtesseract.so.5")` & `pdftotext` on Linux; pure C++23 `/FlateDecode` PDF parser & PNG/JPEG metadata reader on all targets |
-| `ext:webui` | `WebKit.framework` / `webkit2gtk-4.1` | `webkit2gtk-4.1` | `WKWebView` + `Cocoa` on macOS, `WKWebView` + `UIKit` on iOS, `WebKitGTK` + `GTK3` on Linux, and deterministic headless RPC/Event dispatcher in CI |
+| `core:json` | `runtime/vendor/simdjson/` amalgamation | System `libsimdjson` (`pkg-config` `simdjson`) used only with explicit `PkgConfig`, link, or `~/.local` override | Vendored `simdjson` (scalar fallback under WASM) |
+| `ext:db/sqlite` | `runtime/vendor/sqlite3/` amalgamation | System `libsqlite3` (`sqlite3`) only on explicit override, or `sqlcipher` when installed for `open_encrypted` | In-memory / WASM shim |
+
+#### System Libraries & OS Platform Backends
+
+| Core / Extension Module | Native Library / Platform Backend | Fallback When Absent |
+| :--- | :--- | :--- |
+| `core:net/tls` & `core:net/http` | `libssl` / `libcrypto` (`pkg-config` `openssl` via dynamic `dlopen`) | Apple `Foundation` `NSURLSession` on macOS/iOS; WinHTTP/Schannel or OpenSSL on Windows; browser XHR on WASM |
+| `core:audio` | `AudioToolbox.framework` (macOS/iOS), `libasound2` (`dlopen("libasound.so.2")`, Linux), Windows WASAPI/WaveOut | `WebAudio` on WASM; deterministic software mixer in headless environments |
+| `core:keychain` | macOS/iOS `Security.framework`; Windows Credential Manager; Linux `secret-tool` CLI (package `libsecret-tools`, no `pkg-config`) | **None.** Any unsupported platform or missing `secret-tool` returns `Err`; the in-memory store exists only under `CFIRE_TEST_MODE` (`runtime/core/keychain.hpp`). |
+| `ext:compress/zstd` | `libzstd` (`pkg-config` `libzstd`) | Native `libcompression` (`COMPRESSION_LZFSE` / `ZLIB`) on Apple/iOS; RFC 1951 codec on WASM |
+| `ext:crypto/sodium` | `libsodium` (`pkg-config` `libsodium`, **required**) | **None.** Without `libsodium` the build fails (`#error` in `runtime/core/sodium.hpp`). |
+| `ext:net/ssh` | `libssh` (`pkg-config` `libssh`, **required**) | **None.** Without `libssh` the build fails (`#error` in `runtime/core/ssh.hpp`); `ssh.enable_mock_server()` is for tests only (`CFIRE_TEST_MODE`). |
+| `ext:ai` (OCR & PDF) | `Vision` / `PDFKit` / `NaturalLanguage` (macOS/iOS); `libtesseract.so.5` & `pdftotext` (Linux); pure C++23 decoders & SIMD | Pure C++23 `/FlateDecode` + `/ToUnicode` PDF parser, Office/ODF XML extractor, and PNG/BMP/JPEG reader across all targets |
+| `ext:webui` | `WKWebView` + `Cocoa` (macOS), `WKWebView` + `UIKit` (iOS), `WebKitGTK` + `GTK3` (`webkit2gtk-4.1`, Linux), `WebView2` + `HWND` (Windows) | Deterministic headless RPC/event dispatcher under `CFIRE_HEADLESS_TEST=1` |
 
 ### Setting Up WebAssembly & iOS Cross-Compilation
 
@@ -305,7 +312,7 @@ Every scaffolded workspace includes a ready-to-run `build.cf`, `main.cf`, a unit
 
 | Template (`--template`) | Generated Files | Target Matrix & Default Subsystem | Best For |
 | :--- | :--- | :--- | :--- |
-| `cli` (default) | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` (`console`) | CLI tools, microservices, AI agents, systems daemons. |
+| `cli` (default) | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` (`cli`) | CLI tools, microservices, AI agents, systems daemons. |
 | `webui` (alias `gui`) | `build.cf`, `main.cf`, `main_test.cf`, `ui/index.html`, `.gitignore` | `["native", "ios-sim"]` (`gui`) | Wails/Tauri-style desktop & mobile apps using HTML/CSS/JS over `ext:webui`. |
 | `tako` | `build.cf`, `main.cf`, `main_test.cf`, `.gitignore` | `["native"]` | Local AWS-compatible cloud service & testing scaffold using `core:tako`. |
 
@@ -327,9 +334,12 @@ my-service/
 
 How `cfire` resolves files and packages across your workspace:
 1. **Same-Directory Package Merging**: All `.cf` files in the same folder declaring the same `package <name>` (for example, `main.cf`, `routes.cf`, and `store.cf` all declaring `package main`) automatically share their types, functions, methods, and constants—no relative imports needed between sibling files. Test files ending in `_test.cf` are compiled during `cfire test` and excluded during `cfire build` / `cfire run`.
-2. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all non-test `.cf` files in `./pkg/checksum/` belonging to `package checksum` and exposes their declarations under the `checksum.` namespace.
-3. **Standard Library (`import "core:..."`, `"ext:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
-4. **Built-in Cloud Primitives (`import "core:tako"`)**: Resolves directly against the built-in `core:tako` standard runtime header (`runtime/core_tako.hpp`) alongside user packages in `~/.local/share/cfire/pkgs`.
+2. **Platform-Specific File Suffixes (`_darwin`, `_macos`, `_ios`, `_linux`, `_windows`, `_wasm`, `_unix`)**: Any `.cf` source or `_test.cf` file whose stem (before an optional `_test`) ends with `_darwin` / `_macos` (desktop macOS), `_ios` (iOS & iOS Simulator), `_linux` (Linux), `_windows` (Windows), `_wasm` (WebAssembly), or `_unix` (non-Windows, non-WASM POSIX targets) compiles **only** when targeting that platform (`src/build/package_loader.hpp`).
+   > [!WARNING]
+   > This filename filter runs automatically in every package directory: an existing file named e.g. `foo_linux.cf` (or `foo_linux_test.cf`) is silently omitted on macOS, Windows, and WASM builds. Name files with `_<os>` only when they hold platform-specific code or tests.
+3. **Local Workspace Packages (`import "./pkg/checksum"`)**: Scans all platform-matching non-test `.cf` files in `./pkg/checksum/` belonging to `package checksum` and exposes their declarations under the `checksum.` namespace.
+4. **Standard Library (`import "core:..."`, `"ext:..."`)**: Resolves headers from the `cfire` runtime directory and auto-links required system frameworks.
+5. **Built-in Cloud Primitives (`import "core:tako"`)**: Resolves directly against the built-in `core:tako` standard runtime header (`runtime/core/tako.hpp`) alongside user packages in `~/.local/share/cfire/pkgs`.
 
 ### Declarative Build Files (`build.cf`)
 For single-package projects, `cfire run main.cf` works with zero configuration. When you need multi-target app bundles, pre-build code generation, or C/C++/CMake dependencies, declare them in `build.cf`:
@@ -371,7 +381,7 @@ RemoteEngine := build.Git("https://github.com/example/engine.git", {
 // 5. Multi-target application executable definition
 App := build.Executable("service-app", {
     Entry:      "src/main.cf",
-    Subsystem:  "console",
+    Subsystem:  "cli",
     Name:       "ServiceApp",
     BundleId:   "com.example.serviceapp",
     Icon:       "assets/icon.png",
@@ -386,14 +396,20 @@ App := build.Executable("service-app", {
 | Field / Builder | Type / Signature | Default / Config | Purpose |
 | :--- | :--- | :--- | :--- |
 | `Entry` | `str` | `"main.cf"` | Entry `.cf` file containing `fn main()`. |
-| `Subsystem` | `str` | `"auto"` | `"console"` (CLI binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal console). Auto-switches to `"gui"` when `ext:webui` is used. |
-| `Name` & `BundleId` | `str` | `<name>`, `"com.cfire.<name>"` | Display name and reverse-DNS `CFBundleIdentifier` for macOS/iOS signing and Simulator launch. |
-| `Icon` | `str` | `""` | Path to a `.png` icon; auto-generates `.icns` on macOS, `AppIcon60x60@2x.png` on iOS, and window icon pixels on Linux. |
+| `Subsystem` | `str` | `"auto"` | `"cli"` (command-line binary) or `"gui"` (creates a macOS `.app` bundle and suppresses terminal console on Windows). Auto-switches to `"gui"` when `ext:webui` is imported. |
+| `OutDir` | `str` | `"."` (project root) | Output directory where built binaries, `.app` bundles, and `.wasm` assets are written. |
+| `Name` / `AppName` & `BundleId` | `str` | `<target>`, `"com.cfire.<name>"` | Target binary/display name (`AppName`) and reverse-DNS `CFBundleIdentifier` for Apple bundle signing and Simulator launch. |
+| `Icon` | `str` | `""` | Path to a `.png`, `.svg`, `.icns`, or `.ico` icon; auto-generates `.icns` on macOS, `AppIcon60x60@2x.png` on iOS, and `.rc` resource icons on Windows. |
 | `Targets` & `WebProfile` | `[]str`, `str` | `["native"]`, `"auto"` | Target triples (`"native"`, `"wasm"`, `"ios-sim"`, `"ios"`) and WASM shell profile (`"canvas"` or `"cli"`). |
+| `Sources`, `Includes`, `Defines`, `Flags` | `[]str` / `map` | `[]` | Native C/C++ translation units compiled with the target, `-I` header directories forwarded to `import cpp`, `-D` macros, and extra compiler flags. |
+| `PkgConfig`, `Libraries`, `Frameworks` | `str` / `[]str` | `[]` | `pkg-config` packages, `-l` linker libraries, and Apple-only `-framework` flags (`Frameworks` is ignored on Linux and Windows targets). |
+| `Portable`, `Static`, `Universal`, `MacosMin` | `bool` / `str` | `false`, `""` | Prefer static `.a` libs + rpath (`Portable`), strict static link (`Static`), macOS `arm64+x86_64` fat binary (`Universal`), and minimum macOS deployment target (`>= "13.3"`). |
+| `UrlSchemes` & `SignIdentity` | `[]str`, `str` | `[]`, `"-"` | Custom `CFBundleURLSchemes` entries and Apple `codesign` signing identity. |
 | `build.CC(dir, cfg)` | Builder | `Sources`, `Includes`, `Defines` | Compiles C/C++ sources into a SHA-256-cached static archive (`lib<name>.a`) and feeds `Includes` to the Clang AST bridge. |
 | `build.CMake(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Configures and builds a CMake subproject in `.cfire/cache/deps/` and links the target archive. |
 | `build.Make(dir, cfg)` | Builder | `Target`, `Includes`, `Defines` | Runs `make -C <dir>` and links `lib<Target>.a`. |
 | `build.Git(url, cfg)` / `build.Archive` | Builder | `Tag`/`Commit`/`Sha256`, `Driver` | Fetches remote dependency, pins cryptographic hashes in `cfire.lock`, and builds via `Driver` (vendor offline with `cfire vendor`). |
+| `build.Step(name, cfg)` / `build.Command` | Step | `Command`, `Args`, `Inputs`, `Outputs` | Runs a custom pre-build command whenever `Inputs` are newer than `Outputs`. |
 
 ### Complete CLI Command Reference
 Every tool in the `cfire` workflow lives inside the single `cfire` binary:
@@ -401,8 +417,9 @@ Every tool in the `cfire` workflow lives inside the single `cfire` binary:
 | Command & Syntax | Supported Flags | Description |
 | :--- | :--- | :--- |
 | `cfire init` / `cfire new <dir>` | `--template <cli\|tako\|gui\|webui>`, `--force` | Scaffolds a new `cfire` project (`build.cf`, `main.cf`, `main_test.cf`, `.gitignore`, plus `ui/index.html` for `webui`). |
-| `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|console>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). |
-| `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|console>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
+| `cfire run [target\|file.cf] [-- args...]` | `--web`, `--ios`, `--device <name>`, `--port <n>`, `--no-open`, `--sanitize`, `--subsystem <gui\|cli>` | Compiles and executes a native binary, local WebAssembly server (`--web`), or iOS Simulator app (`--ios`). |
+| `cfire build [target\|file.cf]` | `-o <path>`, `--target <wasm\|ios-sim\|ios\|triple>`, `--web`, `--ios`, `--subsystem <gui\|cli>`, `--name <app>`, `--bundle-id <id>`, `--icon <png>`, `--sanitize` | Compiles an optimized binary, macOS `.app` bundle, WebAssembly `.html`/`.wasm` bundle, or signed iOS `.app` bundle. |
+| `cfire clean [path\|build.cf]` | `--cache`, `--all`, `--dry-run`, `--json` | Removes nested project `.cfire/` directories and manifest outputs (`--cache` safely cleans the marker-guarded OS/XDG user cache and owned legacy caches). |
 | `cfire check [file.cf\|dir]` | `--json`, `--fix` | Workspace-aware lexer, parser, Clang header bridge, and semantic/loan/intent analyzer (with optional auto-fix via `--fix`). |
 | `cfire fix [file.cf\|dir]` | `--dry-run`, `--json` | Automatically inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
 | `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks. |
@@ -885,11 +902,13 @@ fn main() {
 }
 ```
 
-### Algebraic Enums, Or-Patterns, Slice Patterns & Exhaustive `match`
-Enums in `cfire` can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to `std::variant<...>`). When you `match` on an enum, string, or slice, the compiler verifies:
-1. **Exhaustiveness (`cfire/NON-EXHAUSTIVE-MATCH`)**: Every variant of an enum must be handled (or covered by a `_ =>` wildcard arm).
-2. **Reachability (`cfire/UNREACHABLE-MATCH-ARM`)**: No arm can be shadowed by an earlier duplicate variant, wildcard, or broader slice rest pattern (`[head, ..tail]`).
-3. **Or-Patterns (`|`)**: You can match multiple alternative values or variants in a single arm (`"GET" | "HEAD" =>`, `Event::Connected | Event::Disconnected =>`).
+### Algebraic Enums, Guards, Range Patterns, Slice Patterns & Exhaustive `match`
+Enums in `cfire` can be simple C-style tags or full algebraic sum types carrying typed payloads (lowered to `std::variant<...>`). `match` also works directly on integers, strings, slices, optionals (`Some(v)` / `none`), and fallible results (`Ok(v)` / `Err(e)`), with compile-time checking of:
+1. **Exhaustiveness (`cfire/NON-EXHAUSTIVE-MATCH`)**: Every variant of an enum, both branches of `T?` (`Some` / `none`), and both branches of `T!` (`Ok` / `Err`) must be handled (or covered by a non-guarded `_ =>` wildcard arm).
+2. **Reachability (`cfire/UNREACHABLE-MATCH-ARM`)**: No arm can be shadowed by an earlier duplicate pattern, non-guarded wildcard, or broader slice rest pattern (`[head, ..tail]`).
+3. **Or-Patterns (`|`)**: Match multiple values or variants in one arm (`"GET" | "HEAD" =>`, `Event::Connected | Event::Disconnected =>`).
+4. **Range Patterns (`a..b` / `a..=b`)**: Match half-open (`0..10`) or inclusive (`10..=20`, `-10..=-1`) integer ranges cleanly in one arm.
+5. **Pattern Guards (`Pattern if cond =>`)**: Refine any arm with an arbitrary `bool` condition (`_ if cond =>`, `Some(x) if x > 10 =>`, `Ok(n) if n > 0 =>`, `Event::Resize(w, h) if w == h =>`, `[h, ..rest] if rest.len() > 0 =>`, or bare `n if n < 0 =>` on non-enum scrutinees). Pattern bindings are in scope inside the guard expression; because a guard can evaluate to `false`, guarded arms do not satisfy exhaustiveness on their own, so an unguarded catch-all or full fallback arm is still required.
 
 #### Best Practices: Prefer Enums Over Integer Constants
 A common anti-pattern in systems programming is defining clusters of integer constants for state machines or modes (e.g. `VIEW_LOGIN = 0`, `VIEW_DASHBOARD = 1`, `VIEW_SETTINGS = 2`). This sacrifices compile-time exhaustiveness checking and makes refactoring error-prone.
@@ -934,10 +953,11 @@ type Event enum {
 
 fn describe_event(e: Event) -> str {
     return match e {
-        Event::Connected(addr)     => "connected:" + addr,
-        Event::Data(payload)       => "bytes:{payload.len()}",
-        Event::Resize(w, h)        => "resize:{w}x{h}",
-        Event::Disconnected(code)  => "closed:{code}",
+        Event::Resize(w, h) if w == h => "square:{w}x{h}",
+        Event::Connected(addr)        => "connected:" + addr,
+        Event::Data(payload)          => "bytes:{payload.len()}",
+        Event::Resize(w, h)           => "resize:{w}x{h}",
+        Event::Disconnected(code)     => "closed:{code}",
     }
 }
 
@@ -959,6 +979,51 @@ fn main() {
 ```text
 # Output:
 event=resize:1920x1080 route=api->..(2)..->profile
+```
+
+Range patterns, guarded pattern bindings, optional `Some`/`none` arms, and fallible `Ok`/`Err` arms compose seamlessly:
+
+```cfire
+package main
+
+fn bucket(score: i64) -> str {
+    return match score {
+        0..60   => "retry",
+        60..=89 => "pass",
+        90..=100 => "honors",
+        n if n < 0 => "invalid",
+        _       => "bonus",
+    }
+}
+
+fn describe_opt(v: i64?) -> str {
+    return match v {
+        Some(n) if n > 10 => "high:{n}",
+        Some(n)           => "low:{n}",
+        none              => "none",
+    }
+}
+
+fn positive_ratio(num: i64, den: i64) -> i64! {
+    if den == 0 {
+        return error("zero divisor")
+    }
+    return num / den
+}
+
+fn main() {
+    res: i64! = positive_ratio(20, 4)
+    res_msg := match res {
+        Ok(q)  => "ok:{q}",
+        Err(e) => "err:{e.message()}",
+    }
+    opt: i64? = 42
+    println("{} {} {}", bucket(95), describe_opt(opt), res_msg)
+}
+```
+```text
+# Output:
+honors high:42 ok:5
 ```
 
 ### Structural Interfaces & C++20 `concept` Lowering
@@ -1328,11 +1393,12 @@ Whether your code runs on a Linux server, macOS desktop, or inside the iOS Simul
 | :--- | :--- | :--- | :--- |
 | `core:fs` | `fs.read_text` / `write_text` / `append_text` | `fn(path: str) -> str!` / `fn(path: str, text: str) -> void!` | One-shot UTF-8 text file read, write, and append. |
 | `core:fs` | `fs.read_bytes` / `write_bytes` / `append_bytes` | `fn(path: str) -> []byte!` / `fn(path: str, data: []byte) -> void!` | One-shot binary file read, write, and append. |
-| `core:fs` | `fs.open(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` | Opens a streaming `File` handle (`OpenMode::Read`, `Write`, `Append`, `ReadWrite`) supporting `.read_text()`, `.read_bytes()`, `.read_into()`, `.read_exact()`, `.read_text_until()`, `.read_bytes_until()`, `.read_line()`, `.read_lines()`, `.write_text()`, `.write_bytes()`, `.seek()`, `.tell()`, `.flush()`, `.close()`. |
+| `core:fs` | `fs.open(path, mode)` / `fs.create_new(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` / `fn(path: str, mode: u32 = 0o600) -> File!` | Opens or exclusively creates (`O_CREAT\|O_EXCL` / `CREATE_NEW`) a streaming `File` handle supporting `.read_text()`, `.read_bytes()`, `.read_into()`, `.read_exact()`, `.read_text_until()`, `.read_bytes_until()`, `.read_line()`, `.read_lines()`, `.write_text()`, `.write_bytes()`, `.seek()`, `.tell()`, `.flush()`, `.sync()`, and `.close()`. |
+| `core:fs` | `fs.stat` / `realpath` / `ERR_EXISTS` / `ERR_NOT_FOUND` / `ERR_PERMISSION` | `fn(path: str) -> FileInfo!` / `str!` / `const i32` | Metadata inspection (`FileInfo{size, mtime_ms, mode, is_dir, is_symlink}`), canonical real path resolution, and portable error codes via `err.code()`. |
 | `core:fs` | `fs.exists` / `is_dir` / `is_file` / `file_size` / `copy_file` / `mkdir_all` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, file copying, recursive directory creation, removal, and directory listing. |
 | `core:os` | `os.stdin` / `os.stdout` / `os.stderr` / `os.pipe` | `fn() -> fs.File` / `fn() -> (fs.File, fs.File)!` | Non-owning `fs.File` stream handles for stdio (`0`, `1`, `2`) and owning `(reader, writer)` OS pipe pairs. |
 | `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str, fallback: str = "") -> str` | Reads or sets process environment variables and queries the working directory. |
-| `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.format_rfc3339()`, and thread sleep. |
+| `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.local()`, `.utc()`, `.format(pattern)`, offset-aware `.format_rfc3339()`, and thread sleep. |
 | `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
 | `core:math` | `math.PI` / `E` / `TAU` / `SQRT_2` and `math.atan2` / `hypot` / `gcd` / `lcm` | `f64` constants / multi-input functions | Constants and functions with no natural receiver; single-value math is a method (`x.sqrt()`, `x.sin()`, `x.clamp(lo, hi)`, `a.checked_add(b)`). |
 
@@ -1704,6 +1770,62 @@ flags |= rl.ConfigFlags::FLAG_MSAA_4X_HINT
 
 Before writing code against a foreign header, run `cfire inspect "cpp zstd.h"` from the terminal to list every discovered symbol and its mapped `.cf` signature.
 
+### Wrapping C Handles with Custom Deleters (Move-Only C++ RAII Shims)
+Safe `.cf` code has no raw pointers (`cfire/RAW-POINTER`), and `own[T].from_raw(p)` is strictly for reclaiming a `T*` that was previously created with `make(own[T], ...)` and detached with `.release()`—never for foreign C handles freed by a library cleanup function such as `sqlite3_close`, `ssh_free`, or `EVP_CIPHER_CTX_free`.
+
+When wrapping a C resource with a custom deleter, put a tiny **move-only C++23 RAII class** in a project C++ header, expose its directory via `Includes` in `build.cf`, import it with `import cpp`, and hold the wrapper **by value** in `.cf` code:
+
+```cpp
+// csrc/cipher_handle.hpp
+#pragma once
+#include <utility>
+
+struct DemoCSession;
+inline auto demo_session_open(int seed) -> DemoCSession*;
+inline void demo_session_free(DemoCSession* ctx);
+
+class CipherHandle {
+public:
+    CipherHandle() = default;
+    explicit CipherHandle(DemoCSession* raw) noexcept : ptr_(raw) {}
+    ~CipherHandle() { reset(); }
+
+    CipherHandle(const CipherHandle&) = delete;
+    auto operator=(const CipherHandle&) -> CipherHandle& = delete;
+
+    CipherHandle(CipherHandle&& other) noexcept
+        : ptr_(std::exchange(other.ptr_, nullptr)) {}
+    auto operator=(CipherHandle&& other) noexcept -> CipherHandle& {
+        if (this != &other) {
+            reset();
+            ptr_ = std::exchange(other.ptr_, nullptr);
+        }
+        return *this;
+    }
+
+    void reset() noexcept {
+        if (ptr_ != nullptr) {
+            demo_session_free(std::exchange(ptr_, nullptr));
+        }
+    }
+    [[nodiscard]] auto valid() const noexcept -> bool { return ptr_ != nullptr; }
+
+private:
+    DemoCSession* ptr_{nullptr};
+};
+
+[[nodiscard]] inline auto open_cipher(int seed) -> CipherHandle {
+    return CipherHandle(demo_session_open(seed));
+}
+```
+
+```cfire
+// With `Includes: ["csrc"]` in `build.cf` and `import cpp "cipher_handle.hpp"`:
+mut handle := cpp.open_cipher(7)
+// Held by value with zero heap wrapper allocation; `~CipherHandle()` runs `demo_session_free`
+// deterministically when `handle` leaves scope.
+```
+
 ### Orchestrating C, CMake & Make Libraries in `build.cf`
 When your project combines `.cf` code with local C files (`build.CC`), a CMake subproject (`build.CMake`), or a Makefile archive (`build.Make`), declare them in `build.cf`. The build driver compiles each native dependency into `.cfire/cache/deps/`, forwards its `Includes` and `Defines` to the Clang AST bridge, and links the resulting static archives automatically:
 
@@ -1878,7 +2000,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/INDEX-OUT-OF-BOUNDS` | Detailed rule | Compile-Time Out-of-Bounds or Negative Constant Sequence Index |
 | `cfire/INVALID-ATTRIBUTE` | Attributes | An attribute on a declaration is unknown, misplaced, or has invalid arguments. |
 | `cfire/INVALID-CONSTRUCTOR` | Detailed rule | Associated Function Other Than `make` |
-| `cfire/INVALID-IMPORT` | Imports | A module imported under the wrong tier prefix (`core:` vs `ext:`). |
+| `cfire/INVALID-IMPORT` | Imports | A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`). |
 | `cfire/INVALID-INDEX` | Types | Indexing a value that is not a string, slice, array or map. |
 | `cfire/INVALID-INTERPOLATION` | Syntax | An interpolation `{...}` that is not a valid expression. |
 | `cfire/INVALID-MAKE` | Detailed rule | Invalid `make(T, ...)` Arguments |
@@ -1966,20 +2088,22 @@ The `core:net` family gives you one API from raw TCP sockets up to HTTP routers,
 | `core:net/tls` | `TlsStream`, `TlsListener`, `PemPair` | Runtime `dlopen` of `libssl` / `libcrypto` (OpenSSL 1.3+) | Apple `Foundation` / `Network.framework` | Browser TLS stack | In-process TLS stream framing over loopback |
 | `core:net/http` | `Client`, `Server`, `Router`, `Request`, `Response`, `SseEvent` | Native `core:net` + `core:net/tls` (with `curl` fallback for external HTTPS if OpenSSL is absent) | Native `NSURLSession` synchronous bridge for external HTTPS; native `core:net` for local loopback | Browser `emscripten_fetch` synchronous XHR bridge | In-process router registry for `127.0.0.1` / `localhost` servers |
 | `core:net/websocket` | `WebSocket`, `WsPair`, `WsServer`, `Frame` | RFC 6455 frame engine over `TcpStream` / `TlsStream` | RFC 6455 frame engine | RFC 6455 frame engine | In-memory `websocket.pair()` full-duplex channel |
+| `core:net/ipc` | `Listener`, `Conn`, `PeerCred` | Private `0600` `AF_UNIX` streams + `SO_PEERCRED` / `LOCAL_PEERPID` | Owner-only Named Pipes (`PIPE_REJECT_REMOTE_CLIENTS`) + `EqualSid` | Unavailable (`connect` / `listen` return explicit error) | In-process local IPC loop |
 
 ### Building an HTTP Router & Streaming SSE (`core:net/http`)
 Let's build an HTTP service with pre-dispatch middleware, parameterized routes (`/users/:id`), and a real-time Server-Sent Events (`/v1/stream`) endpoint. Notice how `router.dispatch(...)` lets you unit-test your entire routing table in memory before binding a live port via `make(http.Server, 0)`:
 
 | Function / Method | Signature | Description |
 | :--- | :--- | :--- |
-| `http.get` | `fn(url: str, headers = {}, verify_peer: bool = true) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` (`verify_peer: false` accepts self-signed certificates). |
-| `http.post` / `http.request` | `fn(url: str, body: str, ...) -> Response!` | Sends an `HTTP POST` or custom HTTP verb (`PUT`, `PATCH`, `DELETE`) with headers. |
-| `http.post_sse` | `fn(url: str, body: str, headers: map[str]str, on_event: fn(SseEvent) -> bool) -> void!` | Streams `text/event-stream` chunks in real time, invoking `on_event` for each frame until the stream ends or `on_event` returns `false`. |
+| `http.get` | `fn(url: str, headers = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` | Sends an `HTTP GET` request over `http://` or `https://` with an end-to-end deadline (`0` disables; `verify_peer: false` accepts self-signed certificates). |
+| `http.post` / `http.request` | `fn(url: str, body: str, ..., timeout_ms: i64 = 30000) -> Response!` | Sends an `HTTP POST` or custom HTTP verb (`PUT`, `PATCH`, `DELETE`) with headers and an end-to-end `timeout_ms` deadline. |
+| `http.post_sse` | `fn(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, ..., timeout_ms: i64 = 30000) -> void!` | Streams `text/event-stream` chunks in real time, invoking `on_event` for each frame until the stream ends or `on_event` returns `false`. |
 | `make(http.Router)` | `-> Router` | Constructs a pattern-matching router supporting static paths, `:param` segments, and `*` wildcards. |
 | `router.get` / `post` / `put` / `delete_` | `fn(pattern: str, handler: fn(Request) -> Response)` | Registers a route handler for the specified HTTP method and path pattern. |
 | `router.use` | `fn(middleware: fn(Request) -> int)` | Runs before route dispatch (`0` continues; non-zero HTTP status code short-circuits). |
 | `router.dispatch` | `fn(req: Request) -> Response` | Executes middleware and route matching in memory without opening a network socket. |
-| `make(http.Server, port)` / `make(http.Server, port, tls: http.TlsConfig{...})` | `-> Server!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`); An event loop waits on idle and slow connections, so they hold no handler thread; connections are kept alive between requests (HTTP/1.1), and each WebSocket session gets its own thread; `server.set_limits(http.ServerLimits{...})` tunes timeouts, sizes, `workers` (handlers run at once) and the keep-alive and connection caps. |
+| `make(http.Server, port, host: "0.0.0.0")` / `http.serve_in_background` | `-> HttpServer!` | Binds a multi-threaded HTTP/1.1 or HTTPS (TLS 1.3) server (`0` picks an ephemeral port via `server.port()`, `host: "127.0.0.1"` binds loopback only); move-safe even after starting background serving. |
+| `ipc.listen` / `ipc.connect` / `conn.peer_credentials` | `-> ipc.Listener!` / `ipc.Conn!` / `ipc.PeerCred!` | Same-machine private IPC (`core:net/ipc`) using `0600` `AF_UNIX` sockets on POSIX and owner-only Named Pipes on Windows with OS-verified peer PID/UID/same-user credentials (`PeerCred{pid, same_user, uid}`). |
 
 ```cfire
 package main
@@ -2660,6 +2784,19 @@ To make a hybrid app feel like a native macOS or Linux tool rather than a browse
 | `app.save_file_dialog(title, default_name)` | `fn(str, str = "") -> str` | Opens a native `NSSavePanel` save dialog and returns the target path. |
 | `app.message_dialog(title, message, level)` | `fn(str, str, str = "info") -> bool` | Displays a native `NSAlert` modal (`"info"`, `"warning"`, `"error"`, or `"confirm"` with Cancel/OK buttons). |
 
+### Release Security Defaults & Desktop Lifecycle Events
+
+Release binaries (`cfire build`) follow secure-by-default WebView settings while development runs (`cfire run` / `cfire test`) keep debugging ergonomics enabled:
+
+| API / Event | Signature / Payload | Behavior |
+| :--- | :--- | :--- |
+| `app.set_devtools(enabled)` / `devtools_enabled()` | `fn(bool)` / `fn() -> bool` | Toggles Web Inspector / DevTools across `WKWebView`, `WebKitGTK`, and `WebView2`. Defaults to `false` in `Release` (`cfire build`) and `true` in debug/test runs unless overridden. |
+| `app.set_context_menu(enabled)` / `context_menu_enabled()` | `fn(bool)` / `fn() -> bool` | Toggles the browser's default right-click context menu. Defaults to `false` in `Release` (`cfire build`) and `true` in debug/test runs unless overridden. |
+| `app.set_autofill(enabled)` / `autofill_enabled()` | `fn(bool)` / `fn() -> bool` | Opts windows and sensitive secret inputs out of password autosave and form autofill (`ICoreWebView2Settings4` on Windows plus preload `autocomplete="off"` enforcement on WebKit). |
+| `app.on("window:fullscreen")` | `{"fullscreen":true}` / `{"fullscreen":false}` | Emitted on native fullscreen entry and exit transitions across macOS, Linux GTK3, Windows, and headless tests. |
+| `app.on("window:file_drop")` | `{"paths":["/path/to/file"]}` | Emitted when files are dropped onto the window, carrying native OS filesystem paths (macOS `NSDraggingDestination`, Linux GTK URI drops, Windows `WM_DROPFILES` & WebView2 `ICoreWebView2File`). |
+| Desktop OS Integrations | Automatic | Clicking the macOS Dock icon reopens a hidden or miniaturized window (`"window:reopen"`), and Windows enables Per-Monitor-V2 HiDPI scaling automatically (`SetProcessDpiAwarenessContext` + `WM_DPICHANGED`). |
+
 ### Headless & Live Offscreen `WKWebView` Testing (`cfire test`)
 Most WebView frameworks are painful to test in CI because spinning up a visible GUI window hangs headless runners. `ext:webui` gives you two tiers of automated verification inside standard `cfire test` blocks:
 
@@ -2808,8 +2945,8 @@ fn main() -> void! {
 s3_etag_ok=true body=zstd-frame-bytes sqs_msg=true received=1
 ```
 
-### Canonical Projects Index (`examples/01`–`17`)
-Every project in [`examples/`](../examples) is continuously verified by `make test-examples` and can be run directly from the repository root:
+### Canonical Projects Index (`examples/01-hello-core` – `examples/17-webui-studio`)
+Every project in [`examples/`](../examples) is continuously verified by `make check` and can be run directly from the repository root:
 
 | Directory | Title | Core Technologies Demonstrated | Run / Build Command |
 | :--- | :--- | :--- | :--- |
@@ -2820,7 +2957,7 @@ Every project in [`examples/`](../examples) is continuously verified by `make te
 | [`examples/05-cmake-interop`](../examples/05-cmake-interop) | CMake Interop | Clang JSON AST ingestion (`import cpp "<zstd.h>"`), `build.CMake` native library orchestration | `cfire run examples/05-cmake-interop/main.cf` |
 | [`examples/07-types-match-map`](../examples/07-types-match-map) | Types & Match | Algebraic `enum` sum types (`std::variant`), exhaustive `match`, `map[K]V`, `interface` C++20 concepts | `cfire run examples/07-types-match-map/main.cf` |
 | [`examples/08-multi-pkg-cc-build`](../examples/08-multi-pkg-cc-build) | Multi-Package Build | Multi-package `build.cf` orchestration, static archive compilation (`build.CC`) | `cfire run examples/08-multi-pkg-cc-build` |
-| [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`own[T]`, `shared[T]`), `test "..."` blocks, `core:testing` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
+| [`examples/09-stdlib-test-pointers`](../examples/09-stdlib-test-pointers) | Stdlib & Tests | Smart pointers (`own[T]`, `shared[T]`), `test "..."` blocks, built-in `assert` / `assert_eq` assertions | `cfire test examples/09-stdlib-test-pointers/main.cf` |
 | [`examples/10-cmake-and-make-deps`](../examples/10-cmake-and-make-deps) | Multi-Build Deps | Simultaneous `build.CMake` and `build.Make` external dependency orchestration in a single `build.cf` | `cfire run examples/10-cmake-and-make-deps` |
 | [`examples/11-http-server-router`](../examples/11-http-server-router) | HTTP Web Server | Multi-threaded HTTP/1.1 server (`core:net/http`), fluent request router, URL `:param` & query extraction | `cfire run examples/11-http-server-router/main.cf` |
 | [`examples/14-ai-rag-sqlite`](../examples/14-ai-rag-sqlite) | AI Vector RAG | Local normalized embeddings (`ext:ai`), SQLite `vec_cosine_similarity` (`ext:db/sqlite`), compile-time `json.schema[T]()` | `cfire run examples/14-ai-rag-sqlite/main.cf` |

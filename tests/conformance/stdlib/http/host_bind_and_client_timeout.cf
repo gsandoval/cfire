@@ -1,0 +1,66 @@
+// HTTP loopback host binding, background server helper, move-safe running server, and client timeout_ms.
+// expect: stdout
+// | get=200:pong
+// | post=200:echo:hello
+// | put=200:updated:v2
+// | dispatch_put=200:updated:d2
+// | del=200:deleted
+// | dispatch_del=200:deleted
+// | sse=2:token=chunk1,done=[DONE]
+package main
+
+import "core:net/http"
+
+fn relay_server(move s: http.HttpServer) -> http.HttpServer {
+    return move s
+}
+
+fn main() -> void! {
+    mut router := make(http.Router)
+    router.get("/ping", |req| {
+        return http.Response.text(200, "pong")
+    })
+    router.post("/echo", |req| {
+        return http.Response.text(200, "echo:" + req.body)
+    })
+    router.put("/item", |req| {
+        return http.Response.text(200, "updated:" + req.body)
+    })
+    router.delete_("/item", |req| {
+        return http.Response.text(200, "deleted")
+    })
+    router.post("/sse", |req| {
+        mut res := http.Response.text(200, "event: token\ndata: chunk1\n\nevent: done\ndata: [DONE]\n\n")
+        res.set_header("Content-Type", "text/event-stream")
+        return res
+    })
+
+    dp_put := router.dispatch(http.Request{method: "PUT", path: "/item", body: "d2"})
+    dp_del := router.dispatch(http.Request{method: "DELETE", path: "/item"})
+
+    mut srv := try http.serve_in_background(0, router, host: "127.0.0.1")
+    mut moved := relay_server(move srv)
+    defer moved.stop()
+
+    base := "http://127.0.0.1:{moved.port()}"
+    g := try http.get(base + "/ping", timeout_ms: 5000)
+    println("get={}:{}", g.status_code, g.body)
+
+    p := try http.post(base + "/echo", "hello", timeout_ms: 0)
+    println("post={}:{}", p.status_code, p.body)
+
+    u := try http.request("PUT", base + "/item", "v2", timeout_ms: 5000)
+    println("put={}:{}", u.status_code, u.body)
+    println("dispatch_put={}:{}", dp_put.status_code, dp_put.body)
+
+    d := try http.request("DELETE", base + "/item", timeout_ms: 5000)
+    println("del={}:{}", d.status_code, d.body)
+    println("dispatch_del={}:{}", dp_del.status_code, dp_del.body)
+
+    mut evs: []str = []
+    try http.post_sse(base + "/sse", "{}", |ev: http.SseEvent| -> bool{
+        evs.push("{ev.event}={ev.data}")
+        return true
+        }, timeout_ms: 5000)
+    println("sse={}:{},{}", evs.len(), evs[0], evs[1])
+}

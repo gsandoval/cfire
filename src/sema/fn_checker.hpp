@@ -158,6 +158,12 @@ public:
 
     [[nodiscard]] auto resolve_member_call_sig(const MemberExpr& mem) const -> const FnDecl*;
 
+    [[nodiscard]] auto resolve_interface_method_sig_sema(const MemberExpr& mem) const -> const InterfaceMethodSig*;
+
+    [[nodiscard]] auto is_expr_type_unresolved_for_redundancy_sema(const ExprPtr& inner) const -> bool;
+
+    [[nodiscard]] auto resolve_enum_by_prefix_sema(std::string_view prefix) const -> const EnumDecl*;
+
     [[nodiscard]] auto expr_returns_optional_sema(const ExprPtr& e) const -> bool;
 
     // the former string-based inference, now producing TypeIds. Only reached as the fallback
@@ -596,6 +602,7 @@ private:
     bool fn_is_fallible_{false};
     bool has_cpp_imports_{false};
     std::unordered_set<std::string> fn_type_params_{};  // the function's and its receiver's type parameters
+    std::unordered_map<std::string, std::vector<std::string>> fn_type_param_bounds_{};
     bool seen_cpp_block_{false};
     int scope_depth_{1};
     int in_defer_depth_{0};

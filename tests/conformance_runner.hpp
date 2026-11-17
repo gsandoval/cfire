@@ -14,9 +14,10 @@
 //     <code> //~ warning cfire/CODE          inline expected warning
 //     <code> //~ panic "<substring>"         inline expected panic attributed to this line
 //     // flags: --sanitize | --sanitize=thread   extra run flags (thread falls back to emit-cpp + TSan)
+//     // requires-lib: libsodium|libssh|libzstd|webkit2gtk   skip cleanly when optional C lib is absent
 //
 // Files named *_test.cf run with `cfire test` instead of `cfire run`.
-// Outcomes: PASS, FAIL, XFAIL (known hole, expected), XPASS (hole now fixed: drop the xfail line).
+// Outcomes: PASS, SKIP, FAIL, XFAIL (known hole, expected), XPASS (hole now fixed: drop the xfail line).
 //
 // Usage: .cfire_test_runner conformance [--filter glob] [--jobs N] [--run-flags=--sanitize] [--cfire path] [-v]
 
@@ -38,6 +39,7 @@ struct Spec {
     std::optional<int> exit{};
     std::string xfail{};
     std::vector<std::string> flags{};
+    std::vector<std::string> requires_libs{};
 };
 
 struct DirectiveError {
@@ -128,6 +130,15 @@ struct DirectiveError {
             }
         } else if (body.starts_with("flags:")) {
             spec.flags = split_ws(std::string_view(body).substr(6));
+        } else if (body.starts_with("requires-lib:")) {
+            auto libs = split_ws(std::string_view(body).substr(13));
+            if (libs.empty()) return bad(std::format("requires-lib must name at least one library: '{}'", body));
+            for (const auto& lib : libs) {
+                if (lib != "libsodium" && lib != "libssh" && lib != "libzstd" && lib != "webkit2gtk") {
+                    return bad(std::format("unknown library '{}' in requires-lib", lib));
+                }
+                spec.requires_libs.push_back(lib);
+            }
         }
         ++i;
     }
@@ -169,11 +180,53 @@ struct Options {
     std::vector<std::string> run_flags{};
 };
 
+[[nodiscard]] inline auto host_has_optional_lib(std::string_view lib) -> bool {
+    if (const char* forced = std::getenv("CFIRE_TEST_FORCE_MISSING_LIB"); forced && *forced) {
+        std::string_view fv(forced);
+        if (fv == lib) return false;
+    }
+    auto has_hdr_or_pc = [](std::string_view pc_name, std::string_view rel_hdr) -> bool {
+        if (cfire::build::ProbeCache::instance().probe_pkg_config(std::string(pc_name)).found) {
+            return true;
+        }
+        std::error_code ec;
+        if (const char* home = std::getenv("HOME"); home && *home) {
+            if (std::filesystem::exists(std::filesystem::path(home) / ".local" / "include" / rel_hdr, ec)) {
+                return true;
+            }
+        }
+        if (const char* mp = std::getenv("MINGW_PREFIX"); mp && *mp) {
+            if (std::filesystem::exists(std::filesystem::path(mp) / "include" / rel_hdr, ec)) {
+                return true;
+            }
+        }
+        for (const char* dir : {"/opt/homebrew/include", "/usr/local/include", "/usr/include", "/clang64/include", "C:/msys64/clang64/include"}) {
+            if (std::filesystem::exists(std::filesystem::path(dir) / rel_hdr, ec)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (lib == "libsodium") return has_hdr_or_pc("libsodium", "sodium.h");
+    if (lib == "libssh") return has_hdr_or_pc("libssh", "libssh/libssh.h");
+    if (lib == "libzstd") return has_hdr_or_pc("libzstd", "zstd.h");
+    if (lib == "webkit2gtk") {
+#if defined(__APPLE__) || defined(_WIN32)
+        return true;
+#else
+        return cfire::build::ProbeCache::instance().probe_pkg_config("webkit2gtk-4.1").found ||
+               cfire::build::ProbeCache::instance().probe_pkg_config("webkit2gtk-4.0").found;
+#endif
+    }
+    return false;
+}
+
 struct Evaluation {
     Spec spec{};
     bool met = false;
     std::vector<std::string> reasons{};
     bool tsan_skipped = false;
+    std::string skipped_missing_lib{};
 };
 
 [[nodiscard]] inline auto has_flag(const std::vector<std::string>& flags, std::string_view f) -> bool {
@@ -222,6 +275,12 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     Evaluation ev;
     ev.spec = std::move(*parsed);
     Spec& spec = ev.spec;
+    for (const auto& lib : spec.requires_libs) {
+        if (!host_has_optional_lib(lib)) {
+            ev.skipped_missing_lib = lib;
+            return ev;
+        }
+    }
     for (const auto& f : opt.run_flags) {
         if (!has_flag(spec.flags, f)) spec.flags.push_back(f);
     }
@@ -356,7 +415,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     return ev;
 }
 
-enum class Outcome { Pass, Fail, Xfail, Xpass };
+enum class Outcome { Pass, Fail, Xfail, Xpass, Skip };
 
 [[nodiscard]] inline auto outcome_name(Outcome o) -> std::string_view {
     switch (o) {
@@ -364,6 +423,7 @@ enum class Outcome { Pass, Fail, Xfail, Xpass };
         case Outcome::Fail: return "FAIL";
         case Outcome::Xfail: return "XFAIL";
         case Outcome::Xpass: return "XPASS";
+        case Outcome::Skip: return "SKIP";
     }
     return "?";
 }
@@ -373,6 +433,7 @@ struct FileResult {
     std::vector<std::string> reasons{};
     std::string xfail{};
     bool tsan_skipped = false;
+    std::string skipped_missing_lib{};
 };
 
 [[nodiscard]] inline auto classify(const Options& opt, const std::filesystem::path& path) -> FileResult {
@@ -384,6 +445,12 @@ struct FileResult {
     }
     fr.tsan_skipped = ev->tsan_skipped;
     fr.xfail = ev->spec.xfail;
+    if (!ev->skipped_missing_lib.empty()) {
+        fr.outcome = Outcome::Skip;
+        fr.skipped_missing_lib = ev->skipped_missing_lib;
+        fr.reasons.push_back("missing optional library: " + ev->skipped_missing_lib);
+        return fr;
+    }
     if (!fr.xfail.empty()) fr.outcome = ev->met ? Outcome::Xpass : Outcome::Xfail;
     else fr.outcome = ev->met ? Outcome::Pass : Outcome::Fail;
     fr.reasons = std::move(ev->reasons);
@@ -453,7 +520,7 @@ inline auto run_corpus(const Options& opt, const std::filesystem::path& corpus, 
     std::vector<FileResult> results(files.size());
     parallel_for_each_index(files.size(), jobs, [&](std::size_t i) { results[i] = classify(opt, files[i]); });
 
-    int counts[4]{};
+    int counts[5]{};
     std::size_t tsan_skipped = 0;
     for (std::size_t i = 0; i < files.size(); ++i) {
         const auto& r = results[i];
@@ -461,15 +528,15 @@ inline auto run_corpus(const Options& opt, const std::filesystem::path& corpus, 
         tsan_skipped += r.tsan_skipped;
         const std::string rel = files[i].lexically_relative(corpus).generic_string();
         const std::string tag = r.xfail.empty() ? "" : std::format("  [{}]", r.xfail.substr(0, r.xfail.find(' ')));
-        if (r.outcome == Outcome::Fail || r.outcome == Outcome::Xpass || verbose) {
+        if (r.outcome == Outcome::Fail || r.outcome == Outcome::Xpass || r.outcome == Outcome::Skip || verbose) {
             std::println("{:<6} {}{}", outcome_name(r.outcome), rel, tag);
             if (r.outcome == Outcome::Xpass) std::println("         hole is fixed: remove the `expect: xfail {}` line", r.xfail);
             else
                 for (const auto& why : r.reasons) std::println("         - {}", why);
         }
     }
-    std::println("Conformance: {} passed, {} xfail (tracked holes), {} xpass, {} failed (total {})", counts[0], counts[2], counts[3], counts[1],
-                 files.size());
+    std::println("Conformance: {} passed, {} skipped, {} xfail (tracked holes), {} xpass, {} failed (total {})",
+                 counts[0], counts[4], counts[2], counts[3], counts[1], files.size());
     if (tsan_skipped > 0)
         std::println("note: {} file(s) asked for ThreadSanitizer, which this platform lacks; they ran unsanitized", tsan_skipped);
     return (counts[1] > 0 || counts[3] > 0) ? 1 : 0;

@@ -4,7 +4,7 @@ This topic-focused backlog tracks compiler/build performance optimizations, prog
 
 It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
 
-> **ID Allocation**: Items here use **`CF-198` – `CF-210`** and ADRs **`Q55` – `Q61`**. Future items anywhere in `docs/planning/` should start at **`CF-211`** and **`Q62`**.
+> **ID Allocation**: Items here use **`CF-198` – `CF-210`** and ADRs **`Q55` – `Q61`**. [`flint.md`](./flint.md) allocates **`CF-211` – `CF-239`** and **`Q62` – `Q69`**. Future items anywhere in `docs/planning/` should start at **`CF-240`** and **`Q70`**.
 
 ---
 

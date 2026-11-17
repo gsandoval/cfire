@@ -327,7 +327,7 @@ auto main(int argc, char** argv) -> int {
     if (linux_mode) {
         const std::string body = mode == "setup-linux"
             ? "export DEBIAN_FRONTEND=noninteractive; apt-get update -q && apt-get install -y -q clang libclang-rt-dev make git pkg-config rsync curl cmake "
-              "libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssl-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev"
+              "libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev libssl-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev"
             : std::format("bash /mnt/vm-shared/cfire/scripts/vm/linux_gate.sh {} {} {}", cfg.share_tag, cfg.host_ip, cfg.port);
         const std::string wrapper = std::format(
             "mkdir -p /mnt/vm-shared; mountpoint -q /mnt/vm-shared || mount -t 9p -o trans=virtio,version=9p2000.L,msize=262144 {0} /mnt/vm-shared\n"

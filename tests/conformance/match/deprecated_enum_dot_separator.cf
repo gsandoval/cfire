@@ -1,0 +1,17 @@
+package main
+
+type Shape enum {
+    Circle(f64),
+    Empty,
+}
+
+fn label(s: Shape) -> i64 {
+    return match s {
+        Shape.Circle(_) => 1, //~ error cfire/DEPRECATED-SEPARATOR
+        Shape::Empty => 0,
+    }
+}
+
+fn main() {
+    println("{}", label(Shape::Empty))
+}

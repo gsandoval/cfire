@@ -269,6 +269,26 @@ fn main() {
     server.serve_in_background(router)
 })CF";
     }
+    if (mod == "core:net/ipc") {
+        return R"CF(package main
+
+import "core:net/ipc"
+
+fn main() {
+    ep := ipc.endpoint("app-agent")
+    mut ln := try ipc.listen(ep)
+    defer ln.close()
+
+    mut conn := try ln.accept()
+    defer conn.close()
+    cred := try conn.peer_credentials()
+    if !cred.same_user {
+        return error("unauthorized local IPC peer")
+    }
+    line := conn.read_line() or { return }
+    _ = try conn.write_text("ACK: " + line + "\n")
+})CF";
+    }
     if (mod == "core:net/tls") {
         return R"CF(package main
 

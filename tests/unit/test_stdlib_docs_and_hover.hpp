@@ -66,7 +66,12 @@ void test_stdlib_type_docs_and_hover(const std::filesystem::path& rt_dir) {
         const auto& p = probes[i];
         auto sub = dir.subpath(std::format("t{}", i));
         (void)cfire::fs::write_text(sub / "main.cf", std::format("package main\nimport \"{}\"\nfn take(x: {}) {{\n}}\nfn main() {{\n}}\n", p.import_path, p.spelled));
-        auto r = run_process({cfire, "check", "--verify-cpp", "main.cf"}, sub, 300);
+        std::vector<std::string> argv{cfire, "check", "--verify-cpp"};
+        if (p.import_path == "ext:net/ssh" || p.import_path == "ext:crypto/sodium") {
+            argv.push_back("-DCFIRE_TEST_MODE=1");
+        }
+        argv.push_back("main.cf");
+        auto r = run_process(argv, sub, 300);
         const std::string all = r.out + r.err;
         if (p.manifest) {
             if (r.exit_code == 0 || !all.contains("cfire/UNKNOWN-STDLIB-TYPE") || !all.contains("build.cf"))

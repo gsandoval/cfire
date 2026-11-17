@@ -1,0 +1,26 @@
+package main
+
+type Named interface {
+    fn label() -> str
+}
+
+type Resettable interface {
+    fn mut reset()
+}
+
+type OnlyNamed struct {
+    tag: str
+}
+
+fn (x: OnlyNamed) label() -> str {
+    return x.tag
+}
+
+fn touch[T: Named + Resettable](mut item: T) {
+    println("{}", item.label())
+}
+
+fn main() {
+    mut n := OnlyNamed{tag: "partial"}
+    touch(mut n) //~ error cfire/UNSATISFIED-CONSTRAINT
+}

@@ -33,7 +33,7 @@ namespace cfire::frontend {
     InterpolationResult res;
     std::size_t cursor = 0;
     for (std::size_t i = 0; i < placeholders.size(); ++i) {
-        res.fmt_str.append(escape_unescaped_quotes(lit.value.substr(cursor, placeholders[i].start_pos - cursor)));
+        res.fmt_str.append(escape_format_literal_segment(lit.value.substr(cursor, placeholders[i].start_pos - cursor)));
         if (!placeholders[i].fmt_spec.empty()) {
             res.fmt_str += "{:" + placeholders[i].fmt_spec + "}";
         } else {
@@ -42,8 +42,29 @@ namespace cfire::frontend {
         cursor = placeholders[i].end_pos + 1;
         res.args.push_back(emit_expr(parsed_exprs[i].expr));
     }
-    res.fmt_str.append(escape_unescaped_quotes(lit.value.substr(cursor)));
+    res.fmt_str.append(escape_format_literal_segment(lit.value.substr(cursor)));
     return res;
+}
+
+[[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_typed_tuple(const TupleExpr& tup, const TypeRef& tr) -> std::string {
+    std::string elems;
+    for (std::size_t i = 0; i < tup.elements.size(); ++i) {
+        if (i > 0) elems += ", ";
+        const ExprPtr& el = tup.elements[i];
+        if (el && i < tr.tuple_types.size()) {
+            const TypeRef& et = tr.tuple_types[i];
+            if (const auto* nested_tup = std::get_if<TupleExpr>(&el->node); nested_tup && et.is_tuple) {
+                elems += emit_typed_tuple(*nested_tup, et);
+                continue;
+            }
+            if (std::holds_alternative<ArrayLitExpr>(el->node)) {
+                elems += std::format("{}{}", lower_owning_type(et), emit_expr(el));
+                continue;
+            }
+        }
+        elems += emit_expr(el);
+    }
+    return std::format("{}{{{}}}", lower_raw_owning_type(tr), elems);
 }
 
 [[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_expr(const ExprPtr& e) -> std::string {
@@ -162,13 +183,13 @@ namespace cfire::frontend {
                     }
                     return std::format("std::format(\"{}\", {})", interp->fmt_str, args);
                 }
-                return std::format("\"{}\"", escape_unescaped_quotes(ex.value));
+                return lower_string_literal_cpp(ex.value);
             }
             if (ex.kind == TokenKind::RawString) {
                 return std::format("R\"({})\"", ex.value);
             }
-            // The lexer only accepts escapes C++ spells the same way, so the literal passes through.
             if (ex.kind == TokenKind::Char) return std::format("std::uint8_t{{static_cast<unsigned char>({})}}", ex.value);
+            if (ex.kind == TokenKind::Int) return lower_cpp_int_literal(ex.value);
             return ex.value;
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
             if (ex.op == "move") return std::format("std::move({})", emit_expr(ex.operand));
@@ -487,7 +508,15 @@ namespace cfire::frontend {
             std::string elems;
             for (std::size_t i = 0; i < ex.elements.size(); ++i) {
                 if (i > 0) elems += ", ";
-                elems += emit_expr(ex.elements[i]);
+                const ExprPtr& el = ex.elements[i];
+                if (const auto* arr_lit = el ? std::get_if<ArrayLitExpr>(&el->node) : nullptr;
+                    arr_lit && !arr_lit->elements.empty()) {
+                    if (std::string vec_t = infer_array_lit_cpp_type(*arr_lit); !vec_t.empty()) {
+                        elems += std::format("{}{}", vec_t, emit_expr(el));
+                        continue;
+                    }
+                }
+                elems += emit_expr(el);
             }
             return std::format("std::make_tuple({})", elems);
         } else if constexpr (std::is_same_v<T, MatchExpr>) {
@@ -516,7 +545,15 @@ namespace cfire::frontend {
                     return std::format("{}({}R\"({})\"{})", fn, stream_prefix, first_lit->value, trailing);
                 }
                 auto interp = extract_interpolation(*first_lit, call.args[0].line);
-                std::string fmt_str = interp ? interp->fmt_str : escape_unescaped_quotes(first_lit->value);
+                if (!interp && call.args.size() == 1) {
+                    auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(first_lit->value);
+                    (void)needs_reencode;
+                    if (has_nul) {
+                        return std::format("{}({}\"{{}}\", cfire::str_ref(\"{}\", {}))",
+                            fn, stream_prefix, encode_cpp_octal_bytes(decoded), decoded.size());
+                    }
+                }
+                std::string fmt_str = interp ? interp->fmt_str : escape_format_literal_segment(first_lit->value);
                 std::string all_args;
                 if (interp) {
                     for (const auto& a : interp->args) {
@@ -557,7 +594,15 @@ namespace cfire::frontend {
                     return std::format("std::format(R\"({})\"{})", first_lit->value, trailing);
                 }
                 auto interp = extract_interpolation(*first_lit, call.args[0].line);
-                std::string fmt_str = interp ? interp->fmt_str : escape_unescaped_quotes(first_lit->value);
+                if (!interp && call.args.size() == 1) {
+                    auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(first_lit->value);
+                    (void)needs_reencode;
+                    if (has_nul) {
+                        return std::format("std::format(\"{{}}\", cfire::str_ref(\"{}\", {}))",
+                            encode_cpp_octal_bytes(decoded), decoded.size());
+                    }
+                }
+                std::string fmt_str = interp ? interp->fmt_str : escape_format_literal_segment(first_lit->value);
                 std::string all_args;
                 if (interp) {
                     for (const auto& a : interp->args) {
@@ -1048,29 +1093,58 @@ namespace cfire::frontend {
                 std::size_t next_pos = 0;
                 std::size_t last = 0;
                 for (const auto& a : call.args) {
-                    std::size_t slot = next_pos;
+                    std::size_t slot = vals.size();
                     if (!a.label.empty()) {
                         for (std::size_t k = 0; k < sig->params.size(); ++k) {
                             if (sig->params[k].name == a.label) { slot = k; break; }
                         }
                     } else {
-                        ++next_pos;
+                        while (next_pos < vals.size() && !vals[next_pos].empty()) ++next_pos;
+                        if (a.value && std::holds_alternative<ClosureExpr>(a.value->node) &&
+                            next_pos < sig->params.size() && !sig->params[next_pos].type_str.starts_with("fn(")) {
+                            for (std::size_t k = next_pos; k < sig->params.size(); ++k) {
+                                if (vals[k].empty() && sig->params[k].type_str.starts_with("fn(")) {
+                                    slot = k;
+                                    break;
+                                }
+                            }
+                        }
+                        if (slot >= vals.size()) {
+                            slot = next_pos++;
+                        } else if (slot == next_pos) {
+                            ++next_pos;
+                        }
                     }
                     if (slot < vals.size()) {
                         vals[slot] = emit_call_arg(a);
                         last = std::max(last, slot + 1);
                     }
                 }
+                if (call.block_arg) {
+                    std::size_t blk_slot = vals.size();
+                    for (std::size_t k = 0; k < sig->params.size(); ++k) {
+                        if (vals[k].empty() && sig->params[k].type_str.starts_with("fn(")) {
+                            blk_slot = k;
+                            break;
+                        }
+                    }
+                    if (blk_slot < vals.size()) {
+                        vals[blk_slot] = emit_closure(*call.block_arg);
+                        last = std::max(last, blk_slot + 1);
+                    }
+                }
                 std::string out;
                 for (std::size_t k = 0; k < last; ++k) {
                     std::string v = vals[k];
                     if (v.empty()) {
-                        const std::string& d = sig->params[k].default_text;
-                        v = (d.empty() || d == "[]") ? std::string("{}") : d;
+                        v = lower_default_expr_text(sig->params[k].default_text);
                     }
                     out += (k > 0 ? ", " : "") + v;
                 }
-                if (call.block_arg) out += (out.empty() ? "" : ", ") + emit_closure(*call.block_arg);
+                if (call.block_arg && last >= vals.size() &&
+                    std::none_of(sig->params.begin(), sig->params.end(), [](const auto& p) { return p.type_str.starts_with("fn("); })) {
+                    out += (out.empty() ? "" : ", ") + emit_closure(*call.block_arg);
+                }
                 return std::format("{}({})", callee, out);
             }
         }

@@ -44,36 +44,58 @@ struct ResolvedImport {
 }
 
 [[nodiscard]] inline auto canonical_import_for_wrong_prefix(std::string_view raw_path) -> std::string {
-    if (raw_path == "core:ai" || raw_path.starts_with("core:ai/")) return "ext:ai";
-    if (raw_path == "core:compress/zstd" || raw_path == "core:compress" || raw_path == "core:zstd" || raw_path.starts_with("core:compress/")) return "ext:compress/zstd";
-    if (raw_path == "core:crypto/sodium" || raw_path == "core:sodium") return "ext:crypto/sodium";
-    if (raw_path == "core:db/sqlite" || raw_path == "core:sqlite") return "ext:db/sqlite";
-    if (raw_path == "core:net/ssh" || raw_path == "core:ssh") return "ext:net/ssh";
-    if (raw_path == "core:webui") return "ext:webui";
+    // Non-canonical ext:* aliases and wrong-prefix core:* spellings
+    if (raw_path == "core:ai" || raw_path.starts_with("core:ai/") ||
+        raw_path == "ext:ai/agent" || raw_path == "ext:ai/client" ||
+        raw_path == "ext:ai/documents" || raw_path == "ext:ai/vectors" ||
+        raw_path == "ext:ai/vision") {
+        return "ext:ai";
+    }
+    if (raw_path == "core:compress/zstd" || raw_path == "core:compress" ||
+        raw_path == "core:zstd" || raw_path.starts_with("core:compress/") ||
+        raw_path == "ext:compress" || raw_path == "ext:zstd" ||
+        (raw_path.starts_with("ext:compress/") && raw_path != "ext:compress/zstd")) {
+        return "ext:compress/zstd";
+    }
+    if (raw_path == "core:crypto/sodium" || raw_path == "core:sodium" || raw_path == "ext:sodium") {
+        return "ext:crypto/sodium";
+    }
+    if (raw_path == "core:db/sqlite" || raw_path == "core:sqlite" || raw_path == "ext:sqlite") {
+        return "ext:db/sqlite";
+    }
+    if (raw_path == "core:net/ssh" || raw_path == "core:ssh" || raw_path == "ext:ssh") {
+        return "ext:net/ssh";
+    }
+    if (raw_path == "core:webui") {
+        return "ext:webui";
+    }
+
+    // Retired short core:* aliases
+    if (raw_path == "core:buildsys" || raw_path == "ext:build" || raw_path == "ext:buildsys") return "core:build";
+    if (raw_path == "core:aes" || raw_path == "ext:aes") return "core:crypto/aes";
+    if (raw_path == "core:blake3" || raw_path == "ext:blake3") return "core:crypto/blake3";
+    if (raw_path == "core:hmac" || raw_path == "ext:hmac") return "core:crypto/hmac";
+    if (raw_path == "core:sha256" || raw_path == "core:crypto" ||
+        raw_path == "ext:sha256" || raw_path == "ext:crypto") return "core:crypto/sha256";
+    if (raw_path == "core:base64" || raw_path == "ext:base64") return "core:encoding/base64";
+    if (raw_path == "core:csv" || raw_path == "ext:csv") return "core:encoding/csv";
+    if (raw_path == "core:hex" || raw_path == "core:encoding" ||
+        raw_path == "ext:hex" || raw_path == "ext:encoding") return "core:encoding/hex";
+    if (raw_path == "core:os/keychain" || raw_path == "ext:os/keychain") return "core:keychain";
+    if (raw_path == "core:http" || raw_path == "ext:http") return "core:net/http";
+    if (raw_path == "core:ipc" || raw_path == "ext:ipc" || raw_path == "ext:net/ipc") return "core:net/ipc";
+    if (raw_path == "core:tls" || raw_path == "ext:tls") return "core:net/tls";
+    if (raw_path == "core:url" || raw_path == "ext:url") return "core:net/url";
+    if (raw_path == "core:websocket" || raw_path == "ext:websocket") return "core:net/websocket";
+    if (raw_path == "core:context" || raw_path == "ext:context") return "core:sync/context";
+    if (raw_path == "ext:tako") return "core:tako";
 
     if (raw_path.starts_with("ext:")) {
         std::string tail(raw_path.substr(4));
-        if (tail == "ai" || tail.starts_with("ai/") ||
-            tail == "compress/zstd" || tail == "compress" || tail.starts_with("compress/") || tail == "zstd" ||
-            tail == "crypto/sodium" || tail == "sodium" ||
-            tail == "db/sqlite" || tail == "sqlite" ||
-            tail == "net/ssh" || tail == "ssh" ||
-            tail == "webui" || tail == "tako") {
-            return {};
-        }
-        if (tail == "url") return "core:net/url";
-        if (tail == "http") return "core:net/http";
-        if (tail == "tls") return "core:net/tls";
-        if (tail == "websocket") return "core:net/websocket";
-        if (tail == "os/keychain") return "core:keychain";
-        if (tail == "context") return "core:sync/context";
-        if (tail == "base64" || tail == "csv" || tail == "hex") return "core:encoding/" + tail;
-        if (tail == "aes" || tail == "blake3" || tail == "hmac" || tail == "sha256") return "core:crypto/" + tail;
         std::string core_candidate = "core:" + tail;
         if (is_known_module(core_candidate)) {
             return core_candidate;
         }
-        return {};
     }
     return {};
 }
@@ -90,8 +112,10 @@ struct ResolvedImport {
         if (mod.import_path == raw_path) {
             return {mod.ns_alias, mod.is_vendor};
         }
-        for (const auto& a : mod.aliases) {
-            if (a == raw_path) {
+    }
+    if (auto canon = canonical_import_for_wrong_prefix(raw_path); !canon.empty()) {
+        for (const auto& mod : cfire::doc::stdlib_catalog()) {
+            if (mod.import_path == canon) {
                 return {mod.ns_alias, mod.is_vendor};
             }
         }

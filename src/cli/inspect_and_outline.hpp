@@ -106,12 +106,7 @@ namespace cfire::cli {
                 json += std::format("        {{\"name\": \"{}\", \"kind\": \"interface\", \"methods\": [", ifc.name);
                 for (std::size_t i = 0; i < ifc.methods.size(); ++i) {
                     if (i > 0) json += ", ";
-                    std::string sig = std::format("fn {}(", ifc.methods[i].name);
-                    for (std::size_t p = 0; p < ifc.methods[i].param_types.size(); ++p) {
-                        if (p > 0) sig += ", ";
-                        sig += cfire::fmt::format_type_ref(ifc.methods[i].param_types[p]);
-                    }
-                    sig += std::format(") -> {}", cfire::fmt::format_type_ref(ifc.methods[i].return_type));
+                    std::string sig = cfire::fmt::format_interface_method_sig(ifc.methods[i]);
                     json += std::format("\"{}\"", cfire::lsp::detail::json_escape(sig));
                 }
                 json += "]}";
@@ -167,7 +162,12 @@ namespace cfire::cli {
                 for (std::size_t tp = 0; tp < fn.type_params.size(); ++tp) {
                     if (tp > 0) tparams_str += ", ";
                     const auto& t = fn.type_params[tp];
-                    tparams_str += std::format("\"{}\"", t.constraint.empty() ? t.name : std::format("{}: {}", t.name, t.constraint));
+                    std::string bounds;
+                    for (std::size_t c = 0; c < t.constraints.size(); ++c) {
+                        if (c > 0) bounds += " + ";
+                        bounds += t.constraints[c];
+                    }
+                    tparams_str += std::format("\"{}\"", bounds.empty() ? t.name : std::format("{}: {}", t.name, bounds));
                 }
                 tparams_str += "]";
 
@@ -257,7 +257,7 @@ namespace cfire::cli {
                     }
                     return 1;
                 }
-                auto cache_dir = runtime_dir.parent_path() / ".cfire" / "cache";
+                auto cache_dir = cfire::build::header_inspect_cache_dir(".");
                 auto idx = cfire::bridge::inspect_header(header, insp_plan.cflags, cache_dir);
                 if (!idx) {
                     if (json_mode) {

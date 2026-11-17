@@ -379,6 +379,12 @@ inline constexpr std::array kStdlibStructs = {
         "Limits for `websocket.Server`; pass to `server.set_limits(...)`. Each connection runs on its own session "
         "thread, up to `max_websockets` (over it a client gets 503); `header_timeout_ms` bounds the TLS handshake and the "
         "upgrade request; `max_frame_size` is each session's largest accepted frame. A field set to 0 keeps its default."},
+    StdlibStruct{"fs", "FileInfo", "cfire::fs::FileInfo",
+        "size: u64 = 0; mtime_ms: i64 = 0; mode: u32 = 0; is_dir: bool = false; is_symlink: bool = false",
+        "Metadata returned by `fs.stat(path)` (`size`, `mtime_ms`, `mode`, `is_dir`, `is_symlink`)."},
+    StdlibStruct{"ipc", "PeerCred", "cfire::ipc::PeerCred",
+        "pid: i64 = -1; same_user: bool = false; uid: i64 = -1",
+        "OS-verified peer process and user credentials returned by `conn.peer_credentials()`."},
     // declarative build.cf manifest configuration structs (`build.Executable`, `build.Package`, etc.)
     StdlibStruct{"build", "Package", "cfire::build::PackageSpec",
         "Name: str = \"\"; name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "

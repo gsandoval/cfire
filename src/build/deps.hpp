@@ -8,35 +8,7 @@
 namespace cfire::build {
 
 inline auto get_package_cache_root() -> std::filesystem::path {
-    if (const char* env = std::getenv("CFIRE_CACHE_DIR")) {
-        auto p = std::filesystem::path(env) / "pkg";
-        std::error_code ec;
-        std::filesystem::create_directories(p, ec);
-        return p;
-    }
-    if (const char* home = std::getenv("HOME")) {
-        auto xdg_pkg = std::filesystem::path(home) / ".cache" / "cfire" / "pkg";
-        if (std::filesystem::exists(xdg_pkg)) {
-            return xdg_pkg;
-        }
-        auto home_pkg = std::filesystem::path(home) / ".cfire" / "cache" / "pkg";
-        std::error_code ec;
-        std::filesystem::create_directories(home_pkg, ec);
-        if (!ec) {
-            auto probe = home_pkg / ".write_probe";
-            std::ofstream probe_file(probe);
-            if (probe_file.good()) {
-                probe_file.close();
-                std::filesystem::remove(probe, ec);
-                return home_pkg;
-            }
-        }
-    }
-    // No writable per-user location: use a private per-process cache, never a shared temp-dir name that
-    // another account could pre-populate with poisoned packages.
-    if (auto user = cfire::detail::user_cache_dir("pkg"); !user.empty()) return user;
-    static cfire::detail::SecureTempDir fallback("cfire_pkg_cache");
-    return fallback.path();
+    return cache_subdir("pkg");
 }
 
 inline auto read_build_lock(const std::filesystem::path& lock_file) -> std::unordered_map<std::string, LockedPackage> {

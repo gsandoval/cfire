@@ -7,6 +7,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace cfire::frontend {
@@ -19,10 +20,12 @@ struct SourceError {
     int col = 1;
     std::string message{};
     std::string code{"cfire/SYNTAX"};
+    std::unordered_map<std::string, std::string> facts{};
 
     SourceError() = default;
-    SourceError(std::string f, int l, int c, std::string msg, std::string cd = "cfire/SYNTAX")
-        : file(std::move(f)), line(l), col(c), message(std::move(msg)), code(std::move(cd)) {}
+    SourceError(std::string f, int l, int c, std::string msg, std::string cd = "cfire/SYNTAX",
+                std::unordered_map<std::string, std::string> fts = {})
+        : file(std::move(f)), line(l), col(c), message(std::move(msg)), code(std::move(cd)), facts(std::move(fts)) {}
     SourceError(const char* msg) : message(msg ? msg : "") {}  // NOLINT: lets `ok ? "ok" : err` type-check
 
     [[nodiscard]] auto text() const -> std::string {

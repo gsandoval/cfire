@@ -278,7 +278,93 @@ inline constexpr std::string_view kPreloadBridgeJs = R"JS(
     }
     postRaw({ event: "files:dropped", data: names });
     window.__cfire_event_dispatch("files:dropped", names);
+    if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessageWithAdditionalObjects === "function") {
+      try {
+        window.chrome.webview.postMessageWithAdditionalObjects(
+          JSON.stringify({ __sys: "webview2_file_drop" }),
+          Array.from(e.dataTransfer.files)
+        );
+      } catch (_err) {}
+    }
   });
+
+  function applyAutofillToElement(el, enabled) {
+    if (!el || typeof el.setAttribute !== "function") return;
+    if (!enabled) {
+      if (!el.__cfireOrigAuto) {
+        el.__cfireOrigAuto = {
+          autocomplete: el.getAttribute("autocomplete"),
+          autocorrect: el.getAttribute("autocorrect"),
+          autocapitalize: el.getAttribute("autocapitalize"),
+          spellcheck: el.getAttribute("spellcheck")
+        };
+      }
+      el.setAttribute("autocomplete", "off");
+      el.setAttribute("autocorrect", "off");
+      el.setAttribute("autocapitalize", "off");
+      el.setAttribute("spellcheck", "false");
+    } else if (el.__cfireOrigAuto) {
+      const orig = el.__cfireOrigAuto;
+      delete el.__cfireOrigAuto;
+      for (const k of ["autocomplete", "autocorrect", "autocapitalize", "spellcheck"]) {
+        if (orig[k] === null) el.removeAttribute(k);
+        else el.setAttribute(k, orig[k]);
+      }
+    }
+  }
+
+  function applyAutofillTree(root, enabled) {
+    if (!root) return;
+    if (root.matches && root.matches("form,input,textarea")) {
+      applyAutofillToElement(root, enabled);
+    }
+    if (typeof root.querySelectorAll === "function") {
+      const nodes = root.querySelectorAll("form,input,textarea");
+      for (let i = 0; i < nodes.length; ++i) {
+        applyAutofillToElement(nodes[i], enabled);
+      }
+    }
+  }
+
+  function installAutofillHooks() {
+    if (window.__cfire_autofill_hooked) return;
+    window.__cfire_autofill_hooked = true;
+    const syncDoc = function() {
+      applyAutofillTree(document, window.__cfire_autofill_enabled !== false);
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", syncDoc);
+    }
+    document.addEventListener("focusin", function(e) {
+      if (window.__cfire_autofill_enabled === false && e.target && e.target.matches && e.target.matches("form,input,textarea")) {
+        applyAutofillToElement(e.target, false);
+      }
+    }, true);
+    if (typeof MutationObserver === "function") {
+      const obs = new MutationObserver(function(muts) {
+        if (window.__cfire_autofill_enabled !== false) return;
+        for (const m of muts) {
+          for (let i = 0; i < m.addedNodes.length; ++i) {
+            const n = m.addedNodes[i];
+            if (n && n.nodeType === 1) applyAutofillTree(n, false);
+          }
+        }
+      });
+      const attach = function() {
+        const target = document.documentElement || document;
+        if (target) obs.observe(target, { childList: true, subtree: true });
+      };
+      if (document.documentElement) attach();
+      else document.addEventListener("DOMContentLoaded", attach);
+    }
+  }
+
+  window.__cfire_set_autofill = function(enabled) {
+    window.__cfire_autofill_enabled = !!enabled;
+    installAutofillHooks();
+    applyAutofillTree(document, window.__cfire_autofill_enabled);
+  };
+  window.__cfire_set_autofill(window.__cfire_initial_config ? window.__cfire_initial_config.autofill !== false : true);
 
   window.addEventListener("mousedown", function(e) {
     if (e.button !== 0) return;
@@ -303,6 +389,13 @@ inline constexpr std::string_view kPreloadBridgeJs = R"JS(
   });
 })();
 )JS";
+
+inline constexpr bool kDefaultWebUIDevExtras =
+#if defined(CFIRE_RELEASE_BUILD)
+    false;
+#else
+    true;
+#endif
 
 struct AssetEntry {
     std::string content{};
@@ -338,6 +431,9 @@ struct AppState {
     bool transparent{false};
     bool dark_mode{true};
     bool always_on_top{false};
+    bool devtools_enabled{kDefaultWebUIDevExtras};
+    bool context_menu_enabled{kDefaultWebUIDevExtras};
+    bool autofill_enabled{true};
     bool is_fullscreen{false};
     bool is_minimized{false};
     bool is_maximized{false};
@@ -381,6 +477,9 @@ struct AppState {
     std::function<void(const std::string&)> platform_set_title{};
     std::function<void(std::int32_t, std::int32_t)> platform_set_size{};
     std::function<void(bool)> platform_set_dark_mode{};
+    std::function<void(bool)> platform_set_devtools{};
+    std::function<void(bool)> platform_set_context_menu{};
+    std::function<void(bool)> platform_set_autofill{};
     std::function<void()> platform_fullscreen{};
     std::function<void()> platform_minimize{};
     std::function<void()> platform_maximize{};
@@ -404,6 +503,34 @@ struct AppState {
             vec.erase(vec.begin());
         }
         vec.push_back(payload);
+    }
+
+    void emit_system_event(std::string_view event, const std::string& json_payload) {
+        record_emitted(event, json_payload);
+        dispatch_event_internal(event, json_payload);
+        std::string ev_escaped = cfire::json::escape_string(event);
+        eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {});", ev_escaped, json_payload));
+    }
+
+    void notify_fullscreen_changed(bool fullscreen) {
+        {
+            std::lock_guard<std::recursive_mutex> lock(mtx);
+            is_fullscreen = fullscreen;
+        }
+        emit_system_event("window:fullscreen", fullscreen ? "{\"fullscreen\":true}" : "{\"fullscreen\":false}");
+    }
+
+    void notify_file_drop(const std::vector<std::string>& paths) {
+        if (paths.empty()) return;
+        std::string payload = "{\"paths\":[";
+        for (std::size_t i = 0; i < paths.size(); ++i) {
+            if (i > 0) payload.push_back(',');
+            payload.push_back('"');
+            payload += cfire::json::escape_string(paths[i]);
+            payload.push_back('"');
+        }
+        payload += "]}";
+        emit_system_event("window:file_drop", payload);
     }
 
     [[nodiscard]] auto resolve_asset(std::string_view raw_path) const -> std::optional<AssetEntry> {
@@ -494,12 +621,15 @@ struct AppState {
                 if (sfn) sfn(w, h);
             } else if (cmd == "fullscreen") {
                 std::function<void()> ffn;
+                bool new_fs = false;
                 {
                     std::lock_guard<std::recursive_mutex> lock(mtx);
                     is_fullscreen = !is_fullscreen;
+                    new_fs = is_fullscreen;
                     ffn = platform_fullscreen;
                 }
                 if (ffn) ffn();
+                else notify_fullscreen_changed(new_fs);
             } else if (cmd == "minimize") {
                 std::function<void()> mfn;
                 {
@@ -653,6 +783,23 @@ struct AppState {
         }
     }
 };
+
+[[nodiscard]] inline auto build_preload_script(const AppState& st) -> std::string {
+    bool dev = kDefaultWebUIDevExtras;
+    bool ctx = kDefaultWebUIDevExtras;
+    bool autofill = true;
+    {
+        std::lock_guard<std::recursive_mutex> lock(st.mtx);
+        dev = st.devtools_enabled;
+        ctx = st.context_menu_enabled;
+        autofill = st.autofill_enabled;
+    }
+    return std::format(
+        "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"autofill\":{}}};\n",
+        dev ? "true" : "false",
+        ctx ? "true" : "false",
+        autofill ? "true" : "false") + std::string(kPreloadBridgeJs);
+}
 
 } // namespace detail
 } // namespace cfire::webui

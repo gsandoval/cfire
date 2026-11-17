@@ -1,0 +1,18 @@
+package main
+
+type Shape enum {
+    Circle(f64),
+    Empty,
+}
+
+fn label(s: Shape) -> i64 {
+    return match s {
+        Circl if true => 1, //~ error cfire/UNKNOWN-ENUM-VARIANT
+        Circle(_) => 2,
+        Empty => 3,
+    }
+}
+
+fn main() {
+    println("{}", label(Shape::Empty))
+}

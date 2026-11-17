@@ -47,6 +47,12 @@
 
 
     CFIRE_SEMA_INLINE void SemaFnChecker::bind_match_arm_vars(const MatchArm& arm, const std::string& target_t) {
+        if (cf_.match_catchall_bindings.contains(&arm) && !arm.variant_name.empty()) {
+            bind_scoped_var(arm.variant_name, false);
+            if (!target_t.empty()) {
+                var_types_[arm.variant_name] = target_t;
+            }
+        }
         for (const auto& b : arm.bindings) {
             bind_scoped_var(b, false);
         }
@@ -61,12 +67,54 @@
                 }
             } else if (arm.is_err || arm.variant_name == "Err") {
                 var_types_[arm.bindings[0]] = "Error";
+            } else {
+                const EnumDecl* en = !arm.enum_prefix.empty()
+                    ? resolve_enum_by_prefix_sema(arm.enum_prefix)
+                    : resolve_enum_by_prefix_sema(target_t);
+                if (!en && !arm.variant_name.empty()) {
+                    if (auto vit = cf_.variant_to_enum.find(arm.variant_name); vit != cf_.variant_to_enum.end()) {
+                        if (auto eit = cf_.enums.find(vit->second); eit != cf_.enums.end()) en = &eit->second;
+                    }
+                }
+                if (en) {
+                    for (const auto& v : en->variants) {
+                        if (v.name == arm.variant_name) {
+                            for (std::size_t k = 0; k < arm.bindings.size() && k < v.payload_types.size(); ++k) {
+                                var_types_[arm.bindings[k]] = format_type_ref_sema(v.payload_types[k]);
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
         if (arm.is_slice_pattern) {
-            for (const auto& h : arm.slice_head) bind_scoped_var(h, false);
-            if (!arm.slice_rest.empty()) bind_scoped_var(arm.slice_rest, false);
-            for (const auto& t : arm.slice_tail) bind_scoped_var(t, false);
+            std::string elem_t;
+            std::string rest_t;
+            if (target_t.starts_with("[]")) {
+                elem_t = target_t.substr(2);
+                rest_t = target_t;
+            } else if (target_t.starts_with('[')) {
+                if (auto rb = target_t.find(']'); rb != std::string::npos) {
+                    elem_t = target_t.substr(rb + 1);
+                    rest_t = "[]" + elem_t;
+                }
+            } else if (target_t == "str") {
+                elem_t = "u8";
+                rest_t = "&str";
+            }
+            for (const auto& h : arm.slice_head) {
+                bind_scoped_var(h, false);
+                if (!elem_t.empty()) var_types_[h] = elem_t;
+            }
+            if (!arm.slice_rest.empty()) {
+                bind_scoped_var(arm.slice_rest, false);
+                if (!rest_t.empty()) var_types_[arm.slice_rest] = rest_t;
+            }
+            for (const auto& t : arm.slice_tail) {
+                bind_scoped_var(t, false);
+                if (!elem_t.empty()) var_types_[t] = elem_t;
+            }
         }
     }
 
@@ -431,7 +479,7 @@
                 map_vars_.insert(vd.name);
             }
             if (vd.type->is_array && !vd.type->array_len.empty()) {
-                if (auto n = cfire::detail::parse_int<std::size_t>(vd.type->array_len)) {
+                if (auto n = parse_int_literal<std::size_t>(vd.type->array_len)) {
                     fixed_array_lens_[vd.name] = *n;
                 }
             }
@@ -754,7 +802,8 @@
             unwrapped_exprs_.insert(rt.value);
         }
         if (auto r = check_expr(rt.value); !r) return r;
-        if (rt.value && !closure_ret_stack_.empty() && closure_ret_stack_.back().second == in_closure_depth_) {
+        const bool returning_error = rt.value && type_name_of(rt.value) == "Error";
+        if (rt.value && !returning_error && !closure_ret_stack_.empty() && closure_ret_stack_.back().second == in_closure_depth_) {
             if (TypeId t = infer_expr_type_id_sema(rt.value); t.is_valid() && !t.is_unknown()) {
                 closure_ret_types_.try_emplace(closure_ret_stack_.back().first, cf_.type_table.to_string(t));
             }
@@ -776,6 +825,12 @@
                     if (auto r = emit_error(diag_at(rt.line, 0, "cfire/DANGLING-RETURN", std::format("cannot return pointer/view borrowing local variable '{}'", *src))); !r) return r;
                 }
             }
+        }
+        if (returning_error && in_closure_depth_ == 0) {
+            if (!fn_is_fallible_ && fn_name_ != "main" && !fn_name_.starts_with("__cfire_test_")) {
+                return emit_error(diag_at(rt.line, 0, "cfire/TYPE-MISMATCH", std::format("cannot return 'Error' from non-fallible function '{}'", fn_name_)));
+            }
+            return {};
         }
         // Type compatibility check for return statement
         if (rt.value && !fn_ret_str_.empty() && fn_ret_str_ != "void" && in_closure_depth_ == 0) {

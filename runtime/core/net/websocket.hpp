@@ -594,93 +594,82 @@ struct ServerLimits {
 class Server {
 public:
     explicit Server(cfire::net::TcpListener listener, std::optional<cfire::tls::ServerContext> tls_ctx = std::nullopt)
-        : listener_(std::move(listener)), tls_ctx_(std::move(tls_ctx)) {}
+        : state_(std::make_unique<State>(std::move(listener), std::move(tls_ctx))) {}
     ~Server() {
         stop();
     }
 
-    Server(Server&& o) noexcept
-        : listener_(std::move(o.listener_)),
-          tls_ctx_(std::move(o.tls_ctx_)),
-          running_(o.running_.load()),
-          limits_(o.limits_),
-          sessions_(std::exchange(o.sessions_, std::make_unique<cfire::http::detail::SessionThreads>())) {
-        o.running_ = false;
-        if (o.worker_.joinable()) {
-            worker_ = std::move(o.worker_);
-        }
-    }
-
+    Server(Server&& o) noexcept = default;
     auto operator=(Server&& o) noexcept -> Server& {
         if (this != &o) {
             stop();
-            listener_ = std::move(o.listener_);
-            tls_ctx_ = std::move(o.tls_ctx_);
-            running_ = o.running_.load();
-            limits_ = o.limits_;
-            std::swap(sessions_, o.sessions_);
-            o.running_ = false;
-            if (o.worker_.joinable()) {
-                worker_ = std::move(o.worker_);
-            }
+            state_ = std::move(o.state_);
         }
         return *this;
     }
 
-    [[nodiscard]] auto port() const noexcept -> std::uint16_t { return listener_.port(); }
-    [[nodiscard]] auto is_tls() const noexcept -> bool { return tls_ctx_.has_value() && tls_ctx_->valid(); }
+    [[nodiscard]] auto port() const noexcept -> std::uint16_t { return state_ ? state_->listener_.port() : 0; }
+    [[nodiscard]] auto is_tls() const noexcept -> bool { return state_ && state_->tls_ctx_.has_value() && state_->tls_ctx_->valid(); }
 
     auto enable_tls(cfire::tls::ServerContext ctx) -> Server& {
-        tls_ctx_ = std::move(ctx);
+        if (state_) state_->tls_ctx_ = std::move(ctx);
         return *this;
     }
 
     auto enable_tls_files(std::string_view cert_file, std::string_view key_file)
         -> std::expected<void, cfire::Error>
     {
+        if (!state_) return cfire::make_error("websocket server is moved-from");
         auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
         if (!ctx_res) return std::unexpected(ctx_res.error());
-        tls_ctx_ = std::move(*ctx_res);
+        state_->tls_ctx_ = std::move(*ctx_res);
         return {};
     }
 
     auto enable_tls_pem(std::string_view cert_pem, std::string_view key_pem)
         -> std::expected<void, cfire::Error>
     {
+        if (!state_) return cfire::make_error("websocket server is moved-from");
         auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
         if (!ctx_res) return std::unexpected(ctx_res.error());
-        tls_ctx_ = std::move(*ctx_res);
+        state_->tls_ctx_ = std::move(*ctx_res);
         return {};
     }
 
     void set_limits(const ServerLimits& lim) noexcept {
-        limits_ = lim;
+        if (!state_) return;
+        state_->limits_ = lim;
         // From `.cf` code 0 means "keep the default".
-        if (limits_.max_websockets == 0) limits_.max_websockets = ServerLimits{}.max_websockets;
-        if (limits_.header_timeout_ms <= 0) limits_.header_timeout_ms = ServerLimits{}.header_timeout_ms;
-        if (limits_.max_frame_size == 0) limits_.max_frame_size = ServerLimits{}.max_frame_size;
+        if (state_->limits_.max_websockets == 0) state_->limits_.max_websockets = ServerLimits{}.max_websockets;
+        if (state_->limits_.header_timeout_ms <= 0) state_->limits_.header_timeout_ms = ServerLimits{}.header_timeout_ms;
+        if (state_->limits_.max_frame_size == 0) state_->limits_.max_frame_size = ServerLimits{}.max_frame_size;
     }
-    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& { return limits_; }
+    [[nodiscard]] auto limits() const noexcept -> const ServerLimits& {
+        static const ServerLimits kDefault{};
+        return state_ ? state_->limits_ : kDefault;
+    }
     // open sessions.
-    [[nodiscard]] auto sessions() const -> std::size_t { return sessions_->live(); }
+    [[nodiscard]] auto sessions() const -> std::size_t { return state_ ? state_->sessions_->live() : 0; }
 
     // Ends the accept loop, then shuts the open sessions down and joins them.
     void stop() noexcept {
-        running_ = false;
-        if (worker_.joinable()) {
-            worker_.join();
+        if (!state_) return;
+        state_->running_ = false;
+        if (state_->worker_.joinable()) {
+            state_->worker_.join();
         }
-        sessions_->shutdown_all();
-        sessions_->join_all();
+        state_->sessions_->shutdown_all();
+        state_->sessions_->join_all();
     }
 
     [[nodiscard]] auto accept() -> std::expected<Conn, cfire::Error> {
-        auto conn_res = listener_.accept();
+        if (!state_) return cfire::make_error("websocket server is moved-from");
+        auto conn_res = state_->listener_.accept();
         if (!conn_res) return std::unexpected(conn_res.error());
         auto& conn = *conn_res;
 
-        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
-            auto wr = tls_ctx_->wrap_server(conn);
+        if (state_->tls_ctx_.has_value() && state_->tls_ctx_->valid()) {
+            auto wr = state_->tls_ctx_->wrap_server(conn);
             if (!wr) return std::unexpected(wr.error());
         }
 
@@ -703,9 +692,10 @@ public:
     // One connection, served on the calling thread.
     template <typename Handler>
     void serve_once(Handler&& handler) {
-        auto conn_res = listener_.accept();
+        if (!state_) return;
+        auto conn_res = state_->listener_.accept();
         if (!conn_res) return;
-        handle_conn(*conn_res, handler);
+        handle_conn_state(*state_, *conn_res, handler);
     }
 
     // each accepted connection runs on its own session thread (TLS handshake, upgrade request and
@@ -713,44 +703,64 @@ public:
     // The open sessions are shut down and joined before this returns.
     template <typename Handler>
     void listen_and_serve(Handler&& handler) {
-        running_ = true;
-        while (running_) {
-            auto conn_res = listener_.accept();
-            if (!conn_res) {
-                if (!running_) break;
-                continue;
-            }
-            auto guard = conn_res->close_guard();
-            auto conn = std::make_shared<cfire::net::TcpConn>(std::move(*conn_res));
-            auto session = [this, &handler, conn]() { handle_conn(*conn, handler); };
-            if (!sessions_->start(limits_.max_websockets, std::move(guard), session)) {
-                cfire::http::Response busy = cfire::http::Response::text(503, "503 Service Unavailable");
-                (void)conn->write_text(busy.to_http_wire());
-            }
-        }
-        sessions_->shutdown_all();
-        sessions_->join_all();
+        if (state_) listen_and_serve_state(*state_, handler);
     }
 
     template <typename Handler>
     void serve_in_background(Handler handler) {
+        if (!state_) return;
         stop();
-        running_ = true;
-        worker_ = std::thread([this, h = std::move(handler)]() mutable {
-            this->listen_and_serve(h);
+        State* st = state_.get();
+        st->running_ = true;
+        st->worker_ = std::thread([st, h = std::move(handler)]() mutable {
+            listen_and_serve_state(*st, h);
         });
     }
 
 private:
+    struct State {
+        State(cfire::net::TcpListener l, std::optional<cfire::tls::ServerContext> ctx)
+            : listener_(std::move(l)), tls_ctx_(std::move(ctx)) {}
+
+        cfire::net::TcpListener listener_;
+        std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
+        std::atomic<bool> running_{false};
+        std::thread worker_{};
+        ServerLimits limits_{};
+        std::unique_ptr<cfire::http::detail::SessionThreads> sessions_ = std::make_unique<cfire::http::detail::SessionThreads>();
+    };
+
     template <typename Handler>
-    void handle_conn(cfire::net::TcpConn& conn, Handler& handler) {
-        conn.set_timeout_ms(limits_.header_timeout_ms);
-        if (tls_ctx_.has_value() && tls_ctx_->valid()) {
-            auto wr = tls_ctx_->wrap_server(conn);
+    static void listen_and_serve_state(State& st, Handler& handler) {
+        st.running_ = true;
+        while (st.running_) {
+            auto conn_res = st.listener_.accept();
+            if (!conn_res) {
+                if (!st.running_) break;
+                continue;
+            }
+            auto guard = conn_res->close_guard();
+            auto conn = std::make_shared<cfire::net::TcpConn>(std::move(*conn_res));
+            State* stp = &st;
+            auto session = [stp, &handler, conn]() { handle_conn_state(*stp, *conn, handler); };
+            if (!st.sessions_->start(st.limits_.max_websockets, std::move(guard), session)) {
+                cfire::http::Response busy = cfire::http::Response::text(503, "503 Service Unavailable");
+                (void)conn->write_text(busy.to_http_wire());
+            }
+        }
+        st.sessions_->shutdown_all();
+        st.sessions_->join_all();
+    }
+
+    template <typename Handler>
+    static void handle_conn_state(State& st, cfire::net::TcpConn& conn, Handler& handler) {
+        conn.set_timeout_ms(st.limits_.header_timeout_ms);
+        if (st.tls_ctx_.has_value() && st.tls_ctx_->valid()) {
+            auto wr = st.tls_ctx_->wrap_server(conn);
             if (!wr) return;
         }
         cfire::http::ServerLimits http_lim;
-        http_lim.header_timeout_ms = limits_.header_timeout_ms;
+        http_lim.header_timeout_ms = st.limits_.header_timeout_ms;
         // the assembler keeps the bytes after the request (a client's first frame sent with it).
         cfire::http::detail::RequestAssembler as(http_lim.max_body_bytes);
         auto req_res = cfire::http::detail::read_next_request(conn, as, http_lim);
@@ -765,7 +775,7 @@ private:
             (void)conn.write_text(err_resp.to_http_wire());
             return;
         }
-        ws_res->set_max_frame_size(limits_.max_frame_size);
+        ws_res->set_max_frame_size(st.limits_.max_frame_size);
         ws_res->set_read_ahead(std::move(as.buffer()));
         if constexpr (std::is_invocable_v<Handler, const cfire::http::Request&, Conn&>) {
             handler(*req_res, *ws_res);
@@ -774,30 +784,19 @@ private:
         }
     }
 
-    cfire::net::TcpListener listener_;
-    std::optional<cfire::tls::ServerContext> tls_ctx_{std::nullopt};
-    std::atomic<bool> running_{false};
-    std::thread worker_{};
-    ServerLimits limits_{};
-    std::unique_ptr<cfire::http::detail::SessionThreads> sessions_ = std::make_unique<cfire::http::detail::SessionThreads>();
+    std::unique_ptr<State> state_;
 };
-
-[[nodiscard]] inline auto make_server(std::uint16_t port = 0)
-    -> std::expected<Server, cfire::Error>
-{
-    auto l = cfire::net::listen_tcp(port);
-    if (!l) return std::unexpected(l.error());
-    return Server(std::move(*l));
-}
 
 [[nodiscard]] inline auto make_tls_server(
     std::uint16_t port,
     std::string_view cert_file,
-    std::string_view key_file
+    std::string_view key_file,
+    std::string_view host = "0.0.0.0"
 ) -> std::expected<Server, cfire::Error> {
     auto ctx_res = cfire::tls::ServerContext::from_files(cert_file, key_file);
     if (!ctx_res) return std::unexpected(ctx_res.error());
-    auto l = cfire::net::listen_tcp(port);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
     if (!l) return std::unexpected(l.error());
     return Server(std::move(*l), std::move(*ctx_res));
 }
@@ -805,21 +804,30 @@ private:
 [[nodiscard]] inline auto make_tls_server_pem(
     std::uint16_t port,
     std::string_view cert_pem,
-    std::string_view key_pem
+    std::string_view key_pem,
+    std::string_view host = "0.0.0.0"
 ) -> std::expected<Server, cfire::Error> {
     auto ctx_res = cfire::tls::ServerContext::from_pem(cert_pem, key_pem);
     if (!ctx_res) return std::unexpected(ctx_res.error());
-    auto l = cfire::net::listen_tcp(port);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
     if (!l) return std::unexpected(l.error());
     return Server(std::move(*l), std::move(*ctx_res));
 }
 
-// `make(websocket.Server, port, tls: cfg)`; `websocket.TlsConfig` is `http.TlsConfig`.
+// `make(websocket.Server, port, tls: cfg, host: addr)`; `websocket.TlsConfig` is `http.TlsConfig`.
 using TlsConfig = cfire::http::TlsConfig;
-[[nodiscard]] inline auto make_server(std::uint16_t port, const TlsConfig& tls) -> std::expected<Server, cfire::Error> {
-    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file);
-    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem);
-    return make_server(port);
+[[nodiscard]] inline auto make_server(
+    std::uint16_t port = 0,
+    const TlsConfig& tls = {},
+    std::string_view host = "0.0.0.0"
+) -> std::expected<Server, cfire::Error> {
+    if (!tls.cert_file.empty() || !tls.key_file.empty()) return make_tls_server(port, tls.cert_file, tls.key_file, host);
+    if (!tls.cert_pem.empty() || !tls.key_pem.empty()) return make_tls_server_pem(port, tls.cert_pem, tls.key_pem, host);
+    std::string_view bind_host = host.empty() ? std::string_view("0.0.0.0") : host;
+    auto l = cfire::net::listen_tcp_addr(bind_host, port);
+    if (!l) return std::unexpected(l.error());
+    return Server(std::move(*l));
 }
 
 } // namespace cfire::websocket

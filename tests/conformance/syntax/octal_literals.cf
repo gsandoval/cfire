@@ -1,0 +1,16 @@
+// expect: stdout
+// | 384 493 420 0 -7 4 42 rw other
+package main
+
+fn classify_mode(mode: i64) -> str {
+    return match mode {
+        0o600 => "rw",
+        _ => "other",
+    }
+}
+
+fn main() {
+    mut buf: [0o4]u8
+    buf[0o3] = u8(42)
+    println("{} {} {} {} {} {} {} {} {}", 0o600, 0o755, 0O644, 0o0, -0o7, buf.len(), buf[0o3], classify_mode(0o600), classify_mode(0o644))
+}

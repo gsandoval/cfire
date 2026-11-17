@@ -1,0 +1,120 @@
+// expect: stdout
+// | ext:ai ok
+package main
+
+import "ext:ai"
+import "core:os"
+
+type PingArgs struct {
+    topic: str `json:"topic" desc:"Topic name"`
+}
+
+type StructuredReply struct {
+    summary: str `json:"summary" validate:"non_empty"`
+}
+
+fn compile_all_ai_surface(mut client: ai.Client, mut agent: ai.Agent, mut mcp: ai.McpServer) -> void! {
+    _ = try client.ask("hello")
+    _ = try client.ask_with_file("describe", "missing.txt")
+    _ = try client.stream([ai.user("hi")], |tok| {
+        _ = tok
+    })
+    _ = try client.generate_struct_from_file[StructuredReply]("extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.run_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+        if r.summary.is_empty() {
+            return error("empty summary")
+        }
+    })
+}
+
+fn main() {
+    mut c := ai.local()
+    _ = ai.apple()
+    _ = ai.openai("sk-test", "gpt-4o-mini")
+    _ = ai.anthropic("ak-test", "claude-3-5-sonnet-latest")
+    _ = ai.gemini("gk-test", "gemini-2.5-flash")
+    _ = ai.ollama("http://127.0.0.1:11434", "llama3.2")
+    _ = ai.openai_compatible("http://127.0.0.1:8080/v1", "k", "m")
+    _ = ai.mock(|msgs, tools| -> ai.ChatResponse! {
+        _ = msgs
+        _ = tools
+        return ai.ChatResponse{text: "{\"summary\":\"ok\"}"}
+    })
+
+    seq := ai.mock_sequence([ai.ChatResponse{text: "{\"summary\":\"seq\"}"}])
+    _ = seq.detect_language("Hello world from cfire")
+    c.set_model("local")
+    assert_eq(c.model(), "local")
+
+    _ = ai.system("be concise")
+    _ = ai.assistant("ready")
+    _ = ai.tool_result("id1", "ping", "pong", false)
+    tdef := ai.tool_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+    doc := try ai.parse_document([]byte("# Title\nBody text"), "notes.md")
+    chunks := ai.chunk_document(doc, 64, 8)
+    assert(chunks.len() >= 1)
+    tchunks := ai.chunk_text("one two three", 64, 8)
+    assert(tchunks.len() >= 1)
+
+    v1 := try c.embed("memory safety")
+    v2 := ai.normalize(v1)
+    assert(ai.cosine_similarity(v1, v2) > 0.5)
+    assert(ai.l2_distance(v1, v2) < 1.0)
+    assert(ai.dot_product(v1, v2) > 0.5)
+
+    mut mc := ai.mock(|msgs, tools| -> ai.ChatResponse! {
+        _ = msgs
+        _ = tools
+        return ai.ChatResponse{text: "{\"summary\":\"mock\"}"}
+    })
+    chat_res := try mc.chat([ai.user("hi")])
+    assert_eq(chat_res.text, "{\"summary\":\"mock\"}")
+    tools_res := try mc.chat_with_tools([ai.user("ping")], [tdef])
+    _ = tools_res.text
+    gen := try mc.generate_struct[StructuredReply]("extract")
+    assert_eq(gen.summary, "mock")
+
+    mut mcp := make(ai.McpServer, "smoke", "1.0.0")
+    mcp.register_tool[PingArgs]("ping", "Ping") |a| {
+        return a.topic
+    }
+    mcp.register_tool_action("health", "Health check") || {
+        return "ok"
+    }
+    init_res := mcp.handle_jsonrpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}")
+    assert(init_res.contains("smoke"))
+
+    mut agent := make(ai.Agent, mc, "mock", "sys")
+    agent.register_tool[PingArgs]("ping", "Ping") |a| {
+        return a.topic
+    }
+    agent.register_tool_action("health", "Health check") || {
+        return "ok"
+    }
+    agent.use_mcp(mcp)
+    agent.set_max_steps(4)
+    agent.set_max_retries(1)
+    out_txt := try agent.run("hello")
+    assert(!out_txt.is_empty())
+    msg_res := try agent.run_messages([ai.user("again")])
+    assert(!msg_res.text.is_empty())
+    assert(agent.history().len() >= 1)
+    agent.clear_history()
+
+    z := ai.create_zip([ai.ZipEntry{name: "a.txt", content: "hello"}])
+    assert(z.len() > 0)
+
+    if os.args().len() > 999999 {
+        _ = compile_all_ai_surface(mut mc, mut agent, mut mcp) or {}
+    }
+    println("ext:ai ok")
+}

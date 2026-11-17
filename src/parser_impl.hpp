@@ -425,24 +425,55 @@ private:
         auto name_tok = expect(TokenKind::Ident);
         if (!name_tok) return std::unexpected(name_tok.error());
 
-        // Optional generic type parameters: `type Box[T: Bound] struct` or `type Result[T, E] enum`
+        // Optional generic type parameters: `type Box[T: Bound1 + Bound2] struct` or `type Result[T, E] enum`
         std::vector<TypeParam> type_params;
-        if (cur().kind == TokenKind::LBracket) {
+        auto parse_type_params = [&](std::vector<TypeParam>& out) -> std::expected<void, SourceError> {
             advance(); // '['
             while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
                 auto tp_name = expect(TokenKind::Ident);
                 if (!tp_name) return std::unexpected(tp_name.error());
-                TypeParam tp{tp_name->lexeme, ""};
+                TypeParam tp;
+                tp.name = tp_name->lexeme;
                 if (cur().kind == TokenKind::Colon) {
                     advance();
-                    auto c_name = expect(TokenKind::Ident);
-                    if (!c_name) return std::unexpected(c_name.error());
-                    tp.constraint = c_name->lexeme;
+                    auto parse_one_bound = [&]() -> std::expected<std::string, SourceError> {
+                        auto b1 = expect(TokenKind::Ident);
+                        if (!b1) return std::unexpected(b1.error());
+                        if (cur().kind == TokenKind::Dot) {
+                            advance();
+                            auto b2 = expect(TokenKind::Ident);
+                            if (!b2) return std::unexpected(b2.error());
+                            return b1->lexeme + "." + b2->lexeme;
+                        }
+                        if (cur().kind == TokenKind::DoubleColon) {
+                            Token sep = advance();
+                            auto b2 = expect(TokenKind::Ident);
+                            if (!b2) return std::unexpected(b2.error());
+                            record_error(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col),
+                                std::format("'.' is the package member separator; use '{}.{}' instead of '{}::{}'", b1->lexeme, b2->lexeme, b1->lexeme, b2->lexeme),
+                                "cfire/DEPRECATED-SEPARATOR", {{"kind", "pkg-member"}}});
+                            return b1->lexeme + "." + b2->lexeme;
+                        }
+                        return b1->lexeme;
+                    };
+                    auto first_b = parse_one_bound();
+                    if (!first_b) return std::unexpected(first_b.error());
+                    tp.constraints.push_back(std::move(*first_b));
+                    while (cur().kind == TokenKind::Plus) {
+                        advance();
+                        auto next_b = parse_one_bound();
+                        if (!next_b) return std::unexpected(next_b.error());
+                        tp.constraints.push_back(std::move(*next_b));
+                    }
                 }
-                type_params.push_back(std::move(tp));
+                out.push_back(std::move(tp));
                 if (cur().kind == TokenKind::Comma) advance();
             }
             if (auto rb = expect(TokenKind::RBracket); !rb) return std::unexpected(rb.error());
+            return {};
+        };
+        if (cur().kind == TokenKind::LBracket) {
+            if (auto r = parse_type_params(type_params); !r) return std::unexpected(r.error());
         }
 
         if (cur().kind == TokenKind::KwStruct) {
@@ -537,20 +568,63 @@ private:
             InterfaceDecl iface;
             iface.name = name_tok->lexeme;
             iface.line = start.line;
+            iface.source_path = file_;
             while (cur().kind != TokenKind::RBrace && cur().kind != TokenKind::Eof) {
-                if (cur().kind == TokenKind::KwFn) advance();
+                InterfaceMethodSig sig;
+                sig.line = cur().line;
+                sig.col = cur().col;
+                if (cur().kind == TokenKind::KwMut) {
+                    advance();
+                    sig.is_mut_receiver = true;
+                }
+                if (cur().kind == TokenKind::KwFn) {
+                    advance();
+                    if (cur().kind == TokenKind::KwMut) {
+                        advance();
+                        sig.is_mut_receiver = true;
+                    } else if (cur().kind == TokenKind::LParen) {
+                        advance(); // '('
+                        if (cur().kind == TokenKind::KwMut) {
+                            advance();
+                            sig.is_mut_receiver = true;
+                        }
+                        if (cur().kind == TokenKind::Ident) {
+                            advance();
+                            if (cur().kind == TokenKind::Colon) {
+                                advance();
+                                auto rt_ignore = parse_type_ref();
+                                if (!rt_ignore) return std::unexpected(rt_ignore.error());
+                            }
+                        }
+                        if (auto rrp = expect(TokenKind::RParen); !rrp) return std::unexpected(rrp.error());
+                    }
+                }
                 auto m_tok = expect(TokenKind::Ident);
                 if (!m_tok) return std::unexpected(m_tok.error());
-                if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
-                InterfaceMethodSig sig;
                 sig.name = m_tok->lexeme;
+                sig.line = m_tok->line;
+                sig.col = m_tok->col;
+                if (auto lp = expect(TokenKind::LParen); !lp) return std::unexpected(lp.error());
                 while (cur().kind != TokenKind::RParen && cur().kind != TokenKind::Eof) {
+                    std::string p_intent = "in";
+                    if (cur().kind == TokenKind::KwMut || cur().kind == TokenKind::KwMove || cur().kind == TokenKind::KwIn) {
+                        p_intent = advance().lexeme;
+                    }
+                    std::string p_name;
                     if (cur().kind == TokenKind::Ident && peek(1).kind == TokenKind::Colon) {
+                        p_name = advance().lexeme;
                         advance();
-                        advance();
+                        if (cur().kind == TokenKind::KwMut) {
+                            Token mt = advance();
+                            p_intent = "mut";
+                            record_error(SourceError{std::string(file_), static_cast<int>(mt.line), static_cast<int>(mt.col),
+                                "'x: mut T' parameter placement is deprecated; use 'mut x: T' instead", "cfire/DEPRECATED-INTENT-POS"});
+                        }
                     }
                     auto pt = parse_type_ref();
                     if (!pt) return std::unexpected(pt.error());
+                    sig.param_names.push_back(std::move(p_name));
+                    sig.param_intents.push_back(std::move(p_intent));
                     sig.param_types.push_back(std::move(*pt));
                     if (cur().kind == TokenKind::Comma) advance();
                 }
@@ -822,18 +896,45 @@ private:
             fn.ctor_type = ctor_type;
         }
 
-        // Optional generic type parameters: `fn foo[T: Hasher](...)`
+        // Optional generic type parameters: `fn foo[T: A + pkg.B](...)`
         if (cur().kind == TokenKind::LBracket) {
             advance(); // '['
             while (cur().kind != TokenKind::RBracket && cur().kind != TokenKind::Eof) {
                 auto tp_name = expect(TokenKind::Ident);
                 if (!tp_name) return std::unexpected(tp_name.error());
-                TypeParam tp{tp_name->lexeme, ""};
+                TypeParam tp;
+                tp.name = tp_name->lexeme;
                 if (cur().kind == TokenKind::Colon) {
                     advance();
-                    auto c_name = expect(TokenKind::Ident);
-                    if (!c_name) return std::unexpected(c_name.error());
-                    tp.constraint = c_name->lexeme;
+                    auto parse_one_bound = [&]() -> std::expected<std::string, SourceError> {
+                        auto b1 = expect(TokenKind::Ident);
+                        if (!b1) return std::unexpected(b1.error());
+                        if (cur().kind == TokenKind::Dot) {
+                            advance();
+                            auto b2 = expect(TokenKind::Ident);
+                            if (!b2) return std::unexpected(b2.error());
+                            return b1->lexeme + "." + b2->lexeme;
+                        }
+                        if (cur().kind == TokenKind::DoubleColon) {
+                            Token sep = advance();
+                            auto b2 = expect(TokenKind::Ident);
+                            if (!b2) return std::unexpected(b2.error());
+                            record_error(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col),
+                                std::format("'.' is the package member separator; use '{}.{}' instead of '{}::{}'", b1->lexeme, b2->lexeme, b1->lexeme, b2->lexeme),
+                                "cfire/DEPRECATED-SEPARATOR", {{"kind", "pkg-member"}}});
+                            return b1->lexeme + "." + b2->lexeme;
+                        }
+                        return b1->lexeme;
+                    };
+                    auto first_b = parse_one_bound();
+                    if (!first_b) return std::unexpected(first_b.error());
+                    tp.constraints.push_back(std::move(*first_b));
+                    while (cur().kind == TokenKind::Plus) {
+                        advance();
+                        auto next_b = parse_one_bound();
+                        if (!next_b) return std::unexpected(next_b.error());
+                        tp.constraints.push_back(std::move(*next_b));
+                    }
                 }
                 fn.type_params.push_back(std::move(tp));
                 if (cur().kind == TokenKind::Comma) advance();
@@ -978,8 +1079,8 @@ private:
                             const auto* l_lit = std::get_if<LiteralExpr>(&(*first_ex)->node);
                             const auto* r_lit = std::get_if<LiteralExpr>(&(*end_ex)->node);
                             if (l_lit && r_lit && l_lit->kind == TokenKind::Int && r_lit->kind == TokenKind::Int) {
-                                auto s_val = cfire::detail::parse_int<std::int64_t>(l_lit->value);
-                                auto e_val = cfire::detail::parse_int<std::int64_t>(r_lit->value);
+                                auto s_val = parse_int_literal<std::int64_t>(l_lit->value);
+                                auto e_val = parse_int_literal<std::int64_t>(r_lit->value);
                                 if (s_val && e_val) {
                                     std::int64_t limit = inclusive ? *e_val : (*e_val - 1);
                                     for (std::int64_t v = *s_val; v <= limit && var.values.size() < 64; ++v) {
@@ -1572,15 +1673,49 @@ private:
                 auto v_tok = expect(TokenKind::Ident);
                 if (!v_tok) return std::unexpected(v_tok.error());
                 pat.line = v_tok->line;
-                if (cur().kind == TokenKind::DoubleColon || cur().kind == TokenKind::Dot) {
+                if (cur().kind == TokenKind::Dot) {
                     Token sep = advance();
                     auto sub_tok = expect(TokenKind::Ident);
                     if (!sub_tok) return std::unexpected(sub_tok.error());
-                    if (sep.kind == TokenKind::Dot) {
-                        return std::unexpected(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col), std::format("'.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}')", v_tok->lexeme, sub_tok->lexeme), "cfire/DEPRECATED-SEPARATOR"});
+                    if (cur().kind == TokenKind::DoubleColon) {
+                        advance();
+                        auto var_tok = expect(TokenKind::Ident);
+                        if (!var_tok) return std::unexpected(var_tok.error());
+                        pat.enum_prefix = v_tok->lexeme + "." + sub_tok->lexeme;
+                        pat.variant_name = var_tok->lexeme;
+                    } else if (cur().kind == TokenKind::Dot) {
+                        Token sep2 = advance();
+                        auto var_tok = expect(TokenKind::Ident);
+                        if (!var_tok) return std::unexpected(var_tok.error());
+                        record_error(SourceError{std::string(file_), static_cast<int>(sep2.line), static_cast<int>(sep2.col),
+                            std::format("'.' is not a valid separator in pattern matching; use '::' (e.g. '{}.{}::{}')", v_tok->lexeme, sub_tok->lexeme, var_tok->lexeme),
+                            "cfire/DEPRECATED-SEPARATOR", {{"kind", "enum-variant"}}});
+                        pat.enum_prefix = v_tok->lexeme + "." + sub_tok->lexeme;
+                        pat.variant_name = var_tok->lexeme;
+                    } else {
+                        record_error(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col),
+                            std::format("'.' is not a valid separator in pattern matching; use '::' (e.g. '{}::{}')", v_tok->lexeme, sub_tok->lexeme),
+                            "cfire/DEPRECATED-SEPARATOR", {{"kind", "enum-variant"}}});
+                        pat.enum_prefix = v_tok->lexeme;
+                        pat.variant_name = sub_tok->lexeme;
                     }
-                    pat.enum_prefix = v_tok->lexeme;
-                    pat.variant_name = sub_tok->lexeme;
+                } else if (cur().kind == TokenKind::DoubleColon) {
+                    Token sep = advance();
+                    auto sub_tok = expect(TokenKind::Ident);
+                    if (!sub_tok) return std::unexpected(sub_tok.error());
+                    if (cur().kind == TokenKind::DoubleColon) {
+                        advance();
+                        auto var_tok = expect(TokenKind::Ident);
+                        if (!var_tok) return std::unexpected(var_tok.error());
+                        record_error(SourceError{std::string(file_), static_cast<int>(sep.line), static_cast<int>(sep.col),
+                            std::format("'.' is the package member separator; use '{}.{}::{}' instead of '{}::{}::{}'", v_tok->lexeme, sub_tok->lexeme, var_tok->lexeme, v_tok->lexeme, sub_tok->lexeme, var_tok->lexeme),
+                            "cfire/DEPRECATED-SEPARATOR", {{"kind", "pkg-member"}}});
+                        pat.enum_prefix = v_tok->lexeme + "." + sub_tok->lexeme;
+                        pat.variant_name = var_tok->lexeme;
+                    } else {
+                        pat.enum_prefix = v_tok->lexeme;
+                        pat.variant_name = sub_tok->lexeme;
+                    }
                 } else {
                     pat.variant_name = v_tok->lexeme;
                     if (pat.variant_name == "Some") pat.is_some = true;
@@ -2526,6 +2661,22 @@ CFIRE_PARSER_IMPL_INLINE void append_doctests(std::string_view path, std::string
     std::vector<InterpPlaceholder> out;
     std::size_t i = 0;
     while (i < sv.size()) {
+        if (sv[i] == '\\' && i + 1 < sv.size()) {
+            if (sv[i + 1] == 'u' && i + 2 < sv.size() && sv[i + 2] == '{') {
+                std::size_t k = i + 3;
+                bool all_hex = (k < sv.size());
+                while (k < sv.size() && sv[k] != '}') {
+                    if (!std::isxdigit(static_cast<unsigned char>(sv[k]))) { all_hex = false; break; }
+                    ++k;
+                }
+                if (all_hex && k < sv.size() && sv[k] == '}') {
+                    i = k + 1;
+                    continue;
+                }
+            }
+            i += 2;
+            continue;
+        }
         if (sv[i] == '{') {
             if (i + 1 < sv.size() && sv[i + 1] == '{') {
                 i += 2; // escaped '{{'

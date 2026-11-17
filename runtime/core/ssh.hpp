@@ -23,10 +23,12 @@
 #include <vector>
 #include <fcntl.h>
 
-#if defined(CFIRE_HAS_LIBSSH) && __has_include(<libssh/libssh.h>) && __has_include(<libssh/sftp.h>)
+#if (defined(CFIRE_HAS_LIBSSH) || defined(CFIRE_USE_SSH)) && __has_include(<libssh/libssh.h>) && __has_include(<libssh/sftp.h>)
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>
 #define CFIRE_LIBSSH_ACTIVE 1
+#elif defined(CFIRE_USE_SSH) && !defined(CFIRE_TEST_MODE)
+#error "ext:net/ssh requires libssh (<libssh/libssh.h> not found; install via 'brew install libssh', 'apt install libssh-dev', or 'pacman -S mingw-w64-clang-x86_64-libssh')"
 #else
 #define CFIRE_LIBSSH_ACTIVE 0
 #endif
@@ -53,17 +55,15 @@ inline auto mock_enabled_flag() -> std::atomic<bool>& {
     return s_mock;
 }
 
-inline auto is_mock_mode() -> bool {
-    if (mock_enabled_flag().load()) return true;
+[[nodiscard]] inline auto is_mock_mode() noexcept -> bool {
 #if defined(CFIRE_TEST_MODE)
-    const char* env_h = std::getenv("CFIRE_HEADLESS_TEST");
-    if (env_h && std::string_view(env_h) == "1") return true;
+    if (mock_enabled_flag().load(std::memory_order_acquire)) return true;
+    if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST")) {
+        std::string_view v(env_h);
+        if (v == "1" || v == "true" || v == "TRUE") return true;
+    }
 #endif
-#if !CFIRE_LIBSSH_ACTIVE
-    return true;
-#else
     return false;
-#endif
 }
 
 struct MockServerState {
@@ -102,9 +102,9 @@ struct ChannelState {
         eof = true;
 #if CFIRE_LIBSSH_ACTIVE
         if (raw_channel) {
-            ssh_channel_send_eof(raw_channel);
-            ssh_channel_close(raw_channel);
-            ssh_channel_free(raw_channel);
+            ::ssh_channel_send_eof(raw_channel);
+            ::ssh_channel_close(raw_channel);
+            ::ssh_channel_free(raw_channel);
             raw_channel = nullptr;
         }
 #endif
@@ -136,12 +136,12 @@ struct SessionState {
         authenticated = false;
 #if CFIRE_LIBSSH_ACTIVE
         if (raw_sftp) {
-            sftp_free(raw_sftp);
+            ::sftp_free(raw_sftp);
             raw_sftp = nullptr;
         }
         if (raw_session) {
-            ssh_disconnect(raw_session);
-            ssh_free(raw_session);
+            ::ssh_disconnect(raw_session);
+            ::ssh_free(raw_session);
             raw_session = nullptr;
         }
 #endif
@@ -177,18 +177,19 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.read_text: null native channel"));
         std::string buf(max_bytes, '\0');
-        int n = ssh_channel_read_nonblocking(state_->raw_channel, buf.data(), static_cast<uint32_t>(max_bytes), 0);
+        int n = ::ssh_channel_read_nonblocking(state_->raw_channel, buf.data(), static_cast<uint32_t>(max_bytes), 0);
         if (n == SSH_ERROR) {
             return std::unexpected(Error("ssh.Channel.read_text: ssh_channel_read_nonblocking failed"));
         }
         if (n <= 0) {
-            if (ssh_channel_is_eof(state_->raw_channel)) state_->eof = true;
+            if (::ssh_channel_is_eof(state_->raw_channel)) state_->eof = true;
             return std::string{};
         }
         buf.resize(static_cast<std::size_t>(n));
         return buf;
 #else
-        return std::string{};
+        (void)max_bytes;
+        return std::unexpected(Error("ssh.Channel.read_text: libssh not compiled in"));
 #endif
     }
 
@@ -211,13 +212,13 @@ public:
 
 #if CFIRE_LIBSSH_ACTIVE
         if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.write_text: null native channel"));
-        int written = ssh_channel_write(state_->raw_channel, data.data(), static_cast<uint32_t>(data.size()));
+        int written = ::ssh_channel_write(state_->raw_channel, data.data(), static_cast<uint32_t>(data.size()));
         if (written == SSH_ERROR || written < 0) {
             return std::unexpected(Error("ssh.Channel.write_text: ssh_channel_write failed"));
         }
         return static_cast<std::size_t>(written);
 #else
-        return data.size();
+        return std::unexpected(Error("ssh.Channel.write_text: libssh not compiled in"));
 #endif
     }
 
@@ -240,11 +241,13 @@ public:
 
 #if CFIRE_LIBSSH_ACTIVE
         if (!state_->raw_channel) return std::unexpected(Error("ssh.Channel.resize_pty: null native channel"));
-        if (ssh_channel_change_pty_size(state_->raw_channel, cols, rows) != SSH_OK) {
+        if (::ssh_channel_change_pty_size(state_->raw_channel, cols, rows) != SSH_OK) {
             return std::unexpected(Error("ssh.Channel.resize_pty: ssh_channel_change_pty_size failed"));
         }
-#endif
         return {};
+#else
+        return std::unexpected(Error("ssh.Channel.resize_pty: libssh not compiled in"));
+#endif
     }
 
     [[nodiscard]] auto is_eof() const -> bool {
@@ -252,7 +255,7 @@ public:
         std::lock_guard<std::mutex> lock(state_->mtx);
 #if CFIRE_LIBSSH_ACTIVE
         if (!state_->is_mock && state_->raw_channel) {
-            return ssh_channel_is_eof(state_->raw_channel) != 0;
+            return ::ssh_channel_is_eof(state_->raw_channel) != 0;
         }
 #endif
         return state_->eof;
@@ -295,7 +298,7 @@ public:
         }
 #if CFIRE_LIBSSH_ACTIVE
         if (state_->raw_session) {
-            return ssh_session_is_known_server(state_->raw_session) == SSH_KNOWN_HOSTS_OK;
+            return ::ssh_session_is_known_server(state_->raw_session) == SSH_KNOWN_HOSTS_OK;
         }
 #endif
         return false;
@@ -313,11 +316,13 @@ public:
         }
 #if CFIRE_LIBSSH_ACTIVE
         if (!state_->raw_session) return std::unexpected(Error("ssh.Session.write_known_host: disconnected"));
-        if (ssh_session_update_known_hosts(state_->raw_session) != SSH_OK) {
-            return std::unexpected(Error(std::format("ssh.Session.write_known_host: {}", ssh_get_error(state_->raw_session))));
+        if (::ssh_session_update_known_hosts(state_->raw_session) != SSH_OK) {
+            return std::unexpected(Error(std::format("ssh.Session.write_known_host: {}", ::ssh_get_error(state_->raw_session))));
         }
-#endif
         return {};
+#else
+        return std::unexpected(Error("ssh.Session.write_known_host: libssh not compiled in"));
+#endif
     }
 
     // Authenticate using an in-memory private key (PEM/OpenSSH format) without writing temp files to disk.
@@ -339,14 +344,14 @@ public:
         std::string pem_str(private_key_pem);
         std::string pass_str(passphrase);
         const char* pass_ptr = passphrase.empty() ? nullptr : pass_str.c_str();
-        int rc = ssh_pki_import_privkey_base64(pem_str.c_str(), pass_ptr, nullptr, nullptr, &pkey);
+        int rc = ::ssh_pki_import_privkey_base64(pem_str.c_str(), pass_ptr, nullptr, nullptr, &pkey);
         if (rc != SSH_OK || !pkey) {
             return std::unexpected(Error("ssh.Session.auth_publickey_mem: failed to parse private key from memory"));
         }
-        rc = ssh_userauth_publickey(state_->raw_session, nullptr, pkey);
-        ssh_key_free(pkey);
+        rc = ::ssh_userauth_publickey(state_->raw_session, nullptr, pkey);
+        ::ssh_key_free(pkey);
         if (rc != SSH_AUTH_SUCCESS) {
-            return std::unexpected(Error(std::format("ssh.Session.auth_publickey_mem: authentication rejected ({})", ssh_get_error(state_->raw_session))));
+            return std::unexpected(Error(std::format("ssh.Session.auth_publickey_mem: authentication rejected ({})", ::ssh_get_error(state_->raw_session))));
         }
         state_->authenticated = true;
         return {};
@@ -372,14 +377,14 @@ public:
         std::string path_str(private_key_path);
         std::string pass_str(passphrase);
         const char* pass_ptr = passphrase.empty() ? nullptr : pass_str.c_str();
-        int rc = ssh_pki_import_privkey_file(path_str.c_str(), pass_ptr, nullptr, nullptr, &pkey);
+        int rc = ::ssh_pki_import_privkey_file(path_str.c_str(), pass_ptr, nullptr, nullptr, &pkey);
         if (rc != SSH_OK || !pkey) {
             return std::unexpected(Error(std::format("ssh.Session.auth_publickey_file: failed to load key '{}'", private_key_path)));
         }
-        rc = ssh_userauth_publickey(state_->raw_session, nullptr, pkey);
-        ssh_key_free(pkey);
+        rc = ::ssh_userauth_publickey(state_->raw_session, nullptr, pkey);
+        ::ssh_key_free(pkey);
         if (rc != SSH_AUTH_SUCCESS) {
-            return std::unexpected(Error(std::format("ssh.Session.auth_publickey_file: authentication rejected ({})", ssh_get_error(state_->raw_session))));
+            return std::unexpected(Error(std::format("ssh.Session.auth_publickey_file: authentication rejected ({})", ::ssh_get_error(state_->raw_session))));
         }
         state_->authenticated = true;
         return {};
@@ -402,9 +407,9 @@ public:
 
 #if CFIRE_LIBSSH_ACTIVE
         std::string pw(password);
-        int rc = ssh_userauth_password(state_->raw_session, nullptr, pw.c_str());
+        int rc = ::ssh_userauth_password(state_->raw_session, nullptr, pw.c_str());
         if (rc != SSH_AUTH_SUCCESS) {
-            return std::unexpected(Error(std::format("ssh.Session.auth_password: authentication rejected ({})", ssh_get_error(state_->raw_session))));
+            return std::unexpected(Error(std::format("ssh.Session.auth_password: authentication rejected ({})", ::ssh_get_error(state_->raw_session))));
         }
         state_->authenticated = true;
         return {};
@@ -424,9 +429,9 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        int rc = ssh_userauth_agent(state_->raw_session, nullptr);
+        int rc = ::ssh_userauth_agent(state_->raw_session, nullptr);
         if (rc != SSH_AUTH_SUCCESS) {
-            return std::unexpected(Error(std::format("ssh.Session.auth_agent: authentication failed ({})", ssh_get_error(state_->raw_session))));
+            return std::unexpected(Error(std::format("ssh.Session.auth_agent: authentication failed ({})", ::ssh_get_error(state_->raw_session))));
         }
         state_->authenticated = true;
         return {};
@@ -450,32 +455,41 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        ssh_channel ch = ssh_channel_new(state_->raw_session);
+        ssh_channel ch = ::ssh_channel_new(state_->raw_session);
         if (!ch) return std::unexpected(Error("ssh.Session.exec: ssh_channel_new failed"));
-        if (ssh_channel_open_session(ch) != SSH_OK) {
-            ssh_channel_free(ch);
+        if (::ssh_channel_open_session(ch) != SSH_OK) {
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.exec: ssh_channel_open_session failed"));
         }
         std::string cmd_str(command);
-        if (ssh_channel_request_exec(ch, cmd_str.c_str()) != SSH_OK) {
-            ssh_channel_close(ch);
-            ssh_channel_free(ch);
+        if (::ssh_channel_request_exec(ch, cmd_str.c_str()) != SSH_OK) {
+            ::ssh_channel_close(ch);
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.exec: ssh_channel_request_exec failed"));
         }
 
         ExecResult res;
         char buf[4096];
         int nbytes = 0;
-        while ((nbytes = ssh_channel_read(ch, buf, sizeof(buf), 0)) > 0) {
+        while ((nbytes = ::ssh_channel_read(ch, buf, sizeof(buf), 0)) > 0) {
             res.stdout_cf_.append(buf, static_cast<std::size_t>(nbytes));
         }
-        while ((nbytes = ssh_channel_read(ch, buf, sizeof(buf), 1)) > 0) {
+        while ((nbytes = ::ssh_channel_read(ch, buf, sizeof(buf), 1)) > 0) {
             res.stderr_cf_.append(buf, static_cast<std::size_t>(nbytes));
         }
-        res.exit_code = ssh_channel_get_exit_status(ch);
-        ssh_channel_send_eof(ch);
-        ssh_channel_close(ch);
-        ssh_channel_free(ch);
+#if defined(LIBSSH_VERSION_MAJOR) && (LIBSSH_VERSION_MAJOR > 0 || (LIBSSH_VERSION_MAJOR == 0 && LIBSSH_VERSION_MINOR >= 11))
+        std::uint32_t exit_u32 = 0;
+        if (::ssh_channel_get_exit_state(ch, &exit_u32, nullptr, nullptr) == SSH_OK) {
+            res.exit_code = static_cast<std::int32_t>(exit_u32);
+        } else {
+            res.exit_code = -1;
+        }
+#else
+        res.exit_code = ::ssh_channel_get_exit_status(ch);
+#endif
+        ::ssh_channel_send_eof(ch);
+        ::ssh_channel_close(ch);
+        ::ssh_channel_free(ch);
         return res;
 #else
         return std::unexpected(Error("ssh.Session.exec: libssh not compiled in"));
@@ -505,21 +519,21 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        ssh_channel ch = ssh_channel_new(state_->raw_session);
+        ssh_channel ch = ::ssh_channel_new(state_->raw_session);
         if (!ch) return std::unexpected(Error("ssh.Session.open_pty: ssh_channel_new failed"));
-        if (ssh_channel_open_session(ch) != SSH_OK) {
-            ssh_channel_free(ch);
+        if (::ssh_channel_open_session(ch) != SSH_OK) {
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.open_pty: ssh_channel_open_session failed"));
         }
         std::string term_str(term);
-        if (ssh_channel_request_pty_size(ch, term_str.c_str(), cols, rows) != SSH_OK) {
-            ssh_channel_close(ch);
-            ssh_channel_free(ch);
+        if (::ssh_channel_request_pty_size(ch, term_str.c_str(), cols, rows) != SSH_OK) {
+            ::ssh_channel_close(ch);
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.open_pty: ssh_channel_request_pty_size failed"));
         }
-        if (ssh_channel_request_shell(ch) != SSH_OK) {
-            ssh_channel_close(ch);
-            ssh_channel_free(ch);
+        if (::ssh_channel_request_shell(ch) != SSH_OK) {
+            ::ssh_channel_close(ch);
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.open_pty: ssh_channel_request_shell failed"));
         }
         ch_state->raw_channel = ch;
@@ -548,12 +562,12 @@ public:
         }
 
 #if CFIRE_LIBSSH_ACTIVE
-        ssh_channel ch = ssh_channel_new(state_->raw_session);
+        ssh_channel ch = ::ssh_channel_new(state_->raw_session);
         if (!ch) return std::unexpected(Error("ssh.Session.open_forward: ssh_channel_new failed"));
         std::string rhost(remote_host);
         std::string shost(source_host);
-        if (ssh_channel_open_forward(ch, rhost.c_str(), remote_port, shost.c_str(), local_port) != SSH_OK) {
-            ssh_channel_free(ch);
+        if (::ssh_channel_open_forward(ch, rhost.c_str(), remote_port, shost.c_str(), local_port) != SSH_OK) {
+            ::ssh_channel_free(ch);
             return std::unexpected(Error("ssh.Session.open_forward: ssh_channel_open_forward failed"));
         }
         ch_state->raw_channel = ch;
@@ -585,10 +599,10 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_write_text: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
-        sftp_file f = sftp_open(state_->raw_sftp, rpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, static_cast<mode_t>(mode));
+        sftp_file f = ::sftp_open(state_->raw_sftp, rpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, static_cast<mode_t>(mode));
         if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_write_text: failed to open '{}'", remote_path)));
-        ssize_t n = sftp_write(f, data.data(), data.size());
-        sftp_close(f);
+        ssize_t n = ::sftp_write(f, data.data(), data.size());
+        ::sftp_close(f);
         if (n < 0 || static_cast<std::size_t>(n) != data.size()) {
             return std::unexpected(Error("ssh.Session.sftp_write_text: incomplete SFTP write"));
         }
@@ -622,15 +636,15 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_read_text: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
-        sftp_file f = sftp_open(state_->raw_sftp, rpath.c_str(), O_RDONLY, 0);
+        sftp_file f = ::sftp_open(state_->raw_sftp, rpath.c_str(), O_RDONLY, 0);
         if (!f) return std::unexpected(Error(std::format("ssh.Session.sftp_read_text: failed to open '{}'", remote_path)));
         std::string out;
         char buf[8192];
         ssize_t n = 0;
-        while ((n = sftp_read(f, buf, sizeof(buf))) > 0) {
+        while ((n = ::sftp_read(f, buf, sizeof(buf))) > 0) {
             out.append(buf, static_cast<std::size_t>(n));
         }
-        sftp_close(f);
+        ::sftp_close(f);
         if (n < 0) return std::unexpected(Error("ssh.Session.sftp_read_text: read error"));
         return out;
 #else
@@ -677,10 +691,10 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_list_dir: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
-        sftp_dir dir = sftp_opendir(state_->raw_sftp, rpath.c_str());
+        sftp_dir dir = ::sftp_opendir(state_->raw_sftp, rpath.c_str());
         if (!dir) return std::unexpected(Error(std::format("ssh.Session.sftp_list_dir: failed to open dir '{}'", remote_path)));
         std::vector<SftpEntry> entries;
-        while (sftp_attributes attr = sftp_readdir(state_->raw_sftp, dir)) {
+        while (sftp_attributes attr = ::sftp_readdir(state_->raw_sftp, dir)) {
             std::string name = attr->name ? attr->name : "";
             if (name != "." && name != "..") {
                 SftpEntry e;
@@ -690,9 +704,9 @@ public:
                 e.permissions = attr->permissions;
                 entries.push_back(std::move(e));
             }
-            sftp_attributes_free(attr);
+            ::sftp_attributes_free(attr);
         }
-        sftp_closedir(dir);
+        ::sftp_closedir(dir);
         return entries;
 #else
         return std::unexpected(Error("ssh.Session.sftp_list_dir: libssh not compiled in"));
@@ -709,7 +723,7 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_mkdir: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
-        if (sftp_mkdir(state_->raw_sftp, rpath.c_str(), static_cast<mode_t>(mode)) != SSH_OK) {
+        if (::sftp_mkdir(state_->raw_sftp, rpath.c_str(), static_cast<mode_t>(mode)) != SSH_OK) {
             return std::unexpected(Error(std::format("ssh.Session.sftp_mkdir: failed to create '{}'", remote_path)));
         }
         return {};
@@ -736,7 +750,7 @@ public:
 #if CFIRE_LIBSSH_ACTIVE
         if (!ensure_sftp_locked()) return std::unexpected(Error("ssh.Session.sftp_remove: failed to initialize SFTP subsystem"));
         std::string rpath(remote_path);
-        if (sftp_unlink(state_->raw_sftp, rpath.c_str()) != SSH_OK) {
+        if (::sftp_unlink(state_->raw_sftp, rpath.c_str()) != SSH_OK) {
             return std::unexpected(Error(std::format("ssh.Session.sftp_remove: failed to remove '{}'", remote_path)));
         }
         return {};
@@ -754,10 +768,10 @@ private:
     auto ensure_sftp_locked() -> bool {
         if (state_->raw_sftp) return true;
         if (!state_->raw_session) return false;
-        state_->raw_sftp = sftp_new(state_->raw_session);
+        state_->raw_sftp = ::sftp_new(state_->raw_session);
         if (!state_->raw_sftp) return false;
-        if (sftp_init(state_->raw_sftp) != SSH_OK) {
-            sftp_free(state_->raw_sftp);
+        if (::sftp_init(state_->raw_sftp) != SSH_OK) {
+            ::sftp_free(state_->raw_sftp);
             state_->raw_sftp = nullptr;
             return false;
         }
@@ -802,32 +816,32 @@ private:
     }
 
 #if CFIRE_LIBSSH_ACTIVE
-    ssh_session sess = ssh_new();
+    ssh_session sess = ::ssh_new();
     if (!sess) return std::unexpected(Error("ssh.dial: ssh_new failed"));
 
     int port_int = static_cast<int>(port);
     long timeout_sec = static_cast<long>(std::max<std::int64_t>(1, (timeout_ms + 999) / 1000));
-    ssh_options_set(sess, SSH_OPTIONS_HOST, st->host.c_str());
-    ssh_options_set(sess, SSH_OPTIONS_PORT, &port_int);
-    ssh_options_set(sess, SSH_OPTIONS_USER, st->user.c_str());
-    ssh_options_set(sess, SSH_OPTIONS_TIMEOUT, &timeout_sec);
+    ::ssh_options_set(sess, SSH_OPTIONS_HOST, st->host.c_str());
+    ::ssh_options_set(sess, SSH_OPTIONS_PORT, &port_int);
+    ::ssh_options_set(sess, SSH_OPTIONS_USER, st->user.c_str());
+    ::ssh_options_set(sess, SSH_OPTIONS_TIMEOUT, &timeout_sec);
 
-    if (ssh_connect(sess) != SSH_OK) {
-        std::string err = ssh_get_error(sess);
-        ssh_free(sess);
+    if (::ssh_connect(sess) != SSH_OK) {
+        std::string err = ::ssh_get_error(sess);
+        ::ssh_free(sess);
         return std::unexpected(Error(std::format("ssh.dial({}:{}): {}", host, port, err)));
     }
 
     ssh_key srv_key = nullptr;
-    if (ssh_get_server_publickey(sess, &srv_key) == SSH_OK && srv_key) {
+    if (::ssh_get_server_publickey(sess, &srv_key) == SSH_OK && srv_key) {
         unsigned char* hash = nullptr;
         std::size_t hlen = 0;
-        if (ssh_get_publickey_hash(srv_key, SSH_PUBLICKEY_HASH_SHA256, &hash, &hlen) == SSH_OK && hash) {
+        if (::ssh_get_publickey_hash(srv_key, SSH_PUBLICKEY_HASH_SHA256, &hash, &hlen) == SSH_OK && hash) {
             st->host_fingerprint = "SHA256:" + cfire::base64::encode(
                 std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(hash), hlen));
-            ssh_clean_pubkey_hash(&hash);
+            ::ssh_clean_pubkey_hash(&hash);
         }
-        ssh_key_free(srv_key);
+        ::ssh_key_free(srv_key);
     }
 
     st->raw_session = sess;

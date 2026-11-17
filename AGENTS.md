@@ -20,9 +20,9 @@ Welcome to the `cfire` codebase. These guidelines are permanent repository-level
   - `refactor.hpp` — AST-backed cross-workspace symbol rename engine (`cfire refactor`).
   - `docgen.hpp` (`src/docgen/{catalog,styles,markdown,html}.hpp`) — Single-source metadata catalog and HTML/Markdown generator (`cfire doc`).
   - `main.cpp` — Standalone CLI driver entrypoint.
-- `runtime/` — Modular ISO C++23 runtime & 35 built-in `core:*` / `ext:*` modules:
+- `runtime/` — Modular ISO C++23 runtime & 36 built-in `core:*` / `ext:*` modules:
   - `cfire_prelude.hpp` — Core primitives (`Error`, `slice`, `async.scope`, `own[T]`, `shared[T]`).
-  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,websocket}.hpp`) — Modular header implementations for all 29 `core:*` and 6 `ext:*` standard library packages.
+  - `cfire_core_stdlib.hpp` & `runtime/core/*.hpp` (`runtime/core/net/{tcp,url,http,ipc,websocket}.hpp`) — Modular header implementations for all 30 `core:*` and 6 `ext:*` standard library packages.
 - `docs/planning/README.md` — The authoritative operational protocol and validation process guidelines.
 - `docs/planning/` — The project backlog, active development tasks, and architectural evaluations.
 - `docs/planning/audit/PLAYBOOK.md` — Repeatable language audit procedure. When asked to "audit the language" or "re-run the audit", follow it end to end (read-only, no commits). It uses `scripts/audit/` (`run_probes.py`, `mutfuzz.py`, `lsp_smoke.py`, `probes/*.cf`).

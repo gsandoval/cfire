@@ -136,6 +136,13 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_definition(const std::string& uri, int
                     break;
                 }
             }
+            for (const auto& iface : pkg.ast.interfaces) {
+                if (iface.name == sym.name) {
+                    target_uri = pkg.uri;
+                    target_line = iface.line - 1;
+                    break;
+                }
+            }
         }
     }
 
@@ -156,7 +163,7 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_definition(const std::string& uri, int
             }
         }
         for (const auto& en : ast_res->enums) {
-            if (en.name == rtype) {
+            if (en.name == rtype || en.name == sym.qualifier) {
                 for (const auto& v : en.variants) {
                     if (v.name == sym.name) { target_line = v.line - 1; break; }
                 }
@@ -182,7 +189,8 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_definition(const std::string& uri, int
                 }
                 if (target_line >= 0) break;
                 for (const auto& en : pkg.ast.enums) {
-                    if (en.name == rtype || pkg.alias + "." + en.name == rtype) {
+                    if (en.name == rtype || pkg.alias + "." + en.name == rtype ||
+                        sym.qualifier == pkg.alias + "." + en.name || sym.qualifier == en.name) {
                         for (const auto& v : en.variants) {
                             if (v.name == sym.name) { target_uri = pkg.uri; target_line = v.line - 1; break; }
                         }
@@ -236,6 +244,10 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_definition(const std::string& uri, int
                 for (const auto& v : en.variants) {
                     if (v.name == sym.name) { target_uri = pkg.uri; target_line = v.line - 1; break; }
                 }
+            }
+            if (target_line >= 0) break;
+            for (const auto& iface : pkg.ast.interfaces) {
+                if (iface.name == sym.name) { target_uri = pkg.uri; target_line = iface.line - 1; break; }
             }
             if (target_line >= 0) break;
         }
@@ -382,6 +394,13 @@ CFIRE_LSP_NAV_INLINE auto Server::compute_type_definition(const std::string& uri
                 return std::format(
                     R"({{"uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}})",
                     detail::json_escape(pkg.uri), en.line - 1, en.line - 1);
+            }
+        }
+        for (const auto& iface : pkg.ast.interfaces) {
+            if (iface.name == stripped_type) {
+                return std::format(
+                    R"({{"uri":"{}","range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":12}}}}}})",
+                    detail::json_escape(pkg.uri), iface.line - 1, iface.line - 1);
             }
         }
     }

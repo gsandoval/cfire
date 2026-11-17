@@ -1,0 +1,54 @@
+// expect: stdout
+// | ctr=10;after=0;own=42
+package main
+
+type ValBox struct {
+    v: i64
+}
+
+type Named interface {
+    fn label() -> str
+}
+
+type Resettable interface {
+    fn mut reset()
+    fn apply(mut out: i64)
+    fn take(move item: own[ValBox]) -> i64
+}
+
+type Widget struct {
+    tag: str
+    count: i64
+}
+
+fn (w: Widget) label() -> str {
+    return w.tag
+}
+
+fn (mut w: Widget) reset() {
+    w.count = 0
+}
+
+fn (w: Widget) apply(mut out: i64) {
+    out += w.count
+}
+
+fn (w: Widget) take(move item: own[ValBox]) -> i64 {
+    return item.v
+}
+
+fn exercise[T: Named + Resettable](mut item: T, mut acc: i64, move boxed: own[ValBox]) -> str {
+    item.apply(mut acc)
+    item.reset()
+    mut after := acc
+    item.apply(mut after)
+    got := item.take(move boxed)
+    return format("{}={};after={};own={}", item.label(), acc, after - acc, got)
+}
+
+fn main() {
+    mut w := Widget{tag: "ctr", count: 10}
+    mut acc: i64 = 0
+    boxed := make(own[ValBox], ValBox{v: 42})
+    println("{}", exercise(mut w, mut acc, move boxed))
+}

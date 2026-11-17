@@ -108,6 +108,7 @@ void test_webui_rpc_events_and_linux_backend([[maybe_unused]] const std::filesys
 #include <cstring>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 // Minimal mock declarations for GTK3 + WebKit2GTK C API
 using gboolean = int;
@@ -141,9 +142,17 @@ struct WebKitURISchemeRequest { std::string path; std::string finished_body; std
 struct WebKitUserContentManager {};
 struct WebKitUserScript {};
 struct WebKitWebContext {};
-struct WebKitWebView { std::string last_eval_js; std::string loaded_uri; };
+struct WebKitSettings { gboolean dev_extras{FALSE}; };
+struct WebKitContextMenu {};
+struct WebKitHitTestResult {};
+struct GdkEvent {};
+struct GdkEventWindowState { guint changed_mask{0}; guint new_window_state{0}; };
+struct GdkDragContext {};
+struct GtkSelectionData { std::vector<std::string> uris; };
+struct WebKitWebView { std::string last_eval_js; std::string loaded_uri; WebKitSettings settings; };
 struct JSCValue { std::string str; };
 struct WebKitJavascriptResult { JSCValue val; };
+constexpr guint GDK_WINDOW_STATE_FULLSCREEN = 1U << 4;
 
 using WebKitURISchemeRequestCallback = void(*)(WebKitURISchemeRequest*, gpointer);
 
@@ -159,7 +168,13 @@ static GtkWidget g_mock_window{};
 
 inline gpointer g_malloc(std::size_t n) { return std::malloc(n); }
 inline void g_free(gpointer p) { std::free(p); }
+inline void g_strfreev(char** v) {
+    if (!v) return;
+    for (int i = 0; v[i] != nullptr; ++i) std::free(v[i]);
+    std::free(v);
+}
 inline void g_object_unref(gpointer p) { delete static_cast<GInputStream*>(p); }
+inline void g_signal_stop_emission_by_name(gpointer, const char*) {}
 
 inline GInputStream* g_memory_input_stream_new_from_data(const void* data, gssize len, GDestroyNotify destroy) {
     auto* s = new GInputStream{};
@@ -173,6 +188,28 @@ inline void webkit_uri_scheme_request_finish(WebKitURISchemeRequest* req, GInput
     req->finished_body = stream->data;
     req->finished_mime = mime ? mime : "";
 }
+inline WebKitSettings* webkit_web_view_get_settings(WebKitWebView* wv) { return wv ? &wv->settings : nullptr; }
+inline void webkit_settings_set_enable_developer_extras(WebKitSettings* s, gboolean en) { if (s) s->dev_extras = en; }
+inline void gtk_drag_dest_add_uri_targets(GtkWidget*) {}
+inline char** gtk_selection_data_get_uris(GtkSelectionData* sd) {
+    if (!sd || sd->uris.empty()) return nullptr;
+    char** out = static_cast<char**>(std::calloc(sd->uris.size() + 1, sizeof(char*)));
+    for (std::size_t i = 0; i < sd->uris.size(); ++i) {
+        out[i] = static_cast<char*>(std::malloc(sd->uris[i].size() + 1));
+        std::memcpy(out[i], sd->uris[i].c_str(), sd->uris[i].size() + 1);
+    }
+    return out;
+}
+inline char* g_filename_from_uri(const char* uri, char**, void**) {
+    if (!uri) return nullptr;
+    std::string_view sv(uri);
+    if (sv.starts_with("file://")) sv.remove_prefix(7);
+    char* out = static_cast<char*>(std::malloc(sv.size() + 1));
+    std::memcpy(out, sv.data(), sv.size());
+    out[sv.size()] = '\0';
+    return out;
+}
+inline void gtk_drag_finish(GdkDragContext*, gboolean, gboolean, guint) {}
 
 inline JSCValue* webkit_javascript_result_get_js_value(WebKitJavascriptResult* r) { return &r->val; }
 inline gboolean jsc_value_is_string(JSCValue*) { return TRUE; }
@@ -283,6 +320,8 @@ using HICON = void*;
 using HCURSOR = void*;
 using HBRUSH = void*;
 using HDC = void*;
+using HMODULE = void*;
+using HDROP = void*;
 
 #ifndef CALLBACK
 #define CALLBACK
@@ -334,7 +373,9 @@ constexpr int SW_RESTORE = 9;
 constexpr UINT SWP_NOSIZE = 1;
 constexpr UINT SWP_NOMOVE = 2;
 constexpr UINT SWP_NOZORDER = 4;
+constexpr UINT SWP_NOACTIVATE = 0x10;
 constexpr UINT SWP_FRAMECHANGED = 0x20;
+constexpr UINT SWP_NOOWNERZORDER = 0x200;
 const HWND HWND_TOP = nullptr;
 constexpr WPARAM HTCAPTION = 2;
 
@@ -565,6 +606,13 @@ inline LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM) { return 0; }
 
 inline HRESULT CoInitializeEx(void*, DWORD) { return 0; }
 inline void CoUninitialize() {}
+inline void* GetProcAddress(HMODULE, const char*) { return nullptr; }
+inline int MulDiv(int nNumber, int nNumerator, int nDenominator) {
+    return nDenominator == 0 ? 0 : static_cast<int>((static_cast<long long>(nNumber) * nNumerator) / nDenominator);
+}
+inline void DragAcceptFiles(HWND, BOOL) {}
+inline UINT DragQueryFileW(HDROP, UINT, wchar_t*, UINT) { return 0; }
+inline void DragFinish(HDROP) {}
 inline HINSTANCE GetModuleHandleW(const wchar_t*) { return &g_dummy_hwnd_obj; }
 inline HCURSOR LoadCursorW(HINSTANCE, const wchar_t*) { return &g_dummy_hwnd_obj; }
 inline HBRUSH CreateSolidBrush(DWORD) { return &g_dummy_hwnd_obj; }
@@ -683,11 +731,40 @@ int main() {
         auto kdf_key = cfire::sodium::argon2id("flint-master-password", salt, 32);
         require(kdf_key.has_value() && kdf_key->size() == 32, "sodium::argon2id derived 32-byte key");
 
+        // Verify byte-identical Argon2id contract vs direct ::crypto_pwhash (64 MiB default, 8 MiB, 256 MiB)
+        for (std::size_t mem_bytes : {std::size_t{64ULL * 1024ULL * 1024ULL}, std::size_t{8ULL * 1024ULL * 1024ULL}, std::size_t{256ULL * 1024ULL * 1024ULL}}) {
+            std::vector<std::uint8_t> expected_key(32);
+            require(::crypto_pwhash(expected_key.data(), 32,
+                                    "flint-master-password", 21,
+                                    salt.data(), 2, mem_bytes,
+                                    crypto_pwhash_ALG_ARGON2ID13) == 0,
+                    "direct crypto_pwhash reference succeeds");
+            auto got_key = cfire::sodium::argon2id("flint-master-password", salt, 32, 2, mem_bytes);
+            require(got_key.has_value() && *got_key == expected_key,
+                    std::format("sodium::argon2id matches crypto_pwhash byte-for-byte at {} bytes", mem_bytes));
+        }
+        {
+            std::vector<std::uint8_t> expected_default(32);
+            require(::crypto_pwhash(expected_default.data(), 32,
+                                    "flint-master-password", 21,
+                                    salt.data(), 2, 67108864ULL,
+                                    crypto_pwhash_ALG_ARGON2ID13) == 0,
+                    "direct crypto_pwhash default 64 MiB reference");
+            require(*kdf_key == expected_default, "sodium::argon2id default equals 64 MiB (67108864 bytes)");
+        }
+        require(!cfire::sodium::argon2id("flint-master-password", salt, 32, 2, 4096).has_value(),
+                "sodium::argon2id rejects memlimit < MEMLIMIT_MIN without clamping or guessing");
+        require(!cfire::sodium::argon2id("flint-master-password", salt, 32, 0, 67108864).has_value(),
+                "sodium::argon2id rejects opslimit < OPSLIMIT_MIN");
+
         auto phc = cfire::sodium::argon2id_str("flint-master-password");
-        require(phc.has_value() && cfire::sodium::argon2id_verify(*phc, "flint-master-password"),
-            "sodium::argon2id_str + argon2id_verify pass");
+        require(phc.has_value() && phc->contains("$m=65536,t=2,p=") &&
+                cfire::sodium::argon2id_verify(*phc, "flint-master-password"),
+            "sodium::argon2id_str reports 64 MiB (m=65536) and verifies");
         require(!cfire::sodium::argon2id_verify(*phc, "wrong-password"),
             "sodium::argon2id_verify rejects wrong password");
+        require(!cfire::sodium::argon2id_str("flint-master-password", 2, 4096).has_value(),
+                "sodium::argon2id_str rejects memlimit < MEMLIMIT_MIN");
 
         auto plain_sod = cfire::to_bytes("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI");
         auto xsealed = cfire::sodium::xchacha20poly1305_encrypt(*kdf_key, plain_sod);
@@ -877,6 +954,7 @@ int main() {
                 require(fwd_res.has_value(), "open_forward");
                 sess.close();
             }
+            cfire::ssh::enable_mock_server(false);
         }
 
         // UPSTREAM-02 Item 8 & 9: Domain-distinct I/O (`fs::File`, `os` FDs) and `cli::FlagReader` validation

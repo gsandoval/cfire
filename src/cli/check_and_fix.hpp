@@ -62,6 +62,27 @@ namespace cfire::cli {
             std::string current_text = *raw_txt;
             std::vector<cfire::diag::FixItEdit> total_applied;
 
+            std::error_code fcan_ec;
+            const auto fpath_canon = std::filesystem::weakly_canonical(fpath, fcan_ec);
+            auto same_file = [&](std::string_view df) -> bool {
+                if (df.empty() || df == fpath.string()) return true;
+                std::error_code dec;
+                auto dc = std::filesystem::weakly_canonical(std::filesystem::path(df), dec);
+                if (!fcan_ec && !dec && !fpath_canon.empty() && !dc.empty()) return dc == fpath_canon;
+                return std::filesystem::path(df).lexically_normal() == fpath.lexically_normal();
+            };
+            auto is_unresolved_code = [](std::string_view code) -> bool {
+                return code == "cfire/UNRESOLVED-PACKAGE" || code == "cfire/UNKNOWN-MODULE" ||
+                       code == "cfire/INVALID-IMPORT" || code == "cfire/UNDECLARED-TYPE" ||
+                       code == "cfire/UNDECLARED-IDENT" || code == "cfire/UNKNOWN-METHOD" ||
+                       code == "cfire/UNKNOWN-FIELD" || code == "cfire/UNKNOWN-STDLIB-FN" ||
+                       code == "cfire/UNKNOWN-STDLIB-TYPE" || code == "cfire/SYNTAX";
+            };
+            auto is_token_removal_fix_code = [](std::string_view code) -> bool {
+                return code == "cfire/REDUNDANT-TRY" || code == "cfire/REDUNDANT-OR" ||
+                       code == "cfire/REDUNDANT-CALLSITE-INTENT";
+            };
+
             for (int pass = 0; pass < 8; ++pass) {
                 auto pres = cfire::frontend::parse_source_resilient(fpath.string(), current_text);
                 auto lines = cfire::diag::split_lines(current_text);
@@ -72,30 +93,45 @@ namespace cfire::cli {
                                                                      : decltype(cfire::diag::detect_missing_stdlib_imports(pres.ast, lines)){};
                 bool has_batch_import_fix = !import_fixes.empty();
                 for (auto& f : import_fixes) {
+                    if (only.empty() && f.applicability != cfire::diag::FixApplicability::MachineApplicable) continue;
                     pass_edits.push_back(std::move(f));
                 }
 
-                // 2. Parser diagnostics & quick-fixes (e.g. deprecations)
-                for (const auto& err : pres.source_errors) {
-                    auto d = cfire::diag::from_source_error(err);
-                    if (!wanted(d.code)) continue;
-                    cfire::diag::resolve_diagnostic_range(d, lines);
-                    cfire::diag::synthesize_fixits_for_diagnostic(d, nullptr, lines);
-                    for (auto& fix : d.fixits) {
-                        if (fix.is_preferred) pass_edits.push_back(std::move(fix));
+                // 2. Full package-aware parse + Sema diagnostics (no Clang subprocess)
+                cfire::analysis::CheckOptions fix_opts;
+                fix_opts.verify_cpp_backend = false;
+                fix_opts.resolve_sibling_packages = true;
+                fix_opts.source_overlays[fpath.string()] = current_text;
+                if (!fcan_ec && !fpath_canon.empty()) {
+                    fix_opts.source_overlays[fpath_canon.string()] = current_text;
+                }
+                auto all_diags = cfire::analysis::check_source(fpath.string(), current_text, fix_opts);
+
+                bool has_unresolved_diagnostics = false;
+                for (const auto& d : all_diags) {
+                    if (d.severity == "error" && is_unresolved_code(d.code)) {
+                        has_unresolved_diagnostics = true;
+                        break;
                     }
                 }
 
-                // 3. Sema diagnostics & quick-fixes
-                auto chk = cfire::frontend::analyze_resilient(std::move(pres.ast));
-                for (auto d : chk.diagnostics) {
+                for (auto& d : all_diags) {
+                    if (!same_file(d.file)) continue;
                     if (d.severity == "error" && has_batch_import_fix && d.code == "cfire/MISSING-IMPORT") continue;
                     if (!wanted(d.code)) continue;
-                    if (d.file.empty()) d.file = fpath.string();
-                    cfire::diag::resolve_diagnostic_range(d, lines);
-                    cfire::diag::synthesize_fixits_for_diagnostic(d, &chk.ast, lines);
+                    if (has_unresolved_diagnostics && is_token_removal_fix_code(d.code)) continue;
                     for (auto& fix : d.fixits) {
-                        if (fix.is_preferred) pass_edits.push_back(std::move(fix));
+                        if (only.empty()) {
+                            if (fix.is_preferred && fix.applicability == cfire::diag::FixApplicability::MachineApplicable) {
+                                pass_edits.push_back(std::move(fix));
+                                break;
+                            }
+                        } else {
+                            if (fix.is_preferred || fix.applicability == cfire::diag::FixApplicability::EditorOnly) {
+                                pass_edits.push_back(std::move(fix));
+                                break;
+                            }
+                        }
                     }
                 }
 

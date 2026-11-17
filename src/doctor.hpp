@@ -133,20 +133,23 @@ struct CheckItem {
             auto cp = build::ProbeCache::instance().probe_compiler(cxx_res.command);
             std::string ver = !cp.version_first_line.empty() ? cp.version_first_line : command_version(run_cxx);
             int rc = 0;
-            std::error_code probe_ec;
-            auto probe_cpp = std::filesystem::temp_directory_path(probe_ec) / "cfire_doctor_probe.cpp";
-            {
+            cfire::detail::SecureTempDir probe_tmp("cfire_doctor");
+            auto probe_cpp = probe_tmp.file("probe.cpp");
+            if (probe_tmp.ok()) {
                 std::ofstream pf(probe_cpp, std::ios::binary | std::ios::trunc);
                 pf << "#include <expected>\nint main() { return 0; }\n";
+            } else {
+                rc = 1;
             }
-            (void)bridge::run_command_capture(
-                std::format(
-                    "{} -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -fsyntax-only {}",
-                    run_cxx,
-                    bridge::shell_quote(probe_cpp.string())),
-                rc
-            );
-            std::filesystem::remove(probe_cpp, probe_ec);
+            if (rc == 0) {
+                (void)bridge::run_command_capture(
+                    std::format(
+                        "{} -std=c++2b -Wno-builtin-macro-redefined -D__cpp_concepts=202002L -fsyntax-only {}",
+                        run_cxx,
+                        bridge::shell_quote(probe_cpp.string())),
+                    rc
+                );
+            }
             if (rc == 0) {
                 std::string ok_detail = ver.empty()
                     ? std::format("{} (-std=c++2b verified) {}", cxx_res.command, src_tag)

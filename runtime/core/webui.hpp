@@ -40,12 +40,18 @@ template <typename Fn, typename... Args>
 class App {
 public:
     App() : state_(std::make_shared<detail::AppState>()) {
+#if defined(CFIRE_HAS_WIN32_BACKEND)
+        (void)detail::win32_enable_per_monitor_dpi_v2();
+#endif
         register_default_serve_dirs();
     }
 
     App(std::string_view title, std::int32_t width, std::int32_t height)
         : state_(std::make_shared<detail::AppState>())
     {
+#if defined(CFIRE_HAS_WIN32_BACKEND)
+        (void)detail::win32_enable_per_monitor_dpi_v2();
+#endif
         state_->title = std::string(title);
         state_->width = width > 0 ? width : 960;
         state_->height = height > 0 ? height : 640;
@@ -335,14 +341,66 @@ public:
         state_->always_on_top = on_top;
     }
 
+    void set_devtools(bool enabled) {
+        std::function<void(bool)> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->devtools_enabled = enabled;
+            fn = state_->platform_set_devtools;
+        }
+        if (fn) fn(enabled);
+    }
+
+    [[nodiscard]] auto devtools_enabled() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->devtools_enabled;
+    }
+
+    void set_context_menu(bool enabled) {
+        std::function<void(bool)> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->context_menu_enabled = enabled;
+            fn = state_->platform_set_context_menu;
+        }
+        if (fn) fn(enabled);
+    }
+
+    [[nodiscard]] auto context_menu_enabled() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->context_menu_enabled;
+    }
+
+    void set_autofill(bool enabled) {
+        std::function<void(bool)> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->autofill_enabled = enabled;
+            fn = state_->platform_set_autofill;
+        }
+        if (fn) {
+            fn(enabled);
+        } else {
+            state_->eval_js(std::format("if(window.__cfire_set_autofill)window.__cfire_set_autofill({});", enabled ? "true" : "false"));
+        }
+    }
+
+    [[nodiscard]] auto autofill_enabled() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->autofill_enabled;
+    }
+
     void fullscreen() {
         std::function<void()> fn;
+        bool new_fs = false;
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
             state_->is_fullscreen = !state_->is_fullscreen;
+            new_fs = state_->is_fullscreen;
             fn = state_->platform_fullscreen;
         }
         if (fn) fn();
+        else state_->notify_fullscreen_changed(new_fs);
     }
 
     void minimize() {

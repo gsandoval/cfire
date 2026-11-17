@@ -181,12 +181,20 @@ public:
         if (auto it = name_to_id_.find(n); it != name_to_id_.end()) {
             return it->second;
         }
+        if (n.ends_with('?')) {
+            TypeId inner = from_name(n.substr(0, n.size() - 1));
+            return make_optional(inner);
+        }
+        if (n.ends_with('!')) {
+            TypeId inner = from_name(n.substr(0, n.size() - 1));
+            return make_fallible(inner);
+        }
         if (n.starts_with("[]")) {
             TypeId elem = from_name(n.substr(2));
             return make_slice(elem);
         }
         // `map[K]V` (K may itself contain brackets) and `[N]T`.
-        if (n.starts_with("map[") && !n.ends_with('?') && !n.ends_with('!')) {
+        if (n.starts_with("map[")) {
             int depth = 0;
             for (std::size_t i = 3; i < n.size(); ++i) {
                 if (n[i] == '[') ++depth;
@@ -198,24 +206,49 @@ public:
                 }
             }
         }
-        if (n.size() > 2 && n[0] == '[' && std::isdigit(static_cast<unsigned char>(n[1])) && !n.ends_with('?') && !n.ends_with('!')) {
+        if (n.size() > 2 && n[0] == '[' && std::isdigit(static_cast<unsigned char>(n[1]))) {
             if (auto rb = n.find(']'); rb != std::string::npos) {
-                std::size_t len = 0;
-                for (std::size_t i = 1; i < rb; ++i) {
-                    if (!std::isdigit(static_cast<unsigned char>(n[i]))) return TypeId::Unknown();
-                    len = len * 10 + static_cast<std::size_t>(n[i] - '0');
+                if (auto parsed_len = parse_int_literal<std::size_t>(n.substr(1, rb - 1))) {
+                    TypeId elem = from_name(n.substr(rb + 1));
+                    if (!elem.is_unknown()) return make_array(elem, *parsed_len);
+                } else {
+                    return TypeId::Unknown();
                 }
-                TypeId elem = from_name(n.substr(rb + 1));
-                if (!elem.is_unknown()) return make_array(elem, len);
             }
         }
-        if (n.ends_with('?')) {
-            TypeId inner = from_name(n.substr(0, n.size() - 1));
-            return make_optional(inner);
-        }
-        if (n.ends_with('!')) {
-            TypeId inner = from_name(n.substr(0, n.size() - 1));
-            return make_fallible(inner);
+        if (n.size() >= 2 && n.front() == '(' && n.back() == ')') {
+            int p_depth = 0;
+            int b_depth = 0;
+            bool outer_encloses = true;
+            std::vector<TypeId> elems;
+            std::size_t start = 1;
+            for (std::size_t i = 0; i < n.size(); ++i) {
+                if (n[i] == '(') ++p_depth;
+                else if (n[i] == ')') {
+                    --p_depth;
+                    if (p_depth == 0 && i + 1 < n.size()) {
+                        outer_encloses = false;
+                        break;
+                    }
+                } else if (n[i] == '[') ++b_depth;
+                else if (n[i] == ']') --b_depth;
+                else if (n[i] == ',' && p_depth == 1 && b_depth == 0) {
+                    std::string_view part(n.data() + start, i - start);
+                    while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front()))) part.remove_prefix(1);
+                    while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back()))) part.remove_suffix(1);
+                    elems.push_back(from_name(part));
+                    start = i + 1;
+                }
+            }
+            if (outer_encloses && p_depth == 0) {
+                std::string_view last_part(n.data() + start, (n.size() - 1) - start);
+                while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.front()))) last_part.remove_prefix(1);
+                while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.back()))) last_part.remove_suffix(1);
+                if (!last_part.empty() || !elems.empty()) {
+                    elems.push_back(from_name(last_part));
+                    return make_tuple(std::move(elems));
+                }
+            }
         }
         if (n.starts_with("&mut ")) {
             TypeId inner = from_name(n.substr(5));
@@ -258,6 +291,12 @@ public:
             inner.is_optional = false;
             return make_optional(from_typeref(inner));
         }
+        if (tr.is_tuple) {
+            std::vector<TypeId> elems;
+            elems.reserve(tr.tuple_types.size());
+            for (const auto& tt : tr.tuple_types) elems.push_back(from_typeref(tt));
+            return make_tuple(std::move(elems));
+        }
         if (tr.is_slice) {
             TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name.starts_with("[]") ? tr.name.substr(2) : tr.name);
             return make_slice(elem);
@@ -266,7 +305,7 @@ public:
             TypeId elem = tr.elem_type ? from_typeref(*tr.elem_type) : from_name(tr.name);
             std::size_t len = 0;
             if (!tr.array_len.empty()) {
-                try { len = std::stoul(tr.array_len); } catch (...) {}
+                len = parse_int_literal<std::size_t>(tr.array_len).value_or(0);
             }
             return make_array(elem, len);
         }
@@ -418,6 +457,21 @@ public:
         return intern(std::move(d));
     }
 
+    [[nodiscard]] auto make_tuple(std::vector<TypeId> elems) const -> TypeId {
+        std::string n = "(";
+        for (std::size_t i = 0; i < elems.size(); ++i) {
+            if (i > 0) n += ", ";
+            n += to_string(elems[i]);
+        }
+        n += ")";
+        if (auto it = name_to_id_.find(n); it != name_to_id_.end()) return it->second;
+        TypeDesc d;
+        d.kind = TypeKind::Tuple;
+        d.name = n;
+        d.param_types = std::move(elems);
+        return intern(std::move(d));
+    }
+
     [[nodiscard]] auto unwrap_optional(TypeId id) const -> TypeId {
         const auto& d = get(id);
         if (d.kind == TypeKind::Optional) return d.elem_type;
@@ -539,6 +593,15 @@ private:
             case TypeKind::MutBorrow: return "&mut " + to_string(d.elem_type);
             case TypeKind::RawPtr: return "*" + to_string(d.elem_type);
             case TypeKind::MutPtr: return "*mut " + to_string(d.elem_type);
+            case TypeKind::Tuple: {
+                std::string s = "(";
+                for (std::size_t i = 0; i < d.param_types.size(); ++i) {
+                    if (i > 0) s += ", ";
+                    s += to_string(d.param_types[i]);
+                }
+                s += ")";
+                return s;
+            }
             default: return "unknown";
         }
     }
@@ -570,6 +633,7 @@ struct CheckedFile {
     std::unordered_map<std::string, std::string> vendor_aliases{}; // alias -> vendor name
     std::unordered_map<std::string, std::string> shadowed_default_qualifiers{}; // default ns -> active alias ("str" -> "s")
     std::unordered_set<std::string> interfaces{};
+    std::unordered_map<std::string, InterfaceDecl> interface_defs{};
     std::unordered_set<std::string> move_only_structs{};
     // untyped `mut x:= <text>` declarations; codegen gives them an owned `std::string`
     // so a view initializer (a read-only `str` param, a slice) is copied rather than becoming a mutable view.
@@ -580,6 +644,8 @@ struct CheckedFile {
     // untyped declarations of a `match` / `if` expression whose arms are integer constants: they are
     // `i64`, so codegen spells the type instead of `auto` (which deduced a 32-bit `int`).
     mutable std::unordered_set<const VarDeclStmt*> int64_decls{};
+    // Non-enum bare identifier arms (`x => ...` / `x if ... => ...`) that bind the scrutinee value.
+    mutable std::unordered_set<const MatchArm*> match_catchall_bindings{};
     // `g.value` on a `sync.MutexGuard[T]`, which codegen lowers to the guarded value (`*g` in C++).
     mutable std::unordered_set<const void*> guard_value_members{};
     // `diagnostics` is the source of truth; `errors` / `warnings` are its rendered text forms

@@ -83,7 +83,13 @@ namespace detail {
     if (mod == "core:fs") return {
         {"OpenMode", "enum", "How `fs.open` opens a file.", {}, {"Read", "Write", "Append", "ReadWrite"}},
         {"SeekWhence", "enum", "The origin for `file.seek`.", {}, {"Start", "Current", "End"}},
-        {"File", "handle", "An open file, closed automatically when it goes out of scope."},
+        {"File", "handle", "An unbuffered OS file handle, closed automatically when it goes out of scope."},
+        {"FileInfo", "struct", "File, directory, or symbolic link metadata returned by `fs.stat`.", {
+            {"size", "u64", "Size of the entry in bytes."},
+            {"mtime_ms", "i64", "Last modification time in milliseconds since the Unix epoch."},
+            {"mode", "u32", "POSIX permission bits (or synthesized attributes on Windows)."},
+            {"is_dir", "bool", "`true` when the entry (or symlink target) is a directory."},
+            {"is_symlink", "bool", "`true` when the path itself is a symbolic link or Windows junction."}}},
     };
     if (mod == "core:json") return {
         {"Value", "handle", "A parsed JSON value of any shape, from `json.parse_dynamic`; inspect it with its methods."},
@@ -121,6 +127,14 @@ namespace detail {
             {"id", "str", "The event id, for reconnecting clients."}}},
         {"ServerLimits", "struct", ""},  // fields and summary from kStdlibStructs
         {"TlsConfig", "struct", ""},
+    };
+    if (mod == "core:net/ipc") return {
+        {"Listener", "handle", "A local IPC server bound to a Unix domain socket (`0600`) or Windows named pipe (same-user ACL); `accept()` returns a `Conn` per client."},
+        {"Conn", "handle", "A connected full-duplex local IPC stream, closed automatically when it goes out of scope."},
+        {"PeerCred", "struct", "Verified OS credentials of a local IPC peer from `conn.peer_credentials()`.", {
+            {"pid", "i64", "Peer process ID (`-1` if unavailable on a legacy platform)."},
+            {"same_user", "bool", "`true` when the peer runs under the same effective user/SID as this process."},
+            {"uid", "i64", "Peer effective UID on POSIX (`-1` on Windows, where identity uses SIDs)."}}},
     };
     if (mod == "core:net/tls") return {
         {"ServerContext", "handle", "A TLS server configuration (certificate and key) that wraps accepted connections."},

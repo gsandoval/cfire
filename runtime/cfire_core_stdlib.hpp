@@ -13,6 +13,7 @@
 #include "core/keychain.hpp"
 #include "core/encoding.hpp"
 #include "core/net.hpp"
+#include "core/net/ipc.hpp"
 #include "core/sync.hpp"
 #include "core/time.hpp"
 #include "core/log.hpp"

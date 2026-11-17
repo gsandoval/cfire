@@ -1,0 +1,6 @@
+package main
+
+fn main() {
+    bad := 0o8 //~ error cfire/SYNTAX
+    println("{}", bad)
+}

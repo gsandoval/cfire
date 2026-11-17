@@ -221,6 +221,15 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, i
                 std::string add_edit = imported ? "" : compute_import_edit(lines, mod.import_path);
                 for (const auto& fn : mod.functions) {
                     if (fn.name.find('.') != std::string::npos) continue;
+                    if (fn.cf_sig.starts_with("const ")) {
+                        std::string c_detail = imported ? fn.cf_sig : std::format("{} (auto-import)", fn.cf_sig);
+                        std::string c_doc = std::format("{} (C++23: {})", fn.summary, fn.cpp_lowering);
+                        if (!imported) {
+                            c_doc += std::format("\n\n*Selecting this will automatically insert `import \"{}\"`.*", mod.import_path);
+                        }
+                        append_item(fn.name, 21 /* Constant */, c_detail, c_doc, fn.name, 1, fn.name, add_edit);
+                        continue;
+                    }
                     std::string fn_detail = imported ? fn.cf_sig : std::format("{} (auto-import)", fn.cf_sig);
                     std::string fn_doc = std::format("{} (C++23: {})", fn.summary, fn.cpp_lowering);
                     if (!imported) {
@@ -297,6 +306,22 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_completions(const std::string& uri, i
             auto env = detail::build_scope_bindings(*ast_res, ws, lines, line);
             std::string rtype = detail::resolve_qualifier_type(sym.qualifier, *ast_res, ws, env);
             // builtin methods come from the single table (src/sema/builtin_methods.hpp).
+            if (rtype == "Error") {
+                auto [ic, fc] = make_sig_snippet("code", "fn code() -> i32");
+                append_item("code", 2, "fn (e: Error) code() -> i32",
+                            "Machine-readable error code (e.g. fs.ERR_EXISTS, or 0 if unspecified).", ic, fc);
+                auto [im, fm] = make_sig_snippet("message", "fn message() -> str");
+                append_item("message", 2, "fn (e: Error) message() -> str",
+                            "Human-readable error message carried by this Error.", im, fm);
+            }
+            if (auto dot = rtype.find('.'); dot != std::string::npos) {
+                if (auto [m, td] = detail::find_stdlib_type_doc(rtype.substr(0, dot), rtype.substr(dot + 1)); td != nullptr) {
+                    for (const auto& f : td->fields) {
+                        append_item(f.name, 5, f.type,
+                                    f.summary.empty() ? std::format("Field of {}.{}", m->ns_alias, td->name) : f.summary);
+                    }
+                }
+            }
             if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
                 std::unordered_set<std::string_view> seen;
                 for (const auto& bm : cfire::frontend::kBuiltinMethods) {

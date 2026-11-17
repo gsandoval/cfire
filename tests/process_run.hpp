@@ -36,17 +36,6 @@ inline auto slurp(const std::filesystem::path& p) -> std::string {
     auto text = cfire::fs::read_text(p);
     return text ? std::string(*text) : std::string();
 }
-inline auto capture_paths() -> std::pair<std::filesystem::path, std::filesystem::path> {
-    static std::atomic<std::uint64_t> s_id{0};
-    auto id = s_id++;
-#if defined(_WIN32)
-    auto pid = static_cast<unsigned long>(::GetCurrentProcessId());
-#else
-    auto pid = static_cast<long>(::getpid());
-#endif
-    auto base = std::filesystem::temp_directory_path() / std::format("cfire_proc_{}_{}", pid, id);
-    return {base.string() + ".out", base.string() + ".err"};
-}
 } // namespace proc_detail
 
 [[nodiscard]] inline auto run_process(const std::vector<std::string>& argv, const std::filesystem::path& cwd, int timeout_seconds)
@@ -56,7 +45,13 @@ inline auto capture_paths() -> std::pair<std::filesystem::path, std::filesystem:
         r.spawn_failed = true;
         return r;
     }
-    auto [out_path, err_path] = proc_detail::capture_paths();
+    cfire::detail::SecureTempDir cap_dir("cfire_proc");
+    if (!cap_dir.ok()) {
+        r.spawn_failed = true;
+        return r;
+    }
+    auto out_path = cap_dir.file("out");
+    auto err_path = cap_dir.file("err");
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
 #if defined(_WIN32)
     SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};

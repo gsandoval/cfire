@@ -76,11 +76,8 @@ struct ScopedBuildFlags {
 struct ScopedTempRoot {
     std::filesystem::path dir;
     explicit ScopedTempRoot(const std::string& prefix) {
-        std::error_code ec;
-        auto base = std::filesystem::temp_directory_path(ec);
-        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-        dir = base / std::format("{}_{}_{}", prefix, cfire::build::current_pid(), now);
-        std::filesystem::create_directories(dir, ec);
+        cfire::detail::SecureTempDir sec(prefix);
+        dir = sec.release();
     }
     ~ScopedTempRoot() {
         std::error_code ec;

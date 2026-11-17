@@ -110,6 +110,8 @@ public:
     bool in_ptr_return_ = false;
     bool sharded_non_inline_ = false;
     std::string cur_fn_raw_return_type_{};
+    TypeRef cur_fn_return_typeref_{};
+    bool has_cur_fn_return_typeref_ = false;
     std::string source_path_{};
     int last_source_line_ = -1;
     std::ostringstream buf_;
@@ -123,6 +125,7 @@ public:
     std::unordered_set<std::string> used_core_{};
     std::unordered_map<std::string, std::string> used_vendor_{};
     std::unordered_map<std::string, std::string> core_aliases_{};
+    std::unordered_set<std::string> error_vars_{};
     std::vector<std::string> active_async_scopes_{};
     // scope variable -> (its `cfire::async::Results<T>` collector, the lowered `T`), for the value-producing
     // scopes being emitted; their `scope.spawn` calls add the task to the collector.
@@ -214,6 +217,7 @@ public:
         sub.used_core_ = used_core_;
         sub.used_vendor_ = used_vendor_;
         sub.core_aliases_ = core_aliases_;
+        sub.error_vars_ = error_vars_;
         sub.local_vars_ = local_vars_;
         sub.ptr_vars_ = ptr_vars_;
         sub.ptr_field_names_ = ptr_field_names_;
@@ -233,6 +237,8 @@ public:
             sub.in_fallible_void_ = in_fallible_void_;
             sub.in_ptr_return_ = in_ptr_return_;
             sub.cur_fn_raw_return_type_ = cur_fn_raw_return_type_;
+            sub.cur_fn_return_typeref_ = cur_fn_return_typeref_;
+            sub.has_cur_fn_return_typeref_ = has_cur_fn_return_typeref_;
         }
         return sub;
     }
@@ -299,10 +305,10 @@ public:
             }
             if (kBuiltinNames.contains(ta.name) || cf_.declared_type_names.contains(ta.name)) continue;
             if (!seen.insert(ta.name).second) continue;
-            std::string constraint;
-            if (recv_st && idx < recv_st->type_params.size()) constraint = recv_st->type_params[idx].constraint;
-            else if (recv_en && idx < recv_en->type_params.size()) constraint = recv_en->type_params[idx].constraint;
-            out.push_back(TypeParam{ta.name, std::move(constraint)});
+            std::vector<std::string> constraints;
+            if (recv_st && idx < recv_st->type_params.size()) constraints = recv_st->type_params[idx].constraints;
+            else if (recv_en && idx < recv_en->type_params.size()) constraints = recv_en->type_params[idx].constraints;
+            out.push_back(TypeParam{ta.name, std::move(constraints)});
         }
         return out;
     }
@@ -382,6 +388,7 @@ public:
             } else if constexpr (std::is_same_v<T, MatchExpr>) {
                 if (expr_references_ident(ex.target, ident)) return true;
                 for (const auto& arm : ex.arms) {
+                    if (expr_references_ident(arm.guard, ident)) return true;
                     if (stmts_reference_ident(arm.body, ident)) return true;
                 }
                 return false;
@@ -432,6 +439,7 @@ public:
                 } else if constexpr (std::is_same_v<T, MatchStmt>) {
                     if (expr_references_ident(st.target, ident)) return true;
                     for (const auto& arm : st.arms) {
+                        if (expr_references_ident(arm.guard, ident)) return true;
                         if (stmts_reference_ident(arm.body, ident)) return true;
                     }
                     return false;
@@ -579,6 +587,269 @@ public:
         return false;
     }
 
+    [[nodiscard]] auto resolve_concept_name(std::string_view bound) const -> std::string {
+        if (auto it = cf_.interface_defs.find(std::string(bound)); it != cf_.interface_defs.end()) {
+            return it->second.name;
+        }
+        if (auto dot = bound.rfind('.'); dot != std::string_view::npos) {
+            return std::string(bound.substr(dot + 1));
+        }
+        return std::string(bound);
+    }
+
+    [[nodiscard]] auto resolve_enum_cpp_name(std::string_view prefix) const -> std::string {
+        if (prefix.empty()) return "";
+        if (cf_.enums.contains(std::string(prefix))) return std::string(prefix);
+        if (auto dot = prefix.find('.'); dot != std::string_view::npos) {
+            std::string_view pkg = prefix.substr(0, dot);
+            std::string_view ename = prefix.substr(dot + 1);
+            std::string mangled = std::format("cfire_pkg_{}__{}", pkg, ename);
+            if (cf_.enums.contains(mangled)) return mangled;
+            for (const auto& [k, en] : cf_.enums) {
+                (void)k;
+                std::string orig = en.name;
+                if (orig.starts_with("cfire_pkg_")) {
+                    if (auto sep = orig.find("__"); sep != std::string::npos) orig = orig.substr(sep + 2);
+                }
+                if (en.package_name == pkg && orig == ename) return en.name;
+            }
+        }
+        return std::string(prefix);
+    }
+
+    [[nodiscard]] auto format_template_clause(const std::vector<TypeParam>& tps) const -> std::string {
+        if (tps.empty()) return "";
+        const bool has_multi = std::any_of(tps.begin(), tps.end(), [](const TypeParam& tp) {
+            return tp.constraints.size() > 1;
+        });
+        std::string tparams;
+        std::string reqs;
+        for (std::size_t i = 0; i < tps.size(); ++i) {
+            if (i > 0) tparams += ", ";
+            const auto& tp = tps[i];
+            if (!has_multi && tp.constraints.size() == 1) {
+                tparams += std::format("{} {}", resolve_concept_name(tp.constraints[0]), tp.name);
+            } else {
+                tparams += std::format("typename {}", tp.name);
+                for (const auto& b : tp.constraints) {
+                    if (!reqs.empty()) reqs += " && ";
+                    reqs += std::format("{}<{}>", resolve_concept_name(b), tp.name);
+                }
+            }
+        }
+        if (!reqs.empty()) {
+            return std::format("template <{}> requires ({})", tparams, reqs);
+        }
+        return std::format("template <{}>", tparams);
+    }
+
+    [[nodiscard]] static auto lower_cpp_int_literal(std::string_view lit) -> std::string {
+        if (lit.starts_with("-0o") || lit.starts_with("-0O")) {
+            std::string_view rest = lit.substr(3);
+            const bool all_zero = !rest.empty() && std::all_of(rest.begin(), rest.end(), [](char c) { return c == '0'; });
+            return all_zero ? "0" : ("-0" + std::string(rest));
+        }
+        if (lit.starts_with("0o") || lit.starts_with("0O")) {
+            std::string_view rest = lit.substr(2);
+            const bool all_zero = !rest.empty() && std::all_of(rest.begin(), rest.end(), [](char c) { return c == '0'; });
+            return all_zero ? "0" : ("0" + std::string(rest));
+        }
+        return std::string(lit);
+    }
+
+    [[nodiscard]] static auto lower_default_expr_text(std::string_view d) -> std::string {
+        if (d.empty() || d == "[]") return "{}";
+        if (d.starts_with("0o") || d.starts_with("0O") || d.starts_with("-0o") || d.starts_with("-0O")) {
+            return lower_cpp_int_literal(d);
+        }
+        return std::string(d);
+    }
+
+    static void append_utf8_codepoint(std::string& out, std::uint32_t cp) {
+        if (cp <= 0x7Fu) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp <= 0x7FFu) {
+            out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else if (cp <= 0xFFFFu) {
+            out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else if (cp <= 0x10FFFFu) {
+            out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        }
+    }
+
+    [[nodiscard]] static auto encode_cpp_octal_bytes(std::string_view bytes) -> std::string {
+        std::string out;
+        out.reserve(bytes.size() * 2);
+        for (unsigned char uc : bytes) {
+            switch (uc) {
+                case '\\': out += "\\\\"; break;
+                case '"': out += "\\\""; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                case '\0': out += "\\000"; break;
+                default:
+                    if (uc >= 0x20 && uc <= 0x7E) {
+                        out.push_back(static_cast<char>(uc));
+                    } else {
+                        out += std::format("\\{:03o}", static_cast<unsigned int>(uc));
+                    }
+                    break;
+            }
+        }
+        return out;
+    }
+
+    // Decodes a raw cfire string literal snippet when it contains embedded NUL, `\u{...}`, or `\xHH` escapes
+    // that could truncate at `\0` or greedily consume trailing hex digits in C++. Returns `{bytes, has_nul, reencode}`.
+    [[nodiscard]] static auto decode_cfire_string_escapes(std::string_view raw) -> std::tuple<std::string, bool, bool> {
+        std::string decoded;
+        decoded.reserve(raw.size());
+        bool has_nul = false;
+        bool needs_reencode = false;
+        for (std::size_t i = 0; i < raw.size();) {
+            if (raw[i] != '\\' || i + 1 >= raw.size()) {
+                decoded.push_back(raw[i]);
+                ++i;
+                continue;
+            }
+            char esc = raw[i + 1];
+            if (esc == '0') {
+                decoded.push_back('\0');
+                has_nul = true;
+                needs_reencode = true;
+                i += 2;
+            } else if (esc == 'n') { decoded.push_back('\n'); i += 2; }
+            else if (esc == 't') { decoded.push_back('\t'); i += 2; }
+            else if (esc == 'r') { decoded.push_back('\r'); i += 2; }
+            else if (esc == 'b') { decoded.push_back('\b'); i += 2; }
+            else if (esc == 'f') { decoded.push_back('\f'); i += 2; }
+            else if (esc == 'v') { decoded.push_back('\v'); i += 2; }
+            else if (esc == 'a') { decoded.push_back('\a'); i += 2; }
+            else if (esc == '\\') { decoded.push_back('\\'); i += 2; }
+            else if (esc == '"') { decoded.push_back('"'); i += 2; }
+            else if (esc == '\'') { decoded.push_back('\''); i += 2; }
+            else if (esc == 'x' && i + 3 < raw.size() &&
+                     std::isxdigit(static_cast<unsigned char>(raw[i + 2])) &&
+                     std::isxdigit(static_cast<unsigned char>(raw[i + 3]))) {
+                std::uint32_t b = 0;
+                std::from_chars(raw.data() + i + 2, raw.data() + i + 4, b, 16);
+                decoded.push_back(static_cast<char>(static_cast<unsigned char>(b)));
+                if (b == 0) has_nul = true;
+                needs_reencode = true;
+                i += 4;
+            } else if (esc == 'u' && i + 2 < raw.size() && raw[i + 2] == '{') {
+                std::size_t j = i + 3;
+                while (j < raw.size() && raw[j] != '}') ++j;
+                if (j < raw.size() && j > i + 3) {
+                    std::uint32_t cp = 0;
+                    auto [ptr, ec] = std::from_chars(raw.data() + i + 3, raw.data() + j, cp, 16);
+                    if (ec == std::errc{} && ptr == raw.data() + j) {
+                        append_utf8_codepoint(decoded, cp);
+                        if (cp == 0) has_nul = true;
+                        needs_reencode = true;
+                        i = j + 1;
+                        continue;
+                    }
+                }
+                decoded.push_back(raw[i]);
+                decoded.push_back(esc);
+                i += 2;
+            } else if (esc == 'u' && i + 5 < raw.size()) {
+                std::uint32_t cp = 0;
+                auto [ptr, ec] = std::from_chars(raw.data() + i + 2, raw.data() + i + 6, cp, 16);
+                if (ec == std::errc{} && ptr == raw.data() + i + 6) {
+                    append_utf8_codepoint(decoded, cp);
+                    if (cp == 0) has_nul = true;
+                    needs_reencode = true;
+                    i += 6;
+                } else {
+                    decoded.push_back(raw[i]);
+                    decoded.push_back(esc);
+                    i += 2;
+                }
+            } else {
+                decoded.push_back(raw[i]);
+                decoded.push_back(esc);
+                i += 2;
+            }
+        }
+        return {std::move(decoded), has_nul, needs_reencode};
+    }
+
+    [[nodiscard]] static auto lower_string_literal_cpp(std::string_view raw) -> std::string {
+        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw);
+        if (has_nul) {
+            return std::format("cfire::str_ref(\"{}\", {})", encode_cpp_octal_bytes(decoded), decoded.size());
+        }
+        if (needs_reencode) {
+            return std::format("\"{}\"", encode_cpp_octal_bytes(decoded));
+        }
+        return std::format("\"{}\"", escape_unescaped_quotes(raw));
+    }
+
+    [[nodiscard]] static auto escape_format_literal_segment(std::string_view raw) -> std::string {
+        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw);
+        if (needs_reencode) {
+            return encode_cpp_octal_bytes(decoded);
+        }
+        return escape_unescaped_quotes(raw);
+    }
+
+    [[nodiscard]] auto infer_elem_cpp_type(const ExprPtr& e) const -> std::string {
+        if (!e) return "";
+        if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
+            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "std::string";
+            if (lit->kind == TokenKind::Int) return "std::int64_t";
+            if (lit->kind == TokenKind::Float) return "double";
+            if (lit->kind == TokenKind::Char) return "std::uint8_t";
+            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return "bool";
+        }
+        if (const auto* un = std::get_if<UnaryExpr>(&e->node); un && (un->op == "-" || un->op == "+") && un->operand) {
+            return infer_elem_cpp_type(un->operand);
+        }
+        if (const auto* nested_arr = std::get_if<ArrayLitExpr>(&e->node)) {
+            return infer_array_lit_cpp_type(*nested_arr);
+        }
+        if (const auto* tup = std::get_if<TupleExpr>(&e->node); tup && !tup->elements.empty()) {
+            std::string inner;
+            for (std::size_t i = 0; i < tup->elements.size(); ++i) {
+                std::string et = infer_elem_cpp_type(tup->elements[i]);
+                if (et.empty()) return "";
+                if (i > 0) inner += ", ";
+                inner += et;
+            }
+            return std::format("std::tuple<{}>", inner);
+        }
+        if (const auto* slit = std::get_if<StructLitExpr>(&e->node); slit && !slit->type_name.empty()) {
+            TypeRef tr;
+            tr.name = slit->type_name;
+            tr.type_args = slit->type_args;
+            return lower_owning_type(tr);
+        }
+        if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = var_types_.find(id->name); it != var_types_.end() && !it->second.empty() && it->second != "str") {
+                TypeRef tr;
+                tr.name = it->second;
+                return lower_owning_type(tr);
+            }
+        }
+        return "";
+    }
+
+    [[nodiscard]] auto infer_array_lit_cpp_type(const ArrayLitExpr& arr) const -> std::string {
+        if (arr.elements.empty()) return "";
+        std::string et = infer_elem_cpp_type(arr.elements[0]);
+        if (et.empty()) return "";
+        return std::format("std::vector<{}>", et);
+    }
+
     [[nodiscard]] static auto escape_unescaped_quotes(std::string_view sv) -> std::string {
         std::string out;
         out.reserve(sv.size());
@@ -611,6 +882,7 @@ public:
 
     [[nodiscard]] auto extract_interpolation(const LiteralExpr& lit, int line) -> std::optional<InterpolationResult>;
     [[nodiscard]] auto emit_expr(const ExprPtr& e) -> std::string;
+    [[nodiscard]] auto emit_typed_tuple(const TupleExpr& tup, const TypeRef& tr) -> std::string;
     [[nodiscard]] auto emit_call(const CallExpr& call) -> std::string;
     [[nodiscard]] auto infer_closure_expr_cpp_type(
         const ExprPtr& e,
@@ -697,6 +969,10 @@ public:
         }
         if (tr.is_slice && tr.elem_type) return is_non_value_field_type(*tr.elem_type, depth + 1);
         std::string n = tr.name;
+        if (n == "fs.FileInfo" || n == "fs::FileInfo" || n == "FileInfo" ||
+            n == "ipc.PeerCred" || n == "ipc::PeerCred" || n == "PeerCred") {
+            return false;
+        }
         if (n.starts_with("cpp::") || n.starts_with("webui.") || n.starts_with("webui::") ||
             n.starts_with("sync.") || n.starts_with("sync::") ||
             n.starts_with("sqlite.") || n.starts_with("sqlite::") ||
@@ -704,8 +980,11 @@ public:
             n.starts_with("fs.") || n.starts_with("fs::") ||
             n.starts_with("net.") || n.starts_with("net::") ||
             n.starts_with("http.") || n.starts_with("http::") ||
+            n.starts_with("ipc.") || n.starts_with("ipc::") ||
+            n.starts_with("websocket.") || n.starts_with("websocket::") ||
             n == "App" || n == "Mutex" || n == "WaitGroup" || n == "Channel" ||
-            n == "Conn" || n == "Session" || n == "File" || n == "TcpConn" || n == "TcpListener") {
+            n == "Conn" || n == "Session" || n == "File" || n == "TcpConn" || n == "TcpListener" ||
+            n == "Listener" || n == "HttpServer" || n == "Server") {
             return true;
         }
         for (const auto& sub_st : cf_.ast.structs) {
@@ -814,13 +1093,14 @@ CFIRE_CG_INLINE auto Emitter::emit_make(const CallExpr& call) -> std::string {
                 std::size_t next_pos = 0;
                 std::size_t last = 0;
                 for (const auto& a : call.args) {
-                    std::size_t slot = next_pos;
+                    std::size_t slot = vals.size();
                     if (!a.label.empty()) {
                         for (std::size_t k = 0; k < sig->params.size(); ++k) {
                             if (sig->params[k].name == a.label) { slot = k; break; }
                         }
                     } else {
-                        ++next_pos;
+                        while (next_pos < vals.size() && !vals[next_pos].empty()) ++next_pos;
+                        slot = next_pos++;
                     }
                     if (slot < vals.size()) {
                         vals[slot] = emit_call_arg(a);
@@ -830,7 +1110,7 @@ CFIRE_CG_INLINE auto Emitter::emit_make(const CallExpr& call) -> std::string {
                 std::string placed;
                 for (std::size_t k = 0; k < last; ++k) {
                     std::string v = vals[k];
-                    if (v.empty()) v = sig->params[k].default_text.empty() ? std::string("{}") : sig->params[k].default_text;
+                    if (v.empty()) v = lower_default_expr_text(sig->params[k].default_text);
                     placed += (k > 0 ? ", " : "") + v;
                 }
                 return std::format("{}({})", sc->cpp, placed);

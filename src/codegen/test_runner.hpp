@@ -314,6 +314,7 @@ CFIRE_CG_INLINE void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx
     in_test_ = true;
     in_fallible_void_ = false;
     local_vars_.clear();
+    error_vars_.clear();
     ptr_vars_.clear();
     smart_ptr_vars_.clear();
     map_vars_.clear();
@@ -338,6 +339,7 @@ CFIRE_CG_INLINE void Emitter::emit_test_decl(const TestDecl& td, std::size_t idx
     writeln("}");
     in_test_ = false;
     local_vars_.clear();
+    error_vars_.clear();
     ptr_vars_.clear();
     map_vars_.clear();
     fixed_array_vars_.clear();

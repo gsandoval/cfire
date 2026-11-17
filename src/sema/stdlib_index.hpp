@@ -54,6 +54,7 @@ struct StdlibCatalogIndex {
     std::unordered_map<std::string, std::string> ns_to_import{}; // "os" -> "core:os"
     std::unordered_map<std::string, std::unordered_map<std::string, StdFnSigInfo>> ns_fns{}; // "os" -> ("read_stdin_lines" -> sig)
     std::unordered_map<std::string, std::unordered_set<std::string>> ns_types_and_consts{}; // "os" -> {"ExecResult", "STDIN", ...}
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> ns_const_types{}; // "fs" -> ("ERR_EXISTS" -> "i32")
     std::unordered_map<std::string, StdFnSigInfo> receiver_methods{}; // "fs.File.read_str" or "File.read_str" -> sig
     std::unordered_map<std::string, StdFnSigInfo> unambiguous_methods{}; // "read_str" -> sig
 
@@ -95,6 +96,15 @@ struct StdlibCatalogIndex {
             if (it->second.contains(std::string(member))) return true;
         }
         return false;
+    }
+
+    [[nodiscard]] auto find_ns_const_type(std::string_view ns, std::string_view name) const -> std::string_view {
+        if (auto it = ns_const_types.find(std::string(ns)); it != ns_const_types.end()) {
+            if (auto cit = it->second.find(std::string(name)); cit != it->second.end()) {
+                return cit->second;
+            }
+        }
+        return "";
     }
 
     [[nodiscard]] static auto edit_distance(std::string_view a, std::string_view b) -> std::size_t {
@@ -317,6 +327,16 @@ CFIRE_STDLIB_IDX_INLINE void StdlibCatalogIndex::register_fn(
     auto parsed = parse_cf_sig(mod_import, ns, fn_name, cf_sig);
     if (!parsed) {
         ns_types_and_consts[std::string(ns)].insert(std::string(fn_name));
+        std::string_view sv = cf_sig;
+        while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) sv.remove_prefix(1);
+        if (sv.starts_with("const ")) {
+            if (auto col = sv.find(':'); col != std::string_view::npos) {
+                std::string ctype = trim_str(sv.substr(col + 1));
+                if (!ctype.empty()) {
+                    ns_const_types[std::string(ns)][std::string(fn_name)] = std::move(ctype);
+                }
+            }
+        }
         return;
     }
     if (parsed->has_receiver) {

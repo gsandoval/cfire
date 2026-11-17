@@ -2,7 +2,7 @@
 
 This document tracks the interactively triaged and architecturally audited backlog for `cfire` (`CF-001` – `CF-197`; architectural decisions `Q1` – `Q54`).
 
-> **Topic Backlogs**: Compiler/build performance, progressive `.o` compilation, caching, and cross-platform binary distribution are tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (`CF-198` – `CF-206`; decisions `Q55` – `Q59`). Start any new backlog items at **`CF-207`** and new ADRs at **`Q60`**.
+> **Topic Backlogs**: Compiler/build performance, progressive `.o` compilation, caching, cross-platform binary distribution, and Wave B5 consistency are tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (`CF-198` – `CF-210`; decisions `Q55` – `Q61`). Downstream security, compiler, stdlib, IPC, and desktop refinements from Flint are tracked in [`flint.md`](./flint.md) (`CF-211` – `CF-239`; decisions `Q62` – `Q69`). Start any new backlog items at **`CF-240`** and new ADRs at **`Q70`**.
 
 ---
 
@@ -413,7 +413,7 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
   2. A bounded worker pool (default `hardware_concurrency`) with an accept backlog limit.
   3. Reject invalid or duplicate `Content-Length` and CL+TE conflicts with a 400. Implement chunked decoding for requests (with a size cap) or reject it with a 411/501.
   4. Return a 400 on truncated bodies, and require CRLF.
-  5. Add `conn.peer_addr() -> str` and `req.remote_addr`, with dual-stack listening.
+  5. Add `conn.remote_addr() -> str` and `req.remote_addr`, with dual-stack listening.
 - **Tests**:
   - *Stdlib*: a slowloris test (idle client plus a concurrent normal request succeeds), smuggling-vector tests, and peer-address tests.
   - *Fuzz*: extend `fuzz_http`.
@@ -842,7 +842,7 @@ The work proceeds in **waves**. A wave starts only when the previous wave's exit
   - The LSP tests rebase their `file:///tmp/` URIs into a hermetic `ScopedTempDir` inside `rpc_frame`, before `Content-Length` is computed.
   - The unit and stdlib suites pass with 200 conflicting `.cf` files under `/tmp`, and a CI step now pollutes `/tmp` before the Linux suites.
 
-#### `CF-176` — `cfire check` Honors `build.cf` Include Paths & Dependencies `[TODO]`
+#### `CF-176` — `cfire check` Honors `build.cf` Include Paths & Dependencies `[DONE]`
 - **Problem & Evidence (widened during W1)**: `cfire check` (directory mode) reports clang `fatal error: '<header>' file not found` for **9 canonical examples plus `pkg/raygui_ext`**: `zstd.h` (02, 05), `raylib.h` (06, 12, 13, `pkg/raygui_ext`), `kvstore.h` (10), and `fastcrc.h` (08). The headers are installed (e.g. `/opt/homebrew/include/zstd.h`) and `cfire run`/`build` succeed, because the build plan adds pkg-config, Homebrew, and `build.cf` include paths that the check pipeline doesn't. Identical counts with the `f611aa2` binary confirm it predates this work. Original evidence: `./cfire check examples/08-multi-pkg-cc-build` fails with `fatal error: 'fastcrc.h' file not found (cfire/TYPE-ERROR)` on `main.cf` and `pkg/checksum/checksum.cf`. This was already true at `f611aa2`. `cfire run` succeeds because the build plan adds the `build.CC` include directories. `review-check` never runs `check` over `examples/`, so CI doesn't notice. The audit's first example sweep missed it too, because it only grepped for `checked`.
 - **Implementation**: Make the C++ backend syntax check in `src/analysis.hpp` use the same `BuildPlan` include and define resolution as `cfire build` (the nearest ancestor `build.cf` plus `external_deps`). Add `for d in examples/*/; do ./cfire check $d; done` (failing on any error) to `review-check`.
 - **Acceptance Criteria**: `cfire check` passes on every canonical example, and `review-check` enforces it.
@@ -881,7 +881,7 @@ The following architectural decisions were established during the interactive PL
    - Plain C-style enums are elevated to first-class primitives with equality comparison (`==`), string formatting (`{}`), integer conversion (`i32(e)` / `from_i32`), and JSON string serialization.
    - Multi-pattern or-arms (`"a" | "b" =>`, `Ev::A | Ev::B =>`) are supported in `match`.
    - Generic type application syntax is made uniform across all user and standard library types (`Name[A, B]`).
-   - Complex nested pattern matching, match guards, and type aliases are deferred until driven by concrete downstream requirements.
+   - Complex nested pattern matching, match guards, and type aliases are deferred until driven by concrete downstream requirements. — **Superseded in part** by `634c8dd` (2026-11-10) and `Q64` (`CF-224`): `match` guards (`_ if c =>` and pattern-bound guards) and range patterns shipped; complex nested patterns and type aliases remain deferred.
 5. **Deprecation Transition Policy (`Q6`)**:
    - Deprecated language constructs (`var`, `out` intent, `x: mut T` parameter annotations, explicit `in`, `make(own[T], v)`, `_ :=`, `Type.Variant`, and `(*p).Field` on smart pointers) are treated as hard compile errors accompanied by machine-executable auto-fixes (`cfire fix`).
    - The entire `cfire` repository (examples, guide, tests, and standard library) is migrated concurrently to guarantee zero deprecation warnings.
@@ -1821,8 +1821,8 @@ flowchart TD
 
 | ID | Priority | Component | Summary | Revisit Criteria | Status |
 | :--- | :---: | :--- | :--- | :--- | :---: |
-| `CF-081` | P3 | `runtime/core/net/tcp.hpp`, `src/docgen/catalog_types.hpp` | **Unix Domain Sockets & Peer Credentials (`ext:net`)**: `net.listen_unix`, `net.connect_unix`, and `conn.peer() -> PeerCred`. | When specialized IPC or daemon monitoring requires peer credentials. | `[DEFERRED]` |
-| `CF-134` | P3 | `src/sema.hpp`, `src/parser.hpp` | **Nested Patterns, Match Guards & Optional Arms**: Complex nested `Out::W(In::A(v))` and `n if n > 0 =>` guards. | When downstream AST processing or compiler self-hosting presents deep match structures. | `[DEFERRED]` |
+| `CF-081` | P3 | `runtime/core/net/ipc.hpp`, `src/docgen/catalog_types.hpp` | **Cross-Platform Local IPC & Peer Credentials (`core:net/ipc`)**: `ipc.listen`, `ipc.connect`, `ipc.endpoint`, and `conn.peer_credentials() -> PeerCred!`. | Promoted via `Q65` ([`flint.md`](./flint.md) `CF-230`) over `AF_UNIX` on POSIX and Named Pipes on Windows. | `[PROMOTED -> CF-230]` |
+| `CF-134` | P3 | `src/sema.hpp`, `src/parser.hpp` | **Nested Patterns, Match Guards & Optional Arms**: Complex nested `Out::W(In::A(v))` and `n if n > 0 =>` guards. — **Superseded in part** by `634c8dd` (2026-11-10) and `Q64` (`CF-224`): `match` guards and `Some`/`none`/`Ok`/`Err` arms shipped; nested patterns remain deferred. | When downstream AST processing or compiler self-hosting presents deep match structures. | `[DEFERRED]` |
 | `CF-135` | P3 | `src/parser.hpp`, `src/codegen/stmt.hpp` | **Labeled Loop Breaks & Continues**: `outer: for ...` and `break outer`. | When concrete downstream algorithms present nested loops requiring flags. | `[DEFERRED]` |
 | `CF-136` | P3 | `src/parser.hpp`, `src/sema.hpp` | **Transparent Type Aliases**: `type Identifier = i64`. | When API modernization requires semantic nominal type synonyms without wrapper structs. | `[DEFERRED]` |
 | `CF-137` | P3 | `src/codegen.hpp`, `runtime/` | **Dynamic-Dispatch Interface Views (`[]Interface`)**: Type-erased vtable views for runtime polymorphism. | When plugin architectures or heterogeneous collections require runtime polymorphism. | `[DEFERRED]` |
@@ -1833,21 +1833,26 @@ flowchart TD
 
 ## 3. Explicitly Excluded / Rejected Items
 
-To prevent re-introducing previously rejected designs or violating language orthogonality, the following upstream requests were evaluated and intentionally excluded:
+To prevent re-introducing previously rejected designs or violating language orthogonality, the following upstream requests were evaluated and intentionally excluded. An entry here can be reversed or refined by a later Q-decision; check `git log -S'<id>'` and the Q-tables in `backlog*.md` and [`flint.md`](./flint.md) before citing one:
 
-- **`CF-R01` (`if let` / `while let` conditional unwrapping)**: Rejected. Redundant with existing flow-sensitive narrowing (`if val != none`) and expression `or` fallbacks; violates language orthogonality by introducing a third way to unwrap optionals.
+- **`CF-R01` (`if let` / `while let` conditional unwrapping)**: Rejected. Redundant with existing flow-sensitive narrowing (`if val != none`) and expression `or` fallbacks; violates language orthogonality by introducing a third way to unwrap optionals. — **Superseded** by `634c8dd` (2026-11-10): `if [mut] val := expr` and `for val := expr` conditional unwrapping shipped (`GUIDE.md` Ch9).
 - **`CF-R02` (Generic Typed Error Enums `T!E`)**: Rejected. Splits ecosystem libraries into incompatible error hierarchies; `cfire::Error` (carrying human-readable message and integer code) provides uniform, zero-overhead error propagation across all packages.
 - **`CF-003` (`ext:webui` binary streaming channel)**: Excluded. `app.emit` and `app.emit_bytes` are sufficient; running an embedded WebSocket/scheme streaming server inside `ext:webui` is out of scope.
 - **`CF-005` (`ext:net/ssh` low-level `libssh` jump-host FD / algorithm preference / kbdint APIs)**: Excluded. `ext:net/ssh` remains a high-level stdlib module; specialized SSH clients should bind `libssh` directly.
 - **`CF-018` (`@allow_fd_growth` / `@no_fd_check` test attribute)**: Rejected in both rounds. Keep the test grammar clean and exempt foreign `import cpp` FFI tests automatically.
-- **`CF-026` (`sync.Mutex[T]` owning wrapper & multi-channel `select`)**: Excluded. Only the `ch.len()` bug fix is included.
+- **`CF-026` (`sync.Mutex[T]` owning wrapper & multi-channel `select`)**: Excluded. Only the `ch.len()` bug fix is included. — **Superseded in part** by `634c8dd` (2026-11-10) and `CF-154`: `make(sync.Mutex[T], v)`, `MutexGuard[T]`, and `Atomic[T]` shipped as the sole mutex API; multi-channel `select` remains excluded (reaffirmed by `Q66` / `CF-231`).
 - **`CF-031` (`@framework("...")` on `import cpp` & top-level `cpp {}`)**: Rejected in both rounds. Framework and library linkage belongs declaratively in `build.cf` (`Frameworks` / `Libraries`), which `cfire test` will now inherit.
 - **`CF-043` (Raw joinable `Thread` struct handles)**: Excluded. `cfire` enforces structured concurrency via `async.scope`.
 - **`CF-051` / `CF-073` (macOS default menu bar / `Cmd+W` opt-out toggles)**: Excluded. Keep the standard macOS menu bar in `ext:webui` unchanged.
 - **`CF-054` (`fs.write_atomic`)**: Excluded. Only the `fs.write_all` documentation fix and `fs.rename` documentation addition are included.
 - **`CF-059` (`s.find` as a synonym for `s.index_of`)**: Rejected for orthogonality. `s.index_of` / `s.last_index_of` is the single canonical method; `s.find` / `s.rfind` is rejected in Sema with a fix-it.
-- **`CF-060` (Part 1 — Making `a[0..5]` allocate `std::string`)**: Rejected to preserve the Zero-Overhead Guarantee (`a[0..5]` stays `std::string_view`; use `&str` or `str(a[0..5])`).
+- **`CF-060` (Part 1 — Making `a[0..5]` allocate `std::string`)**: Rejected to preserve the Zero-Overhead Guarantee (`a[0..5]` stays `std::string_view`; use `&str` or `str(a[0..5])`). — **Superseded in part** by `cdccc09` (2026-11-12, `Q36`): read-only `str` parameters take zero-copy views while owned destinations copy implicitly ("views in, copies out").
 - **`CF-065` (Rewriting `.stdout` inside `cpp {}` blocks)**: Rejected. `cpp {}` blocks remain 100% verbatim C++23.
-- **`CF-079` (`if c { a } else { b }` expression)**: Rejected. Keep `if` as a statement and `match` as the expression-level branching construct for language orthogonality.
+- **`CF-079` (`if c { a } else { b }` expression)**: Rejected. Keep `if` as a statement and `match` as the expression-level branching construct for language orthogonality. — **Superseded** by `5869497` (2026-11-12, `Q40`): `if c { a } else { b }` is supported as an expression.
 - **`CF-084` (OS screen lock, sleep, and wake events)**: Excluded. OS power management and screen-lock D-Bus/IOKit listeners are application-specific native concerns.
-- **`CF-085` (Part 1 — `shared(v)` constructor syntax)**: Rejected for orthogonality. Keep `make[shared[T]](...)` as the sole smart-pointer constructor syntax; only auto-deref on `.field` and `.method()` is included.
+- **`CF-085` (Part 1 — `shared(v)` constructor syntax)**: Rejected for orthogonality. Keep `make[shared[T]](...)` as the sole smart-pointer constructor syntax; only auto-deref on `.field` and `.method()` is included. — **Superseded in part** by `05b7834` (2026-11-12, `Q25`): `make[...](...)` was replaced by uniform type-first `make(shared[T], ...)`; `shared(v)` remains rejected.
+- **`CF-224` (Part — `[]T.clone()`)**: Excluded (`Q64`). Preserves `Q14`/`Q36`/`Q53` single-way value semantics (`mut copy := xs` creates an owned copy; views copy automatically when stored or returned).
+- **`CF-226` (Part — `fs.sync_dir`, `fs.symlink`, `fs.read_link`)**: Excluded (`Q68`). `CreateSymbolicLinkW` requires Developer Mode or Administrator privileges on Windows and directory `fsync` is POSIX-specific; `core:fs` keeps portable `File.sync`, `fs.create_new`, `fs.stat`, `fs.realpath`, and `fs.ERR_*`.
+- **`CF-231` (`net.wait_readable` multi-socket readiness wait)**: Excluded (`Q66`). `net::detail::Poller` remains internal to `http.Server`; `TcpConn` is move-only, TLS streams buffer decrypted bytes in `SSL_pending`, and `async.scope` structured concurrency handles multi-stream relays.
+- **`CF-233` (`cfire test` FD-leak canary warm-up hook for `import cpp`)**: Excluded (`Q67`). Reaffirms `CF-018` / `CF-080`: `import cpp` test suites remain automatically exempt from per-test FD-leak checks without adding test lifecycle syntax or extra CLI flags.
+- **`CF-238` (Downstream-coupled Flint CI canary, `legacy-flint-pin` tag & Flint impact in `feat!` commits)**: Excluded (`Q69`). `cfire` remains downstream-agnostic: SemVer release tags (`vX.Y.Z`) are the sole pin contract, regressions are captured as hermetic `tests/conformance/` and `CF-214` `ext_smoke` tests, and commit messages follow `AGENTS.md` §3.

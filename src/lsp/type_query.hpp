@@ -95,7 +95,12 @@ struct LocalBindingInfo {
     if (n == "void") return "void";
     if (n == "str") return param_borrow ? "std::string_view" : "std::string";
     if (n == "path") return param_borrow ? "const std::filesystem::path&" : "std::filesystem::path";
+    if (n == "fs.FileInfo" || n == "FileInfo") return "cfire::fs::FileInfo";
     if (n == "fs.File" || n == "File") return "cfire::fs::File";
+    if (n == "ipc.Listener" || n == "Listener") return "cfire::ipc::Listener";
+    if (n == "ipc.Conn") return "cfire::ipc::Conn";
+    if (n == "ipc.PeerCred" || n == "PeerCred") return "cfire::ipc::PeerCred";
+    if (n == "Error") return "cfire::Error";
     if (n == "sync.Mutex" || n == "Mutex") return "cfire::sync::Mutex";
     if (n == "net.TcpListener") return "cfire::net::TcpListener";
     if (n == "net.TcpConn") return "cfire::net::TcpConn";
@@ -486,6 +491,29 @@ struct LocalBindingInfo {
                     if (mem->field == "port") return "u16";
                     if (mem->field == "accept") return "net.TcpConn!";
                 }
+                if (rtype == "ipc.Listener" || rtype == "Listener") {
+                    if (mem->field == "accept") return "ipc.Conn!";
+                    if (mem->field == "endpoint") return "str";
+                    if (mem->field == "is_open") return "bool";
+                    if (mem->field == "close") return "void";
+                }
+                if (rtype == "ipc.Conn") {
+                    if (mem->field == "peer_credentials") return "ipc.PeerCred!";
+                    if (mem->field == "write_bytes" || mem->field == "write_text" || mem->field == "write_line" || mem->field == "read_into") return "usize!";
+                    if (mem->field == "read_bytes" || mem->field == "read_exact" || mem->field == "read_bytes_until") return "[]byte!";
+                    if (mem->field == "read_text" || mem->field == "read_all_text" || mem->field == "read_text_until") return "str!";
+                    if (mem->field == "read_line") return "str?";
+                    if (mem->field == "is_open" || mem->field == "poll") return "bool";
+                    if (mem->field == "close" || mem->field == "set_timeout_ms") return "void";
+                }
+                if (rtype == "time.Time" || rtype == "Time") {
+                    if (mem->field == "local" || mem->field == "utc" || mem->field == "add" || mem->field == "add_ms") return "time.Time";
+                    if (mem->field == "format" || mem->field == "format_rfc3339") return "str";
+                }
+                if (rtype == "Error") {
+                    if (mem->field == "code") return "i32";
+                    if (mem->field == "message") return "str";
+                }
                 if (rtype == "net.TcpConn" || rtype == "TcpConn" || rtype == "fs.File" || rtype == "File") {
                     if (mem->field == "write_bytes" || mem->field == "write_text" || mem->field == "write_line" || mem->field == "read_into") return "usize!";
                     if (mem->field == "read_bytes" || mem->field == "read_exact" || mem->field == "read_bytes_until") return "[]byte!";
@@ -495,7 +523,7 @@ struct LocalBindingInfo {
                     if (mem->field == "is_open" || mem->field == "is_tty" || mem->field == "poll") return "bool";
                     if (mem->field == "fd") return "i32";
                     if (mem->field == "seek" || mem->field == "tell") return "i64!";
-                    if (mem->field == "flush") return "void!";
+                    if (mem->field == "flush" || mem->field == "sync") return "void!";
                     if (mem->field == "close" || mem->field == "set_timeout_ms") return "void";
                 }
                 if (rtype.starts_with("sync.Channel[") || rtype.starts_with("Channel[")) {
@@ -521,7 +549,12 @@ struct LocalBindingInfo {
                     if (mem->field == "call_rpc") return "str!";
                     if (mem->field == "emitted_events_count") return "i64";
                     if (mem->field == "run_webview_test") return "bool!";
-                    if (mem->field == "is_clipboard_concealed") return "bool";
+                    if (mem->field == "is_clipboard_concealed" ||
+                        mem->field == "devtools_enabled" ||
+                        mem->field == "context_menu_enabled" ||
+                        mem->field == "autofill_enabled") {
+                        return "bool";
+                    }
                     if (mem->field == "monospace_fonts") return "[]str";
                     return "void";
                 }
@@ -560,7 +593,7 @@ struct LocalBindingInfo {
                                     if (ret == "File!") return "fs.File!";
                                     if (ret == "TcpConn!") return "net.TcpConn!";
                                     if (ret == "TcpListener!") return "net.TcpListener!";
-                                    return ret;
+                                    return qualify_module_types(ret, mod);
                                 }
                                 return "void";
                             }
@@ -585,7 +618,33 @@ struct LocalBindingInfo {
     }
     if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
         if (mem->field == "len") return "usize";
+        if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+            oid && !env.contains(oid->name)) {
+            for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                if (mod.ns_alias == oid->name) {
+                    const std::string prefix = "const " + mem->field + ": ";
+                    for (const auto& sfn : mod.functions) {
+                        if (sfn.name == mem->field && sfn.cf_sig.starts_with(prefix)) {
+                            return qualify_module_types(sfn.cf_sig.substr(prefix.size()), mod);
+                        }
+                    }
+                }
+            }
+        }
         std::string obj_t = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
+        if (auto dot = obj_t.find('.'); dot != std::string::npos) {
+            std::string_view ns = std::string_view(obj_t).substr(0, dot);
+            std::string_view tn = std::string_view(obj_t).substr(dot + 1);
+            for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                if (mod.ns_alias != ns) continue;
+                for (const auto& td : mod.type_docs) {
+                    if (td.bare_name() != tn) continue;
+                    for (const auto& f : td.fields) {
+                        if (f.name == mem->field) return qualify_module_types(f.type, mod);
+                    }
+                }
+            }
+        }
         for (const auto& st : ast.structs) {
             if (st.name == obj_t) {
                 for (const auto& f : st.fields) {

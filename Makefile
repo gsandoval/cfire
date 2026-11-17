@@ -249,6 +249,12 @@ vm-setup-windows: .vmtest
 	./.vmtest setup-windows
 
 clean:
-	rm -rf cfire cfire.exe .cfire_gitsha .cfire_build.log .cfire_host.pch .cfire_host.pch.log .cfire_host.pch.d $(CFIRE_OBJS) $(CFIRE_OBJS:=.log) $(CFIRE_OBJS:.o=.d) .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner.exe .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) examples/*/.cfire tests/.cfire cfire_cross_* cfire_wasm_gui_*
+	@if [ -x ./cfire$(EXE) ] && ./cfire$(EXE) --version >/dev/null 2>&1; then \
+		for m in examples/*/build.cf; do if [ -f "$$m" ]; then ./cfire$(EXE) clean "$$m"; fi; done; \
+		./cfire$(EXE) clean examples; \
+		./cfire$(EXE) clean tests; \
+		./cfire$(EXE) clean --cache; \
+	fi
+	rm -rf cfire cfire.exe .cfire_gitsha .cfire_build.log .cfire_host.pch .cfire_host.pch.log .cfire_host.pch.d $(CFIRE_OBJS) $(CFIRE_OBJS:=.log) $(CFIRE_OBJS:.o=.d) .vmtest .vmtest.log $(TEST_OBJS:=.log) .cfire_test_runner .cfire_test_runner.exe .cfire_test_runner_asan .cfire_test_runner_tsan .fuzz_corpus .fuzz_crashes .fuzz_replay_* .fuzz_* $(TEST_OBJS) tests/unit/*.o.tmp cfire_cross_* cfire_wasm_gui_*
 
 -include .cfire_host.pch.d $(CFIRE_OBJS:.o=.d)

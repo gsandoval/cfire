@@ -1,0 +1,37 @@
+// requires-lib: webkit2gtk
+// expect: stdout
+// | defaults: true,true,true
+// | toggled: false,false,false
+// | fullscreen_events: {"fullscreen":true}|{"fullscreen":false}
+// | drop_event: {"paths":["/var/vault/demo.txt","/var/vault/notes.md"]}
+package main
+
+import "ext:webui"
+
+fn main() {
+    mut app := make(webui.App, "SecurityAndEvents", 800, 600)
+    defer app.close()
+
+    println("defaults: {},{},{}", app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled())
+
+    app.set_devtools(false)
+    app.set_context_menu(false)
+    app.set_autofill(false)
+    println("toggled: {},{},{}", app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled())
+
+    mut fs_log: []str = []
+    app.on("window:fullscreen") |payload| {
+        fs_log.push(payload)
+    }
+    app.fullscreen()
+    app.fullscreen()
+    assert_eq(fs_log.len(), 2)
+    println("fullscreen_events: {}|{}", fs_log[0], fs_log[1])
+
+    mut drop_payload := ""
+    app.on("window:file_drop") |payload| {
+        drop_payload = payload
+    }
+    app.dispatch_event("window:file_drop", "{\"paths\":[\"/var/vault/demo.txt\",\"/var/vault/notes.md\"]}")
+    println("drop_event: {}", drop_payload)
+}

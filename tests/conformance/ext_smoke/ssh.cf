@@ -1,0 +1,55 @@
+// requires-lib: libssh
+// expect: stdout
+// | ext:net/ssh ok
+package main
+
+import "ext:net/ssh"
+import "core:os"
+
+fn compile_all_ssh_surface() -> void! {
+    ssh.enable_mock_server(false)
+    mut sess := try ssh.connect("127.0.0.1", 22, "cfire", 200)
+    defer sess.close()
+    _ = sess.host_key_fingerprint()
+    _ = sess.is_known_host()
+    try sess.write_known_host()
+    try sess.auth_publickey_mem("pem", "")
+    try sess.auth_publickey_file("id_ed25519", "")
+    try sess.auth_password("pw")
+    try sess.auth_agent()
+    _ = try sess.exec("id")
+    mut pty := try sess.open_pty("xterm-256color", 80, 24)
+    defer pty.close()
+    _ = try pty.write_text("hi\n")
+    _ = try pty.write_bytes([]byte("hi\n"))
+    _ = try pty.read_text(64)
+    _ = try pty.read_bytes(64)
+    try pty.resize_pty(100, 30)
+    _ = pty.is_eof()
+    mut fwd := try sess.open_forward("127.0.0.1", 80, "127.0.0.1", 0)
+    defer fwd.close()
+    try sess.sftp_mkdir("/tmp/d", 0755)
+    try sess.sftp_write_text("/tmp/d/f.txt", "a", 0644)
+    try sess.sftp_write_bytes("/tmp/d/b.bin", []byte("a"), 0644)
+    _ = try sess.sftp_read_text("/tmp/d/f.txt")
+    _ = try sess.sftp_read_bytes("/tmp/d/b.bin")
+    _ = try sess.sftp_list_dir("/tmp/d")
+    try sess.sftp_remove("/tmp/d/f.txt")
+}
+
+fn check_fail_closed() -> bool {
+    mut s := ssh.connect("127.0.0.1", 1, "cfire", 300) or {
+        return true
+    }
+    s.close()
+    return false
+}
+
+fn main() {
+    // Without CFIRE_TEST_MODE + explicit mock opt-in, ssh.connect must fail closed via real libssh.
+    assert(check_fail_closed())
+    if os.args().len() > 999999 {
+        _ = compile_all_ssh_surface() or {}
+    }
+    println("ext:net/ssh ok")
+}

@@ -106,6 +106,54 @@ using namespace cfire::frontend;
     return prefix + base;
 }
 
+[[nodiscard]] inline auto format_type_params_list(const std::vector<TypeParam>& tps) -> std::string {
+    if (tps.empty()) return "";
+    std::string out = "[";
+    for (std::size_t i = 0; i < tps.size(); ++i) {
+        if (i > 0) out += ", ";
+        out += tps[i].name;
+        if (!tps[i].constraints.empty()) {
+            out += ": ";
+            for (std::size_t c = 0; c < tps[i].constraints.size(); ++c) {
+                if (c > 0) out += " + ";
+                out += tps[i].constraints[c];
+            }
+        }
+    }
+    out += "]";
+    return out;
+}
+
+[[nodiscard]] inline auto format_interface_method_sig(const InterfaceMethodSig& m) -> std::string {
+    std::string out = "fn ";
+    if (m.is_mut_receiver) out += "mut ";
+    out += m.name + "(";
+    for (std::size_t p = 0; p < m.param_types.size(); ++p) {
+        if (p > 0) out += ", ";
+        if (p < m.param_intents.size() && !m.param_intents[p].empty() && m.param_intents[p] != "in") {
+            out += m.param_intents[p] + " ";
+        }
+        if (p < m.param_names.size() && !m.param_names[p].empty()) {
+            out += m.param_names[p] + ": ";
+        }
+        out += format_type_ref(m.param_types[p]);
+    }
+    out += ")";
+    if (m.return_type.name != "void" || m.return_type.is_fallible || m.return_type.is_optional) {
+        out += " -> " + format_type_ref(m.return_type);
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto format_interface_signature(const InterfaceDecl& ifc) -> std::string {
+    std::string out = std::format("type {} interface {{\n", ifc.name);
+    for (const auto& m : ifc.methods) {
+        out += "    " + format_interface_method_sig(m) + "\n";
+    }
+    out += "}";
+    return out;
+}
+
 [[nodiscard]] inline auto format_fn_signature(const FnDecl& fn) -> std::string {
     std::string out = "fn ";
     if (fn.receiver) {
@@ -116,17 +164,7 @@ using namespace cfire::frontend;
         }
     }
     out += fn.name;
-    if (!fn.type_params.empty()) {
-        out += "[";
-        for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
-            if (i > 0) out += ", ";
-            out += fn.type_params[i].name;
-            if (!fn.type_params[i].constraint.empty()) {
-                out += ": " + fn.type_params[i].constraint;
-            }
-        }
-        out += "]";
-    }
+    out += format_type_params_list(fn.type_params);
     out += "(";
     for (std::size_t i = 0; i < fn.params.size(); ++i) {
         if (i > 0) out += ", ";
@@ -144,7 +182,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_struct_signature(const StructDecl& st) -> std::string {
-    std::string out = std::format("type {} struct {{\n", st.name);
+    std::string out = std::format("type {}{} struct {{\n", st.name, format_type_params_list(st.type_params));
     std::size_t max_name = 0;
     std::size_t max_type = 0;
     for (const auto& f : st.fields) {
@@ -165,7 +203,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_enum_signature(const EnumDecl& en) -> std::string {
-    std::string out = std::format("type {} enum {{\n", en.name);
+    std::string out = std::format("type {}{} enum {{\n", en.name, format_type_params_list(en.type_params));
     for (const auto& v : en.variants) {
         out += "    " + v.name;
         if (!v.payload_types.empty()) {

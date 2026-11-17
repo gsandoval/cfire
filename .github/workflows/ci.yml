@@ -13,6 +13,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install Native Dependencies
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install libsodium libssh zstd
+
       - name: Build cfire Toolchain
         run: make build
 
@@ -31,7 +34,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
 
@@ -61,7 +64,7 @@ jobs:
       - name: Install LLVM 18 with libFuzzer
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
 
       - name: libFuzzer smoke run (20s per target)
@@ -95,6 +98,7 @@ jobs:
             mingw-w64-clang-x86_64-simdjson
             mingw-w64-clang-x86_64-zstd
             mingw-w64-clang-x86_64-libsodium
+            mingw-w64-clang-x86_64-libssh
             mingw-w64-clang-x86_64-sqlite3
 
       - name: Build cfire.exe on Windows

@@ -14,6 +14,7 @@
 #include "test_websocket_sessions.hpp"
 #include "test_websocket_handshake_tail.hpp"
 #include "test_deflate_bounds.hpp"
+#include "test_package_fixes_and_generics.hpp"
 
 void test_google_cpp_and_language_design(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_google_cpp_and_language_design");

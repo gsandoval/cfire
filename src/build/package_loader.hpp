@@ -352,7 +352,12 @@ namespace cfire::build {
                     }
                     root_ast.enums.push_back(std::move(en));
                 }
-                for (auto& ifc : sub_ast->interfaces) root_ast.interfaces.push_back(std::move(ifc));
+                for (auto& ifc : sub_ast->interfaces) {
+                    if (ifc.package_name.empty() && !sub_pkg_tag.empty()) {
+                        ifc.package_name = sub_pkg_tag;
+                    }
+                    root_ast.interfaces.push_back(std::move(ifc));
+                }
                 for (auto& gv : sub_ast->global_vars) {
                     if (gv.package_name.empty() && !sub_pkg_tag.empty()) {
                         gv.package_name = sub_pkg_tag;
@@ -404,10 +409,11 @@ namespace cfire::build {
         }
     }
 
-    // Disambiguate colliding struct/enum names across packages
+    // Disambiguate colliding struct/enum/interface names across packages
     std::unordered_map<std::string, std::size_t> type_counts;
     for (const auto& st : root_ast.structs) type_counts[st.name]++;
     for (const auto& en : root_ast.enums) type_counts[en.name]++;
+    for (const auto& ifc : root_ast.interfaces) type_counts[ifc.name]++;
 
     std::unordered_map<std::string, std::string> pkg_type_renames;
     for (auto& st : root_ast.structs) {
@@ -424,6 +430,14 @@ namespace cfire::build {
             pkg_type_renames[en.package_name + "." + en.name] = mangled;
             pkg_type_renames[en.package_name + "::" + en.name] = mangled;
             en.name = mangled;
+        }
+    }
+    for (auto& ifc : root_ast.interfaces) {
+        if (!ifc.package_name.empty() && type_counts[ifc.name] > 1) {
+            std::string mangled = std::format("cfire_pkg_{}__{}", ifc.package_name, ifc.name);
+            pkg_type_renames[ifc.package_name + "." + ifc.name] = mangled;
+            pkg_type_renames[ifc.package_name + "::" + ifc.name] = mangled;
+            ifc.name = mangled;
         }
     }
 
@@ -516,6 +530,10 @@ namespace cfire::build {
                     self(self, rewrite_stmts, ex.target, cur_pkg);
                     for (auto& arm : ex.arms) {
                         if (!arm.enum_prefix.empty()) arm.enum_prefix = resolve_type_name(arm.enum_prefix, cur_pkg);
+                        for (auto& pat : arm.patterns) {
+                            if (!pat.enum_prefix.empty()) pat.enum_prefix = resolve_type_name(pat.enum_prefix, cur_pkg);
+                        }
+                        if (arm.guard) self(self, rewrite_stmts, arm.guard, cur_pkg);
                         rewrite_stmts(rewrite_stmts, self, arm.body, cur_pkg);
                     }
                 }
@@ -555,6 +573,10 @@ namespace cfire::build {
                         rexpr(rexpr, self, st.target, cur_pkg);
                         for (auto& arm : st.arms) {
                             if (!arm.enum_prefix.empty()) arm.enum_prefix = resolve_type_name(arm.enum_prefix, cur_pkg);
+                            for (auto& pat : arm.patterns) {
+                                if (!pat.enum_prefix.empty()) pat.enum_prefix = resolve_type_name(pat.enum_prefix, cur_pkg);
+                            }
+                            if (arm.guard) rexpr(rexpr, self, arm.guard, cur_pkg);
                             self(self, rexpr, arm.body, cur_pkg);
                         }
                     } else if constexpr (std::is_same_v<T, frontend::AsyncScopeStmt>) {
@@ -568,14 +590,26 @@ namespace cfire::build {
         };
 
         for (auto& st : root_ast.structs) {
+            for (auto& tp : st.type_params) {
+                for (auto& c : tp.constraints) c = resolve_type_name(c, st.package_name);
+            }
             for (auto& fld : st.fields) {
                 rewrite_tref(rewrite_tref, fld.type, st.package_name);
                 rewrite_expr(rewrite_expr, rewrite_stmts, fld.default_val, st.package_name);
             }
         }
         for (auto& en : root_ast.enums) {
+            for (auto& tp : en.type_params) {
+                for (auto& c : tp.constraints) c = resolve_type_name(c, en.package_name);
+            }
             for (auto& v : en.variants) {
                 for (auto& pt : v.payload_types) rewrite_tref(rewrite_tref, pt, en.package_name);
+            }
+        }
+        for (auto& ifc : root_ast.interfaces) {
+            for (auto& m : ifc.methods) {
+                for (auto& pt : m.param_types) rewrite_tref(rewrite_tref, pt, ifc.package_name);
+                rewrite_tref(rewrite_tref, m.return_type, ifc.package_name);
             }
         }
         for (auto& gv : root_ast.global_vars) {
@@ -583,6 +617,9 @@ namespace cfire::build {
             rewrite_expr(rewrite_expr, rewrite_stmts, gv.value, gv.package_name);
         }
         for (auto& fn : root_ast.functions) {
+            for (auto& tp : fn.type_params) {
+                for (auto& c : tp.constraints) c = resolve_type_name(c, fn.package_name);
+            }
             if (fn.receiver) rewrite_tref(rewrite_tref, fn.receiver->type, fn.package_name);
             for (auto& p : fn.params) rewrite_tref(rewrite_tref, p.type, fn.package_name);
             rewrite_tref(rewrite_tref, fn.return_type, fn.package_name);

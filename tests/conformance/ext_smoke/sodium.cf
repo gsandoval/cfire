@@ -1,0 +1,32 @@
+// requires-lib: libsodium
+// expect: stdout
+// | ext:crypto/sodium ok
+package main
+
+import "ext:crypto/sodium"
+
+fn main() {
+    salt := sodium.random_bytes(16)
+    assert_eq(salt.len(), 16)
+
+    mut master := try sodium.argon2id("smoke-password", salt, 32, 2, 8388608)
+    assert_eq(master.len(), 32)
+
+    encoded := try sodium.argon2id_str("smoke-password", 2, 8388608)
+    assert(encoded.starts_with("$argon2id$"))
+    assert(sodium.argon2id_verify(encoded, "smoke-password"))
+    assert(!sodium.argon2id_verify(encoded, "wrong-password"))
+
+    sub := try sodium.derive_subkey(master, 1, "smokectx", 32)
+    assert_eq(sub.len(), 32)
+
+    mac := try sodium.blake2b([]byte("payload"), 32, sub)
+    assert_eq(mac.len(), 32)
+
+    sealed := try sodium.xchacha20poly1305_encrypt(sub, []byte("secret-bytes"), []byte("aad"))
+    opened := try sodium.xchacha20poly1305_decrypt(sub, sealed, []byte("aad"))
+    assert_eq(str(opened), "secret-bytes")
+
+    sodium.memzero(mut master)
+    println("ext:crypto/sodium ok")
+}

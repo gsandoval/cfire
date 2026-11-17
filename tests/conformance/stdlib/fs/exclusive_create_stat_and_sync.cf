@@ -1,0 +1,70 @@
+// Exclusive file creation, error code inspection via `or err`, metadata stat, realpath, and File.sync.
+// expect: stdout
+// | exists_match=true
+// | not_found_match=true
+// | forwarded_match=true
+// | stat_ok=true
+// | realpath_ok=true
+package main
+
+import "core:fs"
+import "core:os"
+
+fn create_dup_code(path: str) -> i32 {
+    mut f := fs.create_new(path, 0o600) or err {
+        return err.code()
+    }
+    f.close()
+    return 0
+}
+
+fn open_missing_code(path: str) -> i32 {
+    mut f := fs.open(path, fs.OpenMode::Read) or err {
+        return err.code()
+    }
+    f.close()
+    return 0
+}
+
+fn forward_open_missing(path: str) -> void! {
+    mut f := fs.open(path, fs.OpenMode::Read) or err {
+        return err
+    }
+    f.close()
+}
+
+fn capture_forwarded_code(path: str) -> i32 {
+    forward_open_missing(path) or err {
+        return err.code()
+    }
+    return 0
+}
+
+fn main() -> void! {
+    base := os.getenv("TEMP", os.getenv("TMPDIR", "/tmp"))
+    dir := "{base}/cfire_conf_fs_{os.getpid()}"
+    try fs.mkdir_all(dir)
+    defer {
+        _ = fs.remove(dir)
+    }
+
+    target := "{dir}/token.dat"
+    mut f := try fs.create_new(target)
+    _ = try f.write_text("payload-123")
+    try f.flush()
+    try f.sync()
+    f.close()
+
+    println("exists_match={}", create_dup_code(target) == fs.ERR_EXISTS)
+    missing := "{dir}/absent.dat"
+    println("not_found_match={}", open_missing_code(missing) == fs.ERR_NOT_FOUND)
+    println("forwarded_match={}", capture_forwarded_code(missing) == fs.ERR_NOT_FOUND)
+
+    st := try fs.stat(target)
+    dir_st := try fs.stat(dir)
+    stat_ok := (st.size == u64(11)) && !st.is_dir && !st.is_symlink && (st.mtime_ms > 0) && dir_st.is_dir
+    println("stat_ok={}", stat_ok)
+
+    rp := try fs.realpath(target)
+    println("realpath_ok={}", rp.ends_with("token.dat"))
+}

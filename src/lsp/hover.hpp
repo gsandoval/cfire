@@ -270,6 +270,12 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
             for (const auto& st : pkg.ast.structs) {
                 exports += std::format("- `type {} struct` ({} fields)\n", st.name, st.fields.size());
             }
+            for (const auto& en : pkg.ast.enums) {
+                exports += std::format("- `type {} enum` ({} variants)\n", en.name, en.variants.size());
+            }
+            for (const auto& ifc : pkg.ast.interfaces) {
+                exports += std::format("- `type {} interface` ({} methods)\n", ifc.name, ifc.methods.size());
+            }
             return std::format("### Package `{}` (`import \"{}\"`)\n**Source:** `{}`\n\n**Exported Symbols:**\n{}",
                 pkg.alias, pkg.import_path, pkg.file_path, exports);
         }
@@ -302,6 +308,32 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                         pkg.alias, st.name, pkg.import_path, cfire::fmt::format_struct_signature(st), layout_hdr, doc_sec, fields_table);
                 }
             }
+            for (const auto& en : pkg.ast.enums) {
+                if (en.name == sym.name) {
+                    std::string doc = detail::extract_leading_doc_comments(pkg_lines, en.line);
+                    std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                    return std::format("### Enum `{}.{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
+                        pkg.alias, en.name, pkg.import_path, cfire::fmt::format_enum_signature(en), pkg.file_path, en.line, doc_sec);
+                }
+            }
+            for (const auto& ifc : pkg.ast.interfaces) {
+                if (ifc.name == sym.name) {
+                    std::string doc = detail::extract_leading_doc_comments(pkg_lines, ifc.line);
+                    std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                    return std::format("### Interface `{}.{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
+                        pkg.alias, ifc.name, pkg.import_path, cfire::fmt::format_interface_signature(ifc), pkg.file_path, ifc.line, doc_sec);
+                }
+            }
+        }
+        for (const auto& en : pkg.ast.enums) {
+            if (sym.qualifier == pkg.alias + "." + en.name) {
+                for (const auto& v : en.variants) {
+                    if (v.name == sym.name) {
+                        return std::format("### Enum Variant `{}.{}::{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`.",
+                            pkg.alias, en.name, v.name, pkg.import_path, cfire::fmt::format_enum_signature(en), pkg.file_path, v.line);
+                    }
+                }
+            }
         }
     }
 
@@ -331,6 +363,14 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
             return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::uint8_t>`) over the string's UTF-8 bytes.";
         }
         std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
+        if (recv_type == "Error") {
+            if (sym.name == "code") {
+                return "### `Error.code` (builtin method)\n```cf\nfn (e: Error) code() -> i32\n```\n**Lowered C++23:** `e.code()`\n\nReturns the machine-readable error code (e.g., `fs.ERR_EXISTS`, `fs.ERR_NOT_FOUND`, `fs.ERR_PERMISSION`, or `0` if unspecified).";
+            }
+            if (sym.name == "message") {
+                return "### `Error.message` (builtin method)\n```cf\nfn (e: Error) message() -> str\n```\n**Lowered C++23:** `e.message()`\n\nReturns the human-readable diagnostic message carried by this `Error`.";
+            }
+        }
         // a field of a stdlib struct (`req.body`, `res.exit_code`).
         if (auto dot = recv_type.find('.'); dot != std::string::npos) {
             if (auto [m, td] = detail::find_stdlib_type_doc(recv_type.substr(0, dot), recv_type.substr(dot + 1)); td != nullptr) {
@@ -515,6 +555,30 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                 return std::format("### Struct `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
                     st.name, pkg.file_path, cfire::fmt::format_struct_signature(st), pkg.file_path, st.line, doc_sec);
             }
+        }
+        for (const auto& en : pkg.ast.enums) {
+            if (en.name == sym.name) {
+                std::string doc = detail::extract_leading_doc_comments(pkg_lines, en.line);
+                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                return std::format("### Enum `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
+                    en.name, pkg.file_path, cfire::fmt::format_enum_signature(en), pkg.file_path, en.line, doc_sec);
+            }
+        }
+        for (const auto& ifc : pkg.ast.interfaces) {
+            if (ifc.name == sym.name) {
+                std::string doc = detail::extract_leading_doc_comments(pkg_lines, ifc.line);
+                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                return std::format("### Interface `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
+                    ifc.name, pkg.file_path, cfire::fmt::format_interface_signature(ifc), pkg.file_path, ifc.line, doc_sec);
+            }
+        }
+    }
+    for (const auto& ifc : ast.interfaces) {
+        if (ifc.name == sym.name) {
+            std::string doc = detail::extract_leading_doc_comments(lines, ifc.line);
+            std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+            return std::format("### Interface `{}`\n```cf\n{}\n```\nCompile-time C++23 `concept {}` contract (line {}).{}",
+                ifc.name, cfire::fmt::format_interface_signature(ifc), ifc.name, ifc.line, doc_sec);
         }
     }
     for (const auto& en : ast.enums) {

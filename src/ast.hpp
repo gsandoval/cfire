@@ -3,11 +3,15 @@
 
 #include "lexer.hpp"
 #include <atomic>
+#include <cctype>
+#include <charconv>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <new>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <variant>
 #include <vector>
@@ -199,9 +203,49 @@ struct StructField {
     return out;
 }
 
+// Parse integer literals (`0x`, `0b`, `0o`, decimal, optional sign) for compiler bounds and CTFE.
+template <typename T>
+[[nodiscard]] inline auto parse_int_literal(std::string_view sv) noexcept -> std::optional<T> {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+    while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) sv.remove_suffix(1);
+    if (sv.empty()) return std::nullopt;
+    bool neg = false;
+    if (sv.front() == '-') {
+        if constexpr (std::is_unsigned_v<T>) return std::nullopt;
+        neg = true;
+        sv.remove_prefix(1);
+    } else if (sv.front() == '+') {
+        sv.remove_prefix(1);
+    }
+    if (sv.empty()) return std::nullopt;
+    int base = 10;
+    if (sv.size() >= 3 && sv[0] == '0') {
+        if (sv[1] == 'x' || sv[1] == 'X') { base = 16; sv.remove_prefix(2); }
+        else if (sv[1] == 'b' || sv[1] == 'B') { base = 2; sv.remove_prefix(2); }
+        else if (sv[1] == 'o' || sv[1] == 'O') { base = 8; sv.remove_prefix(2); }
+    }
+    if (sv.empty()) return std::nullopt;
+    std::uint64_t uval = 0;
+    auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), uval, base);
+    if (ec != std::errc{} || ptr != sv.data() + sv.size()) return std::nullopt;
+    if constexpr (std::is_signed_v<T>) {
+        if (neg) {
+            constexpr std::uint64_t max_mag = static_cast<std::uint64_t>(std::numeric_limits<T>::max()) + 1ULL;
+            if (uval > max_mag) return std::nullopt;
+            if (uval == max_mag) return std::numeric_limits<T>::min();
+            return static_cast<T>(-static_cast<std::int64_t>(uval));
+        }
+        if (uval > static_cast<std::uint64_t>(std::numeric_limits<T>::max())) return std::nullopt;
+        return static_cast<T>(uval);
+    } else {
+        if (uval > static_cast<std::uint64_t>(std::numeric_limits<T>::max())) return std::nullopt;
+        return static_cast<T>(uval);
+    }
+}
+
 struct TypeParam {
     std::string name{};
-    std::string constraint{}; // optional interface/concept name `T: Hasher`
+    std::vector<std::string> constraints{}; // optional interface/concept bounds `T: A + B`
 };
 
 struct StructDecl {
@@ -232,12 +276,19 @@ struct InterfaceMethodSig {
     std::string name{};
     std::vector<TypeRef> param_types{};
     TypeRef return_type{"void"};
+    bool is_mut_receiver = false;
+    std::vector<std::string> param_names{};
+    std::vector<std::string> param_intents{}; // "in", "mut", "move"
+    int line = 0;
+    int col = 0;
 };
 
 struct InterfaceDecl {
     std::string name{};
     std::vector<InterfaceMethodSig> methods{};
     int line = 1;
+    std::string package_name{};
+    std::string source_path{};
 };
 
 struct ReceiverDecl {

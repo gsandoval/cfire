@@ -968,13 +968,13 @@ syncCfireThemeBtn();
       Expressive systems programming built for native, web, mobile, and AI.
     </h1>
     <p class="subtitle">
-      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 38-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, Windows, WebAssembly, and iOS with zero lock-in.
+      <strong>cfire</strong> (pronounced <em>sapphire</em> &bull; <code>/ˈsæf.aɪ.ər/</code>) combines high-level ergonomics, compile-time intent safety, and a batteries-included 36-module standard library—compiling directly 1-to-1 into clean, human-readable standard <strong>ISO C++23</strong> across macOS, Linux, Windows, WebAssembly, and iOS with zero lock-in.
     </p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="guide.html#chapter-1">Start in 5 Minutes &rarr;</a>
       <a class="btn btn-secondary" href="guide.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">menu_book</span> Read Language Guide</a>
-      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 35 Stdlib Modules</a>
+      <a class="btn btn-secondary" href="reference.html"><span class="material-symbols-outlined" style="font-size:1.1rem;" aria-hidden="true">deployed_code</span> Explore 36 Stdlib Modules</a>
     </div>
 
     <div id="install">
@@ -1069,7 +1069,7 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 29 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1185,7 +1185,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 29 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>).</td>
+          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>).</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -1340,7 +1340,7 @@ fn main() {
 
   <div style="text-align: center; margin-top: 2rem;">
     <a class="btn btn-primary" href="guide.html">Read the Full Language Guide &rarr;</a>
-    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code> &amp; <code>ext:*</code> Catalog (35 Modules) &rarr;</a>
+    <a class="btn btn-secondary" href="reference.html" style="margin-left: 0.75rem;">Explore <code>core:*</code> &amp; <code>ext:*</code> Catalog (36 Modules) &rarr;</a>
   </div>
 </div>
 

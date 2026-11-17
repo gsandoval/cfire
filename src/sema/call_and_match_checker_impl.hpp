@@ -73,6 +73,14 @@
                     std::string expected = sig->min_args == sig->max_args ? std::to_string(sig->min_args) : std::format("{} to {}", sig->min_args, sig->max_args);
                     return emit_error(diag_at(line, col, "cfire/ARITY-MISMATCH", std::format("'make({}, ...)' expects {} argument(s), got {}", tname, expected, n)));
                 }
+                for (const auto& a : call.args) {
+                    if (a.label.empty()) continue;
+                    if (std::none_of(sig->params.begin(), sig->params.end(), [&](const StdParamInfo& p) { return p.name == a.label; })) {
+                        std::string names;
+                        for (const auto& p : sig->params) names += (names.empty() ? "" : ", ") + p.name;
+                        return emit_error(diag_at(a.line, a.col, "cfire/UNKNOWN-ARG-LABEL", std::format("'make({}, ...)' has no parameter named '{}'; parameters: {}", tname, a.label, names)));
+                    }
+                }
             }
             return {};
         }
@@ -111,6 +119,7 @@
         }
         if (auto r = check_expr(call.callee); !r) return r;
         const FnDecl* target_sig = nullptr;
+        const InterfaceMethodSig* iface_sig = nullptr;
         const StdFnSigInfo* std_sig = nullptr;
         const StdlibStruct* build_cfg_st = nullptr;
         const auto& catalog_idx = StdlibCatalogIndex::instance();
@@ -307,7 +316,10 @@
                 if (auto r = check_builtin_method_call(call, *mem, line, col); !r) return r;
             }
             target_sig = resolve_member_call_sig(*mem);
-            if (!target_sig && (!obj_id || !catalog_idx.has_namespace(obj_id->name) || is_ident_in_scope_sema(obj_id->name))) {
+            if (!target_sig) {
+                iface_sig = resolve_interface_method_sig_sema(*mem);
+            }
+            if (!target_sig && !iface_sig && (!obj_id || !catalog_idx.has_namespace(obj_id->name) || is_ident_in_scope_sema(obj_id->name))) {
                 if (mem->field == "read_str") {
                     if (auto r = emit_error(diag_at(line, col, "cfire/DEPRECATED-API", std::format("'.read_str' has been renamed to '.read_text'"), {{"from", ".read_str"}, {"to", ".read_text"}})); !r) return r;
                 } else if (mem->field == "write_str") {
@@ -320,6 +332,7 @@
                 std::string recv_t = mem->object ? type_name_of(mem->object) : "";
                 bool is_stream_handle = (recv_t == "File" || recv_t == "fs.File" || recv_t == "fs::File" ||
                                          recv_t == "TcpConn" || recv_t == "net.TcpConn" || recv_t == "net::TcpConn" ||
+                                         recv_t == "ipc.Conn" || recv_t == "ipc::Conn" ||
                                          recv_t == "ssh.Channel" || recv_t == "ssh::Channel" ||
                                          (recv_t == "Channel" && is_stdlib_ns_imported("ssh")));
                 if (is_stream_handle) {
@@ -360,10 +373,21 @@
             }
             if (!target_sig && !std_sig && mem->object) {
                 std::string recv_t = type_name_of(mem->object);
-                if (recv_t == "File" || recv_t == "fs.File" || recv_t == "fs::File" ||
-                    recv_t == "TcpConn" || recv_t == "net.TcpConn" || recv_t == "net::TcpConn") {
-                    std::string norm_t = (recv_t.ends_with("File")) ? "File" : "TcpConn";
-                    if (auto mit = catalog_idx.receiver_methods.find(norm_t + "." + mem->field); mit != catalog_idx.receiver_methods.end()) {
+                std::string canon_recv = canonical_nominal_path_sema(recv_t);
+                if (auto dot = canon_recv.find('.'); dot != std::string::npos) {
+                    if (std::string cns = resolve_stdlib_ns_sema(canon_recv.substr(0, dot)); !cns.empty()) {
+                        canon_recv = cns + canon_recv.substr(dot);
+                    }
+                }
+                std::string key;
+                if (recv_t == "File" || canon_recv == "fs.File") key = "fs.File." + mem->field;
+                else if (recv_t == "TcpConn" || canon_recv == "net.TcpConn") key = "net.TcpConn." + mem->field;
+                else if (canon_recv == "ipc.Conn") key = "ipc.Conn." + mem->field;
+                else if (canon_recv == "ipc.Listener") key = "ipc.Listener." + mem->field;
+                else if (canon_recv == "time.Time") key = "time.Time." + mem->field;
+                else if (canon_recv == "time.Duration") key = "time.Duration." + mem->field;
+                if (!key.empty()) {
+                    if (auto mit = catalog_idx.receiver_methods.find(key); mit != catalog_idx.receiver_methods.end()) {
                         std_sig = &mit->second;
                     }
                 }
@@ -371,6 +395,10 @@
             if (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") {
                 if (obj_id && imm_vars_.contains(obj_id->name) && !smart_ptr_vars_.contains(obj_id->name)) {
                     if (auto r = emit_error(diag_at(line, col, "cfire/MUT-RECEIVER", std::format("cannot call mutating method '{}' on immutable variable '{}'", mem->field, obj_id->name), {{"var", obj_id->name}})); !r) return r;
+                }
+            } else if (iface_sig && iface_sig->is_mut_receiver) {
+                if (obj_id && imm_vars_.contains(obj_id->name) && !smart_ptr_vars_.contains(obj_id->name)) {
+                    if (auto r = emit_error(diag_at(line, col, "cfire/MUT-RECEIVER", std::format("cannot call mutating interface method '{}' on immutable variable '{}'", mem->field, obj_id->name), {{"var", obj_id->name}})); !r) return r;
                 }
             }
             if (mem->field == "push" && !call.args.empty() && is_byte_slice_expr(mem->object)) {
@@ -413,6 +441,23 @@
             }
             if (auto r = check_call_argument_types(call, *target_sig); !r) return r;
             if (auto r = check_interface_constraints(call, *target_sig, line, col); !r) return r;
+        } else if (iface_sig) {
+            std::size_t actual_args = call.args.size() + (call.block_arg ? 1 : 0);
+            if (actual_args != iface_sig->param_types.size()) {
+                if (auto r = emit_error(diag_at(line, col, "cfire/ARITY-MISMATCH", std::format("call to interface method '{}' expects {} argument(s), got {}", iface_sig->name, iface_sig->param_types.size(), actual_args))); !r) return r;
+            }
+            for (std::size_t i = 0; i < call.args.size() && i < iface_sig->param_types.size(); ++i) {
+                TypeId want = cf_.type_table.from_typeref(iface_sig->param_types[i]);
+                if (!is_concrete_checkable_type(want)) continue;
+                bool handled = false;
+                if (auto r = check_value_for(want, call.args[i].value, handled); !r) return r;
+                if (handled) continue;
+                TypeId got = infer_expr_type_id_sema(call.args[i].value);
+                if (!is_concrete_checkable_type(got) || expr_returns_optional_sema(call.args[i].value)) continue;
+                if (!cf_.type_table.is_assignable(want, got)) {
+                    if (auto r = emit_error(diag_at(call.args[i].line, call.args[i].col, "cfire/TYPE-MISMATCH", std::format("argument {} of '{}' expects '{}', got '{}'{}", i + 1, iface_sig->name, cf_.type_table.to_string(want), cf_.type_table.to_string(got), nominal_mismatch_hint_sema(want, got)))); !r) return r;
+                }
+            }
         } else if (std_sig) {
             std::size_t actual_args = call.args.size() + (call.block_arg ? 1 : 0);
             if (actual_args < std_sig->min_args || actual_args > std_sig->max_args) {
@@ -450,7 +495,8 @@
 
         if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
             if (auto p = extract_path_info(mem->object)) {
-                bool is_mut = (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut");
+                bool is_mut = (target_sig && target_sig->receiver && target_sig->receiver->intent == "mut") ||
+                              (iface_sig && iface_sig->is_mut_receiver);
                 seen_paths.push_back({*p, is_mut});
             }
         }
@@ -484,6 +530,20 @@
                             }
                         }
                     }
+                }
+            } else if (iface_sig && i < iface_sig->param_types.size()) {
+                const std::string expected = (i < iface_sig->param_intents.size() && !iface_sig->param_intents[i].empty())
+                    ? iface_sig->param_intents[i] : std::string("in");
+                const std::string pname = (i < iface_sig->param_names.size() && !iface_sig->param_names[i].empty())
+                    ? iface_sig->param_names[i] : std::format("#{}", i + 1);
+                expected_is_move = (expected == "move");
+                if ((expected == "mut" || expected == "out" || expected == "move") && arg.intent != expected) {
+                    std::string_view rule = (expected == "out")
+                        ? "cfire/OUT-CALLSITE"
+                        : (expected == "move" ? "cfire/MOVE-CALLSITE" : "cfire/MUT-CALLSITE");
+                    if (auto r = emit_error(diag_at(arg.line, arg.col, rule, std::format("parameter '{}' of {} requires explicit '{}' annotation at call-site", pname, iface_sig->name, expected), {{"keyword", expected}})); !r) return r;
+                } else if (expected == "in" && (arg.intent == "mut" || arg.intent == "out")) {
+                    if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/REDUNDANT-CALLSITE-INTENT", std::format("parameter '{}' of '{}' has 'in' intent; remove redundant '{}' annotation at call-site", pname, iface_sig->name, arg.intent), {{"keyword", arg.intent}})); !r) return r;
                 }
             } else if (std_sig && i < std_sig->params.size()) {
                 const auto& expected = std_sig->params[i].intent;
@@ -721,6 +781,14 @@
             }
         }
         if (auto r = check_match_arms_reachability(arms, line, col); !r) return r;
+        std::string enum_name;
+        std::string target_t;
+        if (target) {
+            target_t = type_name_of(target);
+            if (const auto* en = resolve_enum_by_prefix_sema(target_t)) {
+                enum_name = en->name;
+            }
+        }
         bool is_slice_match = false;
         bool is_primitive_match = false;
         for (const auto& a : arms) {
@@ -730,20 +798,24 @@
         if (!is_expr_match && is_slice_match) {
             for (const auto& arm : arms) {
                 ScopeGuard sg(*this);
-                bind_match_arm_vars(arm);
+                bind_match_arm_vars(arm, target_t);
+                if (arm.guard) {
+                    if (auto r = check_expr(arm.guard); !r) return r;
+                    if (auto r = check_bool_condition(arm.guard, "match guard"); !r) return r;
+                }
                 if (auto r = check_block_stmts(arm.body); !r) return r;
             }
             return {};
         }
 
-        std::string enum_name;
-        std::string target_t;
-        if (target) {
-            target_t = type_name_of(target);
-            if (cf_.enums.contains(target_t)) {
-                enum_name = target_t;
-            }
-        }
+        const bool is_opt = target_t.ends_with('?') || target_t.starts_with("std::optional");
+        const bool is_res = target_t.ends_with('!') || target_t.starts_with("cfire::Result");
+        auto is_global_const = [&](std::string_view n) -> bool {
+            return std::any_of(cf_.ast.global_vars.begin(), cf_.ast.global_vars.end(), [&](const GlobalVarDecl& gv) {
+                return !gv.is_mut && gv.name == n;
+            });
+        };
+
         std::unordered_set<std::string> covered;
         bool has_wildcard = false;
 
@@ -756,21 +828,30 @@
                     if (!arm.guard) has_wildcard = true;
                 } else {
                     if (!arm.guard) covered.insert(pat.variant_name);
-                    if (enum_name.empty() && !pat.enum_prefix.empty() && cf_.enums.contains(pat.enum_prefix)) {
-                        enum_name = pat.enum_prefix;
+                    if (enum_name.empty() && !pat.enum_prefix.empty()) {
+                        if (const auto* en = resolve_enum_by_prefix_sema(pat.enum_prefix)) {
+                            enum_name = en->name;
+                        }
                     }
                 }
+            }
+            if (enum_name.empty() && !is_opt && !is_res && !target_t.empty() && target_t != "unknown" &&
+                pats.size() == 1 && !arm.is_slice_pattern && !pats[0].is_range &&
+                pats[0].enum_prefix.empty() && pats[0].literal_val.empty() && pats[0].bindings.empty() &&
+                !pats[0].variant_name.empty() && pats[0].variant_name != "_" &&
+                !pats[0].is_some && !pats[0].is_none && !pats[0].is_ok && !pats[0].is_err &&
+                !is_global_const(pats[0].variant_name)) {
+                cf_.match_catchall_bindings.insert(&arm);
+                if (!arm.guard) has_wildcard = true;
             }
             ScopeGuard sg(*this);
             bind_match_arm_vars(arm, target_t);
             if (arm.guard) {
                 if (auto r = check_expr(arm.guard); !r) return r;
+                if (auto r = check_bool_condition(arm.guard, "match guard"); !r) return r;
             }
             if (auto r = check_block_stmts(arm.body, is_expr_match); !r) return r;
         }
-
-        bool is_opt = target_t.ends_with('?') || target_t.starts_with("std::optional");
-        bool is_res = target_t.ends_with('!') || target_t.starts_with("cfire::Result");
 
         if (is_opt && !has_wildcard) {
             bool has_some = covered.contains("Some");
@@ -792,8 +873,11 @@
                         : arm.patterns;
                     for (const auto& pat : pats) {
                         if (pat.variant_name != "_" && pat.literal_val.empty() && !pat.is_slice_pattern) {
-                            if (!pat.enum_prefix.empty() && pat.enum_prefix != enum_name) {
-                                if (auto r = emit_error(diag_at(pat.line, 0, "cfire/TYPE-MISMATCH", std::format("variant pattern '{}::{}' does not match target enum '{}'", pat.enum_prefix, pat.variant_name, enum_name))); !r) return r;
+                            if (!pat.enum_prefix.empty()) {
+                                const EnumDecl* pat_en = resolve_enum_by_prefix_sema(pat.enum_prefix);
+                                if (!pat_en || pat_en->name != enum_name) {
+                                    if (auto r = emit_error(diag_at(pat.line, 0, "cfire/TYPE-MISMATCH", std::format("variant pattern '{}::{}' does not match target enum '{}'", pat.enum_prefix, pat.variant_name, enum_name))); !r) return r;
+                                }
                             }
                             bool found_var = false;
                             for (const auto& v : eit->second.variants) {
@@ -831,6 +915,7 @@
         std::unordered_set<std::size_t> exact_covered;
         std::optional<std::size_t> min_variadic_covered;
         for (const auto& arm : arms) {
+            if (arm.guard) continue;
             if (arm.variant_name == "_" && !arm.is_slice_pattern && arm.literal_val.empty()) {
                 return true;
             }
@@ -1011,8 +1096,13 @@
                 bool has_wildcard = false;
                 std::unordered_set<std::string> arm_variants;
                 for (const auto& arm : ms->arms) {
-                    if (arm.variant_name == "_") has_wildcard = true;
-                    else arm_variants.insert(arm.variant_name);
+                    if (!arm.guard) {
+                        if (arm.variant_name == "_" || (cf && cf->match_catchall_bindings.contains(&arm))) {
+                            has_wildcard = true;
+                        } else {
+                            arm_variants.insert(arm.variant_name);
+                        }
+                    }
                     if (!block_diverges(arm.body, cf)) {
                         all_diverge = false;
                     }

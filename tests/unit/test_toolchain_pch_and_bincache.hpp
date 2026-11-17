@@ -47,11 +47,8 @@ struct ScopedEnvVar {
 struct ScopedTempRoot {
     std::filesystem::path dir;
     explicit ScopedTempRoot(const std::string& prefix) {
-        std::error_code ec;
-        auto base = std::filesystem::temp_directory_path(ec);
-        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-        dir = base / std::format("{}_{}_{}", prefix, cfire::build::current_pid(), now);
-        std::filesystem::create_directories(dir, ec);
+        cfire::detail::SecureTempDir sec(prefix);
+        dir = sec.release();
     }
     ~ScopedTempRoot() {
         std::error_code ec;
@@ -284,7 +281,8 @@ void test_toolchain_pch_and_binary_caching([[maybe_unused]] const std::filesyste
         // BinaryCache LRU eviction unit check
         {
             test_build_cache_detail::ScopedTempRoot lru_cache("cfire_lru_bin");
-            test_build_cache_detail::ScopedEnvVar env_lru("CFIRE_CACHE_DIR", lru_cache.dir.string());
+            auto lru_cache_dir = lru_cache.dir / "cache";
+            test_build_cache_detail::ScopedEnvVar env_lru("CFIRE_CACHE_DIR", lru_cache_dir.string());
             auto f1 = lru_cache.dir / "src1.bin";
             auto f2 = lru_cache.dir / "src2.bin";
             test_build_cache_detail::write_file_str(f1, std::string(1024, 'A'));

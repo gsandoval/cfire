@@ -1,6 +1,8 @@
 #pragma once
 // src/build/cache_paths.hpp — Unified cache root, config paths, atomic writes, JSON helpers & SHA-256
 
+#include "../../runtime/cfire_prelude.hpp"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -112,38 +114,42 @@ inline bool is_dir_writable(const std::filesystem::path& dir) {
     return true;
 }
 
+[[nodiscard]] inline std::filesystem::path resolve_configured_cache_root() {
+    return cfire::detail::resolve_configured_cache_root();
+}
+
 inline std::filesystem::path user_cache_root_dir() {
-    std::error_code ec;
-    if (const char* override_dir = std::getenv("CFIRE_CACHE_DIR");
-        override_dir && *override_dir) {
-        std::filesystem::path p(override_dir);
-        std::filesystem::create_directories(p, ec);
-        return p;
-    }
-    if (auto home = user_home_dir(); !home.empty()) {
-        auto preferred = home / ".cfire" / "cache";
-        if (is_dir_writable(preferred)) {
-            return preferred;
-        }
-    }
-    auto tmp_base = std::filesystem::temp_directory_path(ec);
-    if (ec || tmp_base.empty()) {
-        tmp_base = std::filesystem::path(".");
-    }
-    auto fallback = tmp_base / std::format("cfire-{}-cache", current_user_tag());
-    std::filesystem::create_directories(fallback, ec);
-    return fallback;
+    return cfire::detail::user_cache_dir("");
 }
 
 inline std::filesystem::path cache_subdir(std::string_view name) {
-    std::error_code ec;
-    auto dir = user_cache_root_dir() / std::string(name);
-    std::filesystem::create_directories(dir, ec);
-    return dir;
+    return cfire::detail::user_cache_dir(name);
 }
 
 [[nodiscard]] inline auto user_libs_cache_dir() -> std::filesystem::path {
     return cache_subdir("libs");
+}
+
+// Header AST cache inside a build.cf workspace when present, or the user cache root otherwise.
+[[nodiscard]] inline auto header_inspect_cache_dir(const std::filesystem::path& start_dir) -> std::filesystem::path {
+    std::error_code ec;
+    std::filesystem::path base = start_dir.empty() ? std::filesystem::path(".") : start_dir;
+    auto cur = std::filesystem::weakly_canonical(base, ec);
+    if (ec || cur.empty()) cur = std::filesystem::absolute(base, ec);
+    if (std::filesystem::is_regular_file(cur, ec)) cur = cur.parent_path();
+    for (int depth = 0; depth < 8 && !cur.empty(); ++depth) {
+        if (std::filesystem::exists(cur / "build.cf", ec)) {
+            auto proj_cache = cur / ".cfire" / "cache";
+            std::filesystem::create_directories(proj_cache, ec);
+            if (!ec && std::filesystem::is_directory(proj_cache, ec)) {
+                return proj_cache;
+            }
+            break;
+        }
+        if (cur == cur.parent_path()) break;
+        cur = cur.parent_path();
+    }
+    return cache_subdir("headers");
 }
 
 inline std::filesystem::path config_file_path() {
@@ -160,12 +166,8 @@ inline std::filesystem::path config_file_path() {
     if (auto home = user_home_dir(); !home.empty()) {
         return home / ".cfire" / "config.json";
     }
-    std::error_code ec;
-    auto tmp_base = std::filesystem::temp_directory_path(ec);
-    if (ec || tmp_base.empty()) {
-        tmp_base = std::filesystem::path(".");
-    }
-    return tmp_base / std::format("cfire-{}-config.json", current_user_tag());
+    static cfire::detail::SecureTempDir fallback_cfg("cfire_cfg");
+    return fallback_cfg.file("config.json");
 }
 
 inline bool read_text_file(const std::filesystem::path& path, std::string& out) {

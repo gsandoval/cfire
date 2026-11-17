@@ -1,0 +1,22 @@
+package main
+
+type Resettable interface {
+    fn mut reset()
+}
+
+type Counter struct {
+    n: i64
+}
+
+fn (mut c: Counter) reset() {
+    c.n = 0
+}
+
+fn bad_reset[T: Resettable](item: T) {
+    item.reset() //~ error cfire/MUT-RECEIVER
+}
+
+fn main() {
+    c := Counter{n: 5}
+    bad_reset(c)
+}
