@@ -17,3 +17,4 @@ When working in this repository:
      - **Conformance Tests** (language execution & LSP streams in `tests/unit/` and `tests/e2e/`)
      - **Manual Validation** (real-world validation in Zed/VS Code or CLI)
 4. Every change must compile cleanly with `clang++ -std=c++23 -O2 -Wall -Wextra` (zero warnings via `make check-warnings`), pass `make check` 100%, and pass `./cfire doc --check`.
+5. **Release & Auto-Versioning**: Green pushes to `main` trigger `.github/workflows/release.yml` to auto-bump `patch` (`0.Y.Z` -> `0.Y.(Z+1)`), publish 6-target binaries, and deploy GitHub Pages. Run `git pull --rebase` before pushing follow-up commits; use `gh workflow run release.yml -f bump=minor` (or `make release BUMP=minor`) for intentional minor/major versions.

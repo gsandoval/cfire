@@ -7,6 +7,7 @@
 #endif
 #include "../runtime/cfire_prelude.hpp"
 #include <algorithm>
+#include <cctype>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -224,9 +225,9 @@ namespace detail {
 
 [[nodiscard]] inline auto trim_ws(std::string_view sv) -> std::string {
     std::size_t b = 0;
-    while (b < sv.size() && (sv[b] == ' ' || sv[b] == '\t' || sv[b] == '\r')) ++b;
+    while (b < sv.size() && std::isspace(static_cast<unsigned char>(sv[b])) != 0) ++b;
     std::size_t e = sv.size();
-    while (e > b && (sv[e - 1] == ' ' || sv[e - 1] == '\t' || sv[e - 1] == '\r')) --e;
+    while (e > b && std::isspace(static_cast<unsigned char>(sv[e - 1])) != 0) --e;
     return std::string(sv.substr(b, e - b));
 }
 
@@ -272,38 +273,61 @@ struct StructFieldLine {
 
 [[nodiscard]] inline auto try_parse_struct_field_line(const std::string& trimmed, StructFieldLine& out) -> bool {
     if (trimmed.empty() || trimmed == "}") return false;
-    if (trimmed.starts_with("//")) {
-        out = StructFieldLine{true, "", "", "", trimmed};
-        return true;
+    std::vector<cfire::frontend::CommentSpan> f_comments;
+    auto f_toks = cfire::frontend::tokenize("<field>", trimmed, &f_comments);
+    if (!f_toks) return false;
+    for (const auto& c : f_comments) {
+        if (c.block) return false;
     }
-    auto colon = trimmed.find(':');
-    if (colon == std::string::npos || colon == 0) return false;
-    std::string fname = trim_ws(std::string_view(trimmed).substr(0, colon));
-    for (char c : fname) {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) return false;
-    }
-    std::string rest = trim_ws(std::string_view(trimmed).substr(colon + 1));
-    std::string tag;
-    std::string comment;
-    // Check if a comment starts before any backtick tag (string-aware)
-    auto cpos = find_comment_start(rest);
-    auto b1 = rest.find('`');
-    if (b1 != std::string::npos && (cpos == std::string::npos || b1 < cpos)) {
-        auto b2 = rest.find('`', b1 + 1);
-        if (b2 != std::string::npos) {
-            tag = rest.substr(b1, b2 - b1 + 1);
-            std::string after_tag = trim_ws(std::string_view(rest).substr(b2 + 1));
-            if (after_tag.starts_with("//")) {
-                comment = after_tag;
-            }
-            rest = trim_ws(std::string_view(rest).substr(0, b1));
+    if (f_comments.size() > 1) return false;
+
+    const auto& toks = *f_toks;
+    // tokenize() always appends a final TokenKind::Eof.
+    if (toks.size() == 1) {
+        if (f_comments.size() == 1 && !f_comments[0].block) {
+            out = StructFieldLine{true, "", "", "", trim_ws(trimmed)};
+            return true;
         }
-    } else if (cpos != std::string::npos) {
-        comment = trim_ws(std::string_view(rest).substr(cpos));
-        rest = trim_ws(std::string_view(rest).substr(0, cpos));
+        return false;
     }
-    out = StructFieldLine{false, fname, rest, tag, comment};
-    return !out.type_and_default.empty();
+    if (toks.size() < 4) return false;
+    if (toks[0].kind != TokenKind::Ident || toks[1].kind != TokenKind::Colon) return false;
+    const std::size_t last_tok_idx = toks.size() - 2;
+    if (toks[last_tok_idx].kind == TokenKind::Comma || toks[last_tok_idx].kind == TokenKind::Semicolon) {
+        return false;
+    }
+
+    const bool has_tag = (last_tok_idx >= 3 &&
+                          toks[last_tok_idx].kind == TokenKind::RawString &&
+                          toks[last_tok_idx - 1].kind != TokenKind::Assign);
+    if (toks[2].line != 1 || toks[last_tok_idx].line != 1 || toks[2].col < 1 || toks[last_tok_idx].col < 1) {
+        return false;
+    }
+    const std::size_t type_start = static_cast<std::size_t>(toks[2].col - 1);
+    const std::size_t tag_start = static_cast<std::size_t>(toks[last_tok_idx].col - 1);
+    if (type_start >= trimmed.size() || tag_start >= trimmed.size()) return false;
+    if (!f_comments.empty() && f_comments[0].begin > trimmed.size()) return false;
+    if (has_tag && !f_comments.empty() && f_comments[0].begin < tag_start) return false;
+
+    const std::size_t comment_pos = !f_comments.empty() ? f_comments[0].begin : trimmed.size();
+    const std::size_t type_end = has_tag ? tag_start : comment_pos;
+    if (type_end < type_start) return false;
+
+    std::string type_and_default = trim_ws(std::string_view(trimmed).substr(type_start, type_end - type_start));
+    std::string tag;
+    if (has_tag) {
+        if (comment_pos < tag_start) return false;
+        tag = trim_ws(std::string_view(trimmed).substr(tag_start, comment_pos - tag_start));
+    }
+    std::string comment;
+    if (!f_comments.empty()) {
+        if (f_comments[0].end > trimmed.size() || f_comments[0].end < f_comments[0].begin) return false;
+        comment = trim_ws(std::string_view(trimmed).substr(f_comments[0].begin, f_comments[0].end - f_comments[0].begin));
+    }
+    if (type_and_default.empty()) return false;
+
+    out = StructFieldLine{false, toks[0].lexeme, std::move(type_and_default), std::move(tag), std::move(comment)};
+    return true;
 }
 
 // Net `{([` minus `})]` on a line, skipping strings, char literals, comments and raw strings (LSP on-type indent).
@@ -355,16 +379,17 @@ struct StructFieldLine {
 }
 
 // Column-aligns the fields of every `type X struct { ... }` block whose body is only fields and comments.
-inline void align_struct_fields(std::vector<std::string>& lines) {
+inline void align_struct_fields(std::vector<std::string>& lines, const std::vector<bool>& unsafe_line = {}) {
     for (std::size_t i = 0; i < lines.size(); ++i) {
         std::string head = trim_ws(lines[i]);
         if (!(head.starts_with("type ") && head.ends_with("struct {"))) continue;
         const std::size_t indent = lines[i].find_first_not_of(' ');
         std::vector<StructFieldLine> fields;
         std::size_t j = i + 1;
-        bool pure = true;
+        bool pure = i >= unsafe_line.size() || !unsafe_line[i];
         std::size_t real = 0;
-        for (; j < lines.size(); ++j) {
+        for (; pure && j < lines.size(); ++j) {
+            if (j < unsafe_line.size() && unsafe_line[j]) { pure = false; break; }
             std::string ft = trim_ws(lines[j]);
             if (ft == "}") break;
             if (ft.empty()) continue;
@@ -436,16 +461,62 @@ inline void align_struct_fields(std::vector<std::string>& lines) {
 
     // Struct field columns are aligned as a final pass over the printed lines.
     std::vector<std::string> lines;
+    std::vector<std::size_t> line_starts;
     {
         std::size_t pos = 0;
         while (pos <= printed.size()) {
             auto nl = printed.find('\n', pos);
-            if (nl == std::string::npos) { if (pos < printed.size()) lines.push_back(printed.substr(pos)); break; }
+            if (nl == std::string::npos) {
+                if (pos < printed.size()) {
+                    line_starts.push_back(pos);
+                    lines.push_back(printed.substr(pos));
+                }
+                break;
+            }
+            line_starts.push_back(pos);
             lines.push_back(printed.substr(pos, nl - pos));
             pos = nl + 1;
         }
     }
-    detail::align_struct_fields(lines);
+    std::vector<bool> line_has_multiline_or_block_comment(lines.size(), false);
+    if (!lines.empty()) {
+        auto line_of_offset = [&](std::size_t off) -> std::size_t {
+            auto it = std::upper_bound(line_starts.begin(), line_starts.end(), off);
+            if (it == line_starts.begin()) return 0;
+            return static_cast<std::size_t>((it - line_starts.begin()) - 1);
+        };
+        auto mark_span = [&](std::size_t start_line, std::size_t end_line) {
+            start_line = std::min(start_line, lines.size() - 1);
+            end_line = std::min(end_line, lines.size() - 1);
+            for (std::size_t r = start_line; r <= end_line; ++r) {
+                line_has_multiline_or_block_comment[r] = true;
+            }
+        };
+        std::vector<cfire::frontend::CommentSpan> printed_comments;
+        auto printed_toks = cfire::frontend::tokenize(filename, printed, &printed_comments);
+        if (!printed_toks) {
+            std::fill(line_has_multiline_or_block_comment.begin(), line_has_multiline_or_block_comment.end(), true);
+        } else {
+            for (const auto& c : printed_comments) {
+                if (c.block) {
+                    const std::size_t sl = line_of_offset(c.begin);
+                    const std::size_t el = line_of_offset(c.end > c.begin ? c.end - 1 : c.begin);
+                    mark_span(sl, el);
+                }
+            }
+            for (const auto& t : *printed_toks) {
+                if (t.kind == TokenKind::Eof) continue;
+                if (t.kind == TokenKind::RawString || t.kind == TokenKind::String || t.kind == TokenKind::CppBlock) {
+                    const std::size_t nl_count = static_cast<std::size_t>(std::count(t.lexeme.begin(), t.lexeme.end(), '\n'));
+                    if (nl_count > 0 && t.line >= 1) {
+                        const std::size_t sl = static_cast<std::size_t>(t.line - 1);
+                        mark_span(sl, sl + nl_count);
+                    }
+                }
+            }
+        }
+    }
+    detail::align_struct_fields(lines, line_has_multiline_or_block_comment);
     std::string out;
     for (const auto& l : lines) out += l + "\n";
 

@@ -1447,6 +1447,7 @@ fn main() {}
 #include "test_single_pass_check_and_lsp.hpp"
 #include "test_sharded_cpp_codegen.hpp"
 #include "test_vendored_libs_and_release.hpp"
+#include "test_toolchain_upgrade.hpp"
 #include "test_language_consistency_and_docs.hpp"
 #include "test_ext_soundness_cache_and_clean.hpp"
 #include "test_fs_http_time_ipc.hpp"

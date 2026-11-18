@@ -1,9 +1,10 @@
 #!/bin/sh
 # scripts/release.sh — Atomic version bump, verification, local portable packaging & git tagging for cfire
 # Usage:
-#   ./scripts/release.sh <x.y.z> [--dry-run] [--no-tag]
+#   ./scripts/release.sh <patch|minor|major|x.y.z> [--dry-run] [--no-tag]
 #   ./scripts/release.sh --package-local <dest_dir>
-#   make release VERSION=0.10.0
+#   make release BUMP=minor
+#   make release VERSION=0.12.0
 set -e
 
 NEW_VER=""
@@ -29,7 +30,7 @@ while [ $# -gt 0 ]; do
             PACKAGE_LOCAL_DIR="${arg#--package-local=}"
             ;;
         -h|--help)
-            echo "Usage: ./scripts/release.sh <x.y.z> [--dry-run] [--no-tag]"
+            echo "Usage: ./scripts/release.sh <patch|minor|major|x.y.z> [--dry-run] [--no-tag]"
             echo "       ./scripts/release.sh --package-local <dest_dir>"
             exit 0
             ;;
@@ -60,7 +61,11 @@ if [ -n "$PACKAGE_LOCAL_DIR" ]; then
         x86_64|amd64)  TARGET_ARCH="x86_64" ;;
         *)             TARGET_ARCH="$HOST_ARCH" ;;
     esac
-    CUR_VER="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo '0.16.0')"
+    CUR_VER="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+    if [ -z "$CUR_VER" ] && [ -f src/version.hpp ]; then
+        CUR_VER="$(sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' src/version.hpp | head -n 1)"
+    fi
+    [ -n "$CUR_VER" ] || CUR_VER="0.0.0-dev"
     CUR_VER="${CUR_VER#v}"
     BUNDLE_NAME="cfire-v${CUR_VER}-${TARGET_OS}-${TARGET_ARCH}"
 
@@ -103,16 +108,41 @@ if [ -n "$PACKAGE_LOCAL_DIR" ]; then
 fi
 
 if [ -z "$NEW_VER" ]; then
-    echo "error: missing target version (e.g. ./scripts/release.sh 0.10.0)" >&2
+    echo "error: missing target version or bump keyword (e.g. ./scripts/release.sh patch|minor|major|0.12.0)" >&2
     exit 1
 fi
 
 case "$NEW_VER" in
-    v*) NEW_VER="${NEW_VER#v}" ;;
+    patch|minor|major)
+        BASE_VER="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+        BASE_VER="${BASE_VER#v}"
+        if [ -z "$BASE_VER" ] && [ -f src/version.hpp ]; then
+            BASE_VER="$(sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' src/version.hpp | head -n 1)"
+        fi
+        if ! printf "%s" "$BASE_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "error: invalid or missing base VERSION '${BASE_VER}' for '${NEW_VER}' bump" >&2
+            exit 1
+        fi
+        OLD_IFS="$IFS"
+        IFS=.
+        set -- $BASE_VER
+        IFS="$OLD_IFS"
+        CUR_MAJ="$1"
+        CUR_MIN="$2"
+        CUR_PAT="$3"
+        case "$NEW_VER" in
+            patch) NEW_VER="${CUR_MAJ}.${CUR_MIN}.$((CUR_PAT + 1))" ;;
+            minor) NEW_VER="${CUR_MAJ}.$((CUR_MIN + 1)).0" ;;
+            major) NEW_VER="$((CUR_MAJ + 1)).0.0" ;;
+        esac
+        ;;
+    v*)
+        NEW_VER="${NEW_VER#v}"
+        ;;
 esac
 
 if ! printf "%s" "$NEW_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "error: invalid semantic version '$NEW_VER' (expected X.Y.Z)" >&2
+    echo "error: invalid semantic version '$NEW_VER' (expected patch, minor, major, or X.Y.Z)" >&2
     exit 1
 fi
 
@@ -124,13 +154,15 @@ mv -f src/version.hpp.tmp src/version.hpp
 printf "%s\n" "$NEW_VER" > VERSION
 
 # 2. Build cfire and run `./cfire doc` to propagate version across runtime headers, docs, and plugin manifests
-echo "==> Building cfire v${NEW_VER} and synchronizing docs & manifests..."
-make build
-./cfire doc
+if [ "${CFIRE_RELEASE_SKIP_BUILD:-0}" != "1" ]; then
+    echo "==> Building cfire v${NEW_VER} and synchronizing docs & manifests..."
+    make build
+    ./cfire doc
 
-# 3. Rebuild cfire so any updated runtime header stamps are compiled in, then run full quality gate
-echo "==> Running full conformance and documentation synchronization gates (make review-check)..."
-make review-check
+    # 3. Rebuild cfire so any updated runtime header stamps are compiled in, then run full quality gate
+    echo "==> Running full conformance and documentation synchronization gates (make review-check)..."
+    make review-check
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
     echo "✓ Dry run for cfire v${NEW_VER} succeeded (skipping git commit and tag)."
@@ -138,8 +170,12 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 # 4. Commit and tag release if working tree has changes or tag does not exist yet
-if ! git diff --quiet HEAD -- VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/; then
-    git add VERSION .gitattributes src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/
+VSCODE_MANIFEST=""
+if git ls-files --error-unmatch .vscode/extensions/cfire.cfire-lang/package.json >/dev/null 2>&1; then
+    VSCODE_MANIFEST=".vscode/extensions/cfire.cfire-lang/package.json"
+fi
+if ! git diff --quiet HEAD -- VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/ $VSCODE_MANIFEST; then
+    git add VERSION .gitattributes src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/ $VSCODE_MANIFEST
     git commit -m "chore(release): v${NEW_VER}"
     echo "✓ Created release commit for v${NEW_VER}"
 fi
@@ -151,7 +187,9 @@ if [ "$NO_TAG" = "0" ]; then
         git tag -a "v${NEW_VER}" -m "cfire v${NEW_VER}"
         echo "✓ Created annotated git tag v${NEW_VER}"
     fi
-    # Rebuild once on clean tagged commit so local ./cfire binary has clean SHA without -dirty
-    make build
-    ./cfire --version
+    if [ "${CFIRE_RELEASE_SKIP_BUILD:-0}" != "1" ]; then
+        # Rebuild once on clean tagged commit so local ./cfire binary has clean SHA without -dirty
+        make build
+        ./cfire --version
+    fi
 fi

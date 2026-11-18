@@ -485,17 +485,37 @@ h1.hero-title {
 .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
 /* Install Box */
+.install-tabs {
+    display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap;
+    gap: 0.35rem; margin-bottom: 0.65rem; padding: 0.25rem;
+    background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 8px;
+}
+.install-tab {
+    background: transparent; color: var(--muted); border: 1px solid transparent;
+    padding: 0.35rem 0.85rem; border-radius: 6px; font-family: var(--font-sans);
+    font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+}
+.install-tab:hover { color: var(--text); }
+.install-tab.active, .install-tab[aria-selected="true"] {
+    background: var(--bg-card); color: var(--text-bright);
+    border-color: var(--border-dark); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
 .install-bar {
     display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
     background: var(--bg-code); border: 1px solid var(--border); border-radius: 8px;
     padding: 0.65rem 1rem; font-family: var(--font-mono); font-size: 0.88rem;
     color: var(--text); max-width: 100%; overflow-x: auto;
 }
-.install-bar .prompt { color: var(--muted); font-weight: 700; user-select: none; }
+.install-bar .prompt { color: var(--muted); font-weight: 700; user-select: none; white-space: nowrap; }
+#cmd-install { white-space: nowrap; }
+.install-subnote {
+    margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); font-family: var(--font-mono);
+    line-height: 1.55;
+}
 .copy-btn {
     background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
     padding: 0.35rem 0.75rem; border-radius: 5px; font-size: 0.75rem; font-weight: 700;
-    font-family: var(--font-mono); cursor: pointer; transition: all 0.15s; shrink-0;
+    font-family: var(--font-mono); cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
 .copy-btn:hover { background: var(--bg-card-hover); border-color: var(--border-dark); }
 
@@ -978,14 +998,59 @@ syncCfireThemeBtn();
     </div>
 
     <div id="install">
-      <div class="install-bar">
-        <span class="prompt">$</span>
-        <span id="cmd-install">curl -fsSL https://cfire.memo.engineer/install.sh | sh</span>
-        <button class="copy-btn" onclick="copyInstallCmd()" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">content_copy</span><span id="copy-install-label">Copy</span></button>
+      <div class="install-tabs" role="tablist" aria-label="Operating system installer">
+        <button type="button" class="install-tab active" role="tab" id="tab-os-unix" data-os="unix" aria-selected="true" onclick="selectInstallOs('unix')">macOS / Linux</button>
+        <button type="button" class="install-tab" role="tab" id="tab-os-win" data-os="win" aria-selected="false" onclick="selectInstallOs('win')">Windows (PowerShell)</button>
       </div>
-      <div style="margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); font-family: var(--font-mono);">
-        Prefer building from source or containers? <code>git clone https://github.com/gsandoval/cfire &amp;&amp; cd cfire &amp;&amp; make &amp;&amp; sudo make install</code> &bull; <code>docker build -t cfire .</code> &bull; Verify with <code>cfire doctor</code>
+      <div>
+        <div class="install-bar">
+          <span class="prompt" id="install-prompt">$</span>
+          <span id="cmd-install">curl -fsSL https://cfire.memo.engineer/install.sh | sh</span>
+          <button class="copy-btn" onclick="copyInstallCmd()" style="display:inline-flex;align-items:center;gap:0.3rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">content_copy</span><span id="copy-install-label">Copy</span></button>
+        </div>
       </div>
+      <div id="install-subnote-unix" class="install-subnote">
+        Prefer building from source or containers? <code>git clone https://github.com/gsandoval/cfire &amp;&amp; cd cfire &amp;&amp; make &amp;&amp; sudo make install</code> &bull; <code>docker build -t cfire .</code> &bull; Verify with <code>cfire doctor</code> &amp; keep updated with <code>cfire upgrade</code>
+      </div>
+      <div id="install-subnote-win" class="install-subnote" hidden>
+        Requires Windows 10/11 (x86_64 or arm64) and Clang (<code>winget install LLVM.LLVM</code> or MSYS2 <code>CLANG64</code>) &bull; Verify with <code>cfire doctor</code> &amp; keep updated with <code>cfire upgrade</code>
+      </div>
+      <noscript>
+        <div class="install-subnote">
+          Windows (PowerShell): <code>irm https://cfire.memo.engineer/install.ps1 | iex</code>
+        </div>
+      </noscript>
+      <script>
+      function selectInstallOs(os) {
+        const isWin = os === 'win';
+        const unixBtn = document.getElementById('tab-os-unix');
+        const winBtn = document.getElementById('tab-os-win');
+        const promptEl = document.getElementById('install-prompt');
+        const cmdEl = document.getElementById('cmd-install');
+        const noteUnix = document.getElementById('install-subnote-unix');
+        const noteWin = document.getElementById('install-subnote-win');
+        if (unixBtn) {
+          unixBtn.classList.toggle('active', !isWin);
+          unixBtn.setAttribute('aria-selected', isWin ? 'false' : 'true');
+        }
+        if (winBtn) {
+          winBtn.classList.toggle('active', isWin);
+          winBtn.setAttribute('aria-selected', isWin ? 'true' : 'false');
+        }
+        if (promptEl) promptEl.textContent = isWin ? 'PS>' : '$';
+        if (cmdEl) cmdEl.textContent = isWin
+          ? 'irm https://cfire.memo.engineer/install.ps1 | iex'
+          : 'curl -fsSL https://cfire.memo.engineer/install.sh | sh';
+        if (noteUnix) noteUnix.hidden = isWin;
+        if (noteWin) noteWin.hidden = !isWin;
+      }
+      (function () {
+        try {
+          const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '';
+          if (/Win/i.test(plat)) selectInstallOs('win');
+        } catch (e) {}
+      })();
+      </script>
     </div>
   </section>
 

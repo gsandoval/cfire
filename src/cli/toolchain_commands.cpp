@@ -2,6 +2,7 @@
 
 #include "dispatch.hpp"
 #include "usage.hpp"
+#include "upgrade_command.hpp"
 #include "../doctor.hpp"
 
 #include <cstdlib>
@@ -126,6 +127,10 @@ namespace cfire::cli {
 auto run_toolchain_commands(std::string_view sub, int argc, char** argv, const cfire::build::ToolchainLayout& layout) -> int {
     if (sub == "config") {
         return cfire::cli::toolchain_commands_detail::run_config_subcommand(argc, argv);
+    }
+
+    if (sub == "upgrade" || sub == "self-update") {
+        return cfire::cli::upgrade::run_upgrade_command(argc, argv, layout);
     }
 
     if (sub == "install") {

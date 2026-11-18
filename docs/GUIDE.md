@@ -22,23 +22,32 @@ This guide is written as a hands-on builder's tour rather than a dry language sp
 > [!NOTE]
 > **Backend Compiler Discovery Order**: `cfire` locates a C++23-capable compiler by checking: (1) `CFIRE_CXX`, (2) `CXX`, (3) `clang++-18` / `clang++` (macOS Xcode Command Line Tools or LLVM 18+), and (4) `g++-14` / `g++`. Executables produced by `cfire build` are standalone native Mach-O, ELF, WASM, or iOS `.app` binaries with no garbage collector or virtual machine.
 
-### Quick Installation Script (macOS & Linux)
-Install the `cfire` binary and standard `runtime/` headers (`~/.local/bin/cfire` and `~/.cfire/runtime`, or `/usr/local/bin/cfire` and `/usr/local/share/cfire/runtime` when run as root):
+### Quick Installation Script (macOS, Linux & Windows)
+Install the pre-compiled `cfire` binary (SHA-256 verified) and standard `runtime/` headers:
+
+- **macOS & Linux** (installs to `~/.local/bin/cfire` and `~/.local/share/cfire/runtime`, or `/usr/local/...` as root):
 
 ```bash
 curl -fsSL https://cfire.memo.engineer/install.sh | sh
 ```
 
-To bootstrap all optional native acceleration libraries (`simdjson`, `libzstd`, `sqlite3`, `openssl`, `cmake`) and warm the C++23 runtime precompiled header (`.pch`) in one shot, pass `--setup`:
+To bootstrap optional native acceleration libraries and warm the C++23 runtime precompiled header cache in one shot, pass `--setup`:
 
 ```bash
 curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --setup
 ```
 
-Verify the active compiler binary:
+- **Windows (PowerShell, x86_64 & arm64)** (installs to `%LOCALAPPDATA%\Programs\cfire\` and adds it to User `PATH`):
+
+```powershell
+irm https://cfire.memo.engineer/install.ps1 | iex
+```
+
+Pass `$env:CFIRE_SETUP = '1'` before running `irm ... | iex` to also run `cfire setup --yes`. Verify the active compiler binary and check/install future releases in-place with `cfire upgrade`:
 ```bash
 cfire --version
 # Output: cfire 0.11.0 (5c06d4a, ISO C++23 systems toolchain)
+cfire upgrade --check
 ```
 
 ### Checking Toolchain Health (`cfire doctor` & `cfire setup`)
@@ -94,13 +103,20 @@ docker run --rm cfire:latest doctor
 docker run --rm cfire:latest run examples/01-hello-core/main.cf
 ```
 
-#### Windows (WSL2)
-Run `cfire` inside WSL2 with an Ubuntu 24.04 distribution:
-```bash
-wsl --install -d Ubuntu-24.04
-wsl
-sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
-```
+#### Windows (Native PowerShell & WSL2)
+- **Native Windows (PowerShell 5.1+ / 7+, `x86_64` & `arm64`)**:
+   ```powershell
+   winget install LLVM.LLVM
+   irm https://cfire.memo.engineer/install.ps1 | iex
+   cfire doctor
+   ```
+   For full C/C++ package ecosystems (`libsodium`, `libssh`, `libzstd`, `sqlite3`), MSYS2 `CLANG64` (`mingw-w64-clang-x86_64-clang`) is also supported automatically by `cfire`.
+- **WSL2 (Ubuntu 24.04)**:
+   ```bash
+   wsl --install -d Ubuntu-24.04
+   wsl
+   sudo apt-get update && sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
+   ```
 
 ### Understanding the Two Stdlib Namespaces (`core:*`, `ext:*`)
 One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. `cfire` keeps dependency boundaries honest by organizing its 36 built-in modules into two explicit namespaces based on external link requirements:
@@ -431,6 +447,7 @@ Every tool in the `cfire` workflow lives inside the single `cfire` binary:
 | `cfire inspect <target>` / `outline` | `--json` | Queries stdlib docs, diagnostic rules, or C headers (`inspect`), or prints a token-compressed AST summary (`outline`). |
 | `cfire emit-cpp` / `eject` / `vendor` | `[out_dir]` | Prints emitted ISO C++23 (`emit-cpp`), exports a standalone CMake tree (`eject`), or vendors remote deps (`vendor`). |
 | `cfire doc [file.cf]` | `--check`, `--llm`, `--root <dir>` | Generates the `docs/` HTML site and `LLMS.txt` or verifies zero documentation drift (`--check`). |
+| `cfire upgrade` (`self-update`) | `--check`, `--version <tag>`, `--yes`, `--force` | Checks for and installs SHA-256 verified pre-compiled `cfire` releases matching your installed layout. |
 
 ---
 

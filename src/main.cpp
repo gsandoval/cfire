@@ -84,6 +84,15 @@ auto main(int argc, char** argv) -> int {
 
     std::string sub = eff_ptr[1];
     auto toolchain_layout = cfire::build::locate_toolchain_layout(eff_ptr[0]);
+#if defined(_WIN32)
+    if (!toolchain_layout.executable_path.empty()) {
+        std::error_code old_ec;
+        std::filesystem::path old_bin(toolchain_layout.executable_path.wstring() + L".old");
+        if (std::filesystem::exists(old_bin, old_ec)) {
+            std::filesystem::remove(old_bin, old_ec);
+        }
+    }
+#endif
     auto runtime_dir = toolchain_layout.runtime_dir;
 
     if (sub == "--version" || sub == "-v" || sub == "version") {
@@ -111,7 +120,8 @@ auto main(int argc, char** argv) -> int {
         }
     }
 
-    if (sub == "doctor" || sub == "setup" || sub == "install" || sub == "config") {
+    if (sub == "doctor" || sub == "setup" || sub == "install" || sub == "config" ||
+        sub == "upgrade" || sub == "self-update") {
         return cfire::cli::run_toolchain_commands(sub, eff_argc, eff_ptr, toolchain_layout);
     }
     if (sub == "lsp") {

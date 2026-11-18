@@ -88,7 +88,7 @@ struct ResolvedImport {
     if (raw_path == "core:url" || raw_path == "ext:url") return "core:net/url";
     if (raw_path == "core:websocket" || raw_path == "ext:websocket") return "core:net/websocket";
     if (raw_path == "core:context" || raw_path == "ext:context") return "core:sync/context";
-    if (raw_path == "ext:tako") return "core:tako";
+    if (raw_path == "ext:tako" || raw_path == "pkg:tako") return "core:tako";
 
     if (raw_path.starts_with("ext:")) {
         std::string tail(raw_path.substr(4));

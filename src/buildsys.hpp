@@ -880,7 +880,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         frontend::append_doctests(cf_file.string(), *raw, *ast);
     }
 
-    // 3. Resolve local `.cf` package imports (`import "./..."`, `import "pkg:..."`, and same-directory package siblings) recursively
+    // 3. Resolve local `.cf` package imports (`import "./..."` and same-directory package siblings) recursively
     if (auto r = resolve_local_cf_imports(dir, *ast, plan, runtime_dir, test_mode); !r) {
         return std::unexpected(r.error());
     }

@@ -122,6 +122,9 @@ namespace cfire::frontend {
                 // raylib is no longer bundled. Native library linkage lives in build.cf or --pkg-config.
                 cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
                     "module '{}' has been retired; cfire no longer bundles raylib. Use 'ext:webui' for GUIs, or import \"raylib.h\" via 'import cpp \"raylib.h\"' with 'PkgConfig: [\"raylib\"]' in 'build.cf' (or '--pkg-config raylib')", imp.path)));
+            } else if (imp.path.starts_with("pkg:")) {
+                cf.add_error(cfire::diag::diag(cf.ast.path, imp.line, 0, "cfire/RETIRED-API", std::format(
+                    "import prefix 'pkg:' in '{}' has been retired; use built-in 'core:*' or 'ext:*' modules, or relative './...' paths for local packages", imp.path)));
             } else if (!imp.path.starts_with("./") && !imp.path.starts_with("../") && !imp.path.ends_with(".cf") && !cfire::modules::is_known_module(imp.path)) {
                 std::string best_match;
                 std::size_t best_dist = 5;

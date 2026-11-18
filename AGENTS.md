@@ -78,3 +78,11 @@ Before editing code for any non-trivial task:
 - **Source & header naming**: Every `.cpp` translation unit and `.hpp` header must have a domain-descriptive filename matching the subsystem it implements. Do not introduce `tu_`-prefixed translation units or `.inc` textual fragment headers.
 - **Test, fixture & seed naming**: Unit test headers, test functions, conformance fixtures, golden snapshots, formatter inputs/outputs, and fuzz seeds must be named after the language rule, API, or bug behavior under test—never after internal milestone, wave, or ticket identifiers or numeric ordering prefixes outside `docs/planning/`.
 - **Plain-English commits**: Commit messages must describe the change directly in plain English without `Co-Authored-By:` / attribution trailers, AI/agent/model names, or internal ticket/wave identifiers. Enable repository hooks with `make hooks` (enforced by `.githooks/commit-msg`).
+
+---
+
+## 4. Release & Auto-Versioning Workflow
+
+- **Automatic Patch Releases (`0.Y.Z` -> `0.Y.(Z+1)`)**: Every push to `main` that passes `.github/workflows/ci.yml` (`CI`) triggers `.github/workflows/release.yml` via `workflow_run`. If `VERSION` on `main` equals or predates the latest `v*.*.*` git tag, the workflow runs `./scripts/release.sh patch`, pushes a `chore(release): v0.Y.(Z+1)` commit + annotated tag, builds and verifies all 6 release bundles + `SHA256SUMS.txt`, publishes the GitHub Release, and deploys `docs/` to GitHub Pages.
+- **Keep Local `main` Rebased**: Because CI appends `chore(release): v...` commits after green pushes to `main`, run `git pull --rebase` before pushing subsequent local commits.
+- **Intentional Minor (`0.X.0`) & Major (`X.0.0`) Releases**: Trigger `.github/workflows/release.yml` manually (`gh workflow run release.yml -f bump=minor` or GitHub Actions `Run workflow` -> `bump` dropdown: `minor`, `major`, `patch`, `custom`), or pre-bump locally before pushing via `make release BUMP=minor` (`./scripts/release.sh minor`). When `VERSION` on `main` is already strictly greater than the latest `v*.*.*` tag, the `workflow_run` release pipeline honors it without adding an extra patch bump.

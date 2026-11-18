@@ -706,13 +706,10 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
     std::filesystem::path base_dir = file_path.parent_path();
     if (base_dir.empty()) base_dir = std::filesystem::current_path();
 
-    auto toolchain_pkg_dir = cfire::build::locate_toolchain_layout().pkg_dir;
     auto collect_imports = [&](const cfire::frontend::FileAST& src_ast, const std::filesystem::path& src_dir) {
         for (const auto& imp : src_ast.imports) {
-            if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../") || imp.path.starts_with("pkg:"))) {
-                std::filesystem::path target = imp.path.starts_with("pkg:")
-                    ? (toolchain_pkg_dir / imp.path.substr(4))
-                    : (src_dir / imp.path);
+            if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../"))) {
+                std::filesystem::path target = src_dir / imp.path;
                 std::vector<std::filesystem::path> cf_files;
                 std::error_code ec;
                 if (std::filesystem::is_directory(target, ec)) {

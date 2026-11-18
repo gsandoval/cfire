@@ -53,6 +53,7 @@ inline constexpr CommandHelp kCommandHelp[] = {
     {"eject", "<file.cf> [out_dir]  Export standalone C++23 source tree + CMakeLists.txt", ""},
     {"vendor", "[dest_dir]           Fetch and vendor all build.cf dependencies for offline builds", ""},
     {"install", "[--prefix <dir>|--user|--portable <dir>] Install cfire binary & runtime headers (FHS prefix or portable bundle)", ""},
+    {"upgrade", "[--check] [--version <tag>] [--yes] [--force] Upgrade installed cfire binary and runtime headers in place (alias: self-update)", "Usage: cfire upgrade [--check] [--version <tag>] [--yes] [--force]\n       cfire self-update [--check] [--version <tag>] [--yes] [--force]\n\nChecks for or installs a verified GitHub Release matching your installed layout (PortableDir, SystemPrefix, or UserHome).\n  --check, -c       Check current vs latest release version without modifying disk\n  --version <tag>   Upgrade or pin to a specific release tag (e.g. v0.12.0)\n  --yes, -y         Skip interactive confirmation prompt\n  --force, -f       Reinstall even if already on target version or in a source workspace"},
     {"doctor", "[--json]             Verify C++23 compiler, runtime headers, and native libraries", ""},
     {"config", "<list|get|set|unset> [key] [val] Manage persistent user toolchain config (~/.cfire/config.json)", "Usage: cfire config <list|get|set|unset> [key] [value]\n\nSupported keys: cxx, cc, emxx, ar, ld (or toolchains.<key>).\nPrecedence: CLI flags (--cxx/--cc/--emxx/--ar/--ld) > CFIRE_* env vars > config.json > auto-discovery."},
     {"setup", "[--yes] [--wasm]     Install missing host dependencies and warm C++23 PCH cache", ""},
@@ -68,6 +69,7 @@ inline void print_usage() {
 
 // `cfire <cmd> --help`. Returns false for an unknown command so the caller prints the global usage.
 inline auto print_command_usage(std::string_view cmd) -> bool {
+    if (cmd == "self-update") cmd = "upgrade";
     for (const auto& c : kCommandHelp) {
         if (c.name != cmd) continue;
         if (!c.details.empty()) std::println("{}", c.details);

@@ -21,7 +21,6 @@ WORKDIR /src/cfire
 COPY Makefile VERSION ./
 COPY src ./src
 COPY runtime ./runtime
-COPY pkg ./pkg
 
 ARG GIT_SHA=dev
 RUN make -j"$(nproc)" build CXX=clang++ GIT_SHA="${GIT_SHA}" \
@@ -60,7 +59,6 @@ WORKDIR /src/cfire
 COPY Makefile VERSION ./
 COPY src ./src
 COPY runtime ./runtime
-COPY pkg ./pkg
 COPY examples ./examples
 
 # Compile and install cfire + runtime headers globally, warm C++23 PCH, and verify with cfire doctor

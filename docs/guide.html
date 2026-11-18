@@ -2230,7 +2230,7 @@ syncCfireThemeBtn();
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 1 (7)</span>
     <a href="#ch1-how-the-cfire-toolchain-works" class="topic-pill active" data-topic-pill="ch1-how-the-cfire-toolchain-works" title="How the cfire Toolchain Works" onclick="navigateToSubhead('1', 'ch1-how-the-cfire-toolchain-works'); return false;">1.1 Toolchain</a>
-    <a href="#ch1-quick-installation-script-macos-linux" class="topic-pill" data-topic-pill="ch1-quick-installation-script-macos-linux" title="Quick Installation Script (macOS &amp; Linux)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2 Quick Install</a>
+    <a href="#ch1-quick-installation-script-macos-linux-windows" class="topic-pill" data-topic-pill="ch1-quick-installation-script-macos-linux-windows" title="Quick Installation Script (macOS, Linux &amp; Windows)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux-windows'); return false;">1.2 Quick Install</a>
     <a href="#ch1-checking-toolchain-health-cfire-doctor-cfire-setup" class="topic-pill" data-topic-pill="ch1-checking-toolchain-health-cfire-doctor-cfire-setup" title="Checking Toolchain Health (cfire doctor &amp; cfire setup)" onclick="navigateToSubhead('1', 'ch1-checking-toolchain-health-cfire-doctor-cfire-setup'); return false;">1.3 Doctor &amp; Setup</a>
     <a href="#ch1-building-from-source-platform-setup" class="topic-pill" data-topic-pill="ch1-building-from-source-platform-setup" title="Building from Source &amp; Platform Setup" onclick="navigateToSubhead('1', 'ch1-building-from-source-platform-setup'); return false;">1.4 Source Build</a>
     <a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" class="topic-pill" data-topic-pill="ch1-understanding-the-two-stdlib-namespaces-core-ext" title="Understanding the Two Stdlib Namespaces (core:*, ext:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">1.5 Understanding the Two ..</a>
@@ -2256,26 +2256,36 @@ syncCfireThemeBtn();
         <span class="pager-label">&larr; OVERVIEW</span>
         <strong class="pager-title">Landing &amp; Rosetta Showcase</strong>
       </a>
-      <a href="#ch1-quick-installation-script-macos-linux" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">
+      <a href="#ch1-quick-installation-script-macos-linux-windows" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux-windows'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 1.2) &rarr;</span>
-        <strong class="pager-title">Quick Installation Script (macOS &amp; Linux)</strong>
+        <strong class="pager-title">Quick Installation Script (macOS, Linux &amp; Windows)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch1-quick-installation-script-macos-linux" data-topic-id="ch1-quick-installation-script-macos-linux" data-topic-title="Quick Installation Script (macOS &amp; Linux)" data-short-title="1.2 Quick Install">
-<h3 class="guide-heading" id="ch1-quick-installation-script-macos-linux"><span class="heading-hash">#</span><span class="heading-text">Quick Installation Script (macOS &amp; Linux)</span><span class="heading-badge">Recommended for POSIX</span></h3>
-<p>Install the <code>cfire</code> binary and standard <code>runtime/</code> headers (<code>~/.local/bin/cfire</code> and <code>~/.cfire/runtime</code>, or <code>/usr/local/bin/cfire</code> and <code>/usr/local/share/cfire/runtime</code> when run as root):</p>
+  <section class="guide-topic" id="topic-ch1-quick-installation-script-macos-linux-windows" data-topic-id="ch1-quick-installation-script-macos-linux-windows" data-topic-title="Quick Installation Script (macOS, Linux &amp; Windows)" data-short-title="1.2 Quick Install">
+<h3 class="guide-heading" id="ch1-quick-installation-script-macos-linux-windows"><span class="heading-hash">#</span><span class="heading-text">Quick Installation Script (macOS, Linux &amp; Windows)</span><span class="heading-badge">Recommended for POSIX</span></h3>
+<p>Install the pre-compiled <code>cfire</code> binary (SHA-256 verified) and standard <code>runtime/</code> headers:</p>
+<ul>
+  <li><strong>macOS &amp; Linux</strong> (installs to <code>~/.local/bin/cfire</code> and <code>~/.local/share/cfire/runtime</code>, or <code>/usr/local/...</code> as root):</li>
+</ul>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>curl -fsSL https://cfire.memo.engineer/install.sh | sh
 </code></pre>
-<p>To bootstrap all optional native acceleration libraries (<code>simdjson</code>, <code>libzstd</code>, <code>sqlite3</code>, <code>openssl</code>, <code>cmake</code>) and warm the C++23 runtime precompiled header (<code>.pch</code>) in one shot, pass <code>--setup</code>:</p>
+<p>To bootstrap optional native acceleration libraries and warm the C++23 runtime precompiled header cache in one shot, pass <code>--setup</code>:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>curl -fsSL https://cfire.memo.engineer/install.sh | sh -s -- --setup
 </code></pre>
-<p>Verify the active compiler binary:</p>
+<ul>
+  <li><strong>Windows (PowerShell, x86_64 &amp; arm64)</strong> (installs to <code>%LOCALAPPDATA%\Programs\cfire\</code> and adds it to User <code>PATH</code>):</li>
+</ul>
+<div class="code-header"><span class="tag-cf">powershell</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>irm https://cfire.memo.engineer/install.ps1 | iex
+</code></pre>
+<p>Pass <code>$env:CFIRE_SETUP = '1'</code> before running <code>irm ... | iex</code> to also run <code>cfire setup --yes</code>. Verify the active compiler binary and check/install future releases in-place with <code>cfire upgrade</code>:</p>
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>cfire --version
 # Output: cfire 0.11.0 (5c06d4a, ISO C++23 systems toolchain)
+cfire upgrade --check
 </code></pre>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-how-the-cfire-toolchain-works" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-how-the-cfire-toolchain-works'); return false;">
@@ -2301,9 +2311,9 @@ cfire doctor --json   # Machine-readable JSON report for CI &amp; coding agents
 cfire setup --yes --wasm      # Also install Emscripten (em++) for --target=wasm
 </code></pre>
     <div class="chapter-pager topic-pager">
-      <a href="#ch1-quick-installation-script-macos-linux" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">
+      <a href="#ch1-quick-installation-script-macos-linux-windows" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux-windows'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.2)</span>
-        <strong class="pager-title">Quick Installation Script (macOS &amp; Linux)</strong>
+        <strong class="pager-title">Quick Installation Script (macOS, Linux &amp; Windows)</strong>
       </a>
       <a href="#ch1-building-from-source-platform-setup" class="pager-card pager-next" onclick="navigateToSubhead('1', 'ch1-building-from-source-platform-setup'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 1.4) &rarr;</span>
@@ -2353,13 +2363,23 @@ cd cfire &amp;&amp; sudo make install
 docker run --rm cfire:latest doctor
 docker run --rm cfire:latest run examples/01-hello-core/main.cf
 </code></pre>
-<h4 id="ch1-windows-wsl2">Windows (WSL2)</h4>
-<p>Run <code>cfire</code> inside WSL2 with an Ubuntu 24.04 distribution:</p>
-<div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
-<pre><code>wsl --install -d Ubuntu-24.04
+<h4 id="ch1-windows-native-powershell-wsl2">Windows (Native PowerShell &amp; WSL2)</h4>
+<ul>
+  <li><strong>Native Windows (PowerShell 5.1+ / 7+, <code>x86_64</code> &amp; <code>arm64</code>)</strong>:
+    <div class="code-header"><span class="tag-cf">powershell</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><code>winget install LLVM.LLVM
+irm https://cfire.memo.engineer/install.ps1 | iex
+cfire doctor
+</code></pre>
+   For full C/C++ package ecosystems (<code>libsodium</code>, <code>libssh</code>, <code>libzstd</code>, <code>sqlite3</code>), MSYS2 <code>CLANG64</code> (<code>mingw-w64-clang-x86_64-clang</code>) is also supported automatically by <code>cfire</code>.</li>
+  <li><strong>WSL2 (Ubuntu 24.04)</strong>:
+    <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre><code>wsl --install -d Ubuntu-24.04
 wsl
 sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsimdjson-dev libzstd-dev libsqlite3-dev libssl-dev
 </code></pre>
+  </li>
+</ul>
     <div class="chapter-pager topic-pager">
       <a href="#ch1-checking-toolchain-health-cfire-doctor-cfire-setup" class="pager-card pager-prev" onclick="navigateToSubhead('1', 'ch1-checking-toolchain-health-cfire-doctor-cfire-setup'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 1.3)</span>
@@ -2857,6 +2877,7 @@ App := build.Executable(&quot;service-app&quot;, {
       <tr><td><code>cfire inspect &lt;target&gt;</code> / <code>outline</code></td><td><code>--json</code></td><td>Queries stdlib docs, diagnostic rules, or C headers (<code>inspect</code>), or prints a token-compressed AST summary (<code>outline</code>).</td></tr>
       <tr><td><code>cfire emit-cpp</code> / <code>eject</code> / <code>vendor</code></td><td><code>[out_dir]</code></td><td>Prints emitted ISO C++23 (<code>emit-cpp</code>), exports a standalone CMake tree (<code>eject</code>), or vendors remote deps (<code>vendor</code>).</td></tr>
       <tr><td><code>cfire doc [file.cf]</code></td><td><code>--check</code>, <code>--llm</code>, <code>--root &lt;dir&gt;</code></td><td>Generates the <code>docs/</code> HTML site and <code>LLMS.txt</code> or verifies zero documentation drift (<code>--check</code>).</td></tr>
+      <tr><td><code>cfire upgrade</code> (<code>self-update</code>)</td><td><code>--check</code>, <code>--version &lt;tag&gt;</code>, <code>--yes</code>, <code>--force</code></td><td>Checks for and installs SHA-256 verified pre-compiled <code>cfire</code> releases matching your installed layout.</td></tr>
     </tbody>
   </table>
 </div>
@@ -6554,7 +6575,7 @@ fn main() -&gt; void! {
     <div class="toc-chapter-group" id="toc-group-1" style="display: block;">
       <ul class="toc-list">
         <li><a href="#ch1-how-the-cfire-toolchain-works" class="active-toc-item" title="How the cfire Toolchain Works" onclick="navigateToSubhead('1', 'ch1-how-the-cfire-toolchain-works'); return false;">1.1 Toolchain</a></li>
-        <li><a href="#ch1-quick-installation-script-macos-linux" title="Quick Installation Script (macOS &amp; Linux)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux'); return false;">1.2 Quick Install</a></li>
+        <li><a href="#ch1-quick-installation-script-macos-linux-windows" title="Quick Installation Script (macOS, Linux &amp; Windows)" onclick="navigateToSubhead('1', 'ch1-quick-installation-script-macos-linux-windows'); return false;">1.2 Quick Install</a></li>
         <li><a href="#ch1-checking-toolchain-health-cfire-doctor-cfire-setup" title="Checking Toolchain Health (cfire doctor &amp; cfire setup)" onclick="navigateToSubhead('1', 'ch1-checking-toolchain-health-cfire-doctor-cfire-setup'); return false;">1.3 Doctor &amp; Setup</a></li>
         <li><a href="#ch1-building-from-source-platform-setup" title="Building from Source &amp; Platform Setup" onclick="navigateToSubhead('1', 'ch1-building-from-source-platform-setup'); return false;">1.4 Source Build</a></li>
         <li><a href="#ch1-understanding-the-two-stdlib-namespaces-core-ext" title="Understanding the Two Stdlib Namespaces (core:*, ext:*)" onclick="navigateToSubhead('1', 'ch1-understanding-the-two-stdlib-namespaces-core-ext'); return false;">1.5 Understanding the Two ..</a></li>

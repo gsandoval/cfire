@@ -128,7 +128,7 @@ namespace cfire::build {
     const std::filesystem::path& root_base_dir,
     frontend::FileAST& root_ast,
     BuildPlan& plan,
-    const std::filesystem::path& runtime_dir,
+    const std::filesystem::path& /*runtime_dir*/,
     bool test_mode,
     const std::unordered_map<std::string, std::string>* source_overlays) -> std::expected<void, std::string> {
     std::vector<frontend::ImportDecl> kept_imports;
@@ -155,10 +155,6 @@ namespace cfire::build {
             visited_build_cfs.insert(std::filesystem::weakly_canonical(root_bcf, ec).string());
         }
     }
-
-    std::filesystem::path toolchain_pkg_dir = runtime_dir.empty()
-        ? locate_toolchain_layout().pkg_dir
-        : derive_pkg_dir(runtime_dir);
 
     struct WorkItem {
         std::filesystem::path base_dir;
@@ -202,17 +198,8 @@ namespace cfire::build {
         const auto& imp = item.imp;
         const auto& base_dir = item.base_dir;
 
-        if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../") || imp.path.starts_with("pkg:"))) {
-            std::filesystem::path target;
-            if (imp.path.starts_with("pkg:")) {
-                std::string pkg_rel = imp.path.substr(4);
-                target = toolchain_pkg_dir / pkg_rel;
-                if (!std::filesystem::exists(target) && std::filesystem::exists(root_base_dir / "pkg" / pkg_rel)) {
-                    target = root_base_dir / "pkg" / pkg_rel;
-                }
-            } else {
-                target = base_dir / imp.path;
-            }
+        if (!imp.is_cpp && (imp.path.starts_with("./") || imp.path.starts_with("../"))) {
+            std::filesystem::path target = base_dir / imp.path;
             std::vector<std::filesystem::path> cf_files;
             std::filesystem::path pkg_dir;
 

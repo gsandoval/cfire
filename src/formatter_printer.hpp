@@ -8,6 +8,8 @@
 
 #include "lexer.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,13 +90,19 @@ struct Item {
     }
     std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
 
-    // 2. Token ends: everything up to the next item, minus trailing whitespace (comments already have ends).
-    auto is_ws = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    // 2. Token ends: everything up to the next item, minus trailing whitespace; also trim trailing whitespace
+    //    (e.g. `\r`, `\v`, `\f`, spaces, tabs) from line comments so `LineComment` spans match lexer whitespace.
+    auto is_ws = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
     for (std::size_t i = 0; i < items.size(); ++i) {
-        if (items[i].kind != Item::Kind::Token) continue;
-        std::size_t e = (i + 1 < items.size()) ? items[i + 1].begin : src.size();
-        while (e > items[i].begin && is_ws(src[e - 1])) --e;
-        items[i].end = e;
+        if (items[i].kind == Item::Kind::Token) {
+            std::size_t e = (i + 1 < items.size()) ? items[i + 1].begin : src.size();
+            while (e > items[i].begin && is_ws(src[e - 1])) --e;
+            items[i].end = e;
+        } else if (items[i].kind == Item::Kind::LineComment) {
+            std::size_t e = items[i].end;
+            while (e > items[i].begin && is_ws(src[e - 1])) --e;
+            items[i].end = e;
+        }
     }
     for (std::size_t i = 0; i < items.size(); ++i) {
         std::size_t from = i == 0 ? 0 : items[i - 1].end;
@@ -104,71 +112,247 @@ struct Item {
     auto text = [&](const Item& it) { return src.substr(it.begin, it.end - it.begin); };
     auto tk = [&](std::size_t i) { return i < items.size() && items[i].kind == Item::Kind::Token ? items[i].tk : TokenKind::Eof; };
 
-    // 3. Bracket pairing, struct-literal braces, type brackets (`[]T`, `[4]u8`, `map[K]V`), and the statement `;`
-    //    separators that get their own line. Struct literals follow a type name outside a control header.
-    std::vector<std::size_t> partner(items.size(), items.size());
-    std::vector<bool> struct_lit(items.size(), false);
-    std::vector<bool> type_bracket(items.size(), false);
-    std::vector<bool> split_semicolon(items.size(), false);
-    std::vector<bool> expand_brace(items.size(), false);
-    {
-        struct Open { std::size_t idx; bool header_brace; };
+    // 3. Two-stage normalization & structure classification:
+    //    Stage A normalizes statement-level `;` separators and expands single-line `{ ... }` blocks with `;`,
+    //    folding all forced newlines into `items` and `newlines_before`.
+    //    Stage B recomputes bracket pairing, `struct_lit`, `type_bracket`, and `closure_pipe` purely from the
+    //    normalized `items` so Pass 1 and Pass 2 see identical structure and spacing decisions.
+    struct BracketInfo {
+        std::vector<std::size_t> next_tok;
+        std::vector<std::size_t> partner;
+        std::vector<bool> struct_lit;
+        std::vector<bool> type_bracket;
+        std::vector<bool> in_header;
+    };
+    auto classify = [&]() -> BracketInfo {
+        const std::size_t n = items.size();
+        BracketInfo info;
+        info.next_tok.assign(n, n);
+        info.partner.assign(n, n);
+        info.struct_lit.assign(n, false);
+        info.type_bracket.assign(n, false);
+        info.in_header.assign(n, false);
+
+        std::size_t nt = n;
+        for (std::size_t i = n; i-- > 0;) {
+            info.next_tok[i] = nt;
+            if (items[i].kind == Item::Kind::Token) nt = i;
+        }
+
+        auto is_return_type_tok = [](TokenKind k) -> bool {
+            switch (k) {
+                case TokenKind::Amp: case TokenKind::KwMut: case TokenKind::Star: case TokenKind::KwMap:
+                case TokenKind::KwFn: case TokenKind::Ident: case TokenKind::KwCpp: case TokenKind::Dot:
+                case TokenKind::DoubleColon: case TokenKind::Question: case TokenKind::Bang:
+                case TokenKind::KwAsync: case TokenKind::LParen: case TokenKind::LBracket:
+                    return true;
+                default:
+                    return false;
+            }
+        };
+
+        struct Open { std::size_t idx; bool prev_was_map; };
         std::vector<Open> stack;
-        int header_depth = -1;  // bracket depth at which an `if`/`for`/`match`/`fn`/... header is open, or -1
-        std::size_t prev_tok = items.size();
-        for (std::size_t i = 0; i < items.size(); ++i) {
+        std::vector<int> header_depths;
+        int arrow_depth = -1;
+        std::size_t prev_tok = n;
+        std::size_t prev_prev_tok = n;
+
+        for (std::size_t i = 0; i < n; ++i) {
             if (items[i].kind != Item::Kind::Token) continue;
             const TokenKind k = items[i].tk;
-            const TokenKind p = prev_tok < items.size() ? items[prev_tok].tk : TokenKind::Eof;
+            const TokenKind p = prev_tok < n ? items[prev_tok].tk : TokenKind::Eof;
             const int depth = static_cast<int>(stack.size());
-            // Tokens after which the next `{` at this depth opens a block, never a struct literal: control and
-            // declaration headers, a return type (`-> T {`), and an `or err {` handler.
-            if (header_depth < 0 && (k == TokenKind::KwIf || k == TokenKind::KwFor || k == TokenKind::KwMatch || k == TokenKind::KwFn ||
-                                     k == TokenKind::KwType || k == TokenKind::KwTest || k == TokenKind::KwElse ||
-                                     k == TokenKind::KwDefer || k == TokenKind::KwStruct || k == TokenKind::KwEnum ||
-                                     k == TokenKind::KwInterface || k == TokenKind::Arrow || k == TokenKind::KwOr)) {
-                header_depth = depth;
-            }
-            if (k == TokenKind::LParen || k == TokenKind::LBracket || k == TokenKind::LBrace) {
-                bool lit = false;
-                if (k == TokenKind::LBrace) {
-                    // `P{...}` / `Box[i32]{...}` struct literals and `{...}` map/array literals in value position.
-                    lit = header_depth != depth && (p == TokenKind::Ident || p == TokenKind::RBracket || p == TokenKind::Colon ||
-                                                    p == TokenKind::Assign || p == TokenKind::ColonEq || p == TokenKind::Comma ||
-                                                    p == TokenKind::LParen || p == TokenKind::LBracket || p == TokenKind::KwReturn);
-                    if (header_depth == depth) header_depth = -1;  // the header ends at its block
-                    struct_lit[i] = lit;
-                } else if (k == TokenKind::LBracket) {
-                    // `[]` after a type's own `]` (`[][]i64`, `map[str][]str`) is another type prefix.
-                    type_bracket[i] = p == TokenKind::KwMap || !ends_operand(p) || (p == TokenKind::RBracket && type_bracket[prev_tok]);
+
+            if (arrow_depth == depth && k != TokenKind::LBrace) {
+                const bool new_stmt_line = items[i].newlines_before > 0 &&
+                    p != TokenKind::Arrow && p != TokenKind::Dot && p != TokenKind::DoubleColon &&
+                    p != TokenKind::Amp && p != TokenKind::Star && p != TokenKind::KwMut && p != TokenKind::KwMap;
+                if (new_stmt_line || !is_return_type_tok(k)) {
+                    arrow_depth = -1;
                 }
-                stack.push_back({i, false});
+            }
+
+            if ((k == TokenKind::KwIf || k == TokenKind::KwFor || k == TokenKind::KwMatch) &&
+                !(items[i].newlines_before == 0 && (p == TokenKind::Dot || p == TokenKind::DoubleColon)) &&
+                (info.next_tok[i] >= n || items[info.next_tok[i]].tk != TokenKind::Colon)) {
+                if (header_depths.empty() || header_depths.back() != depth) {
+                    header_depths.push_back(depth);
+                }
+            } else if (k == TokenKind::Arrow) {
+                arrow_depth = depth;
+            } else if (k == TokenKind::FatArrow) {
+                // Match guard `if cond => expr` terminates its header at `=>`.
+                if (!header_depths.empty() && header_depths.back() == depth) {
+                    header_depths.pop_back();
+                }
+            }
+
+            const bool in_hdr = (!header_depths.empty() && header_depths.back() == depth) || arrow_depth == depth;
+            info.in_header[i] = in_hdr;
+
+            if (k == TokenKind::LParen || k == TokenKind::LBracket || k == TokenKind::LBrace) {
+                if (k == TokenKind::LBrace) {
+                    bool is_or_err_block = false;
+                    if (p == TokenKind::Ident && prev_prev_tok < n && items[prev_prev_tok].tk == TokenKind::KwOr) {
+                        const std::size_t n1 = info.next_tok[i];
+                        const std::size_t n2 = n1 < n ? info.next_tok[n1] : n;
+                        const bool is_fallback_lit = n1 < n &&
+                            (items[n1].tk == TokenKind::RBrace ||
+                             ((items[n1].tk == TokenKind::Ident || items[n1].tk == TokenKind::String) &&
+                              n2 < n && items[n2].tk == TokenKind::Colon));
+                        is_or_err_block = !is_fallback_lit;
+                    }
+                    bool lit = false;
+                    if (!in_hdr && !is_or_err_block) {
+                        const bool same_line_type_lit = items[i].newlines_before == 0 &&
+                            ((p == TokenKind::Ident && !text(items[prev_tok]).empty() &&
+                              text(items[prev_tok])[0] >= 'A' && text(items[prev_tok])[0] <= 'Z') ||
+                             p == TokenKind::RBracket);
+                        const bool value_pos_lit = (p == TokenKind::Colon || p == TokenKind::Assign || p == TokenKind::ColonEq ||
+                                                    p == TokenKind::Comma || p == TokenKind::LParen || p == TokenKind::LBracket ||
+                                                    p == TokenKind::KwReturn);
+                        lit = same_line_type_lit || value_pos_lit;
+                    }
+                    if (!header_depths.empty() && header_depths.back() == depth) header_depths.pop_back();
+                    if (arrow_depth == depth) arrow_depth = -1;
+                    info.struct_lit[i] = lit;
+                } else if (k == TokenKind::LBracket) {
+                    const bool postfix_operand = items[i].newlines_before == 0 && ends_operand(p);
+                    info.type_bracket[i] = p == TokenKind::KwMap || !postfix_operand ||
+                                           (p == TokenKind::RBracket && info.type_bracket[prev_tok]);
+                }
+                stack.push_back({i, p == TokenKind::KwMap});
             } else if (k == TokenKind::RParen || k == TokenKind::RBracket || k == TokenKind::RBrace) {
                 if (!stack.empty()) {
-                    std::size_t o = stack.back().idx;
+                    const Open o = stack.back();
                     stack.pop_back();
-                    partner[o] = i;
-                    partner[i] = o;
-                    struct_lit[i] = struct_lit[o];
-                    if (k == TokenKind::RBracket && type_bracket[o]) {
+                    info.partner[o.idx] = i;
+                    info.partner[i] = o.idx;
+                    info.struct_lit[i] = info.struct_lit[o.idx];
+                    if (k == TokenKind::RBracket && info.type_bracket[o.idx]) {
                         // `[]` and `[N]` / `map[K]` prefix a type; `[1, 2]` is an array literal.
-                        bool simple = i == o + 1 || (i == o + 2 && tk(o + 1) == TokenKind::Int) || (o > 0 && tk(o - 1) == TokenKind::KwMap);
-                        type_bracket[o] = type_bracket[i] = simple;
+                        const bool simple = i == o.idx + 1 || (i == o.idx + 2 && tk(o.idx + 1) == TokenKind::Int) || o.prev_was_map;
+                        info.type_bracket[o.idx] = info.type_bracket[i] = simple;
                     }
                 }
-                if (header_depth > static_cast<int>(stack.size())) header_depth = -1;
-            } else if (k == TokenKind::Semicolon && header_depth < 0) {
-                split_semicolon[i] = true;
-                if (!stack.empty() && items[stack.back().idx].tk == TokenKind::LBrace && !struct_lit[stack.back().idx]) {
-                    expand_brace[stack.back().idx] = true;
-                }
+                const int post_depth = static_cast<int>(stack.size());
+                while (!header_depths.empty() && header_depths.back() > post_depth) header_depths.pop_back();
+                if (arrow_depth > post_depth) arrow_depth = -1;
             }
+
+            prev_prev_tok = prev_tok;
             prev_tok = i;
         }
+        return info;
+    };
+
+    auto can_continue_expr = [](TokenKind k) -> bool {
+        switch (k) {
+            case TokenKind::LParen: case TokenKind::LBracket: case TokenKind::LBrace:
+            case TokenKind::Pipe: case TokenKind::DoublePipe:
+            case TokenKind::Dot: case TokenKind::DoubleColon: case TokenKind::DotDot: case TokenKind::DotDotEq:
+            case TokenKind::Question: case TokenKind::Bang:
+            case TokenKind::Plus: case TokenKind::Minus: case TokenKind::Star: case TokenKind::Slash: case TokenKind::Percent:
+            case TokenKind::Amp: case TokenKind::DoubleAmp: case TokenKind::Caret: case TokenKind::Tilde:
+            case TokenKind::Shl: case TokenKind::Shr:
+            case TokenKind::Eq: case TokenKind::Neq: case TokenKind::Lt: case TokenKind::Gt: case TokenKind::Le: case TokenKind::Ge:
+            case TokenKind::KwOr: case TokenKind::KwAs:
+            case TokenKind::Assign: case TokenKind::ColonEq:
+            case TokenKind::PlusEq: case TokenKind::MinusEq: case TokenKind::StarEq: case TokenKind::SlashEq:
+            case TokenKind::PercentEq: case TokenKind::AmpEq: case TokenKind::PipeEq: case TokenKind::CaretEq:
+            case TokenKind::ShlEq: case TokenKind::ShrEq:
+            case TokenKind::Colon: case TokenKind::Comma: case TokenKind::Arrow: case TokenKind::FatArrow:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    // Stage A: Normalize statement-level `;` and expand `{ ... }` blocks containing `;`.
+    {
+        const BracketInfo pre = classify();
+        const std::size_t n = items.size();
+        std::vector<bool> expand_brace(n, false);
+        std::vector<bool> drop_semi(n, false);
+        std::vector<bool> split_after_semi(n, false);
+        std::vector<std::size_t> brace_stack;
+        std::size_t surviving_prev_tok = n;
+
+        for (std::size_t i = 0; i < n; ++i) {
+            if (items[i].kind != Item::Kind::Token) continue;
+            const TokenKind k = items[i].tk;
+            if (k == TokenKind::LParen || k == TokenKind::LBracket || k == TokenKind::LBrace) {
+                brace_stack.push_back(i);
+            } else if (k == TokenKind::RParen || k == TokenKind::RBracket || k == TokenKind::RBrace) {
+                if (!brace_stack.empty()) brace_stack.pop_back();
+            } else if (k == TokenKind::Semicolon && !pre.in_header[i]) {
+                if (!brace_stack.empty() && items[brace_stack.back()].tk == TokenKind::LBrace &&
+                    !pre.struct_lit[brace_stack.back()]) {
+                    expand_brace[brace_stack.back()] = true;
+                }
+                const TokenKind prev_tk = surviving_prev_tok < n ? items[surviving_prev_tok].tk : TokenKind::Eof;
+                const std::size_t nt = pre.next_tok[i];
+                const TokenKind next_tk = nt < n ? items[nt].tk : TokenKind::Eof;
+                const bool can_drop =
+                    prev_tk == TokenKind::Eof || prev_tk == TokenKind::LBrace || prev_tk == TokenKind::Semicolon ||
+                    next_tk == TokenKind::Eof || next_tk == TokenKind::RBrace || next_tk == TokenKind::Semicolon ||
+                    (prev_tk != TokenKind::KwReturn && !can_continue_expr(next_tk));
+                if (can_drop) {
+                    drop_semi[i] = true;
+                    continue;
+                }
+                split_after_semi[i] = true;
+            }
+            surviving_prev_tok = i;
+        }
+
+        for (std::size_t i = 0; i < n; ++i) {
+            if (expand_brace[i]) {
+                if (i + 1 < n) {
+                    items[i + 1].newlines_before = std::max<std::size_t>(items[i + 1].newlines_before, 1);
+                }
+                if (pre.partner[i] < n) {
+                    items[pre.partner[i]].newlines_before = std::max<std::size_t>(items[pre.partner[i]].newlines_before, 1);
+                }
+            }
+            if (split_after_semi[i] && i + 1 < n) {
+                if (!(items[i + 1].kind == Item::Kind::LineComment && items[i + 1].newlines_before == 0)) {
+                    items[i + 1].newlines_before = std::max<std::size_t>(items[i + 1].newlines_before, 1);
+                }
+            }
+        }
+
+        std::vector<Item> norm_items;
+        norm_items.reserve(n);
+        std::size_t carry_nl = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (drop_semi[i]) {
+                carry_nl = std::max<std::size_t>(carry_nl, std::max<std::size_t>(1, items[i].newlines_before));
+                continue;
+            }
+            Item it = items[i];
+            if (carry_nl > 0) {
+                it.newlines_before = std::max(it.newlines_before, carry_nl);
+                carry_nl = 0;
+            }
+            norm_items.push_back(it);
+        }
+        items = std::move(norm_items);
+        if (items.empty()) return "\n";
+        items[0].newlines_before = 0;
         for (std::size_t i = 0; i < items.size(); ++i) {
-            if (expand_brace[i] && partner[i] < items.size()) expand_brace[partner[i]] = true;
+            if (i > 0 && items[i - 1].kind == Item::Kind::LineComment) {
+                items[i].newlines_before = std::max<std::size_t>(items[i].newlines_before, 1);
+            }
+            items[i].newlines_before = std::min<std::size_t>(items[i].newlines_before, 2);
         }
     }
+
+    // Stage B: Classify structure purely from normalized `items`.
+    const BracketInfo info = classify();
+    const std::vector<bool>& struct_lit = info.struct_lit;
+    const std::vector<bool>& type_bracket = info.type_bracket;
     // Closure parameter pipes: `|a, mut b: T|` followed by a body `{` or a return type `->`.
     std::vector<int> closure_pipe(items.size(), 0);  // 1 = opener, 2 = closer
     for (std::size_t i = 0; i < items.size(); ++i) {
@@ -185,12 +369,56 @@ struct Item {
                 break;
             }
         }
-        if (params_only && j + 1 < items.size() && tk(j) == TokenKind::Pipe && (tk(j + 1) == TokenKind::LBrace || tk(j + 1) == TokenKind::Arrow)) {
+        if (params_only && j > i + 1 && j + 1 < items.size() && tk(j) == TokenKind::Pipe &&
+            (tk(j + 1) == TokenKind::LBrace || tk(j + 1) == TokenKind::Arrow)) {
             closure_pipe[i] = 1;
             closure_pipe[j] = 2;
             i = j;
         }
     }
+
+    auto starts_with_assign = [](TokenKind k) -> bool {
+        return k == TokenKind::Assign || k == TokenKind::Eq || k == TokenKind::FatArrow;
+    };
+    auto starts_with_dot = [](TokenKind k) -> bool {
+        return k == TokenKind::Dot || k == TokenKind::DotDot || k == TokenKind::DotDotEq;
+    };
+    auto starts_with_colon = [](TokenKind k) -> bool {
+        return k == TokenKind::Colon || k == TokenKind::ColonEq || k == TokenKind::DoubleColon;
+    };
+    auto starts_with_amp = [](TokenKind k) -> bool {
+        return k == TokenKind::Amp || k == TokenKind::AmpEq || k == TokenKind::DoubleAmp;
+    };
+    auto starts_with_pipe = [](TokenKind k) -> bool {
+        return k == TokenKind::Pipe || k == TokenKind::PipeEq || k == TokenKind::DoublePipe;
+    };
+    auto starts_with_lt = [](TokenKind k) -> bool {
+        return k == TokenKind::Lt || k == TokenKind::Le || k == TokenKind::Shl || k == TokenKind::ShlEq;
+    };
+    auto starts_with_gt = [](TokenKind k) -> bool {
+        return k == TokenKind::Gt || k == TokenKind::Ge || k == TokenKind::Shr || k == TokenKind::ShrEq;
+    };
+    auto would_glue = [&](const Item& A, TokenKind x, TokenKind y) -> bool {
+        if (x == TokenKind::Int && y == TokenKind::Dot) return true;
+        if (x == TokenKind::Float && starts_with_dot(y)) {
+            const auto t = text(A);
+            if (y == TokenKind::Dot || (!t.empty() && t.back() == '.')) return true;
+        }
+        if (x == TokenKind::Dot && starts_with_dot(y)) return true;
+        if (x == TokenKind::DotDot && (starts_with_dot(y) || starts_with_assign(y))) return true;
+        if (x == TokenKind::Colon && starts_with_colon(y)) return true;
+        if (x == TokenKind::Amp && starts_with_amp(y)) return true;
+        if (x == TokenKind::Pipe && starts_with_pipe(y)) return true;
+        if (x == TokenKind::Lt && starts_with_lt(y)) return true;
+        if (x == TokenKind::Gt && starts_with_gt(y)) return true;
+        if ((x == TokenKind::Minus || x == TokenKind::Assign) && starts_with_gt(y)) return true;
+        if (x == TokenKind::Slash && (y == TokenKind::Star || y == TokenKind::StarEq || y == TokenKind::Slash || y == TokenKind::SlashEq)) return true;
+        if ((x == TokenKind::Colon || x == TokenKind::Plus || x == TokenKind::Minus || x == TokenKind::Star ||
+             x == TokenKind::Slash || x == TokenKind::Percent || x == TokenKind::Caret || x == TokenKind::Amp ||
+             x == TokenKind::Pipe || x == TokenKind::Bang || x == TokenKind::Lt || x == TokenKind::Gt ||
+             x == TokenKind::Shl || x == TokenKind::Shr || x == TokenKind::Assign) && starts_with_assign(y)) return true;
+        return false;
+    };
 
     // 4. Spacing between two items on the same output line.
     auto space_between = [&](std::size_t a, std::size_t b) -> bool {
@@ -199,6 +427,7 @@ struct Item {
         if (B.kind == Item::Kind::LineComment || B.kind == Item::Kind::BlockComment || A.kind != Item::Kind::Token) return true;
         const TokenKind x = A.tk;
         const TokenKind y = B.tk;
+        if (would_glue(A, x, y)) return true;
         const TokenKind before_x = a > 0 ? tk(a - 1) : TokenKind::Eof;
         // Prefix operators: after a non-operand, or first on their line (`*g += 1` starts a statement).
         const bool x_unary = (x == TokenKind::Minus || x == TokenKind::Star || x == TokenKind::Amp || x == TokenKind::Bang ||
@@ -227,7 +456,7 @@ struct Item {
         if (y == TokenKind::LBracket) return !(x == TokenKind::Ident || x == TokenKind::RParen || x == TokenKind::RBracket ||
                                                x == TokenKind::KwMap || x == TokenKind::String);
         if (y == TokenKind::LBrace) return !struct_lit[b] || !(x == TokenKind::Ident || x == TokenKind::RBracket);  // `P{`, `xs: {`
-        if ((x == TokenKind::Amp || x == TokenKind::Star) && y == TokenKind::KwMut && (!ends_operand(before_x) || A.newlines_before > 0)) return false;
+        if ((x == TokenKind::Amp || x == TokenKind::Star) && y == TokenKind::KwMut && (!ends_operand(before_x) || A.newlines_before > 0 || a == 0)) return false;
         if (x == TokenKind::Pipe && closure_pipe[a] == 1) return false;  // `|x`
         if (y == TokenKind::Pipe && closure_pipe[b] == 2) return false;  // `x|`
         if (y == TokenKind::Pipe && closure_pipe[b] == 1) return x != TokenKind::LParen && x != TokenKind::LBracket;
@@ -242,27 +471,14 @@ struct Item {
     std::vector<int> indent_stack;
     int line_indent = 0;  // the statement level of the current line, before any continuation indent
     bool at_line_start = true;
-    std::size_t pending_newlines = 0;
-    auto newline = [&](std::size_t count) {
-        if (out.empty()) return;
-        pending_newlines = std::max(pending_newlines, std::min<std::size_t>(count, 2));
-    };
     std::size_t prev = items.size();
     for (std::size_t i = 0; i < items.size(); ++i) {
         const Item& it = items[i];
-        if (it.kind == Item::Kind::Token && it.tk == TokenKind::Semicolon && split_semicolon[i]) {
-            newline(1);
-            continue;  // a statement separator becomes a line break
-        }
-        if (it.newlines_before > 0) newline(it.newlines_before);
-        if (prev < items.size() && items[prev].kind == Item::Kind::Token && items[prev].tk == TokenKind::LBrace && expand_brace[prev]) newline(1);
-        if (it.kind == Item::Kind::Token && it.tk == TokenKind::RBrace && expand_brace[i]) newline(1);
-        if (pending_newlines > 0 && !out.empty()) {
+        if (i > 0 && it.newlines_before > 0 && !out.empty()) {
             while (!out.empty() && out.back() == ' ') out.pop_back();
-            out.append(pending_newlines, '\n');
+            out.append(it.newlines_before, '\n');
             at_line_start = true;
         }
-        pending_newlines = 0;
         // Leading closers dedent their own line.
         const bool closer = it.kind == Item::Kind::Token &&
                             (it.tk == TokenKind::RBrace || it.tk == TokenKind::RParen || it.tk == TokenKind::RBracket);

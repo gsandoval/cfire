@@ -1,5 +1,5 @@
 CXX      := clang++
-CFIRE_VER := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.10.0)
+CFIRE_VER := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' src/version.hpp 2>/dev/null || echo 0.0.0-dev)
 GIT_SHA  ?= $(shell sh -c 'sha=$$(git rev-parse --short=7 HEAD 2>/dev/null) || { echo dev; exit 0; }; git diff --quiet --ignore-submodules HEAD 2>/dev/null && printf "%s" "$$sha" || printf "%s-dirty" "$$sha"')
 UNAME_S  := $(shell uname -s)
 IS_WIN   := $(or $(findstring MINGW,$(UNAME_S)),$(findstring MSYS,$(UNAME_S)),$(findstring CYGWIN,$(UNAME_S)),$(findstring CLANG,$(UNAME_S)),$(findstring CLANG,$(MSYSTEM)),$(findstring Windows_NT,$(OS)))
@@ -77,11 +77,20 @@ hooks:
 	@git config core.hooksPath .githooks
 
 install: build
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	mkdir -p $(DESTDIR)$(PREFIX)/share/cfire/runtime
+	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/cfire
 	cp cfire$(EXE) $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && chmod 755 $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ && mv -f $(DESTDIR)$(PREFIX)/bin/.cfire.tmp.$$$$ $(DESTDIR)$(PREFIX)/bin/cfire$(EXE)
-	cp -R runtime/* $(DESTDIR)$(PREFIX)/share/cfire/runtime/
-	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > $(DESTDIR)$(PREFIX)/share/cfire/runtime/cfire-runtime.version
+	@set -e; \
+	share="$(DESTDIR)$(PREFIX)/share/cfire"; \
+	stage="$${share}/.runtime.tmp.$$$$"; \
+	old="$${share}/.runtime.old.$$$$"; \
+	rm -rf "$$stage" "$$old"; \
+	mkdir -p "$$stage"; \
+	cp -R runtime/. "$$stage/"; \
+	rm -f "$$stage/VERSION"; \
+	printf "%s %s\n" "$(CFIRE_VER)" "$(GIT_SHA)" > "$$stage/cfire-runtime.version"; \
+	if [ -d "$${share}/runtime" ]; then mv "$${share}/runtime" "$$old"; fi; \
+	mv "$$stage" "$${share}/runtime"; \
+	rm -rf "$$old"
 	@echo "✓ Installed cfire $(CFIRE_VER) ($(GIT_SHA)) to $(DESTDIR)$(PREFIX)/bin/cfire$(EXE) and runtime to $(DESTDIR)$(PREFIX)/share/cfire"
 
 uninstall:
@@ -142,8 +151,9 @@ check-all:
 review-check: check
 
 release:
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=x.y.z [FLAGS=--dry-run]"; exit 1; fi
-	./scripts/release.sh "$(VERSION)" $(FLAGS)
+	@target="$(if $(VERSION),$(VERSION),$(BUMP))"; \
+	if [ -z "$$target" ]; then echo "Usage: make release BUMP=patch|minor|major [FLAGS=--dry-run] (or VERSION=x.y.z)"; exit 1; fi; \
+	./scripts/release.sh "$$target" $(FLAGS)
 
 docs: build
 	./cfire doc

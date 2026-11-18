@@ -3,6 +3,7 @@
 
 #include "../test_harness.hpp"
 #include "../../src/mcp.hpp"
+#include "../../src/formatter_printer.hpp"
 
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir) {
     std::println("=== RUN   test_formatter_lsp_and_docgen");
@@ -89,6 +90,83 @@ type Config struct {
         "    z := y / 2";
     require(fmt_range_res.value() == expected_range_str,
         std::format("expected 3-line formatted range, got:\n{}", fmt_range_res.value_or("<error>")));
+
+    // 1b. Formatter idempotency & fuzz-hardening regressions
+    {
+        auto check_fmt_roundtrip = [](std::string_view label, std::string_view src) {
+            auto once = cfire::fmt::format_source(src, label);
+            require(once.has_value(), std::format("format_source({}): {}", label, once ? "" : once.error()));
+            if (!once) return std::string{};
+            auto reparsed = cfire::frontend::parse_source(label, *once);
+            require(reparsed.has_value(), std::format("parse_source(*once)({}): {}", label, reparsed ? "" : reparsed.error().text()));
+            auto twice = cfire::fmt::format_source(*once, label);
+            require(twice.has_value() && *twice == *once,
+                std::format("idempotency({}):\nONCE:\n{}\nTWICE:\n{}", label, *once, twice ? *twice : twice.error()));
+            return *once;
+        };
+
+        auto check_printer_idempotent = [](std::string_view label, std::string_view src) {
+            std::vector<cfire::frontend::CommentSpan> c1;
+            auto t1 = cfire::frontend::tokenize(label, src, &c1);
+            require(t1.has_value(), std::format("tokenize({}): {}", label, t1 ? "" : t1.error().text()));
+            if (!t1) return;
+            std::string once = cfire::fmt::printer::format(src, *t1, c1);
+            std::vector<cfire::frontend::CommentSpan> c2;
+            auto t2 = cfire::frontend::tokenize(label, once, &c2);
+            require(t2.has_value(), std::format("tokenize(*once)({}): {}", label, t2 ? "" : t2.error().text()));
+            if (!t2) return;
+            std::string twice = cfire::fmt::printer::format(once, *t2, c2);
+            require(twice == once, std::format("printer idempotency({}):\nONCE:\n{}\nTWICE:\n{}", label, once, twice));
+        };
+
+        // Direct printer idempotency for top-level / leading `;` variants
+        check_printer_idempotent("semi_recv_p.cf", "package main; fn (r: T) m() {}");
+        check_printer_idempotent("lead_semi_recv_p.cf", "; package main; fn (r: T) m() {}");
+        check_printer_idempotent("semi_block_p.cf", "package main; fn main() { x := a; { y := 2 } }");
+        check_printer_idempotent("semi_slice_p.cf", "package main; fn main() { x := 1; []i32{} }");
+        check_printer_idempotent("semi_cap_block_p.cf", "package main; fn main() { x := A; { /*c*/ } }");
+
+        // Full format_source + parse_source + idempotency checks
+        (void)check_fmt_roundtrip("recv_method.cf", "package main\nfn (r: T) m() {}\n");
+        (void)check_fmt_roundtrip("recv_same_line.cf", "package main\nfn main() {} fn (r: T) m() {}\n");
+        (void)check_fmt_roundtrip("nested_expand_brace.cf", "package main\nfn main() { x := 0; f(|| { a := 1; b := 2 }) }\n");
+        (void)check_fmt_roundtrip("semi_anon_struct.cf", "package main\nfn main() { x := a; { y: 2 } }\n");
+        (void)check_fmt_roundtrip("semi_empty_slice.cf", "package main\nfn main() { x := 1; []i32{} }\n");
+        (void)check_fmt_roundtrip("semi_box_struct.cf", "package main\nfn main() { x := 1; Box[i32]{} }\n");
+        (void)check_fmt_roundtrip("semi_cap_block_comment.cf", "package main\nfn main() { x := A; { /*c*/ } }\n");
+
+        auto semi_cont = check_fmt_roundtrip("semi_keep_star_minus.cf", "package main\nfn main() { f(); *p = 1; x := a; -b }\n");
+        require(semi_cont.contains("f();") && semi_cont.contains("x := a;"),
+            std::format("expected ';' preserved before '*p = 1' and '-b', got:\n{}", semi_cont));
+        auto semi_ast = cfire::frontend::parse_source("semi_keep_star_minus.cf", semi_cont);
+        require(semi_ast && semi_ast->functions.size() == 1 && semi_ast->functions[0].body.size() == 4,
+            "expected f(), *p = 1, x := a, and -b to remain 4 distinct statements");
+
+        auto raw_defaults = check_fmt_roundtrip("struct_raw_defaults.cf",
+            "package main\ntype S struct {\n    LongName: i32\n    A: str = `hello`\n    B: str = `world` `json:\"b\"`\n}\n");
+        require(raw_defaults.contains("    A:        str = `hello`") &&
+                raw_defaults.contains("    B:        str = `world` `json:\"b\"`"),
+            std::format("expected raw string defaults kept distinct from struct tags, got:\n{}", raw_defaults));
+
+        (void)check_fmt_roundtrip("struct_multiline_block_comment.cf",
+            "package main\ntype S struct {\n    Long: i32 /* a\nb: c // x */\n}\n");
+        (void)check_fmt_roundtrip("struct_multiline_raw_string.cf",
+            "package main\ntype S struct {\n    A: str = `x\ny: i32`\n}\n");
+        (void)check_fmt_roundtrip("struct_backtick_in_block_comment.cf",
+            "package main\ntype S struct {\n    LongName: i32\n    B: i32 /* ` */ /* ` // */\n}\n");
+
+        auto ws_norm = check_fmt_roundtrip("ws_vf_ff_crlf.cf",
+            "package\vmain\f\n// hi\t \r\ntype S struct {\r\n    // c\r\n    A: i32\r\n}\r\n");
+        require(!ws_norm.contains('\v') && !ws_norm.contains('\f') && !ws_norm.contains('\r'),
+            std::format("expected \\v, \\f, and \\r stripped from formatted output, got:\n{}", ws_norm));
+
+        (void)check_fmt_roundtrip("or_return_semi.cf", "package main\nfn main() { v := f() or return; x := 1 }\n");
+        (void)check_fmt_roundtrip("or_value_then_struct.cf", "package main\nfn main() { x := a or 0; y := P{v: 1} }\n");
+        (void)check_fmt_roundtrip("match_guard_struct.cf", "package main\nfn main() { match s { Some(v) if v > 0 => P{a: 1}, _ => Q{a: 2} } }\n");
+        (void)check_fmt_roundtrip("int_space_dot.cf", "package main\nfn main() { x := 0 .str(); y := 1.5 .str() }\n");
+        (void)check_fmt_roundtrip("raw_string_fake_struct.cf",
+            "package main\nfn main() {\n    s := `\ntype Fake struct {\n    a: i32\n    bb: i32\n}\n`\n}\n");
+    }
 
     // 2. Test `cfire lsp` JSON-RPC 2.0 server (initialize, didOpen diagnostics, hover, completion, signatureHelp, inlayHint, definition)
     // hermetic workspace. Documents use `file:///tmp/...` URIs in the literals below; they are
@@ -720,6 +798,53 @@ ok
                 "docs/index.html Tab 7 displays matching [Transpiler] title and section text");
             require(!idx_html.contains("4.2k"),
                 "docs/index.html does not contain hardcoded 4.2k star count");
+            require(idx_html.contains("https://cfire.memo.engineer/install.sh") &&
+                    idx_html.contains("https://cfire.memo.engineer/install.ps1") &&
+                    idx_html.contains("selectInstallOs"),
+                "docs/index.html includes both Unix and Windows installers with selectInstallOs switcher");
+        }
+        {
+            std::error_code vsec;
+            std::filesystem::path repo_root = (!rt_dir.empty() && std::filesystem::exists(rt_dir.parent_path() / "docs", vsec))
+                ? rt_dir.parent_path()
+                : std::filesystem::current_path(vsec);
+            auto local_vs_pkg = repo_root / ".vscode" / "extensions" / "cfire.cfire-lang" / "package.json";
+            if (std::filesystem::exists(local_vs_pkg, vsec)) {
+                auto vs_pkg = cfire::build::read_file_text(local_vs_pkg);
+                require(vs_pkg.has_value() &&
+                        vs_pkg->contains(std::format("\"version\": \"{}\"", cfire::version::kVersion)),
+                    ".vscode/extensions/cfire.cfire-lang/package.json tracks cfire kVersion when present");
+            }
+
+            ScopedTempDir tmp_vs("vs_pkg_sync");
+            auto ext_dir = tmp_vs.path / "cfire.cfire-lang";
+            cfire::lsp::write_cfire_vscode_extension_bundle(ext_dir);
+            auto gen_pkg = cfire::build::read_file_text(ext_dir / "package.json");
+            require(gen_pkg.has_value() &&
+                    gen_pkg->contains(std::format("\"version\": \"{}\"", cfire::version::kVersion)),
+                "write_cfire_vscode_extension_bundle writes current kVersion into package.json");
+
+            // Verify sync_docs_directory catches stale .vscode extension version and updates it cleanly.
+            std::filesystem::create_directories(tmp_vs.path / "docs", vsec);
+            std::filesystem::copy_file(docs_dir / "GUIDE.md", tmp_vs.path / "docs" / "GUIDE.md",
+                                       std::filesystem::copy_options::overwrite_existing, vsec);
+            std::filesystem::copy_file(docs_dir / "index.template.html", tmp_vs.path / "docs" / "index.template.html",
+                                       std::filesystem::copy_options::overwrite_existing, vsec);
+            tmp_vs.file(".vscode/extensions/cfire.cfire-lang/package.json",
+                "{\n  \"name\": \"cfire-lang\",\n  \"version\": \"0.2.0\"\n}\n");
+            auto stale_chk = cfire::doc::sync_docs_directory(tmp_vs.path / "docs", true);
+            require(!stale_chk.has_value() && stale_chk.error().contains(".vscode/extensions/cfire.cfire-lang/package.json"),
+                "sync_docs_directory --check flags stale .vscode/extensions/cfire.cfire-lang/package.json version");
+            auto fixed_sync = cfire::doc::sync_docs_directory(tmp_vs.path / "docs", false);
+            require(fixed_sync.has_value(),
+                fixed_sync ? "sync_docs_directory syncs staged docs and .vscode manifest" : fixed_sync.error());
+            auto recheck = cfire::doc::sync_docs_directory(tmp_vs.path / "docs", true);
+            require(recheck.has_value(),
+                recheck ? "sync_docs_directory --check passes after syncing .vscode manifest" : recheck.error());
+            auto synced_pkg = cfire::build::read_file_text(tmp_vs.path / ".vscode" / "extensions" / "cfire.cfire-lang" / "package.json");
+            require(synced_pkg.has_value() &&
+                    synced_pkg->contains(std::format("\"version\": \"{}\"", cfire::version::kVersion)),
+                "sync_docs_directory updates stale package.json version to kVersion");
         }
 
         // 2. Verify codegen hygiene for AI + JSON + SQLite snippet (deduplicated defines/links, no unused headers)

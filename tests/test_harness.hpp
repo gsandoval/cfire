@@ -374,6 +374,7 @@ void test_toolchain_pch_and_binary_caching(const std::filesystem::path& rt_dir);
 void test_single_pass_in_memory_check(const std::filesystem::path& rt_dir);
 void test_sharded_cpp_codegen(const std::filesystem::path& rt_dir);
 void test_vendored_archives_and_portable_releases(const std::filesystem::path& rt_dir);
+void test_toolchain_upgrade(const std::filesystem::path& rt_dir);
 void test_language_consistency_and_docs(const std::filesystem::path& rt_dir);
 void test_ext_soundness_cache_and_clean(const std::filesystem::path& rt_dir);
 void test_package_fixes_and_generics(const std::filesystem::path& rt_dir);

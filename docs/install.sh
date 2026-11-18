@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
         --version)
             shift
             if [ $# -eq 0 ]; then
-                printf "%b\n" "${RED}Error: --version requires a version tag (e.g. v0.16.0).${RESET}" >&2
+                printf "%b\n" "${RED}Error: --version requires a version tag (e.g. v0.11.0).${RESET}" >&2
                 exit 1
             fi
             ARG_VERSION="$1"
@@ -51,7 +51,7 @@ cfire installer
 Options:
   --from-source       Clone/build cfire from source instead of downloading a pre-compiled binary
   --prefix <dir>      Installation prefix (default: ~/.local, or /usr/local as root)
-  --version <ver>     Release tag or version to install (e.g. v0.16.0)
+  --version <ver>     Release tag or version to install (e.g. v0.11.0)
   --setup, --yes, -y  Run 'cfire setup --yes' after installation
 
 Environment overrides:
@@ -163,6 +163,31 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+install_runtime_atomic() {
+    SRC_RT="$1"
+    STAMP_LINE="$2"
+    DEST_RT="${INSTALL_SHARE}/runtime"
+    STAGE_RT="${INSTALL_SHARE}/.runtime.tmp.$$"
+    OLD_RT="${INSTALL_SHARE}/.runtime.old.$$"
+    mkdir -p "$INSTALL_SHARE"
+    rm -rf "$STAGE_RT" "$OLD_RT"
+    mkdir -p "$STAGE_RT"
+    cp -R "${SRC_RT}/." "$STAGE_RT/"
+    rm -f "$STAGE_RT/VERSION"
+    if [ -n "$STAMP_LINE" ]; then
+        printf "%s\n" "$STAMP_LINE" > "$STAGE_RT/cfire-runtime.version"
+    fi
+    if [ -d "$DEST_RT" ]; then
+        mv "$DEST_RT" "$OLD_RT"
+    fi
+    if ! mv "$STAGE_RT" "$DEST_RT"; then
+        [ -d "$OLD_RT" ] && [ ! -d "$DEST_RT" ] && mv "$OLD_RT" "$DEST_RT" || true
+        rm -rf "$STAGE_RT"
+        return 1
+    fi
+    rm -rf "$OLD_RT"
+}
+
 if [ "$FROM_SOURCE" = "1" ]; then
     # Source-build path (requires C++23 compiler & make)
     if ! command -v make >/dev/null 2>&1; then
@@ -192,7 +217,6 @@ if [ "$FROM_SOURCE" = "1" ]; then
     if [ -n "$CFIRE_LOCAL_SRC" ] && [ -d "$CFIRE_LOCAL_SRC" ]; then
         printf "\n%b==> Copying cfire source from %s...%b\n" "${BOLD}" "$CFIRE_LOCAL_SRC" "${RESET}"
         cp -R "$CFIRE_LOCAL_SRC/src" "$CFIRE_LOCAL_SRC/runtime" "$CFIRE_LOCAL_SRC/Makefile" "$TMP_DIR/"
-        [ -d "$CFIRE_LOCAL_SRC/pkg" ] && cp -R "$CFIRE_LOCAL_SRC/pkg" "$TMP_DIR/"
         [ -f "$CFIRE_LOCAL_SRC/VERSION" ] && cp "$CFIRE_LOCAL_SRC/VERSION" "$TMP_DIR/"
         if command -v git >/dev/null 2>&1; then
             RESOLVED_SHA="$(git -C "$CFIRE_LOCAL_SRC" rev-parse --short=7 HEAD 2>/dev/null || true)"
@@ -225,19 +249,15 @@ if [ "$FROM_SOURCE" = "1" ]; then
         exit 1
     fi
 
-    mkdir -p "$INSTALL_BIN" "$INSTALL_SHARE/runtime"
+    mkdir -p "$INSTALL_BIN" "$INSTALL_SHARE"
     cp "$TMP_DIR/cfire" "$INSTALL_BIN/.cfire.tmp.$$"
     chmod 755 "$INSTALL_BIN/.cfire.tmp.$$"
     mv -f "$INSTALL_BIN/.cfire.tmp.$$" "$INSTALL_BIN/cfire"
 
-    cp -R "$TMP_DIR/runtime/"* "$INSTALL_SHARE/runtime/"
-    rm -f "$INSTALL_SHARE/runtime/VERSION"
     INSTALLED_VER="$(tr -d '[:space:]' < "$TMP_DIR/VERSION" 2>/dev/null || sed -n 's/.*kVersion = "\([^"]*\)".*/\1/p' "$TMP_DIR/src/version.hpp" | head -n 1)"
-    [ -n "$INSTALLED_VER" ] && printf "%s %s\n" "$INSTALLED_VER" "$RESOLVED_SHA" > "$INSTALL_SHARE/runtime/cfire-runtime.version"
-    if [ -d "$TMP_DIR/pkg" ]; then
-        mkdir -p "$INSTALL_SHARE/pkg"
-        cp -R "$TMP_DIR/pkg/"* "$INSTALL_SHARE/pkg/"
-    fi
+    STAMP_LINE=""
+    [ -n "$INSTALLED_VER" ] && STAMP_LINE="${INSTALLED_VER} ${RESOLVED_SHA}"
+    install_runtime_atomic "$TMP_DIR/runtime" "$STAMP_LINE"
 else
     # Default: pre-compiled portable release binary + SHA-256 verification (no make required)
     REQ_VER="${ARG_VERSION:-${CFIRE_VERSION:-}}"
@@ -246,13 +266,18 @@ else
             v*) TAG="$REQ_VER" ;;
             *)  TAG="v${REQ_VER}" ;;
         esac
-    elif [ -n "$CFIRE_RELEASE_BASE_URL" ]; then
+    elif [ -n "$CFIRE_RELEASE_BASE_URL" ] && [ -z "$CFIRE_LATEST_RELEASE_URL" ]; then
         printf "%b\n" "${RED}Error: CFIRE_VERSION must be specified when using CFIRE_RELEASE_BASE_URL without GitHub latest redirect.${RESET}" >&2
         exit 1
     else
-        if command -v curl >/dev/null 2>&1; then
-            LATEST_URL="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/gsandoval/cfire/releases/latest 2>/dev/null || true)"
+        LATEST_LOOKUP_URL="${CFIRE_LATEST_RELEASE_URL:-https://github.com/gsandoval/cfire/releases/latest}"
+        TAG=""
+        if [ "${CFIRE_FORCE_WGET:-0}" != "1" ] && command -v curl >/dev/null 2>&1; then
+            LATEST_URL="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_LOOKUP_URL" 2>/dev/null || true)"
             TAG="${LATEST_URL##*/}"
+        elif command -v wget >/dev/null 2>&1; then
+            WGET_HDR="$(wget -S --spider --max-redirect=5 "$LATEST_LOOKUP_URL" 2>&1 || wget -S --spider "$LATEST_LOOKUP_URL" 2>&1 || true)"
+            TAG="$(printf "%s\n" "$WGET_HDR" | tr -d '\r' | sed -n 's/^[[:space:]]*[Ll]ocation:[[:space:]]*.*\/tag\/\([^[:space:]#?]*\).*/\1/p' | tail -n 1)"
         fi
         if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
             printf "%b\n" "${RED}Error: Could not resolve latest release tag from GitHub. Pass CFIRE_VERSION=vX.Y.Z or --from-source.${RESET}" >&2
@@ -326,18 +351,13 @@ else
         BUNDLE_ROOT="$(dirname "$FOUND_BIN")"
     fi
 
-    mkdir -p "$INSTALL_BIN" "$INSTALL_SHARE/runtime"
+    mkdir -p "$INSTALL_BIN" "$INSTALL_SHARE"
     cp "${BUNDLE_ROOT}/cfire" "$INSTALL_BIN/.cfire.tmp.$$"
     chmod 755 "$INSTALL_BIN/.cfire.tmp.$$"
     mv -f "$INSTALL_BIN/.cfire.tmp.$$" "$INSTALL_BIN/cfire"
 
     if [ -d "${BUNDLE_ROOT}/runtime" ]; then
-        cp -R "${BUNDLE_ROOT}/runtime/"* "$INSTALL_SHARE/runtime/"
-        rm -f "$INSTALL_SHARE/runtime/VERSION"
-    fi
-    if [ -d "${BUNDLE_ROOT}/pkg" ]; then
-        mkdir -p "$INSTALL_SHARE/pkg"
-        cp -R "${BUNDLE_ROOT}/pkg/"* "$INSTALL_SHARE/pkg/"
+        install_runtime_atomic "${BUNDLE_ROOT}/runtime" ""
     fi
 fi
 

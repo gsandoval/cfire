@@ -283,34 +283,34 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
 
     {
         std::ofstream p_ofs(ext_dir / "package.json", std::ios::trunc);
-        p_ofs << R"cfjson({
+        p_ofs << std::format(R"cfjson({{
   "name": "cfire-lang",
   "publisher": "cfire",
-  "version": "0.2.0",
+  "version": "{}",
   "displayName": "cfire Language Support",
   "description": "Syntax highlighting, bracket matching, and block auto-indentation for cfire (.cf)",
-  "engines": {
+  "engines": {{
     "vscode": "^1.75.0"
-  },
-  "contributes": {
+  }},
+  "contributes": {{
     "languages": [
-      {
+      {{
         "id": "cfire",
         "aliases": ["cfire", "cf"],
         "extensions": [".cf"],
         "configuration": "./language-configuration.json"
-      }
+      }}
     ],
     "grammars": [
-      {
+      {{
         "language": "cfire",
         "scopeName": "source.cfire",
         "path": "./syntaxes/cfire.tmLanguage.json"
-      }
+      }}
     ]
-  }
-}
-)cfjson";
+  }}
+}}
+)cfjson", cfire::version::kVersion);
     }
 
     {
@@ -498,7 +498,8 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
                 std::filesystem::path h(home);
                 for (const char* ext_root : {".vscode/extensions", ".antigravity/extensions", ".cursor/extensions"}) {
                     if (std::filesystem::exists(h / ext_root, ec)) {
-                        write_cfire_vscode_extension_bundle(h / ext_root / "cfire.cfire-lang-0.2.0");
+                        write_cfire_vscode_extension_bundle(
+                            h / ext_root / std::format("cfire.cfire-lang-{}", cfire::version::kVersion));
                     }
                 }
             }

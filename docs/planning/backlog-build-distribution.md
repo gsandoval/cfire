@@ -1,10 +1,10 @@
 # Build Performance & Binary Distribution Backlog
 
-This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, cross-platform pre-compiled binary distribution, and Wave B5 consistency/soundness/docs remediation for `cfire` (**`CF-198` – `CF-210`**, architectural decisions **`Q55` – `Q61`**).
+This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, cross-platform pre-compiled binary distribution, Wave B5 consistency/soundness/docs remediation, and Wave B6 release automation, installer parity, and self-upgrade tooling for `cfire` (**`CF-198` – `CF-210`** and **`CF-240` – `CF-245`**, architectural decisions **`Q55` – `Q61`** and **`Q70` – `Q73`**).
 
-It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
+It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14) and `14a1a51` (2026-11-17). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
 
-> **ID Allocation**: Items here use **`CF-198` – `CF-210`** and ADRs **`Q55` – `Q61`**. [`flint.md`](./flint.md) allocates **`CF-211` – `CF-239`** and **`Q62` – `Q69`**. Future items anywhere in `docs/planning/` should start at **`CF-240`** and **`Q70`**.
+> **ID Allocation**: Waves B1–B5 use **`CF-198` – `CF-210`** (`Q55` – `Q61`), [`flint.md`](./flint.md) uses **`CF-211` – `CF-239`** (`Q62` – `Q69`), and Wave B6 below uses **`CF-240` – `CF-245`** (`Q70` – `Q73`). Future items anywhere in `docs/planning/` should start at **`CF-246`** and **`Q74`**.
 
 ---
 
@@ -404,3 +404,259 @@ flowchart TD
 - **Problem & Evidence**: `generate_llm_reference()` hardcodes a 13-module subset (`pkg:tako`, `@pkg`, `&str`, `str.find`, `log.Level.Debug`) while missing 15 runtime modules; `README.md`, `GUIDE.md`, `AGENTS.md`, `.agents/rules/planning-workflow.md`, `docs/index.template.html`, `src/mcp.hpp`, `src/lsp/ide_setup.hpp`, `src/docgen/*`, and Showcase Tab 7 still advertise retired syntax, stale counts, or wrong diagnostics.
 - **Implementation Plan**: Overhaul `src/docgen/{markdown,styles,html,catalog_*}.hpp`, add generated `docs/LLMS.txt`, sync `src/mcp.hpp`, `src/lsp/ide_setup.hpp`, `src/cli/*`, `README.md`, `docs/GUIDE.md`, `docs/index.template.html`, `AGENTS.md`, `docs/planning/*`, `tests/conformance/README.md`, `tests/unit/test_lsp_docgen.hpp`, and regenerate all docs via `./cfire doc`.
 - **Acceptance Criteria**: `./cfire doc --check`, `./.cfire_test_runner guide`, and `make check` pass with zero drift across docs, prompts, MCP resources, and catalogs.
+
+---
+
+## Wave B6: Release Pipeline Automation, Cross-Platform Installer Parity & Self-Upgrade (`CF-240` – `CF-245`)
+
+This wave hardens and automates `cfire`'s build, packaging, container, installer, and self-update infrastructure on top of Wave B5 (**`CF-240` – `CF-245`**, architectural decisions **`Q70` – `Q73`**).
+
+### Baseline & Audit Evidence (`main` @ `14a1a51`, 2026-11-17)
+
+1. **Hard `Dockerfile` failure (`Dockerfile:24, 63`)**: Both `release-linux-musl` (`line 24`) and the default Ubuntu runtime stage (`line 63`) execute `COPY pkg ./pkg`. Because `pkg/` was removed in `CF-209`, `docker build -t cfire .` and `docker build --target release-linux-musl .` fail immediately.
+2. **Hard Windows release failure & bespoke build (`release.yml:301-318`)**: `build-windows` manually compiles `src/main.cpp` instead of calling `make -j4 build` + `./cfire.exe install --portable`, and runs `mkdir -p "./dist/${BUNDLE}/runtime" "./dist/${BUNDLE}/pkg"` + `cp -R pkg/* "./dist/${BUNDLE}/pkg/"` under `set -e`, aborting `windows-x86_64` and `windows-arm64` jobs and blocking `publish`.
+3. **Broken `workflow_dispatch` & missing auto-patch on `main` (`.github/workflows/release.yml`, `scripts/release.sh`, `.github/workflows/deploy-docs.yml`)**:
+   - Commits pushed to `main` only trigger `ci.yml` and `deploy-docs.yml`; patch versions (`0.11.X`) do not auto-increment or publish new binaries.
+   - Under `workflow_dispatch`, `prepare` runs `./scripts/release.sh` and pushes `chore(release): vX.Y.Z` + tag `vX.Y.Z` to `main`, but `build-linux` (`line 75`), `build-macos` (`line 169`), and `build-windows` (`line 273`) invoke `actions/checkout@v4` **without** `ref: ${{ needs.prepare.outputs.tag }}` — checking out the pre-bump commit SHA and failing `./cfire --version | grep -F "cfire ${TAG_VER}"` at `line 95`.
+   - `release.yml:35` installs only `clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev` before `./scripts/release.sh` -> `make review-check`, omitting `libssh-dev`, `libasound2-dev`, `libgtk-3-dev`, and `libwebkit2gtk-4.1-dev` present in `.github/workflows/ci.yml:37`.
+   - Pushing `HEAD:main` with `GITHUB_TOKEN` (`release.yml:41`) suppresses downstream `on: push` workflows (`deploy-docs.yml`), leaving `cfire.memo.engineer` stuck on the old version label.
+4. **Residual `pkg` / `pkg:` code across installers & C++ toolchain/loader**:
+   - `docs/install.sh` (`lines 195, 237-240, 338-341`) and `docs/install.ps1` (`lines 115-119`) retain dead `pkg/` copy blocks.
+   - `src/build/toolchain_layout.hpp` (`lines 62, 79, 118-124, 221`: `ToolchainLayout::pkg_dir`, `derive_pkg_dir`), `src/doctor.hpp` (`lines 886-899`: `dest_pkg` copy in `run_install`), `src/build/package_loader.hpp` (`lines 159-161, 205-213`), and `src/lsp/server.hpp` (`lines 709-715`) carry dead `pkg_dir` / `imp.path.starts_with("pkg:")` branches. In `package_loader.hpp`, intercepting `pkg:tako` pre-Sema during `cfire build` / `cfire run` fails with a missing-directory error before `src/sema/analyze.hpp:107` can emit the `cfire/INVALID-IMPORT` (`core:tako`) fix-it. *(Verified clean across the repository: zero `.cf` files, examples, tests, or active plugins rely on `ToolchainLayout::pkg_dir` or `pkg:` resolution.)*
+5. **Landing page missing Windows installer & installer reliability gaps (`docs/index.template.html:980-989`, `docs/install.sh`, `docs/install.ps1`)**:
+   - `docs/index.template.html` renders only `$ curl -fsSL https://cfire.memo.engineer/install.sh | sh`, hiding `install.ps1` on the homepage (`docs/GUIDE.md` Chapter 1 also lacks native Windows PowerShell install instructions alongside `install.sh`).
+   - `docs/install.sh` supports `wget` for downloads (`line 138`) yet fails in `wget`-only containers because `/releases/latest` tag resolution (`lines 253-256`) uses only `curl`. Moreover, `install.sh` (`lines 233, 335`) and `Makefile:83` copy `runtime/*` over existing install directories without purging deleted headers on upgrades.
+   - `docs/install.ps1:28-30` queries `https://api.github.com/repos/gsandoval/cfire/releases/latest` (60 req/hr unauthenticated IP rate limit on shared NATs/CI) instead of resolving `https://github.com/gsandoval/cfire/releases/latest` redirect first, lacks `-Setup` / `$env:CFIRE_SETUP`, and `tests/unit/test_vendored_libs_and_release.hpp:789-796` only inspects substrings in `install.ps1` without executing PowerShell on `_WIN32`.
+6. **Manifest version drift & missing self-update CLI**:
+   - `.vscode/extensions/cfire.cfire-lang/package.json:4` is pinned at `"version": "0.2.0"` because `sync_docs_directory()` (`src/docgen/html.hpp:1256-1307`) only syncs `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`. Meanwhile, `Makefile:2`, `scripts/release.sh:63`, `docs/install.sh:39,54`, `docs/install.ps1:5,33`, and `.github/workflows/release.yml:10` mix stale `0.10.0` and `v0.16.0` fallback/example strings.
+   - Users installing pre-built binaries have no built-in `cfire upgrade` (`self-update`) CLI command to pull continuous `0.11.X` / `0.12.0` releases in-place.
+
+---
+
+### B6.1 Architectural Decision Record (`Q70` – `Q73`, resolved interactively 2026-11-17)
+
+70. **Unified GitHub Actions Auto-Patch (`0.11.X`) & Intentional Minor/Major (`0.X.0` / `X.0.0`) Release Pipeline (`Q70`)**:
+    - **Auto-patch on every `main` commit (`0.11.0` -> `0.11.1` -> `0.11.2`)**: After `.github/workflows/ci.yml` completes with `success` on `push` to `main`, `.github/workflows/release.yml` runs automatically via `workflow_run` (skipping `chore(release):` bot commits and `github-actions[bot]` runs to avoid loops).
+    - **Identical mechanism for `patch`, `minor`, and `major`**: Extend `scripts/release.sh` to accept semantic bump keywords (`patch | minor | major`) alongside explicit `<x.y.z>` versions, and add `BUMP=patch|minor|major` support to `Makefile` `release`.
+    - **Triggering minor (`0.X.0`) & major (`X.0.0`) upgrades via the same pipeline**:
+      1. `workflow_dispatch` provides a `choice` dropdown `bump` (`minor` default, `major`, `patch`, `custom`) + optional `custom_version` (`gh workflow run release.yml -f bump=minor` or GitHub UI).
+      2. On `workflow_run` after green CI on `main`, `prepare` compares `HEAD:VERSION` against the highest `v*.*.*` git tag: if unchanged (normal commit), it runs `./scripts/release.sh patch` and pushes `chore(release): vX.Y.(Z+1)` + tag; if the author already bumped `VERSION` ahead of the latest tag (e.g. via `make release BUMP=minor`), it honors `HEAD:VERSION` without adding a duplicate patch commit, tags `v${FILE_VER}` if missing, and ships that release.
+    - **Concurrency, checkout & Pages parity**: Serialize `release.yml` via `concurrency: { group: cfire-release, cancel-in-progress: false }`, pull/rebase `origin/main` cleanly in `prepare` before committing, check out `ref: ${{ needs.prepare.outputs.tag }}` in `build-linux`, `build-macos`, and `build-windows`, install full Ubuntu CI dependencies in `prepare`, and include a `deploy-pages` job (`actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4` at the new tag `ref`) so `cfire.memo.engineer` updates atomically alongside `publish` despite `GITHUB_TOKEN` push suppression.
+    - **Developer/Agent workflow docs**: Document auto-patch + `git pull --rebase` on `main`, `gh workflow run release.yml -f bump=minor`, and `make release BUMP=minor` in `AGENTS.md`, `docs/planning/README.md`, and `.agents/rules/planning-workflow.md`.
+
+71. **Complete `pkg` Purge Across Containers, CI, Installers & C++ Toolchain/Loader (`Q71`)**:
+    - Delete every dead `pkg` reference from `Dockerfile`, `.github/workflows/release.yml`, `docs/install.sh`, and `docs/install.ps1`.
+    - Remove dead `ToolchainLayout::pkg_dir` and `derive_pkg_dir()` (`src/build/toolchain_layout.hpp`), the `dest_pkg` copy in `run_install()` (`src/doctor.hpp`), and pre-Sema `imp.path.starts_with("pkg:")` interception in `src/build/package_loader.hpp` and `src/lsp/server.hpp` (plus `src/buildsys.hpp:883` comment). Add `cfire/RETIRED-API` fallback in `src/sema/analyze.hpp` for non-`tako` `pkg:*` imports (after `canonical_import_for_wrong_prefix`, so `pkg:tako` keeps its `cfire/INVALID-IMPORT` -> `core:tako` fix-it!).
+    - Keep relative `./pkg/...` local imports and the `~/.cfire/cache/pkg` remote-dependency download cache (`src/build/deps.hpp:11`) intact.
+
+72. **2-Pill Landing Page OS Switcher (`macOS / Linux` | `Windows (PowerShell)`) & Hardened Installers (`Q72`)**:
+    - Replace the static hero install bar in `docs/index.template.html` with a segmented 2-pill switcher (`macOS / Linux` | `Windows (PowerShell)`) that pre-selects Windows vs POSIX via `navigator.userAgentData?.platform || navigator.platform || navigator.userAgent`, switches prompt (`$` vs `PS>`), command (`curl -fsSL https://cfire.memo.engineer/install.sh | sh` vs `irm https://cfire.memo.engineer/install.ps1 | iex`), and compiler prerequisite note, with a `<noscript>` fallback. Also add native PowerShell quickstart instructions to `docs/GUIDE.md` Chapter 1.
+    - Harden `docs/install.sh` (`wget -S --spider` redirect tag lookup fallback + atomic staged `$INSTALL_SHARE/runtime` swap on upgrades, mirrored in `Makefile:install`) and `docs/install.ps1` (HTTP `/releases/latest` `Location` header lookup ahead of `api.github.com` + `-Setup` / `$env:CFIRE_SETUP`), and run real PowerShell `file://` E2E verification on `_WIN32` in `tests/unit/test_vendored_libs_and_release.hpp`.
+
+73. **Unified Windows `install --portable`, Repo Hygiene Gates, VS Code Sync & Built-In `cfire upgrade` (`Q73`)**:
+    - Replace manual `src/main.cpp` compilation and file copying in `release.yml` `build-windows` with `make -j4 build` + `./cfire.exe install --portable` (using native helper packaging + cross binary swap for `windows-arm64`), and add static `Dockerfile`/`release.yml` path checks in `test_vendored_libs_and_release.hpp` plus a `docker build --target release-linux-musl .` check in `ci.yml`.
+    - Sync `.vscode/extensions/cfire.cfire-lang/package.json` `"version"` inside `sync_docs_directory()` (`src/docgen/html.hpp`), `.githooks/pre-commit`, and `scripts/release.sh`, and normalize stale `0.10.0`/`v0.16.0` fallback strings across build/installer files.
+    - Implement native `cfire upgrade` (`self-update`) in `src/cli/upgrade_command.hpp` (using `cfire::build::sha256_file_hex` from `src/build/cache_paths.hpp` so `src/` stays decoupled from `runtime/core/*.hpp`), supporting `--check`, `--version <tag>`, `--yes`, `--force`, `CFIRE_RELEASE_BASE_URL`, layout-preserving replacement (`PortableDir` vs `SystemPrefix`/`UserHome`), `WorkspaceFallback` checkout protection, and `_WIN32` `cfire.exe.old` self-rename.
+
+---
+
+### B6.2 Execution Dependency Graph & Wave B6 Exit Gate
+
+```mermaid
+flowchart TD
+    CF240["CF-240: Full pkg Purge and Windows install --portable"]
+    CF241["CF-241: Semantic release.sh and Auto-Patch plus Pages Release Pipeline"]
+    CF242["CF-242: VS Code Sync, Stale Fallbacks and Agent Workflow Docs"]
+    CF243["CF-243: Installer Hardening for wget, Redirect Lookup and Windows E2E"]
+    CF244["CF-244: Landing Page 2-Pill OS Switcher and GUIDE Windows Quickstart"]
+    CF245["CF-245: Built-in cfire upgrade CLI Subcommand"]
+
+    CF240 --> CF241
+    CF241 --> CF242
+    CF240 --> CF243
+    CF243 --> CF244
+    CF240 --> CF245
+    CF243 --> CF245
+```
+
+| Wave | Goal | Items | Exit Gate |
+| :---: | :--- | :--- | :--- |
+| **B6** | Zero broken `pkg`/Docker/Windows paths, automated `0.11.X` + dropdown `0.X.0` GitHub releases + Pages deploy, OS-aware homepage & hardened installers, VS Code sync, `cfire upgrade` | `CF-240` -> `CF-241` -> `CF-242`, `CF-243` -> `CF-244`, `CF-245` | `docker build --target release-linux-musl .` & `docker build -t cfire .` pass (or CI `linux` gate passes if local Docker absent); `./scripts/release.sh patch --dry-run` & `minor --dry-run` pass; `./cfire doc --check` audits `package.json` & dual OS install URLs; hermetic `install.sh`, `install.ps1` (`_WIN32`), and `cfire upgrade` E2E tests pass; `make check-all` green & recorded in `docs/planning/active.md`. |
+
+---
+
+### B6.3 Prioritized Backlog Index (`CF-240` – `CF-245`)
+
+| Rank | ID | Wave | Priority | Size | Component | Summary | ADR | Depends On | Status |
+| :---: | :--- | :---: | :---: | :---: | :--- | :--- | :---: | :---: | :---: |
+| 14 | `CF-240` | B6 | **P0** | S | `Dockerfile`, `.dockerignore`, `.github/workflows/release.yml`, `docs/install.*`, `src/{build,sema,lsp}/`, `src/doctor.hpp` | **Full `pkg` Purge & Unified Windows Packaging**: Remove dead `pkg/` copies from `Dockerfile`, installers, and `release.yml`; unify Windows release job onto `make build` + `install --portable`; delete dead `pkg_dir`/`pkg:` C++ paths; add `Dockerfile`/`.dockerignore`/`release.yml` path checks | `Q71`, `Q73` | `CF-209` | `[DONE]` |
+| 15 | `CF-241` | B6 | **P0** | M | `scripts/release.sh`, `Makefile`, `.github/workflows/{release,ci}.yml` | **Semantic `release.sh` & Unified Auto-Patch + Minor/Major GitHub Actions Pipeline**: Support `patch`/`minor`/`major` in `release.sh` + `BUMP=` in `Makefile`; auto-bump patch & publish 6-target release + Pages on green `main` CI; fix `workflow_dispatch` checkout `ref`, Ubuntu deps, and `deploy-pages`; add Docker build check to `ci.yml` | `Q70`, `Q73` | `CF-240` | `[DONE]` |
+| 16 | `CF-242` | B6 | **P1** | S | `src/docgen/html.hpp`, `src/lsp/ide_setup.hpp`, `.githooks/pre-commit`, `AGENTS.md`, `docs/planning/` | **VS Code Version Sync, Stale Fallbacks & Release Workflow Docs**: Sync `.vscode/extensions/cfire.cfire-lang/package.json` in `cfire doc`, `ide_setup.hpp`, hooks, and `release.sh`; replace `0.10.0`/`v0.16.0` fallback/example strings; document auto-patch + `git pull --rebase` + `minor` release flow in agent rules | `Q70`, `Q73` | `CF-241` | `[DONE]` |
+| 17 | `CF-243` | B6 | **P1** | M | `docs/install.sh`, `docs/install.ps1`, `Makefile`, `tests/unit/test_vendored_libs_and_release.hpp` | **Installer Reliability (`wget` Tag Lookup, Windows Redirect Lookup, Atomic `runtime/` Swap & `_WIN32` E2E)**: Add `wget` `/releases/latest` spider fallback, staged atomic `runtime/` replacement, non-rate-limited Windows redirect lookup + `-Setup`, and real `_WIN32` PowerShell E2E tests | `Q72` | `CF-240` | `[DONE]` |
+| 18 | `CF-244` | B6 | **P1** | S | `docs/index.template.html`, `docs/GUIDE.md`, `src/docgen/html.hpp`, `tests/unit/test_lsp_docgen.hpp` | **Landing Page 2-Pill OS Switcher & Windows Quickstart Docs**: Add `macOS / Linux` vs `Windows (PowerShell)` pill switcher with OS detection in `#install`; add Windows `install.ps1` instructions in `GUIDE.md`; enforce both installer URLs in doc/unit audits and regenerate via `./cfire doc` | `Q72` | `CF-243` | `[DONE]` |
+| 19 | `CF-245` | B6 | **P2** | M | `src/cli/upgrade_command.hpp`, `src/cli/{toolchain_commands.cpp,usage.hpp,dispatch.hpp}`, `src/main.cpp`, `tests/unit/test_toolchain_upgrade.hpp` | **Built-In `cfire upgrade` (`self-update`) CLI Subcommand**: Add `cfire upgrade` / `self-update` with `--check`, `--version`, `--yes`, `--force`, `CFIRE_RELEASE_BASE_URL`, SHA-256 verification via `sha256_file_hex`, layout-preserving swap, and Windows `.old.exe` self-rename | `Q73` | `CF-240`, `CF-243` | `[DONE]` |
+
+---
+
+### B6.4 Detailed Item Specifications (`CF-240` – `CF-245`)
+
+#### `CF-240` — Complete `pkg` Purge & Unified Windows `install --portable` `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q71`, `Q73`).
+- **Problem & Evidence**:
+  - `Dockerfile:24, 63` fails both Docker stages with `COPY pkg ./pkg`.
+  - `.github/workflows/release.yml:301-318` compiles Windows releases manually (`clang++ ... src/main.cpp` missing `-lgdi32` vs `Makefile:13` and missing `--portable` helper staging) and aborts on `cp -R pkg/* "./dist/${BUNDLE}/pkg/"` (`set -e`).
+  - `docs/install.sh:195, 237-240, 338-341` and `docs/install.ps1:115-119` still check/copy `pkg/`.
+  - `src/build/toolchain_layout.hpp:62, 79, 118-124, 221` (`ToolchainLayout::pkg_dir`, `derive_pkg_dir`), `src/doctor.hpp:886-899` (`dest_pkg`), `src/build/package_loader.hpp:159-161, 205-213`, and `src/lsp/server.hpp:709-715` retain dead `pkg_dir` / `imp.path.starts_with("pkg:")` branches; intercepting `pkg:tako` in `package_loader.hpp` errors out on a missing `pkg/tako` directory before `src/sema/analyze.hpp:107` can report the `core:tako` fix-it.
+- **Implementation Plan**:
+  1. Remove `COPY pkg ./pkg` from `Dockerfile:24` and `Dockerfile:63`.
+  2. Delete `pkg` copy blocks from `docs/install.sh` (`lines 195, 237-240, 338-341`) and `docs/install.ps1` (`lines 115-119`).
+  3. In `.github/workflows/release.yml` (`build-windows`, `lines 299-324`):
+     - Use the split-TU `Makefile` build on `windows-x86_64` (`make -j4 build GIT_SHA="${GIT_SHA}"` followed by `./cfire.exe install --portable "./dist/${BUNDLE}"`).
+     - On `windows-arm64`, build native `cfire.exe` via `make -j4 build` to run `./cfire.exe install --portable "./dist/${BUNDLE}"`, then compile all `CFIRE_SRCS` (or `make clean && make -j4 build CXX="clang++ --target=aarch64-w64-mingw32 --sysroot=/clangarm64 -fuse-ld=lld" EXTRA_LDFLAGS="-static -lws2_32 -ladvapi32 -lshell32 -lgdi32" GIT_SHA="${GIT_SHA}"`) and overwrite `./dist/${BUNDLE}/cfire.exe` (mirroring `build-macos` `x86_64` at `lines 194-201`), verifying zero MinGW/GCC/libc++ DLL imports via `llvm-objdump -p`.
+  4. Remove `ToolchainLayout::pkg_dir` and `derive_pkg_dir()` from `src/build/toolchain_layout.hpp`, remove the `dest_pkg` copy in `src/doctor.hpp:886-899`, remove `toolchain_pkg_dir` and `imp.path.starts_with("pkg:")` branches in `src/build/package_loader.hpp:159-215` and `src/lsp/server.hpp:709-715`, and update the comment in `src/buildsys.hpp:883`. In `src/sema/analyze.hpp` (right after `canonical_import_for_wrong_prefix` at `line 107` so `pkg:tako` still produces `cfire/INVALID-IMPORT` -> `core:tako`), emit `cfire/RETIRED-API` for any remaining `imp.path.starts_with("pkg:")` instructing users to use `core:*`, `ext:*`, or relative `./...` imports.
+  5. Keep relative `import "./pkg/..."` local subpackage resolution and `~/.cfire/cache/pkg` (`src/build/deps.hpp:11`) untouched.
+- **Tests**:
+  - *Unit*: Expand `tests/unit/test_vendored_libs_and_release.hpp` to verify every `COPY <src> <dst>` path in `Dockerfile` exists in `repo_root`, neither `Dockerfile` nor `.github/workflows/release.yml` nor `docs/install.*` references deleted `pkg/` bundles, and `release.yml` contains no `cp -R pkg` or manual single-TU `src/main.cpp` Windows release bypass.
+  - *Sema / Build Integration*: Assert `import "pkg:tako"` via `cfire build` / `cfire check` surfaces `cfire/INVALID-IMPORT` (`core:tako`), unknown `import "pkg:custom"` emits `cfire/RETIRED-API`, while `import "./pkg/checksum"` (e.g. `examples/08-multi-pkg-cc-build`) still builds and passes LSP checks cleanly.
+  - *Container*: Run `docker build --target release-linux-musl .` and `docker build -t cfire .` if Docker/OrbStack is running (record status explicitly if Docker daemon is unavailable locally; covered in CI via `CF-241`).
+- **Acceptance Criteria**: Zero dead `pkg/` bundle references exist in `Dockerfile`, `release.yml`, installers, or C++ `ToolchainLayout`/`package_loader`/`lsp`; `make check-all` passes.
+
+---
+
+#### `CF-241` — Semantic `scripts/release.sh` & Unified GitHub Actions Auto-Patch + Minor/Major + Pages Pipeline `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q70`, `Q73`).
+- **Problem & Evidence**:
+  - `scripts/release.sh` requires an explicit `X.Y.Z` literal (`line 114`) and `Makefile:144` only accepts `VERSION=x.y.z`.
+  - Commits to `main` never auto-bump patch (`0.11.X`) or publish 6-target binaries.
+  - `.github/workflows/release.yml` has three critical defects on `workflow_dispatch`: (1) `build-linux`/`build-macos`/`build-windows` check out the pre-bump commit SHA instead of `needs.prepare.outputs.tag`; (2) `prepare` (`line 35`) omits `libssh-dev`, `libasound2-dev`, `libgtk-3-dev`, `libwebkit2gtk-4.1-dev` needed by `make review-check`; (3) `git push` via `GITHUB_TOKEN` suppresses `.github/workflows/deploy-docs.yml`, so GitHub Pages stays stale.
+- **Implementation Plan**:
+  1. **Extend `scripts/release.sh` & `Makefile`**:
+     - Update `scripts/release.sh` first positional argument to accept `patch | minor | major` (in addition to `X.Y.Z` / `vX.Y.Z`). Parse current `X.Y.Z` from `VERSION` (`tr -d '[:space:]'`), compute `(X).(Y).(Z+1)` for `patch`, `(X).(Y+1).0` for `minor`, `(X+1).0.0` for `major` using pure POSIX `IFS=.` arithmetic, and guard cleanly against missing/malformed `VERSION`.
+     - Add an idempotent `git tag` / push-safe check and support `BUMP=patch|minor|major` in `Makefile:144-146` (`make release BUMP=minor`, preserving backward-compatible `make release VERSION=0.12.0`).
+     - Include `.vscode/extensions/cfire.cfire-lang/package.json` once `CF-242` wires it into `cfire doc` (or keep git staging synced across `CF-241` + `CF-242`).
+  2. **Overhaul `.github/workflows/release.yml`**:
+     - Permissions: `contents: write`, `pages: write`, `id-token: write`.
+     - Concurrency: `group: cfire-release`, `cancel-in-progress: false` (queue sequential `main` pushes cleanly without dropping a release or fighting tag pushes).
+     - Triggers:
+       - `push: { tags: ['v*.*.*'] }` (manual local tag pushes still work)
+       - `workflow_dispatch`: input `bump` (`type: choice`, `default: minor`, options `['minor', 'major', 'patch', 'custom']`) + optional `custom_version` (`type: string`, used when `bump == 'custom'`)
+       - `workflow_run: { workflows: ["CI"], types: [completed], branches: [main] }`
+     - `prepare` job gating (`if:`): run always for `tag` / `workflow_dispatch`, and for `workflow_run` ONLY when `github.event.workflow_run.conclusion == 'success'`, `github.event.workflow_run.event == 'push'`, `github.event.workflow_run.head_branch == 'main'`, `!startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')`, and `github.event.workflow_run.actor != 'github-actions[bot]'`.
+     - Inside `prepare`:
+       - When `workflow_run`, check out `ref: main` (`fetch-depth: 0`) and rebase onto `origin/main` before acting.
+       - Install full Ubuntu deps matching `.github/workflows/ci.yml:37` (`clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev`).
+       - Determine SemVer target:
+         - On `workflow_dispatch`: compute `TARGET = custom ? custom_version : bump`, run `./scripts/release.sh "${TARGET}"`, pull/rebase if needed, and push `HEAD:main "v${NEW_VER}"`.
+         - On `workflow_run`: read `FILE_VER` from `VERSION` and `LATEST_TAG` from `git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1`. Using a clean SemVer comparator (`semver_gt FILE_VER LATEST_VER`):
+           - If `FILE_VER` is already strictly greater than `LATEST_VER` (author pre-bumped `VERSION` locally with e.g. `minor`), verify `make review-check`, create annotated tag `v${FILE_VER}` on `HEAD` if absent, push tag `v${FILE_VER}` (do **not** double-bump to `.1`).
+           - Otherwise (normal code push to `main`), run `./scripts/release.sh patch` (`0.11.Z` -> `0.11.(Z+1)`), verify `make review-check`, and push `HEAD:main "v${NEW_VER}"`.
+       - Output exact `version` and `tag=v${VERSION}` from the verified `VERSION` file (not raw dispatch input!).
+     - All 3 build matrix jobs (`build-linux`, `build-macos`, `build-windows`) **must** pass `ref: ${{ needs.prepare.outputs.tag }}` to `actions/checkout@v4`!
+     - Append `deploy-pages` job (`needs: [prepare, publish]`, `environment: { name: github-pages, url: ${{ steps.deployment.outputs.page_url }} }`) checking out `ref: ${{ needs.prepare.outputs.tag }}` and running `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3` (`path: 'docs'`), and `actions/deploy-pages@v4` (keeping `.github/workflows/deploy-docs.yml` intact for standalone direct doc pushes).
+  3. **Add Container CI Verification (`.github/workflows/ci.yml`)**:
+     - Add a step in the `linux` job running `docker build --target release-linux-musl .` (fast single-stage check reusing `Dockerfile`) so `Dockerfile` drift never reaches `main` unnoticed.
+- **Tests**:
+  - *Dry-run & Script Tests*: Run `./scripts/release.sh patch --dry-run` and `./scripts/release.sh minor --dry-run` against a temporary worktree/restore or sandboxed temp git clone (never polluting `main` with uncommitted bumps unless `--dry-run` is verified to leave clean state or test copies are used). Add unit assertions in `tests/unit/test_vendored_libs_and_release.hpp` verifying:
+    - `release.sh` SemVer `patch`/`minor`/`major` math inside a temp git sandbox (`--no-tag` / mocked workspace copy),
+    - `.github/workflows/release.yml` specifies `workflow_run` on `["CI"]`, `concurrency:`, `ref: ${{ needs.prepare.outputs.tag }}` on all 3 build jobs, all 4 missing `apt` packages in `prepare`, and `deploy-pages`,
+    - `.github/workflows/ci.yml` covers `docker build`.
+- **Acceptance Criteria**: Pushing to `main` automatically bumps `patch` -> builds 6 targets -> publishes GitHub Release -> deploys GitHub Pages after green CI; GitHub Actions `Run workflow` -> `minor` (and pre-bumped `VERSION` pushes) share the identical verified pipeline cleanly; `make check-all` passes.
+
+---
+
+#### `CF-242` — VS Code Extension Version Sync, Stale Fallbacks & Release Workflow Docs `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q70`, `Q73`).
+- **Problem & Evidence**:
+  - `.vscode/extensions/cfire.cfire-lang/package.json:4` has `"version": "0.2.0"` instead of `0.11.0`; `src/docgen/html.hpp:1256, 1296` syncs/checks only `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
+  - `.githooks/pre-commit:29` (`SYNC_PATHS`) and `scripts/release.sh:141-142` stage `.claude-plugin/` but would miss `.vscode/extensions/cfire.cfire-lang/package.json`.
+  - Stale fallback strings appear in `Makefile:2` (`0.10.0`), `scripts/release.sh:63` (`0.16.0`), `docs/install.sh:39,54` (`v0.16.0`), `docs/install.ps1:5,33` (`v0.16.0`), and `.github/workflows/release.yml:10` (`0.16.0`).
+  - `AGENTS.md`, `docs/planning/README.md`, and `.agents/rules/planning-workflow.md` lack instructions explaining GitHub auto-patch releases on `main`, `git pull --rebase` after pushing, and how to trigger minor/major releases (`gh workflow run release.yml -f bump=minor` or `make release BUMP=minor`).
+- **Implementation Plan**:
+  1. Add `".vscode/extensions/cfire.cfire-lang/package.json"` to both the write loop (`src/docgen/html.hpp:1256`) and `check_only` loop (`src/docgen/html.hpp:1296`) in `sync_docs_directory()`. Run `./cfire doc` to bump `.vscode/extensions/cfire.cfire-lang/package.json` to match `kVersion`.
+  2. Add `.vscode/extensions/cfire.cfire-lang/package.json` to `SYNC_PATHS` in `.githooks/pre-commit:29` and to `git diff` / `git add` in `scripts/release.sh:141-142`.
+  3. Normalize stale version examples/fallbacks across `Makefile:2` (read/match current `VERSION` line or neutral `0.0.0-dev` fallback when `VERSION` is missing), `scripts/release.sh:63`, `docs/install.sh:39,54`, `docs/install.ps1:5,33`, and `.github/workflows/release.yml:10` to realistic neutral examples or current version dynamically. *(Note: inspect `tests/unit/test_vendored_libs_and_release.hpp:728,753` to ensure mock installer test assertions match cleanly.)*
+  4. Add a concise **Release & Auto-Versioning Workflow** section to `AGENTS.md`, `docs/planning/README.md`, and `.agents/rules/planning-workflow.md` covering:
+     - Automatic `patch` (`0.Y.Z` -> `0.Y.(Z+1)`) release commit + 6-target binaries + GitHub Pages deploy created by GitHub Actions after green `CI` on `main`.
+     - Running `git pull --rebase` locally before pushing subsequent commits after a `main` release completes.
+     - How to cut intentional `minor` (`0.X.0`) or `major` (`X.0.0`) releases via GitHub Actions `workflow_dispatch` (`bump: minor` / `gh workflow run release.yml -f bump=minor`) or locally (`make release BUMP=minor` before push).
+     - Strict repo hygiene check: ensure `collect_missing_repo_paths` (`tests/unit/test_tooling_docs_polish.hpp`) passes across `AGENTS.md` and `docs/GUIDE.md`.
+- **Tests**:
+  - *Unit / Docgen*: `./cfire doc --check` fails if `.vscode/extensions/cfire.cfire-lang/package.json` has a stale `"version"` and passes once synced; `test_generated_doc_integrity` passes with zero broken paths in `AGENTS.md`.
+- **Acceptance Criteria**: Every plugin/extension manifest in the repository tracks `kVersion` via `cfire doc --check`; agent instructions accurately document the GitHub release workflow; `make check-all` passes.
+
+---
+
+#### `CF-243` — Installer Hardening (`wget` Tag Lookup, Windows Redirect Lookup, Atomic `runtime/` Swap & `_WIN32` E2E) `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q72`).
+- **Problem & Evidence**:
+  - `docs/install.sh:253-260` falls back to `wget` for file downloads (`line 138`) yet fails on minimal Linux containers without `curl` because `/releases/latest` resolution only tries `curl`.
+  - `docs/install.sh:233, 335` (`cp -R .../runtime/* "$INSTALL_SHARE/runtime/"`) and `Makefile:83` leave orphaned headers behind when future `cfire` versions rename or delete files under `runtime/`.
+  - `docs/install.ps1:28-30` queries `https://api.github.com/repos/gsandoval/cfire/releases/latest` (60 req/hr unauthenticated IP rate limit) instead of resolving `https://github.com/gsandoval/cfire/releases/latest` HTTP redirect (`AllowAutoRedirect = $false` -> `Location`), lacks a `-Setup` CLI switch / `$env:CFIRE_SETUP = "1"` option matching `install.sh --setup`, and `tests/unit/test_vendored_libs_and_release.hpp:789-796` only performs static substring checks on `install.ps1` without running PowerShell on Windows.
+- **Implementation Plan**:
+  1. **`docs/install.sh` improvements**:
+     - Update latest-tag resolution (`lines 253-260`): if `curl` is missing and `wget` is present, parse `wget -S --spider --max-redirect=0 https://github.com/gsandoval/cfire/releases/latest 2>&1 | sed -n 's/^[[:space:]]*[Ll]ocation:[[:space:]]*.*\/tag\/\([^[:space:]\r]*\).*/\1/p' | head -n 1` (and follow 1 redirect via `wget -S --max-redirect=5 -O /dev/null` if needed so tag discovery works reliably on `wget`-only hosts).
+     - Stage unpacked `runtime/` into a temp sibling directory (`"${INSTALL_SHARE}/.runtime.tmp.$$"`), write `cfire-runtime.version` and strip `VERSION` inside the temp dir, then atomically swap out `"$INSTALL_SHARE/runtime"` (preserving permissions/backups if move fails) so obsolete runtime headers are cleanly pruned on upgrade (apply the same clean replacement in `Makefile:81-84` for `make install`).
+  2. **`docs/install.ps1` improvements**:
+     - Accept `[switch]$Setup` parameter (or `$env:CFIRE_SETUP -eq '1'`) to optionally run `& $ExePath setup --yes` at the end.
+     - Resolve latest tag via `HttpWebRequest` (`https://github.com/gsandoval/cfire/releases/latest`, `AllowAutoRedirect = $false`, reading `Response.Headers["Location"]` and extracting the trailing tag) **before** falling back to `api.github.com/repos/gsandoval/cfire/releases/latest`.
+     - Ensure `New-Item` + atomic overwrite of `cfire.exe` (rename previous `cfire.exe` to `.old` and delete on cleanup if locked, though a fresh PowerShell install normally has no running `cfire.exe`).
+  3. **Hermetic Installer E2E Tests (`tests/unit/test_vendored_libs_and_release.hpp`)**:
+     - On POSIX (`!_WIN32`): add assertions testing `docs/install.sh` stale-runtime cleanup (pre-create `$INSTALL_SHARE/runtime/stale_obsolete_header.hpp`, run verified mock install, assert `stale_obsolete_header.hpp` was removed while `cfire_prelude.hpp` is present) and `wget` helper fallback behavior.
+     - On Windows (`_WIN32`): add an end-to-end PowerShell test in `test_vendored_archives_and_portable_releases()` packaging `bundle_dir` into a mock `.zip`, writing `SHA256SUMS.txt`, running `powershell -NoProfile -ExecutionPolicy Bypass -File docs/install.ps1` with `CFIRE_RELEASE_BASE_URL="file://..."`, `CFIRE_VERSION="v0.11.0"`, and `CFIRE_INSTALL_DIR` pointing to a temp dir (testing both valid install + `cfire.exe --version` and corrupted `SHA256SUMS.txt` rejection!). Guard User `PATH` mutation during test mode or restore original test dir cleanly (`install.ps1` can support `$env:CFIRE_NO_MODIFY_PATH = "1"` so CI/VM User `PATH` stays clean!).
+- **Tests**:
+  - *Unit / E2E*: POSIX stale-runtime cleanup & `install.sh` `file://` tests pass on macOS & Linux VM; `_WIN32` PowerShell `file://` install + SHA-256 tamper rejection test passes inside `make check` and Windows VM (`make check-platforms`).
+- **Acceptance Criteria**: `install.sh` works with `curl` or `wget` and prunes stale runtime headers cleanly; `install.ps1` avoids GitHub API rate limits and passes real PowerShell E2E tests in Windows VM/CI (`make check-all` green).
+
+---
+
+#### `CF-244` — Landing Page 2-Pill OS Switcher (`macOS / Linux` | `Windows (PowerShell)`) & Guide Docs `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q72`).
+- **Problem & Evidence**:
+  - `docs/index.template.html:980-989` only displays `$ curl -fsSL https://cfire.memo.engineer/install.sh | sh`, giving Windows visitors no visible `irm https://cfire.memo.engineer/install.ps1 | iex` command and failing to advertise native Windows pre-built binary support on the homepage.
+  - `docs/GUIDE.md:25-104` covers Quick Installation (`install.sh`) for macOS & Linux and WSL2 setup, omitting native Windows PowerShell (`install.ps1`) setup and LLVM/MSYS2 prerequisites.
+- **Implementation Plan**:
+  1. Update `#install` in `docs/index.template.html` (`lines 487-500` CSS + `lines 980-989` markup + `lines 1387-1396` JS):
+     - Add `.install-tabs` / `.install-tab` styling (matching theme variables `--bg-subtle`, `--bg-card`, `--border`, `--accent`, `--font-mono`).
+     - Render two semantic `role="tab"` buttons: **`macOS / Linux`** (`data-os="unix"`) and **`Windows (PowerShell)`** (`data-os="win"`).
+     - Clicking either tab switches:
+       - Prompt token (`$` vs `PS>`)
+       - Copyable `#cmd-install` command (`curl -fsSL https://cfire.memo.engineer/install.sh | sh` vs `irm https://cfire.memo.engineer/install.ps1 | iex`)
+       - Compact prerequisite subline (Linux/macOS build-from-source + `cfire doctor` vs `winget install LLVM.LLVM` + `cfire doctor`, keeping existing `git clone` / `docker build -t cfire .` accessible).
+     - Run a tiny zero-flash inline `<script>` immediately after `#install` (checking `navigator.userAgentData?.platform || navigator.platform || navigator.userAgent`) so Windows browsers land with `Windows (PowerShell)` selected automatically, and add a concise `<noscript>` fallback displaying the PowerShell command underneath.
+  2. Update `docs/GUIDE.md` Chapter 1 (`lines 25-43` and `lines 97-105`) to include native Windows PowerShell installation (`irm https://cfire.memo.engineer/install.ps1 | iex` + `winget install LLVM.LLVM`) alongside WSL2 and macOS/Linux.
+  3. Extend `sync_docs_directory()` in `src/docgen/html.hpp` (`check_only` & generation audit) and `tests/unit/test_lsp_docgen.hpp` (`lines 709-723`) to assert generated `docs/index.html` includes both `https://cfire.memo.engineer/install.sh` and `https://cfire.memo.engineer/install.ps1` and the OS switcher controls.
+  4. Run `./cfire doc` to regenerate `docs/index.html`, `docs/guide.html`, `docs/reference.html`, `docs/STDLIB_REFERENCE.md`, and `docs/LLMS.txt`.
+- **Tests**:
+  - *Unit / Docgen*: `./cfire doc --check` and `./.cfire_test_runner guide` pass; `test_formatter_lsp_and_docgen` asserts both installer URLs and `selectInstallOs` switcher in `docs/index.html`.
+  - *Manual / Visual*: Inspect `docs/index.html` in Light & Dark themes and narrow mobile viewport (~375 px) verifying tab alignment, `PS>` vs `$` contrast, Copy button behavior for both tabs, and zero horizontal overflow.
+- **Acceptance Criteria**: Both macOS/Linux and Windows one-line installers are first-class on `cfire.memo.engineer` and in `docs/GUIDE.md`; `./cfire doc --check` and `make check-all` pass.
+
+---
+
+#### `CF-245` — Built-In `cfire upgrade` (`self-update`) CLI Subcommand `[DONE]`
+- **Wave / ADR**: Wave B6 (`Q73`).
+- **Problem & Evidence**:
+  - Because `main` pushes automatically publish `v0.11.X` releases and manual dispatches cut `v0.12.0`, users with pre-built `cfire` installations lack an ergonomic `cfire upgrade` (alias `cfire self-update`) command to check for and install newer binaries without copying web installer URLs again.
+- **Implementation Plan**:
+  1. Create `src/cli/upgrade_command.hpp` *(strictly domain-descriptive naming per `AGENTS.md` §3)*, exposing `run_upgrade_command(int argc, char** argv, const cfire::build::ToolchainLayout& layout) -> int`.
+  2. **Supported flags & behavior**:
+     - `--check`: resolves target tag (`https://github.com/gsandoval/cfire/releases/latest` redirect via `curl -fsSL -o /dev/null -w '%{url_effective}'`, or `powershell` `/releases/latest` redirect lookup on Windows, or `CFIRE_RELEASE_BASE_URL`), compares SemVer cleanly (`parse_semver` + `compare_semver(latest, kVersion)`), prints current vs latest version, and exits `0` without mutating disk (can optionally exit `0` printing `"Up to date"` or `"Update available: v... -> v..."`).
+     - `--version <ver>` (`CFIRE_VERSION`): upgrade/pin to a specific `vX.Y.Z` tag (accepting `X.Y.Z` or `vX.Y.Z`, rejecting invalid strings safely with shell-injection guard matching `src/build/deps.hpp:validate_fetch_arg`).
+     - `--yes`, `-y`: skip confirmation prompt if interactive; default non-interactive / CLI behavior clearly documented (`--force` reinstalls even when already on target version).
+  3. **Install-layout safety checks (`ToolchainLayout::kind`)**:
+     - If `layout.kind == InstallKind::WorkspaceFallback` (user is running `./cfire` built from a local git clone, NOT an installed binary) or `layout.kind == InstallKind::EnvOverride` without `--force`: refuse cleanly with exit `1` and an actionable message (`"cfire is running from a source workspace checkout; run git pull && make build or pass --force"`).
+     - Inspect `ToolchainLayout::kind` (`PortableDir` -> `<install_root>/cfire[.exe]` + `<install_root>/runtime`; `SystemPrefix` / `UserHome` -> `<install_root>/bin/cfire[.exe]` + `<install_root>/share/cfire/runtime`) and check write permissions before downloading.
+  4. **Download, SHA-256 Verification & Atomic Replacement**:
+     - Support `CFIRE_RELEASE_BASE_URL` (supporting `file://` and `https://`) for deterministic offline/hermetic unit tests!
+     - Use `cfire::detail::SecureTempDir` (`src/build/cache_paths.hpp` / `deps.hpp`), download `cfire-${TAG}-${OS}-${ARCH}.{tar.gz,zip}` + `SHA256SUMS.txt`, and verify digest **in-process** using `cfire::build::sha256_file_hex()` from `src/build/cache_paths.hpp` *(do NOT `#include "runtime/core/crypto.hpp"` inside `src/`, preserving `CF-198` decoupling!)*. Abort on mismatch before touching the live binary.
+     - Unpack into temp staging dir, validate extracted `cfire[.exe]` + `runtime/cfire_prelude.hpp`, atomically swap `runtime/` cleanly (no stale headers left behind), and replace `cfire[.exe]`:
+       - **POSIX**: write temp binary beside destination, `chmod 755`, atomic `mv`/`rename` over `layout.executable_path`.
+       - **Windows (`_WIN32`)**: rename currently running `cfire.exe` -> `cfire.exe.old` via `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` (Windows permits renaming a locked running `.exe`), move new `cfire.exe` into place, and schedule/clean `cfire.exe.old` on subsequent `cfire` invocations (or `MOVEFILE_DELAY_UNTIL_REBOOT` / startup sweep inside `upgrade`).
+     - Write updated `cfire-runtime.version` (`<ver> <tag>` or `<ver> dev` matching the bundle) and remind user to run `cfire clean --cache` only if needed (`BinaryCache`/`PCH` keys already include `kVersion` / prelude hashes!).
+  5. Wire `upgrade` and `self-update` into `src/main.cpp` (`run_toolchain_commands`), `src/cli/toolchain_commands.cpp`, `src/cli/usage.hpp` (`kCommandHelp`), `src/docgen/markdown.hpp` (`generate_llm_reference()`), `docs/GUIDE.md`, and run `./cfire doc`.
+- **Tests**:
+  - *Unit / Integration (`tests/unit/test_toolchain_upgrade.hpp`, registered in `tests/test_main.cpp` via `tests/unit/test_stdlib.cpp`)*:
+    - SemVer comparison tests (`0.11.0` < `0.11.1` < `0.12.0` < `1.0.0`, equal, invalid tag rejection).
+    - Hermetic mock `file://` upgrade tests across both `PortableDir` and `UserHome`/`SystemPrefix` staged temp directories: `--check` output & zero mutation, valid upgrade replacing `cfire` + pruning stale `runtime/obsolete.hpp`, `--force` reinstall on same version, corrupted `SHA256SUMS.txt` aborting cleanly without altering `bin/cfire` or `runtime/`, and `WorkspaceFallback` refusal when running from a source repo tree without `--force`.
+    - On `_WIN32`: live self-replacement test confirming a running copy of `cfire.exe` copied to a temp `PortableDir` successfully executes `cfire.exe upgrade` on itself using a mock `file://` `.zip`, leaving the upgraded `cfire.exe` runnable afterward!
+- **Acceptance Criteria**: `cfire upgrade` and `cfire self-update` work offline/hermetically in tests and end-to-end against releases on macOS, Linux, and Windows; `CF-198` zero-`runtime/core/*` include constraint in `src/` remains intact; `./cfire doc --check` and `make check-all` pass.

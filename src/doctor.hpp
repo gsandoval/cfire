@@ -883,21 +883,6 @@ inline auto run_install(
         }
     }
 
-    if (!layout.pkg_dir.empty() && std::filesystem::is_directory(layout.pkg_dir, ec)) {
-        std::filesystem::path dest_pkg = portable_mode ? (target_root / "pkg") : (target_root / "share" / "cfire" / "pkg");
-        auto src_pkg_can = std::filesystem::weakly_canonical(layout.pkg_dir, ec);
-        auto dst_pkg_can = std::filesystem::weakly_canonical(dest_pkg, ec);
-        if (src_pkg_can != dst_pkg_can) {
-            std::filesystem::create_directories(dest_pkg, ec);
-            std::filesystem::copy(
-                layout.pkg_dir,
-                dest_pkg,
-                std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
-                ec
-            );
-        }
-    }
-
     if (portable_mode) {
         std::println("✓ Installed portable cfire bundle to {}:", target_root.string());
         std::println("  - Binary:  {}", dest_bin.string());

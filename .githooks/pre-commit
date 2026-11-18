@@ -27,6 +27,9 @@ make -s build
 if ! ./cfire doc --check >/dev/null 2>&1; then
     echo "==> [pre-commit] Synchronizing documentation and version manifests via ./cfire doc..."
     SYNC_PATHS="VERSION src/version.hpp runtime/cfire_prelude.hpp docs/ .claude-plugin/"
+    if git ls-files --error-unmatch .vscode/extensions/cfire.cfire-lang/package.json >/dev/null 2>&1; then
+        SYNC_PATHS="$SYNC_PATHS .vscode/extensions/cfire.cfire-lang/package.json"
+    fi
     # Stage only what `cfire doc` regenerates. If a generated file also has unstaged
     # hand edits, staging it would silently commit work the author did not stage, so stop instead.
     BEFORE="$(git diff --name-only -- $SYNC_PATHS | sort)"

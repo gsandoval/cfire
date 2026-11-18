@@ -1715,6 +1715,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire outline [--json] [file|dir]`: AST symbol & test/fuzz/bench outline
   - `cfire inspect <target|cfire/CODE>`: Inspect symbol, header, module, or diagnostic rule (`cfire inspect cfire/USE-AFTER-MOVE`)
   - `cfire install [--user|--prefix <dir>|--portable <dir>]`: Install self-relocating `cfire` binary and `runtime/` headers
+  - `cfire upgrade [--check] [--version <tag>] [--yes] [--force]` (`cfire self-update`): Check for or apply SHA-256 verified binary & runtime upgrades in place
   - `cfire ide [target|--all|--status] [--global]`: Configure LSP, MCP, and agent rules for supported editors/agents
   - `cfire mcp [--setup|--print-config]`: Start built-in Model Context Protocol server over stdio
   - `cfire doc [--check|--llm]`: Synchronize docs/`LLMS.txt` or print this reference sheet

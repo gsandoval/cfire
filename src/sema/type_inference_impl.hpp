@@ -1824,15 +1824,15 @@
             else if (body.size() > 2 && body[0] == '0' && (body[1] == 'b' || body[1] == 'B')) { base = 2; body.remove_prefix(2); }
             else if (body.size() > 2 && body[0] == '0' && (body[1] == 'o' || body[1] == 'O')) { base = 8; body.remove_prefix(2); }
             if (body.empty()) return std::nullopt;
-            __int128 v = 0;
+            unsigned __int128 uv = 0;
             for (char c : body) {
                 int d = std::isdigit(static_cast<unsigned char>(c)) ? c - '0'
                       : std::isxdigit(static_cast<unsigned char>(c)) ? (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10) : -1;
                 if (d < 0 || d >= base) return std::nullopt;
-                v = v * base + d;
-                if (v > kMax) return std::nullopt;
+                uv = uv * static_cast<unsigned __int128>(base) + static_cast<unsigned __int128>(d);
+                if (uv > static_cast<unsigned __int128>(UINT64_MAX)) return std::nullopt;
             }
-            return v;
+            return static_cast<__int128>(uv);
         }
         if (const auto* un = std::get_if<UnaryExpr>(&e->node); un && un->op == "-") {
             auto v = const_int_value(un->operand);
@@ -1847,7 +1847,14 @@
         __int128 v = 0;
         if (b->op == "+") v = *l + *r;
         else if (b->op == "-") v = *l - *r;
-        else if (b->op == "*") { if (*l != 0 && (*r > kMax / (*l < 0 ? -*l : *l) || *r < -kMax / (*l < 0 ? -*l : *l))) return std::nullopt; v = *l * *r; }
+        else if (b->op == "*") {
+            const bool neg = (*l < 0) != (*r < 0);
+            const unsigned __int128 ul = *l < 0 ? static_cast<unsigned __int128>(-*l) : static_cast<unsigned __int128>(*l);
+            const unsigned __int128 ur = *r < 0 ? static_cast<unsigned __int128>(-*r) : static_cast<unsigned __int128>(*r);
+            const unsigned __int128 prod = ul * ur;
+            if (prod > static_cast<unsigned __int128>(UINT64_MAX)) return std::nullopt;
+            v = neg ? -static_cast<__int128>(prod) : static_cast<__int128>(prod);
+        }
         else if (b->op == "/") { if (*r == 0) return std::nullopt; v = *l / *r; }
         else if (b->op == "%") { if (*r == 0) return std::nullopt; v = *l % *r; }
         else if (b->op == "<<") { if (*r < 0 || *r > 63 || *l < 0) return std::nullopt; v = *l << static_cast<int>(*r); }
@@ -2082,15 +2089,16 @@
         if (body.size() > 2 && body[0] == '0' && (body[1] == 'x' || body[1] == 'X')) { base = 16; body.remove_prefix(2); }
         else if (body.size() > 2 && body[0] == '0' && (body[1] == 'b' || body[1] == 'B')) { base = 2; body.remove_prefix(2); }
         else if (body.size() > 2 && body[0] == '0' && (body[1] == 'o' || body[1] == 'O')) { base = 8; body.remove_prefix(2); }
-        __int128 v = 0;
+        unsigned __int128 uv = 0;
         bool overflow = false;
         for (char c : body) {
             int d = std::isdigit(static_cast<unsigned char>(c)) ? c - '0'
                   : std::isxdigit(static_cast<unsigned char>(c)) ? (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10) : -1;
             if (d < 0 || d >= base) return {};  // not a plain integer literal; leave it to other checks
-            v = v * base + d;
-            if (v > static_cast<__int128>(UINT64_MAX)) { overflow = true; break; }
+            uv = uv * static_cast<unsigned __int128>(base) + static_cast<unsigned __int128>(d);
+            if (uv > static_cast<unsigned __int128>(UINT64_MAX)) { overflow = true; break; }
         }
+        __int128 v = static_cast<__int128>(uv);
         if (negative) v = -v;
         if (overflow || v < rit->second.lo || v > rit->second.hi) {
             std::string shown = (negative ? "-" : "") + lit->value;

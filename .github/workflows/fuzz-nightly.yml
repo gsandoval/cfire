@@ -20,8 +20,9 @@ jobs:
       - name: Install LLVM 18 with libFuzzer
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
 
       - name: Run every fuzz target
         run: make fuzz-lib FUZZ_SECONDS=${{ github.event.inputs.seconds || '1800' }} FUZZ_CXX=clang++-18
@@ -34,3 +35,4 @@ jobs:
           path: |
             .fuzz_crashes/
             .fuzz_corpus/
+          include-hidden-files: true

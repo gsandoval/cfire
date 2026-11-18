@@ -59,7 +59,6 @@ struct ToolchainLayout {
     std::filesystem::path install_root{};
     std::filesystem::path runtime_dir{};
     std::filesystem::path docs_dir{};
-    std::filesystem::path pkg_dir{};
     InstallKind kind{InstallKind::PortableDir};
 
     [[nodiscard]] auto kind_label() const -> std::string_view {
@@ -75,8 +74,6 @@ struct ToolchainLayout {
 };
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto derive_install_root(const std::filesystem::path& runtime_dir) -> std::filesystem::path;
-
-[[nodiscard]] CFIRE_INFRA_INLINE auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto locate_toolchain_layout(const char* argv0 = nullptr) -> ToolchainLayout;
 
@@ -113,14 +110,6 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
     }
     // Portable layout: <root>/runtime
     return p1;
-}
-
-[[nodiscard]] CFIRE_INFRA_INLINE auto derive_pkg_dir(const std::filesystem::path& runtime_dir) -> std::filesystem::path {
-    auto root = derive_install_root(runtime_dir);
-    std::error_code ec;
-    if (std::filesystem::is_directory(root / "pkg", ec)) return root / "pkg";
-    if (std::filesystem::is_directory(root / "share" / "cfire" / "pkg", ec)) return root / "share" / "cfire" / "pkg";
-    return root / "pkg";
 }
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto locate_toolchain_layout(const char* argv0) -> ToolchainLayout {
@@ -218,7 +207,6 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
         } else {
             layout.docs_dir = layout.install_root / "docs";
         }
-        layout.pkg_dir = derive_pkg_dir(layout.runtime_dir);
         return layout;
     };
 

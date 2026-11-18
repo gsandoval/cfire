@@ -1253,7 +1253,7 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
                     std::format("// CFIRE_RUNTIME_VERSION: {}", cfire::version::kVersion));
                 write_if_changed(rt_dir / "cfire_prelude.hpp", updated_prel, prel_txt);
             }
-            for (const auto& rel_json : {".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"}) {
+            for (const auto& rel_json : {".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".vscode/extensions/cfire.cfire-lang/package.json"}) {
                 auto jp = repo_root / rel_json;
                 if (std::filesystem::exists(jp)) {
                     std::string jtxt = read_all_str(jp);
@@ -1293,7 +1293,7 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
                         expected_rt_marker));
                 }
             }
-            for (const auto& rel_json : {".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"}) {
+            for (const auto& rel_json : {".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".vscode/extensions/cfire.cfire-lang/package.json"}) {
                 auto jp = repo_root / rel_json;
                 if (std::filesystem::exists(jp)) {
                     std::string jtxt = read_all_str(jp);
@@ -1312,6 +1312,17 @@ window.addEventListener('DOMContentLoaded', handleRefHash);
             return std::unexpected(std::format(
                 "Documentation audit failure: docs/index.template.html has stale stdlib module count (expected '{}').",
                 expected_btn));
+        }
+        for (const auto* required_install_token : {
+                "https://cfire.memo.engineer/install.sh",
+                "https://cfire.memo.engineer/install.ps1",
+                "selectInstallOs"
+            }) {
+            if (!tmpl_txt.contains(required_install_token)) {
+                return std::unexpected(std::format(
+                    "Documentation audit failure: docs/index.template.html is missing dual-OS installer control '{}'.",
+                    required_install_token));
+            }
         }
 
         // Verify every `## Chapter N:` in GUIDE.md has a corresponding `guide.html#chapter-N` roadmap card in index.template.html

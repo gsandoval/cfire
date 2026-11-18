@@ -98,6 +98,7 @@ auto main(int argc, char** argv) -> int {
         test_single_pass_in_memory_check(rt_dir);
         test_sharded_cpp_codegen(rt_dir);
         test_vendored_archives_and_portable_releases(rt_dir);
+        test_toolchain_upgrade(rt_dir);
         test_language_consistency_and_docs(rt_dir);
         test_ext_soundness_cache_and_clean(rt_dir);
         test_package_fixes_and_generics(rt_dir);

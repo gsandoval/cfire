@@ -41,6 +41,9 @@ jobs:
       - name: Build cfire Toolchain
         run: make build
 
+      - name: Verify Dockerfile musl Release Stage
+        run: docker build --target release-linux-musl .
+
       - name: Pollute /tmp to prove the LSP suites are hermetic
         run: |
           mkdir -p /tmp/.cfire /tmp/cfire_ci_pollution
@@ -76,6 +79,7 @@ jobs:
         with:
           name: fuzz-crashes
           path: .fuzz_crashes/
+          include-hidden-files: true
 
   windows:
     runs-on: windows-latest
@@ -92,6 +96,8 @@ jobs:
           msystem: CLANG64
           update: true
           install: >-
+            make
+            tar
             mingw-w64-clang-x86_64-clang
             mingw-w64-clang-x86_64-make
             mingw-w64-clang-x86_64-pkgconf

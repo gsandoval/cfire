@@ -6,16 +6,46 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Semantic version to release (e.g. 0.16.0)'
+      bump:
+        description: 'Semantic version bump type (or custom)'
         required: true
+        default: 'minor'
+        type: choice
+        options:
+          - minor
+          - major
+          - patch
+          - custom
+      custom_version:
+        description: 'Explicit X.Y.Z version when bump is custom (e.g. 0.12.0)'
+        required: false
         type: string
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: cfire-release
+  cancel-in-progress: false
 
 jobs:
   prepare:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):') &&
+       github.event.workflow_run.actor.login != 'github-actions[bot]' &&
+       github.actor != 'github-actions[bot]')
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -24,38 +54,91 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'push' && github.ref || 'main' }}
           fetch-depth: 0
+
+      - name: Install Build & Runtime Dependencies
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev libssh-dev libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
 
       - name: Bump Version & Push Tag (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          RAW_VER="${{ inputs.version }}"
-          CLEAN_VER="${RAW_VER#v}"
-          sudo apt-get update
-          sudo apt-get install -y clang-18 libclang-rt-18-dev libzstd-dev libsimdjson-dev libsqlite3-dev libsodium-dev
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          BUMP="${{ inputs.bump }}"
+          if [ "$BUMP" = "custom" ]; then
+            RAW_VER="${{ inputs.custom_version }}"
+            TARGET="${RAW_VER#v}"
+            if [ -z "$TARGET" ]; then
+              echo "error: custom_version is required when bump is 'custom'" >&2
+              exit 1
+            fi
+          else
+            TARGET="$BUMP"
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          ./scripts/release.sh "${CLEAN_VER}"
-          git push origin HEAD:main "v${CLEAN_VER}"
+          git fetch origin main --tags
+          git pull --rebase origin main
+          ./scripts/release.sh "${TARGET}"
+          NEW_VER="$(tr -d '[:space:]' < VERSION)"
+          git push origin HEAD:main "v${NEW_VER}"
+
+      - name: Auto-Patch or Tag Pre-Bumped Release on Green CI (workflow_run)
+        if: github.event_name == 'workflow_run'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main --tags
+          git pull --rebase origin main
+          FILE_VER="$(tr -d '[:space:]' < VERSION)"
+          FILE_VER="${FILE_VER#v}"
+          LATEST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)"
+          LATEST_VER="${LATEST_TAG#v}"
+          semver_gt() {
+            awk -v a="$1" -v b="$2" 'BEGIN {
+              split(a, pa, "."); split(b, pb, ".");
+              for (i = 1; i <= 3; i++) {
+                if ((pa[i] + 0) > (pb[i] + 0)) exit 0;
+                if ((pa[i] + 0) < (pb[i] + 0)) exit 1;
+              }
+              exit 1;
+            }'
+          }
+          if [ -z "$LATEST_VER" ] || semver_gt "$FILE_VER" "$LATEST_VER"; then
+            echo "Honoring pre-bumped VERSION=${FILE_VER} (latest tag: ${LATEST_TAG:-none})"
+            make build
+            ./cfire doc --check
+            make review-check
+            if ! git rev-parse "v${FILE_VER}" >/dev/null 2>&1; then
+              git tag -a "v${FILE_VER}" -m "cfire v${FILE_VER}"
+            fi
+            git push origin "v${FILE_VER}"
+          else
+            echo "Auto-bumping patch release from ${FILE_VER} (latest tag: ${LATEST_TAG})"
+            ./scripts/release.sh patch
+            NEW_VER="$(tr -d '[:space:]' < VERSION)"
+            git push origin HEAD:main "v${NEW_VER}"
+          fi
 
       - name: Resolve Release Version & Verify Tag Matches VERSION
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW_VER="${{ inputs.version }}"
-            TAG_VER="${RAW_VER#v}"
-          else
-            TAG_VER="${GITHUB_REF_NAME#v}"
-          fi
           FILE_VER="$(tr -d '[:space:]' < VERSION)"
-          if [ "$TAG_VER" != "$FILE_VER" ]; then
-            echo "error: release version (${TAG_VER}) does not match VERSION file (${FILE_VER})" >&2
-            exit 1
+          FILE_VER="${FILE_VER#v}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG_VER="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VER" != "$FILE_VER" ]; then
+              echo "error: release version (${TAG_VER}) does not match VERSION file (${FILE_VER})" >&2
+              exit 1
+            fi
           fi
-          echo "version=${TAG_VER}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${TAG_VER}" >> "$GITHUB_OUTPUT"
+          git rev-parse "v${FILE_VER}" >/dev/null 2>&1 || git fetch origin "refs/tags/v${FILE_VER}:refs/tags/v${FILE_VER}"
+          echo "version=${FILE_VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${FILE_VER}" >> "$GITHUB_OUTPUT"
 
   build-linux:
     needs: prepare
@@ -74,6 +157,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
       - name: Build Static musl Portable Bundle (${{ matrix.target }})
@@ -168,6 +252,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
       - name: Build Portable Bundle (${{ matrix.target }})
@@ -209,7 +294,9 @@ jobs:
 
       - name: Run Native Quality Gate (macos-arm64)
         if: matrix.smoke_native == '1'
-        run: make review-check
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install libsodium libssh zstd
+          make review-check
 
       - name: Clean-Room Unpacked Smoke Test (macos-arm64)
         if: matrix.smoke_native == '1'
@@ -257,37 +344,38 @@ jobs:
         include:
           - target: windows-x86_64
             arch: x86_64
-            msystem: CLANG64
-            packages: "mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-llvm mingw-w64-clang-x86_64-make zip"
-            extra_flags: "-static"
             can_execute: "1"
           - target: windows-arm64
             arch: arm64
-            msystem: CLANGARM64
-            packages: "mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-llvm mingw-w64-clang-aarch64-make zip"
-            extra_flags: "-static"
             can_execute: "0"
     runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
-      - name: Setup MSYS2 (${{ matrix.msystem }})
+      - name: Setup MSYS2 (${{ matrix.target }})
         uses: msys2/setup-msys2@v2
         with:
           msystem: CLANG64
           update: true
           install: >-
+            make
+            zip
+            unzip
+            tar
             mingw-w64-clang-x86_64-clang
             mingw-w64-clang-x86_64-llvm
+            mingw-w64-clang-x86_64-lld
             mingw-w64-clang-x86_64-make
             mingw-w64-clang-aarch64-libc++
-            mingw-w64-clang-aarch64-headers-git
-            mingw-w64-clang-aarch64-crt-git
-            mingw-w64-clang-aarch64-winpthreads-git
-            zip
+            mingw-w64-clang-aarch64-libunwind
+            mingw-w64-clang-aarch64-compiler-rt
+            mingw-w64-clang-aarch64-headers
+            mingw-w64-clang-aarch64-crt
+            mingw-w64-clang-aarch64-winpthreads
 
       - name: Build Static Portable Bundle (${{ matrix.target }})
         shell: msys2 {0}
@@ -298,24 +386,27 @@ jobs:
         run: |
           GIT_SHA="$(git rev-parse --short=7 HEAD)"
           BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
+          rm -rf "./dist/${BUNDLE}"
           if [ "$TARGET_ARCH" = "x86_64" ]; then
-            clang++ -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality \
-              -DCFIRE_GIT_SHA="\"${GIT_SHA}\"" -Iruntime -Isrc src/main.cpp \
-              -static -lws2_32 -ladvapi32 -lshell32 -o cfire.exe
+            make -j4 build GIT_SHA="${GIT_SHA}"
+            llvm-objdump -p ./cfire.exe
+            ! llvm-objdump -p ./cfire.exe | grep -iE 'DLL Name:.*(libstdc\+\+|libc\+\+|libwinpthread|libgcc|libunwind)'
+            ./cfire.exe --version | grep -F "cfire ${TAG_VER} (${GIT_SHA},"
+            ./cfire.exe install --portable "./dist/${BUNDLE}"
           else
-            clang++ --target=aarch64-w64-mingw32 --sysroot=/clangarm64 -fuse-ld=lld \
-              -std=c++2b -O2 -Wall -Wextra -Wno-parentheses-equality \
-              -DCFIRE_GIT_SHA="\"${GIT_SHA}\"" -Iruntime -Isrc src/main.cpp \
-              -static -lws2_32 -ladvapi32 -lshell32 -o cfire.exe
+            ARM64_RES="$(ls -d /clangarm64/lib/clang/* | head -n 1)"
+            make -j4 build GIT_SHA="${GIT_SHA}" \
+              EXTRA_CXXFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -resource-dir=${ARM64_RES} -stdlib=libc++" \
+              EXTRA_LDFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -resource-dir=${ARM64_RES} -fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"
+            llvm-objdump -p ./cfire.exe
+            ! llvm-objdump -p ./cfire.exe | grep -iE 'DLL Name:.*(libstdc\+\+|libc\+\+|libwinpthread|libgcc|libunwind)'
+            llvm-objdump -f ./cfire.exe | grep -qiE 'aarch64|arm64'
+            mv ./cfire.exe ./cfire.target_arm64.exe
+            make clean
+            make -j4 build GIT_SHA="${GIT_SHA}"
+            ./cfire.exe install --portable "./dist/${BUNDLE}"
+            mv -f ./cfire.target_arm64.exe "./dist/${BUNDLE}/cfire.exe"
           fi
-          llvm-objdump -p ./cfire.exe
-          ! llvm-objdump -p ./cfire.exe | grep -iE 'DLL Name:.*(libstdc\+\+|libc\+\+|libwinpthread|libgcc|libunwind)'
-          mkdir -p "./dist/${BUNDLE}/runtime" "./dist/${BUNDLE}/pkg"
-          cp ./cfire.exe "./dist/${BUNDLE}/cfire.exe"
-          cp -R runtime/* "./dist/${BUNDLE}/runtime/"
-          rm -f "./dist/${BUNDLE}/runtime/VERSION"
-          printf "%s %s\n" "${TAG_VER}" "${GIT_SHA}" > "./dist/${BUNDLE}/runtime/cfire-runtime.version"
-          cp -R pkg/* "./dist/${BUNDLE}/pkg/"
           STRAY="$(find "./dist/${BUNDLE}" \( -name '*.pch' -o -name '*.a' -o -name '*.o' \))"
           test -z "$STRAY"
           test -f "./dist/${BUNDLE}/runtime/vendor/sqlite3/sqlite3.c"
@@ -385,3 +476,30 @@ jobs:
           files: |
             artifacts/cfire-v*
             artifacts/SHA256SUMS.txt
+
+  deploy-pages:
+    needs: [prepare, publish]
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout Release Tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
