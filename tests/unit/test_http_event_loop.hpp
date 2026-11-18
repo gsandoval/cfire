@@ -2,6 +2,8 @@
 // tests/unit/test_http_event_loop.hpp —: the HTTP server's event loop (idle and slow clients hold no worker).
 
 #include "../test_harness.hpp"
+#include <condition_variable>
+#include <mutex>
 #include "core/net/http.hpp"
 #include "core/net/poller.hpp"
 #include "test_http_keepalive_and_ws.hpp"
@@ -136,30 +138,69 @@ void test_http_server_event_loop([[maybe_unused]] const std::filesystem::path& r
     {
         auto s2 = cfire::http::make_server(0);
         if (s2) {
+            std::mutex gate_mu;
+            std::condition_variable gate_cv;
+            int in_handler = 0;
+            bool release_handler = false;
+
+            auto r2_router = cfire::http::make_router();
+            r2_router.get("/gate", [&](const cfire::http::Request&) {
+                std::unique_lock<std::mutex> lk(gate_mu);
+                ++in_handler;
+                gate_cv.notify_all();
+                gate_cv.wait_for(lk, std::chrono::seconds(10), [&] { return release_handler; });
+                return cfire::http::Response::text(200, "slow");
+            });
+
             cfire::http::ServerLimits l2;
             l2.workers = 1;
             l2.max_pending = 1;
             s2->set_limits(l2);
-            s2->serve_in_background(router);
+            s2->serve_in_background(r2_router);
             auto p2 = s2->port();
-            auto send_slow = [p2] {
+            auto send_gated = [p2] {
                 auto c = cfire::net::connect_tcp("127.0.0.1", p2);
-                if (c) (void)c->write_text("GET /slow HTTP/1.1\r\nHost: a\r\n\r\n");
+                if (c) (void)c->write_text("GET /gate HTTP/1.1\r\nHost: a\r\n\r\n");
                 return c;
             };
-            auto first = send_slow();
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            auto second = send_slow();
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            auto third = send_slow();
+            // Two inline 400 round-trips guarantee the event-loop thread accepted and dispatched `second` into `jobs`.
+            auto sync_event_loop = [p2] {
+                for (int round = 0; round < 2; ++round) {
+                    if (auto probe = cfire::net::connect_tcp("127.0.0.1", p2)) {
+                        (void)probe->write_text("BAD\r\n\r\n");
+                        std::string pbuf;
+                        (void)read_response(*probe, pbuf);
+                    }
+                }
+            };
+
+            auto first = send_gated();
+            {
+                std::unique_lock<std::mutex> lk(gate_mu);
+                (void)gate_cv.wait_for(lk, std::chrono::seconds(5), [&] { return in_handler >= 1; });
+            }
+            auto second = send_gated();
+            sync_event_loop();
+            auto third = send_gated();
             if (first && second && third) {
                 std::string b1, b2, b3;
                 auto r3 = read_response(*third, b3);
+                {
+                    std::lock_guard<std::mutex> lk(gate_mu);
+                    release_handler = true;
+                }
+                gate_cv.notify_all();
                 auto r1 = read_response(*first, b1);
                 auto r2 = read_response(*second, b2);
                 require(r1.ends_with("slow") && r2.ends_with("slow") && r3.starts_with("HTTP/1.1 503"),
                         std::format("busy + waiting are served and the next is 503, got: {} | {} | {}",
                                     r1.substr(0, 12), r2.substr(0, 12), r3.substr(0, 12)));
+            } else {
+                {
+                    std::lock_guard<std::mutex> lk(gate_mu);
+                    release_handler = true;
+                }
+                gate_cv.notify_all();
             }
             s2->stop();
         }
@@ -177,7 +218,11 @@ void test_http_server_event_loop([[maybe_unused]] const std::filesystem::path& r
             for (int i = 0; i < 3; ++i) {
                 if (auto c = cfire::net::connect_tcp("127.0.0.1", s3->port())) held.push_back(std::move(*c));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            if (held.size() == 3) {
+                (void)held.back().write_text("GET /x HTTP/1.1\r\nHost: a\r\n\r\n");
+                std::string sync_buf;
+                (void)read_response(held.back(), sync_buf);
+            }
             auto extra = cfire::net::connect_tcp("127.0.0.1", s3->port());
             if (extra) {
                 std::string buf;

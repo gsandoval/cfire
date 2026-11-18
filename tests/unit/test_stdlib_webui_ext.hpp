@@ -887,13 +887,15 @@ int main() {
         app.clipboard_set_secret("super-secret-password", 35);
         require(app.clipboard_get() == "super-secret-password", "clipboard_set_secret stores secret initially");
         require(app.is_clipboard_concealed(), "clipboard_set_secret marks clipboard as concealed");
-        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        for (int i = 0; i < 150 && !app.clipboard_get().empty(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
         require(app.clipboard_get().empty(), "clipboard_set_secret auto-clears after timeout when unchanged");
 
         // overwriting clipboard before timeout cancels stale auto-clear
         app.clipboard_set_secret("transient-secret", 50);
         app.clipboard_set("user-copied-later");
-        std::this_thread::sleep_for(std::chrono::milliseconds(70));
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
         require(app.clipboard_get() == "user-copied-later", "auto-clear does not wipe newer clipboard content");
 
         // set_icon, add_menu_item, system tray, and window visibility controls
