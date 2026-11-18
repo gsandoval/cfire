@@ -1104,8 +1104,90 @@ fn main() {
                 !rel_yml.contains("-crt-git") &&
                 !rel_yml.contains("-winpthreads-git") &&
                 rel_yml.contains("brew install libsodium libssh zstd") &&
-                rel_yml.contains("-resource-dir="),
+                rel_yml.contains("-print-resource-dir") &&
+                !rel_yml.contains("macos-14") &&
+                rel_yml.contains("macos-latest") &&
+                rel_yml.contains("needs.prepare.outputs.sha") &&
+                !rel_yml.contains("git rev-parse --short=7 HEAD") &&
+                rel_yml.contains("/usr/bin/clang++-18"),
             ".github/workflows/release.yml defines unified auto-patch/dispatch pipeline, 6 targets, tag refs, deps, MSYS2/ARM64/macOS fixes, Pages deploy, and no pkg/main.cpp workarounds");
+
+        std::vector<std::string> smoke_blocks;
+        {
+            std::istringstream riss(rel_yml);
+            std::string rline;
+            bool in_smoke = false;
+            std::vector<std::string> raw_lines;
+            std::size_t min_indent = std::string::npos;
+            while (std::getline(riss, rline)) {
+                if (!rline.empty() && rline.back() == '\r') rline.pop_back();
+                if (!in_smoke) {
+                    if (rline.contains("cat > \"$SMOKE_DIR/smoke.cf\" << 'EOF'")) {
+                        in_smoke = true;
+                        raw_lines.clear();
+                        min_indent = std::string::npos;
+                    }
+                } else {
+                    auto non_ws = rline.find_first_not_of(' ');
+                    if (non_ws != std::string::npos && rline.substr(non_ws) == "EOF") {
+                        std::string dedented;
+                        const std::size_t strip_n = (min_indent == std::string::npos) ? 0 : min_indent;
+                        for (const auto& rl : raw_lines) {
+                            if (rl.size() >= strip_n) dedented += rl.substr(strip_n);
+                            dedented += "\n";
+                        }
+                        smoke_blocks.push_back(std::move(dedented));
+                        in_smoke = false;
+                    } else {
+                        if (non_ws != std::string::npos) min_indent = std::min(min_indent, non_ws);
+                        raw_lines.push_back(rline);
+                    }
+                }
+            }
+        }
+        require(smoke_blocks.size() == 3,
+            std::format("release.yml contains 3 inline smoke.cf blocks, got {}", smoke_blocks.size()));
+        for (std::size_t si = 0; si < smoke_blocks.size(); ++si) {
+            auto s_ast = cfire::frontend::parse_source("release_smoke.cf", smoke_blocks[si]);
+            require(s_ast.has_value(),
+                std::format("release.yml smoke.cf block {} parses cleanly: {}",
+                            si, s_ast.has_value() ? std::string{} : s_ast.error().text()));
+            if (s_ast) {
+                auto s_chk = cfire::frontend::analyze(std::move(*s_ast));
+                require(s_chk.has_value(),
+                    std::format("release.yml smoke.cf block {} type-checks cleanly: {}",
+                                si, s_chk.has_value() ? std::string{} : std::string(s_chk.error())));
+            }
+        }
+        if (!smoke_blocks.empty()) {
+            ScopedTempDir smoke_tmp("release_smoke_e2e");
+            std::filesystem::create_directories(smoke_tmp.path / "home", ec);
+            std::filesystem::create_directories(smoke_tmp.path / "cache", ec);
+            auto smoke_cf = smoke_tmp.path / "smoke.cf";
+            {
+                std::ofstream sofs(smoke_cf, std::ios::binary | std::ios::trunc);
+                sofs << smoke_blocks[0];
+            }
+            ScopedEnvVar s_ignore("CFIRE_IGNORE_SYSTEM_LIBS", "1");
+            ScopedEnvVar s_cache("CFIRE_CACHE_DIR", (smoke_tmp.path / "cache").string());
+            ScopedEnvVar s_home("HOME", (smoke_tmp.path / "home").string());
+            ScopedEnvVar s_up("USERPROFILE", (smoke_tmp.path / "home").string());
+            ScopedPortableFlags s_flags;
+            cfire::build::set_build_profile(cfire::build::BuildProfile::Release);
+            cfire::build::g_portable_mode = true;
+            auto smoke_bin = smoke_tmp.path / "smoke_app";
+            auto s_build = cfire::build::build_native(smoke_cf, rt_dir, smoke_bin);
+            require(s_build.has_value(),
+                std::format("release.yml smoke.cf builds cleanly with --portable: {}",
+                            s_build.has_value() ? "" : s_build.error()));
+            if (s_build) {
+                int s_rc = 0;
+                std::string s_out = cfire::bridge::run_command_capture(
+                    cfire::bridge::shell_quote(smoke_bin.string()), s_rc);
+                require(s_rc == 0 && s_out.find("cfire:ok") != std::string::npos,
+                    std::format("release.yml smoke.cf outputs 'cfire:ok' (rc={}, out='{}')", s_rc, s_out));
+            }
+        }
 
         std::string ci_yml = read_text_file(repo_root / ".github" / "workflows" / "ci.yml");
         require(ci_yml.contains("docker build --target release-linux-musl") &&

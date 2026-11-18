@@ -50,6 +50,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
+      sha: ${{ steps.meta.outputs.sha }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -137,8 +138,10 @@ jobs:
             fi
           fi
           git rev-parse "v${FILE_VER}" >/dev/null 2>&1 || git fetch origin "refs/tags/v${FILE_VER}:refs/tags/v${FILE_VER}"
+          SHORT_SHA="$(git rev-parse --short=7 "v${FILE_VER}^{commit}")"
           echo "version=${FILE_VER}" >> "$GITHUB_OUTPUT"
           echo "tag=v${FILE_VER}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
   build-linux:
     needs: prepare
@@ -163,9 +166,9 @@ jobs:
       - name: Build Static musl Portable Bundle (${{ matrix.target }})
         env:
           TAG_VER: ${{ needs.prepare.outputs.version }}
+          GIT_SHA: ${{ needs.prepare.outputs.sha }}
           TARGET_NAME: ${{ matrix.target }}
         run: |
-          GIT_SHA="$(git rev-parse --short=7 HEAD)"
           BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
           docker run --rm -v "$PWD:/work" -w /work alpine:3.20 sh -c "
             set -e
@@ -201,7 +204,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.cc_pkg }} lld
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/${{ matrix.cc_pkg }} 100 || true
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100 || true
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 || true
           BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
           SMOKE_DIR="$(mktemp -d)"
           tar -xzf "${BUNDLE}.tar.gz" -C "$SMOKE_DIR"
@@ -211,15 +215,17 @@ jobs:
           import "ext:db/sqlite"
 
           type Item struct {
-              Name: str `json:"name"`
+              name: str `sql:"name" json:"name"`
           }
 
           fn main() {
               obj := try json.parse[Item]("{\"name\":\"cfire\"}")
-              db := try sqlite.open(":memory:")
-              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
-              rows := try db.query("SELECT x FROM t")
-              println(obj.Name + ":" + rows[0]["x"])
+              mut db := try sqlite.open(":memory:")
+              defer db.close()
+              try db.exec("CREATE TABLE t(name TEXT)")
+              try db.exec("INSERT INTO t(name) VALUES ('ok')")
+              rows := try db.query[Item]("SELECT name FROM t")
+              println("{}:{}", obj.name, rows[0].name)
           }
           EOF
           HOME="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app"
@@ -238,12 +244,12 @@ jobs:
       matrix:
         include:
           - target: macos-arm64
-            runner: macos-14
+            runner: macos-latest
             arch: arm64
             extra_flags: "-mmacosx-version-min=13.3"
             smoke_native: "1"
           - target: macos-x86_64
-            runner: macos-14
+            runner: macos-latest
             arch: x86_64
             extra_flags: "--target=x86_64-apple-macos13.3 -mmacosx-version-min=13.3"
             smoke_native: "0"
@@ -258,10 +264,10 @@ jobs:
       - name: Build Portable Bundle (${{ matrix.target }})
         env:
           TAG_VER: ${{ needs.prepare.outputs.version }}
+          GIT_SHA: ${{ needs.prepare.outputs.sha }}
           TARGET_NAME: ${{ matrix.target }}
           EXTRA_FLAGS: ${{ matrix.extra_flags }}
         run: |
-          GIT_SHA="$(git rev-parse --short=7 HEAD)"
           BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
           make -j"$(sysctl -n hw.ncpu)" build \
             GIT_SHA="${GIT_SHA}" \
@@ -277,11 +283,11 @@ jobs:
             ./cfire install --portable "./dist/${BUNDLE}"
           else
             # Build native helper binary briefly to run install --portable, then swap in x86_64 cfire binary
-            mv ./cfire ./cfire.target_x86_64
+            mv -f ./cfire "${RUNNER_TEMP:-/tmp}/cfire.target_x86_64"
             make clean
             make -j"$(sysctl -n hw.ncpu)" build GIT_SHA="${GIT_SHA}"
             ./cfire install --portable "./dist/${BUNDLE}"
-            mv -f ./cfire.target_x86_64 "./dist/${BUNDLE}/cfire"
+            mv -f "${RUNNER_TEMP:-/tmp}/cfire.target_x86_64" "./dist/${BUNDLE}/cfire"
             chmod 755 "./dist/${BUNDLE}/cfire"
           fi
           lipo -archs "./dist/${BUNDLE}/cfire" | grep -Fx "${{ matrix.arch }}"
@@ -313,15 +319,17 @@ jobs:
           import "ext:db/sqlite"
 
           type Item struct {
-              Name: str `json:"name"`
+              name: str `sql:"name" json:"name"`
           }
 
           fn main() {
               obj := try json.parse[Item]("{\"name\":\"cfire\"}")
-              db := try sqlite.open(":memory:")
-              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
-              rows := try db.query("SELECT x FROM t")
-              println(obj.Name + ":" + rows[0]["x"])
+              mut db := try sqlite.open(":memory:")
+              defer db.close()
+              try db.exec("CREATE TABLE t(name TEXT)")
+              try db.exec("INSERT INTO t(name) VALUES ('ok')")
+              rows := try db.query[Item]("SELECT name FROM t")
+              println("{}:{}", obj.name, rows[0].name)
           }
           EOF
           HOME="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app"
@@ -348,7 +356,7 @@ jobs:
           - target: windows-arm64
             arch: arm64
             can_execute: "0"
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -381,10 +389,10 @@ jobs:
         shell: msys2 {0}
         env:
           TAG_VER: ${{ needs.prepare.outputs.version }}
+          GIT_SHA: ${{ needs.prepare.outputs.sha }}
           TARGET_NAME: ${{ matrix.target }}
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          GIT_SHA="$(git rev-parse --short=7 HEAD)"
           BUNDLE="cfire-v${TAG_VER}-${TARGET_NAME}"
           rm -rf "./dist/${BUNDLE}"
           if [ "$TARGET_ARCH" = "x86_64" ]; then
@@ -394,18 +402,20 @@ jobs:
             ./cfire.exe --version | grep -F "cfire ${TAG_VER} (${GIT_SHA},"
             ./cfire.exe install --portable "./dist/${BUNDLE}"
           else
-            ARM64_RES="$(ls -d /clangarm64/lib/clang/* | head -n 1)"
+            CLANG_RES_WIN="$(clang++ -print-resource-dir)/lib/windows"
+            mkdir -p "$CLANG_RES_WIN"
+            cp -f /clangarm64/lib/clang/*/lib/windows/* "$CLANG_RES_WIN/"
             make -j4 build GIT_SHA="${GIT_SHA}" \
-              EXTRA_CXXFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -resource-dir=${ARM64_RES} -stdlib=libc++" \
-              EXTRA_LDFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -resource-dir=${ARM64_RES} -fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"
+              EXTRA_CXXFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -stdlib=libc++" \
+              EXTRA_LDFLAGS="--target=aarch64-w64-mingw32 --sysroot=/clangarm64 -fuse-ld=lld -rtlib=compiler-rt -unwindlib=libunwind -stdlib=libc++"
             llvm-objdump -p ./cfire.exe
             ! llvm-objdump -p ./cfire.exe | grep -iE 'DLL Name:.*(libstdc\+\+|libc\+\+|libwinpthread|libgcc|libunwind)'
             llvm-objdump -f ./cfire.exe | grep -qiE 'aarch64|arm64'
-            mv ./cfire.exe ./cfire.target_arm64.exe
+            mv -f ./cfire.exe "${RUNNER_TEMP:-/tmp}/cfire.target_arm64.exe"
             make clean
             make -j4 build GIT_SHA="${GIT_SHA}"
             ./cfire.exe install --portable "./dist/${BUNDLE}"
-            mv -f ./cfire.target_arm64.exe "./dist/${BUNDLE}/cfire.exe"
+            mv -f "${RUNNER_TEMP:-/tmp}/cfire.target_arm64.exe" "./dist/${BUNDLE}/cfire.exe"
           fi
           STRAY="$(find "./dist/${BUNDLE}" \( -name '*.pch' -o -name '*.a' -o -name '*.o' \))"
           test -z "$STRAY"
@@ -430,15 +440,17 @@ jobs:
           import "ext:db/sqlite"
 
           type Item struct {
-              Name: str `json:"name"`
+              name: str `sql:"name" json:"name"`
           }
 
           fn main() {
               obj := try json.parse[Item]("{\"name\":\"cfire\"}")
-              db := try sqlite.open(":memory:")
-              try db.exec("CREATE TABLE t(x TEXT); INSERT INTO t VALUES('ok');")
-              rows := try db.query("SELECT x FROM t")
-              println(obj.Name + ":" + rows[0]["x"])
+              mut db := try sqlite.open(":memory:")
+              defer db.close()
+              try db.exec("CREATE TABLE t(name TEXT)")
+              try db.exec("INSERT INTO t(name) VALUES ('ok')")
+              rows := try db.query[Item]("SELECT name FROM t")
+              println("{}:{}", obj.name, rows[0].name)
           }
           EOF
           USERPROFILE="$SMOKE_DIR/home" CFIRE_IGNORE_SYSTEM_LIBS=1 "$SMOKE_DIR/${BUNDLE}/cfire.exe" build --portable "$SMOKE_DIR/smoke.cf" -o "$SMOKE_DIR/smoke_app.exe"
