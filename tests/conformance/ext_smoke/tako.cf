@@ -1,0 +1,26 @@
+// expect: stdout
+// | ext:tako ok
+package main
+
+import "ext:tako"
+
+fn main() {
+    mut s3 := tako.NewS3Service()
+    try s3.CreateBucket("smoke-bucket")
+    etag := try s3.PutObject("smoke-bucket", "hello.txt", "hello tako", "text/plain")
+    assert(!etag.is_empty())
+    obj := try s3.GetObject("smoke-bucket", "hello.txt")
+    assert_eq(obj.Body, "hello tako")
+    assert_eq(obj.ContentType, "text/plain")
+
+    mut sqs := tako.NewSQSService()
+    q_url := try sqs.CreateQueue("smoke-queue", false)
+    assert(!q_url.is_empty())
+    msg_id := try sqs.SendMessage(q_url, "{\"ok\":true}", "", "")
+    assert(!msg_id.is_empty())
+    msgs := try sqs.ReceiveMessages(q_url, 1)
+    assert_eq(msgs.len(), 1)
+    assert_eq(msgs[0].Body, "{\"ok\":true}")
+
+    println("ext:tako ok")
+}

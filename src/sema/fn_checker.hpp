@@ -150,6 +150,8 @@ public:
 
     [[nodiscard]] auto is_vendor_alias_sema(std::string_view name) const -> bool;
 
+    [[nodiscard]] auto is_unresolved_local_pkg_alias_sema(std::string_view name) const -> bool;
+
     [[nodiscard]] auto resolve_stdlib_ns_sema(std::string_view qualifier) const -> std::string;
 
     [[nodiscard]] auto is_namespace_ident_sema(std::string_view name) const -> bool;
@@ -171,6 +173,30 @@ public:
     [[nodiscard]] auto infer_named_type_id_(const ExprPtr& e) const -> TypeId;
 
     [[nodiscard]] auto infer_expr_type_id_sema(const ExprPtr& e) const -> TypeId;
+
+    // Resolves a parsed TypeRef into an interned TypeId, resolving active generic type parameters.
+    [[nodiscard]] auto resolve_typeref(const TypeRef& tr) const -> TypeId;
+
+    // Unwraps borrows/pointers/smart pointers (and optionally `?`) to reach the underlying receiver type.
+    [[nodiscard]] auto unwrap_receiver_type(TypeId t, bool unwrap_opt = false) const -> TypeId;
+
+    // Maps unambiguous C/C++ Clang QualTypes (primitives, void, bool, std::string, *T) to cfire TypeIds;
+    // returns TypeId::Foreign() for opaque C++ structs/templates.
+    [[nodiscard]] auto map_cpp_qualtype_to_type_id(std::string_view qtype) const -> TypeId;
+
+    [[nodiscard]] auto is_type_comparable_sema(TypeId t) const -> bool;
+    [[nodiscard]] auto is_type_ordered_sema(TypeId t) const -> bool;
+    [[nodiscard]] auto satisfies_constraint_sema(TypeId concrete, std::string_view constraint) const -> bool;
+
+    // Unified compatibility gate emitting cfire/UNWRAPPED-OPTIONAL, cfire/UNHANDLED-RESULT, or cfire/TYPE-MISMATCH.
+    [[nodiscard]] auto check_type_compatible(
+        TypeId want,
+        TypeId got,
+        const ExprPtr& expr,
+        std::string_view ctx,
+        int line,
+        int col
+    ) -> std::expected<void, std::string>;
 
     // Display / lookup name of an expression's type, derived from its TypeId ("" when unknown).
     [[nodiscard]] auto type_name_of(const ExprPtr& e) const -> std::string;
@@ -238,7 +264,7 @@ public:
 
     [[nodiscard]] static auto classify_builtin_receiver(std::string_view t) -> BuiltinReceiver;
 
-    [[nodiscard]] static constexpr auto bm_bits_of(BuiltinReceiver k) -> std::uint8_t {
+    [[nodiscard]] static constexpr auto bm_bits_of(BuiltinReceiver k) -> std::uint16_t {
         switch (k) {
             case BuiltinReceiver::Str: return BmStr;
             case BuiltinReceiver::Slice: return BmSlice;
@@ -251,7 +277,7 @@ public:
 
     // the receiver kind of a builtin method call, from the receiver's TypeId (borrows and pointers
     // auto-deref). Falls back to the receiver's spelled type when inference has no TypeId.
-    [[nodiscard]] auto builtin_recv_bits(const ExprPtr& obj) const -> std::uint8_t;
+    [[nodiscard]] auto builtin_recv_bits(const ExprPtr& obj) const -> std::uint16_t;
 
     [[nodiscard]] auto builtin_self_type(const ExprPtr& obj) const -> TypeId;
 
@@ -272,7 +298,7 @@ public:
         return f == "PI" || f == "E" || f == "TAU" || f == "SQRT_2" || f == "LN_2" || f == "LN_10";
     }
 
-    [[nodiscard]] static auto bm_kind_name(std::uint8_t bits) -> std::string_view {
+    [[nodiscard]] static auto bm_kind_name(std::uint16_t bits) -> std::string_view {
         if (bits & BmStr) return "str";
         if (bits & BmSlice) return "slice";
         if (bits & BmArray) return "fixed array";
@@ -280,6 +306,8 @@ public:
         if (bits & BmInt) return "integer";
         if (bits & BmFloat) return "float";
         if (bits & BmBool) return "bool";
+        if (bits & BmOptional) return "optional (`T?`)";
+        if (bits & BmFallible) return "fallible (`T!`)";
         return "value";
     }
 
@@ -363,7 +391,7 @@ public:
 
     [[nodiscard]] static auto extract_root_ident_sema(const ExprPtr& e) -> std::string;
 
-    [[nodiscard]] auto check_expr(const ExprPtr& e) -> std::expected<void, std::string>;
+    [[nodiscard]] auto check_expr(const ExprPtr& e, TypeId expected = TypeId::Unknown()) -> std::expected<void, std::string>;
 
     // both branches of an `if` expression yield the same type. A bare numeric literal adapts to
     // the other branch's numeric type (`if c { n } else { 0 }`).
@@ -408,7 +436,7 @@ public:
     // `i32`, `f64`, `bool`, ... used as a value prefix (`i32.MAX`, `f64.parse(s)`).
     [[nodiscard]] auto primitive_type_prefix(const ExprPtr& obj) const -> TypeId;
 
-    [[nodiscard]] auto primitive_bits(TypeId t) const -> std::uint8_t;
+    [[nodiscard]] auto primitive_bits(TypeId t) const -> std::uint16_t;
 
     [[nodiscard]] auto check_member_expr(const MemberExpr& mem, int line, int col) -> std::expected<void, std::string>;
 
@@ -463,6 +491,8 @@ public:
         bool was_mut{false};
         bool was_imm{false};
         std::optional<std::string> var_type{};
+        bool had_type_id = false;
+        TypeId prev_type_id{TypeId::Unknown()};
         bool was_optional{false};
         bool was_fallible{false};
         bool was_reported_unhandled{false};
@@ -501,6 +531,9 @@ public:
 
                 if (st.var_type) checker.var_types_[name] = *st.var_type;
                 else checker.var_types_.erase(name);
+
+                if (st.had_type_id) checker.var_type_ids_[name] = st.prev_type_id;
+                else checker.var_type_ids_.erase(name);
 
                 if (st.was_optional) checker.optional_vars_.insert(name);
                 else checker.optional_vars_.erase(name);
@@ -592,6 +625,7 @@ private:
     std::string pkg_name_{};
     std::string fn_name_{};
     std::string fn_ret_str_{};
+    TypeId fn_ret_tid_{TypeId::Unknown()};
     const CheckedFile& cf_;
     std::vector<std::string>& warnings_;
     std::vector<std::string>& errors_;
@@ -603,6 +637,7 @@ private:
     bool has_cpp_imports_{false};
     std::unordered_set<std::string> fn_type_params_{};  // the function's and its receiver's type parameters
     std::unordered_map<std::string, std::vector<std::string>> fn_type_param_bounds_{};
+    std::unordered_map<std::string, TypeId> fn_type_param_ids_{};
     bool seen_cpp_block_{false};
     int scope_depth_{1};
     int in_defer_depth_{0};
@@ -656,6 +691,7 @@ private:
     std::unordered_set<std::string> shared_ptr_var_names_{};  // smart pointers that are `shared[T]`
     std::unordered_set<std::string> foreign_vars_{};
     std::unordered_map<std::string, std::string> var_types_{};
+    std::unordered_map<std::string, TypeId> var_type_ids_{};
     std::unordered_map<std::string, NullState> ptr_null_state_{};
     std::unordered_map<std::string, std::size_t> fixed_array_lens_{};
     std::unordered_set<std::string> map_vars_{};

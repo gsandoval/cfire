@@ -148,11 +148,15 @@ namespace cfire::hex {
 // --- `core:encoding/csv` (RFC 4180 CSV Parsing & Stringification) ---
 namespace cfire::csv {
 
-[[nodiscard]] inline auto parse(std::string_view s) -> std::vector<std::vector<std::string>> {
+[[nodiscard]] inline auto parse(std::string_view s)
+    -> std::expected<std::vector<std::vector<std::string>>, cfire::Error>
+{
     std::vector<std::vector<std::string>> rows;
     std::vector<std::string> current_row;
     std::string current_field;
     bool in_quotes = false;
+    bool at_field_start = true;
+    bool after_closing_quote = false;
     std::size_t i = 0;
 
     while (i < s.size()) {
@@ -164,19 +168,19 @@ namespace cfire::csv {
                     i += 2;
                 } else {
                     in_quotes = false;
+                    after_closing_quote = true;
                     ++i;
                 }
             } else {
                 current_field.push_back(c);
                 ++i;
             }
-        } else {
-            if (c == '"') {
-                in_quotes = true;
-                ++i;
-            } else if (c == ',') {
+        } else if (after_closing_quote) {
+            if (c == ',') {
                 current_row.push_back(std::move(current_field));
                 current_field.clear();
+                at_field_start = true;
+                after_closing_quote = false;
                 ++i;
             } else if (c == '\r') {
                 if (i + 1 < s.size() && s[i + 1] == '\n') ++i;
@@ -184,21 +188,61 @@ namespace cfire::csv {
                 current_field.clear();
                 rows.push_back(std::move(current_row));
                 current_row.clear();
+                at_field_start = true;
+                after_closing_quote = false;
                 ++i;
             } else if (c == '\n') {
                 current_row.push_back(std::move(current_field));
                 current_field.clear();
                 rows.push_back(std::move(current_row));
                 current_row.clear();
+                at_field_start = true;
+                after_closing_quote = false;
+                ++i;
+            } else {
+                return cfire::make_error(std::format("csv.parse: unexpected character after closing quote at offset {}", i));
+            }
+        } else {
+            if (c == '"') {
+                if (!at_field_start) {
+                    return cfire::make_error(std::format("csv.parse: unexpected quote in unquoted field at offset {}", i));
+                }
+                in_quotes = true;
+                at_field_start = false;
+                ++i;
+            } else if (c == ',') {
+                current_row.push_back(std::move(current_field));
+                current_field.clear();
+                at_field_start = true;
+                ++i;
+            } else if (c == '\r') {
+                if (i + 1 < s.size() && s[i + 1] == '\n') ++i;
+                current_row.push_back(std::move(current_field));
+                current_field.clear();
+                rows.push_back(std::move(current_row));
+                current_row.clear();
+                at_field_start = true;
+                ++i;
+            } else if (c == '\n') {
+                current_row.push_back(std::move(current_field));
+                current_field.clear();
+                rows.push_back(std::move(current_row));
+                current_row.clear();
+                at_field_start = true;
                 ++i;
             } else {
                 current_field.push_back(c);
+                at_field_start = false;
                 ++i;
             }
         }
     }
 
-    if (!current_field.empty() || !current_row.empty()) {
+    if (in_quotes) {
+        return cfire::make_error("csv.parse: unterminated quoted field");
+    }
+
+    if (!current_field.empty() || !current_row.empty() || after_closing_quote) {
         current_row.push_back(std::move(current_field));
         rows.push_back(std::move(current_row));
     }

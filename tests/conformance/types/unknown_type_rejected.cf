@@ -1,0 +1,5 @@
+package main
+fn main() {
+    x := [] //~ error cfire/UNKNOWN-TYPE
+    _ = x
+}

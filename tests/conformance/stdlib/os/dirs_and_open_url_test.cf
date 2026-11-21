@@ -1,0 +1,69 @@
+// expect: stdout
+// | dirs_and_open_url ok
+package main
+
+import "core:fs"
+import "core:os"
+
+fn is_data_dir_rejected(app: str) -> bool {
+    _ = os.data_dir(app) or { return true }
+    return false
+}
+
+fn is_cache_dir_rejected(app: str) -> bool {
+    _ = os.cache_dir(app) or { return true }
+    return false
+}
+
+fn is_open_url_rejected(url: str) -> bool {
+    os.open_url(url) or { return true }
+    return false
+}
+
+test "core:os app directories and open_url" {
+    os.setenv("CFIRE_HEADLESS_TEST", "1")
+
+    base_d := try os.data_dir()
+    base_c := try os.cache_dir()
+    docs := try os.documents_dir()
+    assert(!base_d.is_empty())
+    assert(!base_c.is_empty())
+    assert(!docs.is_empty())
+    assert(fs.is_dir(base_d))
+    assert(fs.is_dir(base_c))
+    assert(fs.is_dir(docs))
+
+    d := try os.data_dir("cfire_test")
+    defer { _ = fs.remove(d) or {} }
+    c := try os.cache_dir("cfire_test")
+    defer { _ = fs.remove(c) or {} }
+    assert(!d.is_empty())
+    assert(!c.is_empty())
+    assert(fs.is_dir(d))
+    assert(fs.is_dir(c))
+    assert(d.ends_with("cfire_test"))
+    assert(c.ends_with("cfire_test"))
+
+    assert(is_data_dir_rejected("../evil"))
+    assert(is_data_dir_rejected("a/b"))
+    assert(is_data_dir_rejected("a\\b"))
+    assert(is_data_dir_rejected(".."))
+    assert(is_cache_dir_rejected("../evil"))
+    assert(is_cache_dir_rejected("a/b"))
+    assert(is_cache_dir_rejected("a\\b"))
+    assert(is_cache_dir_rejected(".."))
+
+    assert(is_open_url_rejected(""))
+    assert(is_open_url_rejected("javascript:alert(1)"))
+    assert(is_open_url_rejected("file:///etc/passwd"))
+    assert(is_open_url_rejected("https://example.com/\n"))
+    assert(is_open_url_rejected("example.com"))
+
+    try os.open_url("https://cfire.memo.engineer")
+    try os.open_url("http://example.com/docs")
+    try os.open_url("mailto:dev@example.com")
+    try os.open_url("tel:+15551234567")
+    try os.open_url("myapp://open/42")
+
+    println("dirs_and_open_url ok")
+}

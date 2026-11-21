@@ -9,6 +9,7 @@
 #include <cctype>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <unordered_set>
 #include <unordered_map>
 #include "cfire_prelude.hpp"
@@ -181,6 +182,12 @@ CFIRE_DIAG_INLINE auto apply_fixits(
 ) -> std::string;
 
 [[nodiscard]] CFIRE_DIAG_INLINE auto humanize_cpp_compiler_output(std::string_view raw_out) -> std::string;
+
+[[nodiscard]] CFIRE_DIAG_INLINE auto format_backend_failure(
+    std::string_view raw_out,
+    bool has_cpp_interop,
+    bool verbose = false
+) -> std::string;
 
 #undef CFIRE_DIAG_INLINE
 

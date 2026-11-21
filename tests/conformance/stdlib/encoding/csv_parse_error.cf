@@ -1,0 +1,27 @@
+// expect: stdout
+// | rows=2 q=Hello, "World"
+// | unclosed=true
+// | trailing=true
+package main
+
+import "core:encoding/csv"
+
+fn main() -> void! {
+    valid := "k,v\n\"greeting\",\"Hello, \"\"World\"\"\"\n"
+    rows := try csv.parse(valid)
+    println("rows={} q={}", rows.len(), rows[1][1])
+
+    mut unclosed := false
+    match csv.parse("a,\"unclosed\n") {
+        Ok(_) => {}
+        Err(e) => unclosed = e.message().contains("unterminated")
+    }
+
+    mut trailing := false
+    match csv.parse("a,\"b\"junk,c\n") {
+        Ok(_) => {}
+        Err(e) => trailing = e.message().len() > 0
+    }
+    println("unclosed={}", unclosed)
+    println("trailing={}", trailing)
+}

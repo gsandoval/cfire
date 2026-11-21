@@ -11,11 +11,7 @@ namespace cfire::doc {
 #endif
 
 inline void apply_module_metadata(StdModuleDoc& m) {
-    if (m.import_path == "core:audio") {
-        m.header_path = "core/audio.hpp";
-        m.core_key = "audio";
-        m.types = {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"};
-    } else if (m.import_path == "core:build") {
+    if (m.import_path == "core:build") {
         m.core_key = "buildsys";
         m.header_path.clear();
         m.defines.clear();
@@ -113,12 +109,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.header_path = "core/sync.hpp";
         m.core_key = "sync";
         m.types = {"Context"};
-    } else if (m.import_path == "core:tako") {
-        m.header_path = "core/tako.hpp";
-        m.core_key = "tako";
-        m.extra_core_keys = {"json"};
-        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
-        m.link_tags = {"-lsimdjson"};
     } else if (m.import_path == "core:time") {
         m.header_path = "core/time.hpp";
         m.core_key = "time";
@@ -132,6 +122,10 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.types = {"Provider", "Client", "Agent", "Document", "Message", "Tool", "McpServer", "ZipEntry", "Attachment", "ChatResponse", "DocumentSection", "ToolCall"};
         m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
         m.link_tags = {"-lsimdjson"};
+    } else if (m.import_path == "ext:audio") {
+        m.header_path = "core/audio.hpp";
+        m.core_key = "audio";
+        m.types = {"Waveform", "SfxPreset", "Wave", "Sound", "Stream"};
     } else if (m.import_path == "ext:compress/zstd") {
         m.header_path = "core/compress.hpp";
         m.core_key = "compress";
@@ -154,6 +148,12 @@ inline void apply_module_metadata(StdModuleDoc& m) {
         m.types = {"Session", "Channel", "ExecResult", "SftpEntry"};
         m.defines = {"#define CFIRE_USE_SSH 1"};
         m.link_tags = {"-lssh"};
+    } else if (m.import_path == "ext:tako") {
+        m.header_path = "core/tako.hpp";
+        m.core_key = "tako";
+        m.extra_core_keys = {"json"};
+        m.defines = {"#define CFIRE_USE_SIMDJSON 1"};
+        m.link_tags = {"-lsimdjson"};
     } else if (m.import_path == "ext:webui") {
         m.header_path = "core/webui.hpp";
         m.core_key = "webui";
@@ -167,37 +167,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
 [[nodiscard]] CFIRE_CATALOG_IMPL_INLINE auto stdlib_catalog() -> const std::vector<StdModuleDoc>& {
     static const std::vector<StdModuleDoc> catalog = []() {
         std::vector<StdModuleDoc> cat = {
-        {
-            "core:audio", "audio", "Audio Engine, Polyphonic Mixer, Synth & WAV", "(AudioToolbox / WebAudio / ALSA)",
-            "Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.",
-            {
-                {"init", "fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!", "cfire::audio::init(sample_rate, channels)", "Initializes the hardware audio output queue (or headless software mixer in CI).", "try audio.init(48000, 2)"},
-                {"close", "fn close()", "cfire::audio::close()", "Stops all active sounds and streams and releases audio hardware resources.", "defer audio.close()"},
-                {"is_ready", "fn is_ready() -> bool", "cfire::audio::is_ready()", "Returns `true` if the audio subsystem is initialized.", "if audio.is_ready() { ... }"},
-                {"set_master_volume", "fn set_master_volume(vol: f32)", "cfire::audio::set_master_volume(vol)", "Sets the master output volume multiplier (`0.0` to `1.0`).", "audio.set_master_volume(0.8)"},
-                {"master_volume", "fn master_volume() -> f32", "cfire::audio::master_volume()", "Returns the current master output volume multiplier.", "v := audio.master_volume()"},
-                {"rms_level", "fn rms_level() -> f32", "cfire::audio::rms_level()", "Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.", "rms := audio.rms_level()"},
-                {"peak_level", "fn peak_level() -> f32", "cfire::audio::peak_level()", "Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.", "pk := audio.peak_level()"},
-                {"gen_tone", "fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)", "Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.", "w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)"},
-                {"gen_chirp", "fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)", "Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.", "sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)"},
-                {"gen_sfx", "fn gen_sfx(preset: SfxPreset) -> Wave", "cfire::audio::gen_sfx(preset)", "Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).", "coin := audio.gen_sfx(audio.SfxPreset::Coin)"},
-                {"encode_wav", "fn encode_wav(wave: Wave) -> []byte", "cfire::audio::encode_wav(wave)", "Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.", "wav_bytes := audio.encode_wav(w)"},
-                {"decode_wav", "fn decode_wav(data: []byte) -> Wave!", "cfire::audio::decode_wav(data)", "Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.", "w := try audio.decode_wav(wav_bytes)"},
-                {"save_wav", "fn save_wav(wave: Wave, path: str) -> void!", "cfire::audio::save_wav(wave, path)", "Writes a `Wave` to disk as a standard `.wav` file.", "try audio.save_wav(w, \"tone.wav\")"},
-                {"load_wav", "fn load_wav(path: str) -> Wave!", "cfire::audio::load_wav(path)", "Loads and decodes a `.wav` file from disk or app bundle.", "w := try audio.load_wav(\"tone.wav\")"},
-                {"load_sound_from_wave", "fn load_sound_from_wave(wave: Wave) -> Sound", "cfire::audio::load_sound_from_wave(wave)", "Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.", "sfx := audio.load_sound_from_wave(coin)"},
-                {"load_sound", "fn load_sound(path: str) -> Sound!", "cfire::audio::load_sound(path)", "Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.", "sfx := try audio.load_sound(\"click.wav\")"},
-                {"Sound.play", "fn (s: Sound) play()", "s.play()", "Triggers polyphonic playback of the sound.", "sfx.play()"},
-                {"Sound.stop", "fn (s: Sound) stop()", "s.stop()", "Stops active voices playing this sound.", "sfx.stop()"},
-                {"Sound.set_volume", "fn (s: Sound) set_volume(vol: f32)", "s.set_volume(vol)", "Sets playback gain (`0.0` to `2.0`) for this sound.", "sfx.set_volume(0.75)"},
-                {"Sound.set_pitch", "fn (s: Sound) set_pitch(pitch: f32)", "s.set_pitch(pitch)", "Sets playback pitch/rate multiplier (`1.0` = original pitch).", "sfx.set_pitch(1.25)"},
-                {"Sound.set_pan", "fn (s: Sound) set_pan(pan: f32)", "s.set_pan(pan)", "Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).", "sfx.set_pan(-0.5)"},
-                {"Sound.set_looping", "fn (s: Sound) set_looping(loop: bool)", "s.set_looping(loop)", "Enables or disables seamless loop playback.", "sfx.set_looping(true)"},
-                {"open_stream", "fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!", "cfire::audio::open_stream(sample_rate, channels)", "Opens a real-time push `Stream` for custom DSP synthesis.", "stream := try audio.open_stream(48000, 2)"},
-                {"Stream.push_samples", "fn (st: Stream) push_samples(samples: []f32)", "st.push_samples(samples)", "Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.", "stream.push_samples(pcm_chunk)"},
-                {"Stream.needs_data", "fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool", "st.needs_data(target_frames)", "Returns `true` when buffered frames fall below `target_frames`.", "if stream.needs_data(1024) { ... }"}
-            }
-        },
         {
             "core:build", "build", "Declarative Project & Cross-Platform Build System (`build.cf`)", "(compiler-integrated)",
             "Declarative build manifest module (`build.cf`) for configuring packages (`build.Package`), native/GUI/WebAssembly/iOS executables (`build.Executable`, `build.App`), static/shared libraries (`build.Library`), pre-build codegen steps (`build.Step`, `build.Command`), C/C++ source targets (`build.CC`), external CMake/Make/Ninja/Git/Archive dependencies (`build.CMake`, `build.Make`, `build.Ninja`, `build.Git`, `build.Archive`), native pkg-config/library/include/define/framework settings (`build.PkgConfig`, `build.Link`, `build.Libraries`, `build.Include`, `build.Includes`, `build.Define`, `build.Defines`, `build.Frameworks`), and compile-time host/target queries (`build.os()`, `build.arch()`).",
@@ -230,8 +199,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "core:cli", "cli", "Struct-Tag Command-Line Parser & Interactive Prompts", "(header-only)",
             "Generates zero-boilerplate command-line flag parsers from struct field tags (`cli:\"--flag,help\"`), subcommand/positional argument helpers, and interactive terminal prompts.",
             {
-                {"parse", "fn parse[T](args: []str = []) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`.", "args := try cli.parse[Args]()"},
-                {"try_parse", "fn try_parse[T](args: []str = []) -> T?", "cfire::cli::try_parse<T>(argc, argv)", "Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid.", "args := cli.try_parse[Args]() or { return }"},
+                {"parse", "fn parse[T](args: []str = []) -> T!", "cfire::cli::parse<T>(argc, argv)", "Parses and validates CLI flags (`str`, `i64`, `i32`, `u16`, `f64`, `bool`) into a tagged struct `T`, returning an `Error` if any numeric or boolean flag argument is invalid.", "args := try cli.parse[Args]()"},
                 {"args", "fn args() -> []str", "cfire::cli::args()", "Returns the raw command-line arguments passed to the process (excluding `argv[0]`).", "raw := cli.args()"},
                 {"subcommand", "fn subcommand() -> str", "cfire::cli::subcommand()", "Returns the first non-flag positional argument (subcommand name) or `\"\"` if none.", "cmd := cli.subcommand()"},
                 {"positional", "fn positional() -> []str", "cfire::cli::positional()", "Returns all non-flag positional arguments passed on the command line.", "files := cli.positional()"},
@@ -244,9 +212,36 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "Standard generic containers backed by STL unordered_set, priority_queue, and deque.",
             {
                 {"Set", "type Set[T] struct", "cfire::collections::Set<T>", "Generic hash set container.", "mut s := collections.Set[str]{}"},
+                {"Set.insert", "fn (mut s: Set[T]) insert(val: T) -> bool", "s.insert(val)", "Inserts `val` into the set; returns `true` if `val` was newly inserted.", "added := s.insert(\"alpha\")"},
+                {"Set.contains", "fn (s: Set[T]) contains(val: T) -> bool", "s.contains(val)", "Returns `true` if `val` is present in the set.", "if s.contains(\"alpha\") { ... }"},
+                {"Set.remove", "fn (mut s: Set[T]) remove(val: T) -> bool", "s.remove(val)", "Removes `val` from the set; returns `true` if it was present.", "removed := s.remove(\"alpha\")"},
+                {"Set.len", "fn (s: Set[T]) len() -> usize", "s.len()", "Returns the number of elements in the set.", "n := s.len()"},
+                {"Set.empty", "fn (s: Set[T]) empty() -> bool", "s.empty()", "Returns `true` when the set has no elements.", "if s.empty() { return }"},
+                {"Set.clear", "fn (mut s: Set[T]) clear()", "s.clear()", "Removes every element from the set.", "s.clear()"},
+                {"Set.to_slice", "fn (s: Set[T]) to_slice() -> []T", "s.to_slice()", "Returns a newly allocated slice containing a copy of every element in unspecified order.", "items := s.to_slice()"},
                 {"PriorityQueue", "type PriorityQueue[T] struct", "cfire::collections::PriorityQueue<T>", "Max-first priority queue: `push(v)`, `pop() -> T?`, `peek() -> T?`, `len()`, `empty()`.", "mut pq := collections.PriorityQueue[i32]{}"},
+                {"PriorityQueue.push", "fn (mut pq: PriorityQueue[T]) push(val: T)", "pq.push(val)", "Pushes `val` into the max-first priority queue.", "pq.push(42)"},
+                {"PriorityQueue.peek", "fn (pq: PriorityQueue[T]) peek() -> T?", "pq.peek()", "Returns a copy of the largest element without removing it, or `none` when empty.", "top := pq.peek() or 0"},
+                {"PriorityQueue.top", "fn (pq: PriorityQueue[T]) top() -> T", "pq.top()", "Returns the largest element (panics when empty).", "best := pq.top()"},
+                {"PriorityQueue.pop", "fn (mut pq: PriorityQueue[T]) pop() -> T?", "pq.pop()", "Removes and returns the largest element, or `none` when empty.", "next := pq.pop() or { break }"},
+                {"PriorityQueue.len", "fn (pq: PriorityQueue[T]) len() -> usize", "pq.len()", "Returns the number of queued elements.", "n := pq.len()"},
+                {"PriorityQueue.empty", "fn (pq: PriorityQueue[T]) empty() -> bool", "pq.empty()", "Returns `true` when the priority queue is empty.", "if pq.empty() { break }"},
                 {"MinQueue", "type MinQueue[T] struct", "cfire::collections::MinQueue<T>", "Min-first priority queue (smallest element pops first), with the same methods as `PriorityQueue[T]`. Tuples order element by element, so `MinQueue[(i64, i64)]` pops the lowest cost first.", "mut open := collections.MinQueue[i64]{}"},
-                {"Deque", "type Deque[T] struct", "cfire::collections::Deque<T>", "Generic double-ended queue.", "mut dq := collections.Deque[i32]{}"}
+                {"MinQueue.push", "fn (mut q: MinQueue[T]) push(val: T)", "q.push(val)", "Pushes `val` into the min-first priority queue.", "q.push(10)"},
+                {"MinQueue.peek", "fn (q: MinQueue[T]) peek() -> T?", "q.peek()", "Returns a copy of the smallest element without removing it, or `none` when empty.", "lo := q.peek() or 0"},
+                {"MinQueue.top", "fn (q: MinQueue[T]) top() -> T", "q.top()", "Returns the smallest element (panics when empty).", "best := q.top()"},
+                {"MinQueue.pop", "fn (mut q: MinQueue[T]) pop() -> T?", "q.pop()", "Removes and returns the smallest element, or `none` when empty.", "next := q.pop() or { break }"},
+                {"MinQueue.len", "fn (q: MinQueue[T]) len() -> usize", "q.len()", "Returns the number of queued elements.", "n := q.len()"},
+                {"MinQueue.empty", "fn (q: MinQueue[T]) empty() -> bool", "q.empty()", "Returns `true` when the min-queue is empty.", "if q.empty() { break }"},
+                {"Deque", "type Deque[T] struct", "cfire::collections::Deque<T>", "Generic double-ended queue.", "mut dq := collections.Deque[i32]{}"},
+                {"Deque.push_back", "fn (mut d: Deque[T]) push_back(val: T)", "d.push_back(val)", "Appends `val` to the back of the deque.", "dq.push_back(1)"},
+                {"Deque.push_front", "fn (mut d: Deque[T]) push_front(val: T)", "d.push_front(val)", "Prepends `val` to the front of the deque.", "dq.push_front(0)"},
+                {"Deque.pop_back", "fn (mut d: Deque[T]) pop_back() -> T", "d.pop_back()", "Removes and returns the back element.", "back := dq.pop_back()"},
+                {"Deque.pop_front", "fn (mut d: Deque[T]) pop_front() -> T", "d.pop_front()", "Removes and returns the front element.", "front := dq.pop_front()"},
+                {"Deque.at", "fn (d: Deque[T]) at(idx: usize) -> T?", "d.at(idx)", "Returns the element at `idx`, or `none` when `idx >= len()`.", "v := dq.at(0) or 0"},
+                {"Deque.len", "fn (d: Deque[T]) len() -> usize", "d.len()", "Returns the number of elements in the deque.", "n := dq.len()"},
+                {"Deque.empty", "fn (d: Deque[T]) empty() -> bool", "d.empty()", "Returns `true` when the deque is empty.", "if dq.empty() { return }"},
+                {"Deque.clear", "fn (mut d: Deque[T]) clear()", "d.clear()", "Removes every element from the deque.", "dq.clear()"}
             }
         },
         {
@@ -308,7 +303,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "core:encoding/csv", "csv", "RFC 4180 CSV Parsing & Stringification", "(header-only)",
             "RFC 4180 compliant CSV parser and serializer supporting multi-line quoted fields and comma escaping.",
             {
-                {"parse", "fn parse(s: str) -> [][]str", "cfire::csv::parse(s)", "Parses a CSV string into a 2D table of rows and columns.", "rows := csv.parse(content)"},
+                {"parse", "fn parse(s: str) -> [][]str!", "cfire::csv::parse(s)", "Parses an RFC 4180 CSV string into a 2D table of rows and columns, returning an `Error` on malformed or unclosed quotes.", "rows := try csv.parse(content)"},
                 {"stringify", "fn stringify(rows: [][]str) -> str", "cfire::csv::stringify(rows)", "Serializes a 2D table of strings into an RFC 4180 formatted CSV string.", "out := csv.stringify(rows)"},
                 {"read_all", "fn read_all(path: str) -> [][]str!", "cfire::csv::read_all(path)", "Reads an entire CSV file from disk and parses it into rows.", "table := try csv.read_all(\"data.csv\")"},
                 {"write_all", "fn write_all(path: str, rows: [][]str) -> void!", "cfire::csv::write_all(path, rows)", "Serializes rows to CSV and writes to disk.", "try csv.write_all(\"report.csv\", table)"}
@@ -387,12 +382,13 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
-            "core:keychain", "keychain", "Native OS Credential Keychain & Secret Service", "-framework Security (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)",
-            "Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteA` / `CredReadA`) on Windows.",
+            "core:keychain", "keychain", "Native OS Credential Keychain & Apple Biometric Auth", "-framework Security -lobjc (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)",
+            "Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteW` / `CredReadW`) on Windows, plus Face ID / Touch ID and device passcode user-presence verification via Apple `LocalAuthentication`.",
             {
                 {"set", "fn set(service: str, account: str, secret: str) -> void!", "cfire::keychain::set(service, account, secret)", "Stores or updates a generic password for `(service, account)` in the OS keychain.", "try keychain.set(\"dev.flint.vault\", \"master\", token)"},
                 {"get", "fn get(service: str, account: str) -> str!", "cfire::keychain::get(service, account)", "Retrieves the secret stored for `(service, account)` from the OS keychain.", "sec := try keychain.get(\"dev.flint.vault\", \"master\")"},
-                {"delete_password", "fn delete_password(service: str, account: str) -> void!", "cfire::keychain::delete_password(service, account)", "Removes the credential entry for `(service, account)` from the OS keychain.", "try keychain.delete_password(\"dev.flint.vault\", \"master\")"}
+                {"delete_password", "fn delete_password(service: str, account: str) -> void!", "cfire::keychain::delete_password(service, account)", "Removes the credential entry for `(service, account)` from the OS keychain.", "try keychain.delete_password(\"dev.flint.vault\", \"master\")"},
+                {"authenticate_biometric", "fn authenticate_biometric(reason: str, allow_passcode: bool = true) -> bool!", "cfire::keychain::authenticate_biometric(reason, allow_passcode)", "Prompts for Face ID / Touch ID (with optional device passcode fallback when `allow_passcode` is `true`) via Apple `LocalAuthentication`; returns `Err` on unsupported platforms or when invoked on a GUI main thread.", "ok := try keychain.authenticate_biometric(\"Unlock vault\", allow_passcode: true)"}
             }
         },
         {
@@ -458,7 +454,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"get", "fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!", "cfire::http::get(url, headers, verify_peer, timeout_ms)", "Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables).", "resp := try http.get(\"https://127.0.0.1:8443/health\", {}, false, timeout_ms: 5000)"},
                 {"post", "fn post(url: str, body: str, content_type: str = \"application/json\", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!", "cfire::http::post(url, body, content_type, headers, verify_peer, timeout_ms)", "Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables).", "resp := try http.post(\"http://127.0.0.1:8080/items\", \"{\\\"id\\\": 1}\")"},
                 {"request", "fn request(method: str, url: str, body: str = \"\", content_type: str = \"\", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = \"\", timeout_ms: i64 = 30000) -> Response!", "cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file, timeout_ms)", "Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables).", "resp := try http.request(\"DELETE\", \"http://127.0.0.1:8080/items/1\")"},
-                {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = \"\", timeout_ms: i64 = 30000) -> void!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
+                {"post_sse", "fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = \"\", timeout_ms: i64 = 30000) -> Response!", "cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)", "Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.", "try http.post_sse(url, payload, headers, |ev| { print(\"{}\", ev.data); return true })"},
                 {"serve_in_background", "fn serve_in_background(port: u16, handler: fn(Request) -> Response | Router, tls: TlsConfig = {}, host: str = \"0.0.0.0\") -> HttpServer!", "cfire::http::serve_in_background(port, handler, tls, host)", "Binds a server on `host:port`, starts its background event loop, and returns the live `HttpServer` handle.", "mut srv := try http.serve_in_background(0, router, host: \"127.0.0.1\")"},
                 {"Server.make", "fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = \"0.0.0.0\") -> HttpServer!", "cfire::http::make_server(port, tls, host)", "`make(http.Server, port)` creates an HTTP server listening on `host:port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` serves HTTPS, and `host: \"127.0.0.1\"` restricts binding to loopback.", "mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: \"cert.pem\", key_file: \"key.pem\"}, host: \"127.0.0.1\")"},
                 {"Router.make", "fn make() -> Router", "cfire::http::make_router()", "`make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`).", "mut router := make(http.Router)"},
@@ -563,15 +559,18 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
-            "core:os", "os", "Environment, Standard Streams, Terminal, Pipes & Subprocesses", "(header-only)",
-            "Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).",
+            "core:os", "os", "Environment, App Directories, Terminal, Pipes, URLs & Subprocesses", "(header-only; -lshell32 -lole32 on Windows, -lobjc UIKit on iOS)",
+            "Process environment inspection, working directory and persistent OS app directory queries (`data_dir`, `cache_dir`, `documents_dir`), safe external URL launching (`open_url`), standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).",
             {
                 {"args", "fn args() -> []str", "cfire::os::args()", "Returns the command-line arguments passed to the current process.", "argv := os.args()"},
                 {"exit", "fn exit(code: i32)", "cfire::os::exit(code)", "Terminates the current process immediately with status `code`.", "os.exit(1)"},
-                {"getenv", "fn getenv(key: str, fallback: str = \"\") -> str", "cfire::os::getenv(key, fallback)", "Reads environment variable `key`, returning `fallback` if unset.", "mode := os.getenv(\"ENV\", \"dev\")"},
-                {"getenv_opt", "fn getenv_opt(key: str) -> str?", "cfire::os::getenv_opt(key)", "Reads environment variable `key`, returning `none` if unset.", "val := os.getenv_opt(\"API_KEY\") or { return }"},
+                {"getenv", "fn getenv(key: str) -> str?", "cfire::os::getenv(key)", "Reads environment variable `key`, returning `none` if unset.", "mode := os.getenv(\"ENV\") or \"dev\""},
                 {"setenv", "fn setenv(key: str, value: str)", "cfire::os::setenv(key, value)", "Sets environment variable `key` to `value` in the current process.", "os.setenv(\"MODE\", \"prod\")"},
                 {"cwd", "fn cwd() -> str", "cfire::os::cwd()", "Returns the current working directory path.", "dir := os.cwd()"},
+                {"data_dir", "fn data_dir(app: str = \"\") -> str!", "cfire::os::data_dir(app)", "Returns (and creates with `0700` permissions if missing) the OS-standard persistent application data directory (`Application Support` on Apple, `XDG_DATA_HOME` on Linux, `FOLDERID_RoamingAppData` on Windows).", "dir := try os.data_dir(\"myapp\")"},
+                {"cache_dir", "fn cache_dir(app: str = \"\") -> str!", "cfire::os::cache_dir(app)", "Returns (and creates with `0700` permissions if missing) the OS-standard cache directory (`Library/Caches` on Apple, `XDG_CACHE_HOME` on Linux, `FOLDERID_LocalAppData\\\\Cache` on Windows).", "dir := try os.cache_dir(\"myapp\")"},
+                {"documents_dir", "fn documents_dir() -> str!", "cfire::os::documents_dir()", "Returns (and creates with `0700` permissions if missing) the user's OS-standard Documents directory (`~/Documents` on Apple, `XDG_DOCUMENTS_DIR` on Linux, `FOLDERID_Documents` on Windows).", "docs := try os.documents_dir()"},
+                {"open_url", "fn open_url(url: str) -> void!", "cfire::os::open_url(url)", "Opens a validated external URL (`http://`, `https://`, `mailto:`, `tel:`, or custom schemes; rejects `file:` / `javascript:` schemes and control characters) via the OS handler without shell interpretation.", "try os.open_url(\"https://cfire.memo.engineer\")"},
                 {"getpid", "fn getpid() -> i64", "cfire::os::getpid()", "Returns the process ID (PID) of the current process.", "pid := os.getpid()"},
                 {"stdin", "fn stdin() -> File", "cfire::os::stdin_file()", "Returns a non-owning `fs.File` stream handle wrapping standard input (FD 0).", "line := os.stdin().read_line() or { return }"},
                 {"stdout", "fn stdout() -> File", "cfire::os::stdout_file()", "Returns a non-owning `fs.File` stream handle wrapping standard output (FD 1).", "_ = try os.stdout().write_text(\"ok\\n\")"},
@@ -620,7 +619,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Mutex.make", "fn make[T](initial: T) -> Mutex[T]", "cfire::sync::make_mutex<T>(initial)", "`make(sync.Mutex[T], initial)` creates a mutex protecting a value of type `T`; `make(sync.Mutex[void])` is a pure lock.", "mu := make(sync.Mutex[i64], 0)"},
                 {"Atomic.make", "fn make[T](initial: T) -> Atomic[T]", "cfire::sync::make_atomic<T>(initial)", "`make(sync.Atomic[T], initial)` creates an atomic variable holding `initial`.", "hits := make(sync.Atomic[i64], 0)"},
                 {"Channel.send", "fn (ch: Channel[T]) send(val: T)", "ch.send(val)", "Sends a value into the channel and wakes one waiting receiver.", "ch.send(42)"},
-                {"Channel.recv", "fn (ch: Channel[T]) recv() -> T!", "ch.recv()", "Blocks until a value is available or returns an error if the channel is closed and empty.", "v := ch.recv() or 0"},
+                {"Channel.recv", "fn (ch: Channel[T]) recv() -> T?", "ch.recv()", "Blocks until a value is available or returns `none` if the channel is closed and empty.", "v := ch.recv() or 0"},
                 {"Channel.try_recv", "fn (ch: Channel[T]) try_recv() -> T?", "ch.try_recv()", "Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty.", "v := ch.try_recv() or { return }"},
                 {"Channel.recv_timeout", "fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -> T?", "ch.recv_timeout(timeout_ms)", "Waits up to `timeout_ms` milliseconds for a value from the channel, returning `none` on timeout or closed empty channel.", "v := ch.recv_timeout(50) or { return }"},
                 {"Channel.recv_ctx", "fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!", "ch.recv_ctx(ctx)", "Receives from the channel or aborts immediately with an error if `ctx` is cancelled.", "v := try ch.recv_ctx(ctx)"},
@@ -652,20 +651,6 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"Context.reason", "fn (ctx: Context) reason() -> str", "ctx.reason()", "Returns the cancellation reason string.", "msg := ctx.reason()"},
                 {"Context.wait", "fn (ctx: Context) wait()", "ctx.wait()", "Blocks until the Context is cancelled or its deadline expires.", "ctx.wait()"},
                 {"Context.wait_for", "fn (ctx: Context) wait_for(ms: i64) -> bool", "ctx.wait_for(ms)", "Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled.", "cancelled := ctx.wait_for(100)"}
-            }
-        },
-        {
-            "core:tako", "tako", "Tako Cloud SDK Primitives (S3, SQS)", "(header-only)",
-            "Cloud primitives and storage compatibility services (`core:tako`).",
-            {
-                {"NewS3Service", "fn NewS3Service() -> S3Service", "cfire::tako::NewS3Service()", "Creates an S3 compatible storage service client.", "s3 := tako.NewS3Service()"},
-                {"NewSQSService", "fn NewSQSService() -> SQSService", "cfire::tako::NewSQSService()", "Creates an SQS compatible message queue service client.", "sqs := tako.NewSQSService()"},
-                {"S3Service.CreateBucket", "fn (mut s: S3Service) CreateBucket(name: str) -> void!", "s.CreateBucket(name)", "Creates a storage bucket.", "try s3.CreateBucket(\"b\")"},
-                {"S3Service.PutObject", "fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!", "s.PutObject(bucket, key, data, content_type)", "Uploads an object and returns its ETag.", "etag := try s3.PutObject(\"b\", \"k\", \"d\", \"text/plain\")"},
-                {"S3Service.GetObject", "fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!", "s.GetObject(bucket, key)", "Downloads an object from storage.", "obj := try s3.GetObject(\"b\", \"k\")"},
-                {"SQSService.CreateQueue", "fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!", "s.CreateQueue(name, fifo)", "Creates a message queue and returns its URL.", "q := try sqs.CreateQueue(\"q\", true)"},
-                {"SQSService.SendMessage", "fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = \"\", dedup: str = \"\") -> str!", "s.SendMessage(queue_url, body, group, dedup)", "Publishes a message to the queue.", "id := try sqs.SendMessage(q, \"body\")"},
-                {"SQSService.ReceiveMessages", "fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!", "s.ReceiveMessages(queue_url, max_messages)", "Receives available messages from the queue.", "msgs := try sqs.ReceiveMessages(q, 1)"}
             }
         },
         {
@@ -783,6 +768,37 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
+            "ext:audio", "audio", "Audio Engine, Polyphonic Mixer, Synth & WAV", "(AudioToolbox / WebAudio / ALSA)",
+            "Multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.",
+            {
+                {"init", "fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!", "cfire::audio::init(sample_rate, channels)", "Initializes the hardware audio output queue (or headless software mixer in CI).", "try audio.init(48000, 2)"},
+                {"close", "fn close()", "cfire::audio::close()", "Stops all active sounds and streams and releases audio hardware resources.", "defer audio.close()"},
+                {"is_ready", "fn is_ready() -> bool", "cfire::audio::is_ready()", "Returns `true` if the audio subsystem is initialized.", "if audio.is_ready() { ... }"},
+                {"set_master_volume", "fn set_master_volume(vol: f32)", "cfire::audio::set_master_volume(vol)", "Sets the master output volume multiplier (`0.0` to `1.0`).", "audio.set_master_volume(0.8)"},
+                {"master_volume", "fn master_volume() -> f32", "cfire::audio::master_volume()", "Returns the current master output volume multiplier.", "v := audio.master_volume()"},
+                {"rms_level", "fn rms_level() -> f32", "cfire::audio::rms_level()", "Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters.", "rms := audio.rms_level()"},
+                {"peak_level", "fn peak_level() -> f32", "cfire::audio::peak_level()", "Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers.", "pk := audio.peak_level()"},
+                {"gen_tone", "fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)", "Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope.", "w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)"},
+                {"gen_chirp", "fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave", "cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)", "Synthesizes a frequency-swept tone from `start_hz` to `end_hz`.", "sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)"},
+                {"gen_sfx", "fn gen_sfx(preset: SfxPreset) -> Wave", "cfire::audio::gen_sfx(preset)", "Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`).", "coin := audio.gen_sfx(audio.SfxPreset::Coin)"},
+                {"encode_wav", "fn encode_wav(wave: Wave) -> []byte", "cfire::audio::encode_wav(wave)", "Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice.", "wav_bytes := audio.encode_wav(w)"},
+                {"decode_wav", "fn decode_wav(data: []byte) -> Wave!", "cfire::audio::decode_wav(data)", "Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`.", "w := try audio.decode_wav(wav_bytes)"},
+                {"save_wav", "fn save_wav(wave: Wave, path: str) -> void!", "cfire::audio::save_wav(wave, path)", "Writes a `Wave` to disk as a standard `.wav` file.", "try audio.save_wav(w, \"tone.wav\")"},
+                {"load_wav", "fn load_wav(path: str) -> Wave!", "cfire::audio::load_wav(path)", "Loads and decodes a `.wav` file from disk or app bundle.", "w := try audio.load_wav(\"tone.wav\")"},
+                {"load_sound_from_wave", "fn load_sound_from_wave(wave: Wave) -> Sound", "cfire::audio::load_sound_from_wave(wave)", "Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle.", "sfx := audio.load_sound_from_wave(coin)"},
+                {"load_sound", "fn load_sound(path: str) -> Sound!", "cfire::audio::load_sound(path)", "Loads a `.wav` file from disk into a playable polyphonic `Sound` handle.", "sfx := try audio.load_sound(\"click.wav\")"},
+                {"Sound.play", "fn (s: Sound) play()", "s.play()", "Triggers polyphonic playback of the sound.", "sfx.play()"},
+                {"Sound.stop", "fn (s: Sound) stop()", "s.stop()", "Stops active voices playing this sound.", "sfx.stop()"},
+                {"Sound.set_volume", "fn (s: Sound) set_volume(vol: f32)", "s.set_volume(vol)", "Sets playback gain (`0.0` to `2.0`) for this sound.", "sfx.set_volume(0.75)"},
+                {"Sound.set_pitch", "fn (s: Sound) set_pitch(pitch: f32)", "s.set_pitch(pitch)", "Sets playback pitch/rate multiplier (`1.0` = original pitch).", "sfx.set_pitch(1.25)"},
+                {"Sound.set_pan", "fn (s: Sound) set_pan(pan: f32)", "s.set_pan(pan)", "Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right).", "sfx.set_pan(-0.5)"},
+                {"Sound.set_looping", "fn (s: Sound) set_looping(loop: bool)", "s.set_looping(loop)", "Enables or disables seamless loop playback.", "sfx.set_looping(true)"},
+                {"open_stream", "fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!", "cfire::audio::open_stream(sample_rate, channels)", "Opens a real-time push `Stream` for custom DSP synthesis.", "stream := try audio.open_stream(48000, 2)"},
+                {"Stream.push_samples", "fn (st: Stream) push_samples(samples: []f32)", "st.push_samples(samples)", "Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer.", "stream.push_samples(pcm_chunk)"},
+                {"Stream.needs_data", "fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool", "st.needs_data(target_frames)", "Returns `true` when buffered frames fall below `target_frames`.", "if stream.needs_data(1024) { ... }"}
+            }
+        },
+        {
             "ext:compress/zstd", "zstd", "Native Zstandard Frame Compression", "-lzstd",
             "Hardware-accelerated Zstandard frame compression and decompression backed by native `libzstd`.",
             {
@@ -855,6 +871,20 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             }
         },
         {
+            "ext:tako", "tako", "Tako Cloud SDK Primitives (S3, SQS)", "(header-only)",
+            "Cloud primitives and storage compatibility services (`ext:tako`).",
+            {
+                {"NewS3Service", "fn NewS3Service() -> S3Service", "cfire::tako::NewS3Service()", "Creates an S3 compatible storage service client.", "s3 := tako.NewS3Service()"},
+                {"NewSQSService", "fn NewSQSService() -> SQSService", "cfire::tako::NewSQSService()", "Creates an SQS compatible message queue service client.", "sqs := tako.NewSQSService()"},
+                {"S3Service.CreateBucket", "fn (mut s: S3Service) CreateBucket(name: str) -> void!", "s.CreateBucket(name)", "Creates a storage bucket.", "try s3.CreateBucket(\"b\")"},
+                {"S3Service.PutObject", "fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!", "s.PutObject(bucket, key, data, content_type)", "Uploads an object and returns its ETag.", "etag := try s3.PutObject(\"b\", \"k\", \"d\", \"text/plain\")"},
+                {"S3Service.GetObject", "fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!", "s.GetObject(bucket, key)", "Downloads an object from storage.", "obj := try s3.GetObject(\"b\", \"k\")"},
+                {"SQSService.CreateQueue", "fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!", "s.CreateQueue(name, fifo)", "Creates a message queue and returns its URL.", "q := try sqs.CreateQueue(\"q\", true)"},
+                {"SQSService.SendMessage", "fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = \"\", dedup: str = \"\") -> str!", "s.SendMessage(queue_url, body, group, dedup)", "Publishes a message to the queue.", "id := try sqs.SendMessage(q, \"body\")"},
+                {"SQSService.ReceiveMessages", "fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!", "s.ReceiveMessages(queue_url, max_messages)", "Receives available messages from the queue.", "msgs := try sqs.ReceiveMessages(q, 1)"}
+            }
+        },
+        {
             "ext:webui", "webui", "Hybrid Native WebView & Two-Way Typed RPC Application Framework", "(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)",
             "Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (`WKWebView` on macOS & iOS, `WebKitGTK` on Linux, `WebView2` on Windows) over a custom `app://localhost/` URI scheme with two-way typed struct RPC (`app.bind[T]`), live event streaming (`app.on`, `app.emit`), reactive key-value state (`app.set_state`), and an injected `window.backend.*` ES6 Proxy + `window.invoke` + `window.runtime.*` JavaScript bridge.",
             {
@@ -864,14 +894,15 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.bind_action", "fn (mut app: App) bind_action(name: str, handler: fn() -> any!)", "app.bind_action(name, handler)", "Binds a zero-argument action closure to `window.backend.<name>()`.", "app.bind_action(\"reset_desk\") || { return \"ok\" }"},
                 {"App.bind_action_async", "fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)", "app.bind_action_async(name, handler)", "Binds a zero-argument RPC action that executes asynchronously on a background worker thread.", "app.bind_action_async(\"sync_now\") || { return run_sync() }"},
                 {"App.bind_raw", "fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)", "app.bind_raw(name, handler)", "Binds a raw JSON string RPC handler to `window.backend.<name>(params)`.", "app.bind_raw(\"raw_op\") |raw_json| { return raw_json }"},
-                {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop lifecycle events (`\"window:close_requested\"`, `\"window:fullscreen\"` with `{\"fullscreen\":bool}`, `\"window:file_drop\"` with `{\"paths\":[...]}`, and `\"window:reopen\"` on macOS Dock click).", "app.on(\"window:file_drop\") |payload| { println(\"{}\", payload) }"},
+                {"App.on", "fn (mut app: App) on(event: str, handler: fn(str))", "app.on(event, handler)", "Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop/mobile lifecycle events (`\"app:active\"`, `\"app:inactive\"`, `\"app:foreground\"`, `\"app:background\"`, `\"app:open_url\"`, `\"app:notification_opened\"`, `\"app:external_navigation\"`, `\"app:webview_reloaded\"`, `\"keyboard:change\"`, `\"window:close_requested\"`, `\"window:fullscreen\"`, `\"window:file_drop\"`, and `\"window:reopen\"`).", "app.on(\"app:open_url\") |payload| { println(\"{}\", payload) }"},
                 {"App.emit", "fn (mut app: App) emit(event: str, payload: any)", "app.emit(event, payload)", "Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners.", "app.emit(\"meter:peak\", status)"},
                 {"App.emit_bytes", "fn (mut app: App) emit_bytes(event: str, data: []byte)", "app.emit_bytes(event, data)", "Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`.", "app.emit_bytes(\"pty:data\", chunk)"},
                 {"App.clear_history", "fn (mut app: App) clear_history()", "app.clear_history()", "Clears the bounded in-memory ring buffer of recorded emitted events.", "app.clear_history()"},
                 {"App.set_max_history", "fn (mut app: App) set_max_history(max_events: usize)", "app.set_max_history(max_events)", "Sets the maximum number of emitted events retained per event name for testing inspection (`0` disables history retention).", "app.set_max_history(128)"},
                 {"App.clipboard_set", "fn (app: App) clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)", "app.clipboard_set(text, concealed, clear_after_ms)", "Copies `text` to the native OS system clipboard (`NSPasteboard` on macOS, `GtkClipboard` on Linux, `Win32` on Windows), optionally marking it concealed (`org.nspasteboard.ConcealedType` / `ExcludeClipboardContentFromMonitorProcessing`) and auto-clearing after `clear_after_ms` if unchanged.", "app.clipboard_set(token, true, 15000)"},
                 {"App.clipboard_set_secret", "fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)", "app.clipboard_set_secret(text, clear_after_ms)", "Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after `clear_after_ms` if the clipboard has not been overwritten.", "app.clipboard_set_secret(password, 30000)"},
-                {"App.clipboard_get", "fn (app: App) clipboard_get() -> str", "app.clipboard_get()", "Reads current plain text from the native OS system clipboard.", "clip := app.clipboard_get()"},
+                {"App.is_clipboard_concealed", "fn (app: App) is_clipboard_concealed() -> bool", "app.is_clipboard_concealed()", "Returns `true` if the most recent clipboard write was marked as concealed/secret.", "concealed := app.is_clipboard_concealed()"},
+                {"App.clipboard_get", "fn (app: App) clipboard_get() -> str", "app.clipboard_get()", "Reads current plain text from the native OS system clipboard (triggers iOS 16+ OS paste permission prompt when reading external apps' pasteboard contents).", "clip := app.clipboard_get()"},
                 {"App.monospace_fonts", "fn (app: App) monospace_fonts() -> []str", "app.monospace_fonts()", "Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows).", "fonts := app.monospace_fonts()"},
                 {"App.set_icon", "fn (mut app: App) set_icon(icon_path: str)", "app.set_icon(icon_path)", "Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file.", "app.set_icon(\"assets/icon.png\")"},
                 {"App.set_tray", "fn (mut app: App) set_tray(icon_path: str, tooltip: str = \"\")", "app.set_tray(icon_path, tooltip)", "Configures a system tray / menu-bar status item (`NSStatusItem` on macOS, `GtkStatusIcon` on Linux, `Shell_NotifyIconW` on Windows).", "app.set_tray(\"assets/tray.png\", \"Flint\")"},
@@ -906,7 +937,8 @@ inline void apply_module_metadata(StdModuleDoc& m) {
                 {"App.center", "fn (mut app: App) center()", "app.center()", "Centers the native window on the active screen.", "app.center()"},
                 {"App.open_file_dialog", "fn (app: App) open_file_dialog(title: str = \"Open File\") -> str", "app.open_file_dialog(title)", "Opens a native OS file picker dialog and returns the selected path (or `\"\"` if cancelled).", "path := app.open_file_dialog(\"Select Audio Track\")"},
                 {"App.save_file_dialog", "fn (app: App) save_file_dialog(title: str = \"Save File\", default_name: str = \"\") -> str", "app.save_file_dialog(title, default_name)", "Opens a native OS save-file dialog and returns the chosen destination path.", "dest := app.save_file_dialog(\"Export Preset\", \"studio.json\")"},
-                {"App.message_dialog", "fn (app: App) message_dialog(title: str, message: str)", "app.message_dialog(title, message)", "Displays a modal native OS alert dialog.", "app.message_dialog(\"Export Complete\", \"Saved master preset.\")"},
+                {"App.allow_navigation_origin", "fn (mut app: App) allow_navigation_origin(origin: str)", "app.allow_navigation_origin(origin)", "Permits in-WebView navigation to an additional exact `scheme://host[:port]` origin (for embedded OAuth/dev flows). All other external links open safely in the OS browser (`SFSafariViewController` on iOS, default browser on desktop) and emit `\"app:external_navigation\"`.", "app.allow_navigation_origin(\"https://auth.example.com\")"},
+                {"App.initial_url", "fn (app: App) initial_url() -> str?", "app.initial_url()", "Returns the cold-start Universal Link or deep-link URL that launched the app, if any (`none` on normal launch).", "if u := app.initial_url() { route(u) }"},
                 {"App.call_rpc", "fn (mut app: App) call_rpc(method: str, params_json: str = \"{}\") -> str!", "app.call_rpc(method, params_json)", "Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks).", "res := try app.call_rpc(\"set_track\", \"{\\\"channel\\\":1}\")"},
                 {"App.dispatch_event", "fn (mut app: App) dispatch_event(event: str, data_json: str = \"{}\")", "app.dispatch_event(event, data_json)", "Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing.", "app.dispatch_event(\"fader:input\", \"{\\\"channel\\\":1}\")"},
                 {"App.resolve_asset_mime", "fn (app: App) resolve_asset_mime(path: str) -> str", "app.resolve_asset_mime(path)", "Returns the MIME type the embedded asset server reports for `path` (useful in headless contract tests).", "mime := app.resolve_asset_mime(\"/index.html\")"},
@@ -958,6 +990,7 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {"cfire/ERROR", "Tooling", "An internal error with no more specific code."},
             {"cfire/ESCAPING-CAPTURE-MUT", "Concurrency", "An escaping closure mutates a captured outer variable."},
             {"cfire/FILE-NOT-FOUND", "Tooling", "A file named on the command line or imported does not exist."},
+            {"cfire/INTERNAL-BACKEND-ERROR", "Tooling", "Internal compiler error: the C++ backend rejected generated code for a pure .cf program that Sema accepted (please report)."},
             {"cfire/INVALID-ATTRIBUTE", "Attributes", "An attribute on a declaration is unknown, misplaced, or has invalid arguments."},
             {"cfire/INVALID-IMPORT", "Imports", "A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`)."},
             {"cfire/INVALID-INDEX", "Types", "Indexing a value that is not a string, slice, array or map."},
@@ -992,10 +1025,10 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             {"cfire/UNKNOWN-STDLIB-FN", "Names", "A function that the stdlib module does not export."},
             {"cfire/UNDECLARED-TYPE", "Names", "A type name that is not a builtin, a type declared in the package, or a type parameter in scope."},
             {"cfire/UNKNOWN-STDLIB-TYPE", "Names", "A type that the stdlib module does not export, or a `build.*` type outside `build.cf`."},
-            {"cfire/UNKNOWN-TYPE", "Types", "An expression whose type cannot be inferred (warning)."},
+            {"cfire/UNKNOWN-TYPE", "Types", "An expression whose type cannot be inferred (error in pure .cf, warning in C++ interop)."},
             {"cfire/UNRESOLVED-PACKAGE", "Imports", "A local package import that cannot be found."},
             {"cfire/UNSATISFIED-CONSTRAINT", "Generics", "A type argument that does not satisfy the interface constraint."},
-            {"cfire/UNWRAPPED-OPTIONAL", "Errors", "A member access on a `T?` value without unwrapping."},
+            {"cfire/UNWRAPPED-OPTIONAL", "Errors", "An optional `T?` value used where its non-optional `T` value is required without unwrapping (`or` / `if x := ...`)."},
             {"cfire/WRONG-ARG-COUNT", "Types", "A builtin called with the wrong number of arguments."},
         };
         for (const auto& d : diagnostics_catalog()) {

@@ -41,7 +41,7 @@ fn capture_forwarded_code(path: str) -> i32 {
 }
 
 fn main() -> void! {
-    base := os.getenv("TEMP", os.getenv("TMPDIR", "/tmp"))
+    base := os.getenv("TEMP") or (os.getenv("TMPDIR") or "/tmp")
     dir := "{base}/cfire_conf_fs_{os.getpid()}"
     try fs.mkdir_all(dir)
     defer {

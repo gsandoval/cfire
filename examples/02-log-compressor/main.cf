@@ -21,7 +21,10 @@ fn compress_roundtrip(opts: Options) -> usize! {
 }
 
 fn main() {
-    opts := cli.parse[Options]()
+    opts := cli.parse[Options]() or err {
+        println("Invalid options: {}", err.message())
+        return
+    }
     written := compress_roundtrip(opts) or err {
         println("Compression failed: {}", err.message())
         return

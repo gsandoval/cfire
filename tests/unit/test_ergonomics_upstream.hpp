@@ -650,11 +650,11 @@ fn main() {
                         "UPSTREAM-03: core:crypto/aes functions in stdlib_catalog");
                 require(has_cat_fn("core:crypto/hmac", "pbkdf2_sha256"),
                         "UPSTREAM-03: core:crypto/hmac pbkdf2_sha256 in stdlib_catalog");
-                require(has_cat_fn("core:os", "args") && has_cat_fn("core:os", "exit") && has_cat_fn("core:os", "getenv_opt") &&
+                require(has_cat_fn("core:os", "args") && has_cat_fn("core:os", "exit") && has_cat_fn("core:os", "getenv") &&
                         has_cat_fn("core:os", "term_size") && has_cat_fn("core:os", "RawTerminal.make") && has_cat_fn("core:os", "on_signal") &&
                         has_cat_fn("core:os", "stdin") && has_cat_fn("core:os", "pipe") &&
-                        !has_cat_fn("core:os", "read_line"),
-                        "UPSTREAM-03: core:os functions in stdlib_catalog (and removed read_line absent)");
+                        !has_cat_fn("core:os", "getenv_opt") && !has_cat_fn("core:os", "read_line"),
+                        "UPSTREAM-03: core:os functions in stdlib_catalog (and removed getenv_opt/read_line absent)");
                 // `core:str` is retired; string operations are builtin methods and parsing is `T.parse(s)`.
                 require(!has_cat_fn("core:str", "trim") &&
                         cfire::frontend::find_builtin_method(cfire::frontend::BmStr, "trim") != nullptr &&
@@ -776,9 +776,9 @@ fn main() {}
 )", "cfire/INVALID-IMPORT", "bad_ext_net_http.cf");
 
                 require_sema_error(R"(package main
-import "ext:audio"
+import "core:audio"
 fn main() {}
-)", "cfire/INVALID-IMPORT", "bad_ext_audio.cf");
+)", "cfire/INVALID-IMPORT", "bad_core_audio.cf");
 
                 require_sema_error(R"(package main
 import "core:db/sqlite"
@@ -923,8 +923,8 @@ test "upstream round 3 language, json, concurrency, and smart-ptr suite" {
     rb := pb.make_rec()
     assert_eq(ra.id + rb.id, 30)
 
-    // os.getenv returns non-optional str directly
-    env_val := os.getenv("CFIRE_NONEXISTENT_VAR_999", "fallback_val")
+    // os.getenv returns optional str? directly
+    env_val := os.getenv("CFIRE_NONEXISTENT_VAR_999") or "fallback_val"
     assert_eq(env_val, "fallback_val")
     assert(os.getpid() > 0)
 

@@ -25,22 +25,27 @@ namespace cfire::frontend {
 
 [[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze_resilient(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {},
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns = {}
 ) -> CheckedFile;
 
 [[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {},
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns = {}
 ) -> std::expected<CheckedFile, std::string>;
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_STMT_IMPL)
 [[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze_resilient(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params,
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns
 ) -> CheckedFile {
     CheckedFile cf;
     cf.ast = std::move(ast);
     cf.cpp_fn_params = std::move(pre_cpp_fn_params);
+    cf.cpp_fn_returns = std::move(pre_cpp_fn_returns);
+    cf.has_cpp_interop = !cf.cpp_fn_params.empty();
 
     // Populate import qualifiers, aliases, and shadowed default qualifiers
     std::unordered_set<std::string> unaliased_core_modules;
@@ -94,6 +99,9 @@ namespace cfire::frontend {
     }
     for (const auto& un : unaliased_core_modules) {
         cf.shadowed_default_qualifiers.erase(un);
+    }
+    if (!cf.cpp_qualifiers.empty()) {
+        cf.has_cpp_interop = true;
     }
     if (has_unaliased_cpp) {
         cf.shadowed_default_qualifiers.erase("cpp");
@@ -337,7 +345,11 @@ namespace cfire::frontend {
     auto check_type_params_bounds = [&](const std::vector<TypeParam>& tps, std::string_view decl_path, int decl_line) {
         for (const auto& tp : tps) {
             for (const auto& bound : tp.constraints) {
-                if (bound.empty() || cf.interface_defs.contains(bound)) continue;
+                if (bound.empty() || cf.interface_defs.contains(bound) ||
+                    bound == "Comparable" || bound == "Ordered" ||
+                    bound == "Numeric" || bound == "Integer") {
+                    continue;
+                }
                 cf.add_error(cfire::diag::diag(decl_path, decl_line, 1, "cfire/UNDECLARED-TYPE",
                     std::format("unknown interface constraint '{}' on type parameter '{}'", bound, tp.name),
                     {{"name", bound}}));
@@ -806,6 +818,16 @@ namespace cfire::frontend {
             tags.push_back(std::move(info));
         }
         cf.struct_tags[st.name] = std::move(tags);
+        cf.struct_defs[st.name] = st;
+        if (!st.package_name.empty()) {
+            std::string orig_name = st.name;
+            if (orig_name.starts_with("cfire_pkg_")) {
+                if (auto sep = orig_name.find("__"); sep != std::string::npos) {
+                    orig_name = orig_name.substr(sep + 2);
+                }
+            }
+            cf.struct_defs[st.package_name + "." + orig_name] = st;
+        }
     }
 
     // 3. Index Functions & Methods
@@ -827,13 +849,25 @@ namespace cfire::frontend {
 
     // 3b. Resolve Global Variables & Struct Default Value Expressions
     for (const auto& gv : cf.ast.global_vars) {
-        if (!gv.value) continue;
+        if (!gv.value) {
+            if (gv.type) {
+                TypeId gt = cf.type_table.from_typeref(*gv.type);
+                if (gt.is_valid() && !gt.is_unknown()) gv.resolved_type_id = gt.index;
+            }
+            continue;
+        }
         std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
         FnDecl gv_dummy_fn;
         gv_dummy_fn.name = "__cfire_global_init";
         gv_dummy_fn.package_name = gv.package_name;
         SemaFnChecker gv_checker(gv_path, gv_dummy_fn, cf, cf.warnings, cf.errors, cf.diagnostics, true);
         (void)gv_checker.check_expr(gv.value);
+        TypeId gt = gv.type
+            ? gv_checker.resolve_typeref(*gv.type)
+            : ((gv.value->resolved_type_id != 0) ? TypeId{gv.value->resolved_type_id} : gv_checker.infer_expr_type_id_sema(gv.value));
+        if (gt.is_valid() && !gt.is_unknown()) {
+            gv.resolved_type_id = gt.index;
+        }
     }
     for (const auto& st : cf.ast.structs) {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
@@ -897,9 +931,10 @@ namespace cfire::frontend {
 
 [[nodiscard]] CFIRE_SEMA_ANALYZE_INLINE auto analyze(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params,
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns
 ) -> std::expected<CheckedFile, std::string> {
-    auto cf = analyze_resilient(std::move(ast), std::move(pre_cpp_fn_params));
+    auto cf = analyze_resilient(std::move(ast), std::move(pre_cpp_fn_params), std::move(pre_cpp_fn_returns));
     if (!cf.errors.empty()) {
         return std::unexpected(cf.errors.front());
     }

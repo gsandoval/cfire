@@ -5,11 +5,12 @@ This directory maintains the active planning state and project backlog for the `
 ## Core Files
 
 1. [`backlog.md`](./backlog.md): Main engineering backlog (`CF-001` – `CF-197`, decisions `Q1` – `Q54`).
-2. [`backlog-build-distribution.md`](./backlog-build-distribution.md): Topic-focused backlog for compiler/build performance, progressive compilation, caching, 6-target pre-compiled binary distribution, language/documentation consistency, and release/installer/upgrade automation (`CF-198` – `CF-210` and `CF-240` – `CF-245`, decisions `Q55` – `Q61` and `Q70` – `Q73`).
-3. [`flint.md`](./flint.md): Topic-focused downstream audit and backlog (`CF-211` – `CF-239`, decisions `Q62` – `Q69`; future items anywhere in `docs/planning/` start at `CF-246` and `Q74`).
-4. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
-5. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
-6. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
+2. [`backlog-build-distribution.md`](./backlog-build-distribution.md): Topic-focused backlog for compiler/build performance, progressive compilation, caching, 6-target pre-compiled binary distribution, language/documentation consistency, release/installer/upgrade automation, and VM gate acceleration (`CF-198` – `CF-210` and `CF-240` – `CF-246`, decisions `Q55` – `Q61` and `Q70` – `Q74`).
+3. [`flint.md`](./flint.md): Topic-focused downstream audit and backlog (`CF-211` – `CF-239`, decisions `Q62` – `Q69`).
+4. [`backlog-ios-desktop-webui.md`](./backlog-ios-desktop-webui.md): Topic-focused backlog for full iOS ship-readiness (`ext:webui`, `core:os`, `core:keychain`, `core:build`), Apple/Windows packaging & CLI symmetry, 4-OS navigation/IPC origin security, professional OS primitives + native handle escape hatch, and `core:*` vs `ext:*` taxonomy realignment (`CF-247` – `CF-254`, decisions `Q75` – `Q80`; future items anywhere in `docs/planning/` start at `CF-255` and `Q81`).
+5. [`active.md`](./active.md): The live workbench tracking the currently active milestone and verification gates.
+6. [`SENIOR_ENGINEER_REVIEW_GUIDELINES.md`](../SENIOR_ENGINEER_REVIEW_GUIDELINES.md): Mandatory architectural review checklist, memory/lifetime safety rules, and verification quality gates.
+7. [`audit/PLAYBOOK.md`](./audit/PLAYBOOK.md): Repeatable, clean-context language audit (soundness, uniformity, orthogonality, tooling, security, regression testing). Run it at the end of every backlog wave and before each release. Reports go in [`audit/reports/`](./audit/reports/); the probe corpus and tools live in [`scripts/audit/`](../../scripts/audit/).
 
 ---
 
@@ -18,7 +19,7 @@ This directory maintains the active planning state and project backlog for the `
 Whenever work is performed on this repository, the following protocol **must** be followed:
 
 ```
-[backlog.md / backlog-build-distribution.md / flint.md] ──(Promote)──> [active.md] ──(Implement & Verify)
+[backlog.md / backlog-build-distribution.md / flint.md / backlog-ios-desktop-webui.md] ──(Promote)──> [active.md] ──(Implement & Verify)
 ```
 
 ### Quality Gates (Mandatory): three commands

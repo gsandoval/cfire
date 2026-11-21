@@ -423,6 +423,7 @@ struct StructLitExpr {
 
 struct ArrayLitExpr {
     std::vector<ExprPtr> elements{};
+    mutable uint32_t resolved_elem_type_id = 0;
 };
 
 struct ClosureExpr {
@@ -436,6 +437,8 @@ struct ClosureExpr {
     // `scope.spawn |mut codes[i]| { codes[i] = v }`: the task may write that one element and
     // nothing else of `codes`. Each entry is (slice variable, index expression).
     std::vector<std::pair<std::string, ExprPtr>> slot_captures{};
+    mutable std::vector<uint32_t> resolved_param_types{};
+    mutable uint32_t resolved_return_type_id = 0;
 };
 
 struct CallArg {
@@ -468,6 +471,7 @@ struct OrExpr {
     std::string err_var{};
     std::vector<StmtPtr> handler_body{};
     ExprPtr fallback_val = nullptr;
+    mutable uint32_t resolved_type_id = 0;
 };
 
 struct TupleExpr {
@@ -559,6 +563,7 @@ struct MatchExpr {
     // Set by Sema when every arm yields the same primitive type: codegen gives the lowered lambda an
     // explicit return type, so a literal arm (`_ => 0`) converts instead of clashing with `i64(...)`.
     mutable std::string result_type{};
+    mutable uint32_t resolved_type_id = 0;
 };
 
 using ExprVariant = std::variant<
@@ -585,6 +590,7 @@ struct Expr {
     int line = 1;
     int col = 1;
     uint64_t id = 0;
+    mutable uint32_t resolved_type_id = 0;
 
     Expr() = default;
     Expr(ExprVariant n, int l, int c, uint64_t i = 0) : node(std::move(n)), line(l), col(c), id(i) {}
@@ -609,6 +615,7 @@ struct VarDeclStmt {
     ExprPtr init = nullptr;
     int line = 1;
     int col = 1;
+    mutable uint32_t resolved_type_id = 0;
 };
 
 struct AssignStmt {
@@ -647,6 +654,7 @@ struct IfStmt {
     std::string unwrap_var{};
     bool unwrap_mut = false;
     ExprPtr unwrap_init = nullptr;
+    mutable uint32_t resolved_unwrap_type_id = 0;
 };
 
 struct ForStmt {
@@ -661,6 +669,9 @@ struct ForStmt {
     // Conditional unwrap: `for [mut] val := expr { ... }`
     bool is_unwrap = false;
     bool unwrap_mut = false;
+    mutable uint32_t resolved_index_type_id = 0;
+    mutable uint32_t resolved_item_type_id = 0;
+    mutable uint32_t resolved_unwrap_type_id = 0;
 };
 
 struct MatchStmt {
@@ -689,6 +700,7 @@ struct AsyncScopeStmt {
     int result_col = 1;
     // Set by Sema: the element type `T` of the result (`i32`), so codegen can declare the vector.
     mutable std::string result_elem_type{};
+    mutable uint32_t resolved_result_elem_type_id = 0;
 };
 
 struct ExprStmt {
@@ -701,6 +713,7 @@ struct DestructureVarDeclStmt {
     ExprPtr init = nullptr;
     int line = 1;
     int col = 1;
+    mutable std::vector<uint32_t> resolved_binding_types{};
 };
 
 struct DestructureAssignStmt {
@@ -861,6 +874,7 @@ struct GlobalVarDecl {
     int line = 1;
     std::string package_name{};
     std::string source_path{};
+    mutable uint32_t resolved_type_id = 0;
 };
 
 struct BenchParamVariation {

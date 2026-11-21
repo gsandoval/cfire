@@ -591,15 +591,17 @@ void test_data_encodings_base64_hex_csv([[maybe_unused]] const std::filesystem::
 
     // 3. CSV RFC 4180 parsing and stringification
     std::string raw_csv = "id,name,notes\n1,\"Alice, Smith\",\"Multi-line\nNote\"\n2,Bob,\"Special \"\"Quotes\"\"\"";
-    auto table = cfire::csv::parse(raw_csv);
+    auto table_res = cfire::csv::parse(raw_csv);
+    require(table_res.has_value(), "csv::parse succeeds on valid RFC 4180 CSV");
+    const auto& table = *table_res;
     require(table.size() == 3, "csv parsed 3 rows");
     require(table[1][1] == "Alice, Smith", "csv parsed comma within quotes");
     require(table[1][2] == "Multi-line\nNote", "csv parsed embedded newline");
     require(table[2][2] == "Special \"Quotes\"", "csv parsed escaped double quotes");
 
     std::string serialized = cfire::csv::stringify(table);
-    auto table2 = cfire::csv::parse(serialized);
-    require(table2 == table, "csv stringify and re-parse roundtrip");
+    auto table2_res = cfire::csv::parse(serialized);
+    require(table2_res.has_value() && *table2_res == table, "csv stringify and re-parse roundtrip");
 
     // 4. Substring Search Primitives in core:str (STDLIB-P1-04)
     std::string_view sample_path = "/usr/local/include/sqlite/sqlite.h";
@@ -1278,8 +1280,8 @@ mut count: i64 = 99
         if (checked) {
             require(checked->warnings.empty(), "canonical declarations emit zero warnings");
             std::string cpp = cfire::frontend::emit_cpp(*checked);
-            require(cpp.contains("inline const auto app_name = \"SapphireServer\";"), "codegen package const inferred var");
-            require(cpp.contains("inline auto port = 8080;"), "codegen package mut inferred var");
+            require(cpp.contains("inline const std::string app_name = \"SapphireServer\";"), "codegen package const inferred var");
+            require(cpp.contains("inline std::int64_t port = 8080;"), "codegen package mut inferred var");
             require(cpp.contains("inline const std::int32_t max_conn = 1000;"), "codegen package const typed var");
             require(cpp.contains("inline bool is_ready = true;"), "codegen package mut typed var");
         }
@@ -1452,3 +1454,4 @@ fn main() {}
 #include "test_ext_soundness_cache_and_clean.hpp"
 #include "test_fs_http_time_ipc.hpp"
 #include "test_webui_security_and_desktop.hpp"
+#include "test_build_manifest_ios.hpp"

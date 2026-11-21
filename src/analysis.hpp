@@ -392,6 +392,7 @@ struct ScopedDevDebugGuard {
     const bool want_clang = !is_build_manifest && opts.verify_cpp_backend && (has_cpp_interop || opts.force_cpp_verify);
 
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns;
     if (has_cpp_interop || want_clang) {
         if (has_real_dir) {
             (void)cfire::build::build_external_deps_for_plan(parent_dir, local_plan);
@@ -435,9 +436,15 @@ struct ScopedDevDebugGuard {
                 if (!imp.is_cpp) continue;
                 auto idx = bridge::inspect_header(imp.path, base_header_cflags, hdr_cache_dir, cxx_bin);
                 if (idx) {
+                    std::string qual = imp.alias.empty() ? "cpp" : imp.alias;
                     for (const auto& [sym_name, sym] : idx->symbols) {
                         if (sym.kind == "FunctionDecl") {
                             pre_cpp_fn_params[sym_name] = sym.param_types;
+                            pre_cpp_fn_params[qual + "." + sym_name] = sym.param_types;
+                            if (!sym.return_type.empty()) {
+                                pre_cpp_fn_returns[sym_name] = sym.return_type;
+                                pre_cpp_fn_returns[qual + "." + sym_name] = sym.return_type;
+                            }
                         }
                     }
                     local_plan.cpp_headers[imp.path] = std::move(*idx);
@@ -447,7 +454,7 @@ struct ScopedDevDebugGuard {
     }
 
     // 4. Single-pass resilient semantic analysis
-    auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast), std::move(pre_cpp_fn_params));
+    auto chk = cfire::frontend::analyze_resilient(std::move(merged_ast), std::move(pre_cpp_fn_params), std::move(pre_cpp_fn_returns));
     // Sema diagnostics are structured at detection; here they only get exact ranges and fix-its.
     // Diagnostics from sibling package files keep their own file; ranges are resolved against this file only.
     for (auto d : chk.diagnostics) {
@@ -465,17 +472,18 @@ struct ScopedDevDebugGuard {
     // 5. Conditional single-pass C++23 backend syntax check over stdin (no redundant re-parse or disk writes)
     if (chk.errors.empty() && !unresolved_local_package && want_clang && !file_path.empty() && !rt_dir.empty()) {
         (void)cfire::build::populate_checked_build_plan(chk, local_plan, rt_dir, /*inspect_clang_ast=*/false);
+        const std::string backend_code = local_plan.has_cpp_interop ? "cfire/TYPE-ERROR" : "cfire/INTERNAL-BACKEND-ERROR";
         std::string cpp_code = cfire::frontend::emit_cpp(chk, is_test_f);
         auto syntax_check = cfire::build::verify_cpp_syntax_only(fpath, cpp_code, local_plan, rt_dir, opts.extra_includes);
         if (!syntax_check) {
             auto clang_lines = cfire::diag::split_lines(syntax_check.error());
             bool found_diag = false;
             for (const auto& cl : clang_lines) {
-                const bool is_err = cl.contains(": error:") || cl.contains(": fatal error:");
+                const bool is_err = cl.contains(": error:") || cl.contains(": fatal error:") || cl.starts_with("error: ");
                 const bool is_warn = cl.contains(": warning:");
                 if (is_err || is_warn) {
                     auto d = cfire::diag::parse_clang_diagnostic_line(
-                        cl, file_path, is_err ? "error" : "warning", "cfire/TYPE-ERROR");
+                        cl, file_path, is_err ? "error" : "warning", backend_code);
                     if (d.file == file_path && d.line == 1) {
                         for (const auto& imp : chk.ast.imports) {
                             if (imp.is_cpp && !imp.path.empty() && d.message.contains(imp.path)) {
@@ -492,7 +500,7 @@ struct ScopedDevDebugGuard {
             }
             if (!found_diag && !syntax_check.error().empty()) {
                 auto d = cfire::diag::parse_clang_diagnostic_line(
-                    syntax_check.error(), file_path, "error", "cfire/TYPE-ERROR");
+                    syntax_check.error(), file_path, "error", backend_code);
                 diags.push_back(std::move(d));
             }
         }

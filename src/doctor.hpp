@@ -513,11 +513,11 @@ struct CheckItem {
         if (check_pkg_or_header("alsa", "alsa/asoundlib.h", alsa_det) ||
             std::filesystem::exists("/usr/lib/x86_64-linux-gnu/libasound.so.2") ||
             std::filesystem::exists("/usr/lib/aarch64-linux-gnu/libasound.so.2")) {
-            items.push_back({"Cross-Platform Targets", "Linux ALSA Audio (`core:audio`)", "ok", "libasound.so.2 ready", ""});
+            items.push_back({"Cross-Platform Targets", "Linux ALSA Audio (`ext:audio`)", "ok", "libasound.so.2 ready", ""});
         } else {
             items.push_back({
                 "Cross-Platform Targets",
-                "Linux ALSA Audio (`core:audio`)",
+                "Linux ALSA Audio (`ext:audio`)",
                 "warn",
                 "Optional: libasound2 not installed (needed only for live speaker playback; WAV/DSP synthesis works offline)",
                 pm == "apt" ? "sudo apt-get install -y libasound2-dev" : "Install alsa-lib"

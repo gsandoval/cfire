@@ -36,19 +36,19 @@
 auto main(int argc, char** argv) -> int {
     cfire::detail::set_process_args(argc, argv);
     #line 22 "error_handling.cf"
-    auto _try_1 = parse_even("42");
+    std::expected<std::int64_t, cfire::Error> _try_1 = parse_even("42");
     if (!_try_1.has_value()) {
         std::println(stderr, "Error: {}", _try_1.error().message());
         return 1;
     }
-    auto num = std::move(*_try_1);
+    std::int64_t num = std::move(*_try_1);
     #line 23 "error_handling.cf"
-    auto _res_2 = find_name(1);
+    std::optional<std::string> _res_2 = find_name(1);
     if (!_res_2.has_value()) {
         std::println(stderr, "Error: {}", cfire::make_error("user not found").error().message());
         return 1;
     }
-    auto user = std::move(*_res_2);
+    std::string user = std::move(*_res_2);
     #line 24 "error_handling.cf"
     (void)(std::println("user {} with num {}", user, num));
     return 0;

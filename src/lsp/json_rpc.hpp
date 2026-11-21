@@ -38,8 +38,19 @@ namespace detail {
 struct CursorSymbol {
     std::string qualifier; // e.g. "fs", "m_out", "checksum", "cpp", "order.customer"
     std::string name;      // e.g. "read_all", "Service", "compute_tag"
-    int start_col = 0;     // 0-based start column of `name`
-    int end_col = 0;       // 0-based end column of `name`
+    int start_col = 0;     // 0-based UTF-8 byte start column of `name`
+    int end_col = 0;       // 0-based UTF-8 byte end column of `name`
+    bool is_double_colon = false; // true when separator before `name` is `::`
+    int sep_col = -1;      // 0-based UTF-8 byte column of `.` or first `:` of `::`
+};
+
+struct ContentChangeEvent {
+    bool has_range = false;
+    int start_line = 0;
+    int start_char = 0;
+    int end_line = 0;
+    int end_char = 0;
+    std::string text{};
 };
 
 struct StringInterpolationSpan {
@@ -86,11 +97,17 @@ CFIRE_LSP_RPC_INLINE void append_utf8(std::string& out, uint32_t cp);
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_json_bool(std::string_view json, std::string_view key, std::size_t start_pos = 0)
     -> std::optional<bool>;
 
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_content_changes(std::string_view json)
+    -> std::vector<ContentChangeEvent>;
+
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto uri_to_path(std::string_view uri) -> std::string;
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf8_col_to_utf16_col(std::string_view line, int utf8_col) -> int;
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto utf16_col_to_utf8_col(std::string_view line, int u16_col) -> int;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lsp_pos_to_byte_offset(std::string_view doc, int target_line, int target_u16_col)
+    -> std::size_t;
 
 CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text);
 
@@ -148,7 +165,8 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const std::vector<std::string>& lines,
     int max_line,
     std::unordered_map<std::string, LocalBindingInfo>& env,
-    std::vector<LocalBindingInfo>& ordered_out
+    std::vector<LocalBindingInfo>& ordered_out,
+    const cfire::frontend::TypeTable* sema_types = nullptr
 );
 
 CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
@@ -157,7 +175,8 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const WorkspaceContext& ws,
     const std::vector<std::string>& lines,
     std::unordered_map<std::string, LocalBindingInfo>& env,
-    std::vector<LocalBindingInfo>& ordered_out
+    std::vector<LocalBindingInfo>& ordered_out,
+    const cfire::frontend::TypeTable* sema_types = nullptr
 );
 
 CFIRE_LSP_RPC_INLINE void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::function<void(const cfire::frontend::CallExpr&)>& visitor);
@@ -168,7 +187,8 @@ CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::St
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
     const std::vector<std::string>& lines,
-    int cursor_zero_based_line
+    int cursor_zero_based_line,
+    const cfire::frontend::TypeTable* sema_types = nullptr
 ) -> std::unordered_map<std::string, LocalBindingInfo>;
 
 CFIRE_LSP_RPC_INLINE void write_rpc_message(std::ostream& out, std::string_view body);
@@ -360,6 +380,113 @@ CFIRE_LSP_RPC_INLINE void append_utf8(std::string& out, uint32_t cp) {
     return std::nullopt;
 }
 
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_content_changes(std::string_view json)
+    -> std::vector<ContentChangeEvent> {
+    std::vector<ContentChangeEvent> out;
+    auto skip_ws = [](std::string_view sv, std::size_t p) -> std::size_t {
+        while (p < sv.size() && (sv[p] == ' ' || sv[p] == '\t' || sv[p] == '\n' || sv[p] == '\r')) ++p;
+        return p;
+    };
+    auto extract_balanced_span = [](std::string_view sv, std::size_t open_idx, char open_ch, char close_ch) -> std::string_view {
+        if (open_idx >= sv.size() || sv[open_idx] != open_ch) return {};
+        int depth = 0;
+        bool in_str = false;
+        for (std::size_t i = open_idx; i < sv.size(); ++i) {
+            char c = sv[i];
+            if (in_str) {
+                if (c == '\\') {
+                    ++i;
+                    continue;
+                }
+                if (c == '"') in_str = false;
+                continue;
+            }
+            if (c == '"') {
+                in_str = true;
+            } else if (c == open_ch) {
+                ++depth;
+            } else if (c == close_ch) {
+                --depth;
+                if (depth == 0) return sv.substr(open_idx, i - open_idx + 1);
+            }
+        }
+        return {};
+    };
+    auto parse_change_obj = [&](std::string_view obj_sv) -> std::optional<ContentChangeEvent> {
+        auto text_opt = extract_json_string(obj_sv, "text", 0);
+        if (!text_opt) return std::nullopt;
+        ContentChangeEvent ev;
+        ev.text = std::move(*text_opt);
+        if (std::size_t r_pos = find_json_key(obj_sv, "range", 0); r_pos != std::string_view::npos) {
+            r_pos = skip_ws(obj_sv, r_pos);
+            std::string_view range_sv = extract_balanced_span(obj_sv, r_pos, '{', '}');
+            if (!range_sv.empty()) {
+                std::size_t s_pos = find_json_key(range_sv, "start", 0);
+                std::size_t e_pos = find_json_key(range_sv, "end", 0);
+                if (s_pos != std::string_view::npos && e_pos != std::string_view::npos) {
+                    s_pos = skip_ws(range_sv, s_pos);
+                    e_pos = skip_ws(range_sv, e_pos);
+                    std::string_view start_sv = extract_balanced_span(range_sv, s_pos, '{', '}');
+                    std::string_view end_sv = extract_balanced_span(range_sv, e_pos, '{', '}');
+                    if (!start_sv.empty() && !end_sv.empty()) {
+                        ev.has_range = true;
+                        ev.start_line = extract_json_int_after(start_sv, "line", 0).value_or(0);
+                        ev.start_char = extract_json_int_after(start_sv, "character", 0).value_or(0);
+                        ev.end_line = extract_json_int_after(end_sv, "line", 0).value_or(ev.start_line);
+                        ev.end_char = extract_json_int_after(end_sv, "character", 0).value_or(ev.start_char);
+                    }
+                }
+            }
+        }
+        return ev;
+    };
+
+    std::size_t cc_pos = find_json_key(json, "contentChanges", 0);
+    if (cc_pos != std::string_view::npos) {
+        cc_pos = skip_ws(json, cc_pos);
+        std::string_view arr_sv = extract_balanced_span(json, cc_pos, '[', ']');
+        if (!arr_sv.empty()) {
+            std::size_t i = 1;
+            while (i + 1 < arr_sv.size()) {
+                i = skip_ws(arr_sv, i);
+                if (i >= arr_sv.size()) break;
+                if (arr_sv[i] == ',') {
+                    ++i;
+                    continue;
+                }
+                if (arr_sv[i] == ']') break;
+                if (arr_sv[i] == '{') {
+                    std::string_view obj_sv = extract_balanced_span(arr_sv, i, '{', '}');
+                    if (obj_sv.empty()) break;
+                    if (auto ev = parse_change_obj(obj_sv)) {
+                        out.push_back(std::move(*ev));
+                    }
+                    i += obj_sv.size();
+                } else {
+                    ++i;
+                }
+            }
+            return out;
+        }
+    }
+
+    // Legacy fallback: single `"text"` (and optional `"range"`) directly on `params`
+    if (std::size_t p_pos = find_json_key(json, "params", 0); p_pos != std::string_view::npos) {
+        p_pos = skip_ws(json, p_pos);
+        std::string_view params_sv = extract_balanced_span(json, p_pos, '{', '}');
+        if (!params_sv.empty()) {
+            if (auto ev = parse_change_obj(params_sv)) {
+                out.push_back(std::move(*ev));
+                return out;
+            }
+        }
+    }
+    if (auto ev = parse_change_obj(json)) {
+        out.push_back(std::move(*ev));
+    }
+    return out;
+}
+
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto uri_to_path(std::string_view uri) -> std::string {
     std::string_view path_part = uri;
     if (path_part.starts_with("file://")) {
@@ -447,35 +574,37 @@ CFIRE_LSP_RPC_INLINE void append_utf8(std::string& out, uint32_t cp) {
     return static_cast<int>(byte_idx);
 }
 
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto lsp_pos_to_byte_offset(std::string_view doc, int target_line, int target_u16_col)
+    -> std::size_t {
+    if (target_line < 0) return 0;
+    std::size_t pos = 0;
+    int cur_line = 0;
+    while (pos <= doc.size()) {
+        std::size_t nl = doc.find('\n', pos);
+        std::size_t line_end = (nl == std::string_view::npos)
+            ? doc.size()
+            : ((nl > pos && doc[nl - 1] == '\r') ? nl - 1 : nl);
+        if (cur_line == target_line) {
+            std::string_view ln = doc.substr(pos, line_end - pos);
+            int u8_col = utf16_col_to_utf8_col(ln, target_u16_col);
+            std::size_t clamped = std::min(static_cast<std::size_t>(std::max(0, u8_col)), ln.size());
+            return pos + clamped;
+        }
+        if (nl == std::string_view::npos) break;
+        pos = nl + 1;
+        ++cur_line;
+    }
+    return doc.size();
+}
+
 CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_line, int start_col, int end_line, int end_col, std::string_view new_text) {
-    auto lines = cfire::diag::split_lines(doc);
-    if (lines.empty() && doc.empty()) {
+    if (doc.empty() && start_line == 0 && start_col == 0) {
         doc = std::string(new_text);
         return;
     }
 
-    std::size_t start_byte = 0;
-    for (int i = 0; i < start_line && i < static_cast<int>(lines.size()); ++i) {
-        start_byte += lines[i].size() + 1;
-    }
-    if (start_line < static_cast<int>(lines.size())) {
-        int u8_col = utf16_col_to_utf8_col(lines[start_line], start_col);
-        start_byte += std::min(static_cast<std::size_t>(u8_col), lines[start_line].size());
-    } else {
-        start_byte = doc.size();
-    }
-
-    std::size_t end_byte = 0;
-    for (int i = 0; i < end_line && i < static_cast<int>(lines.size()); ++i) {
-        end_byte += lines[i].size() + 1;
-    }
-    if (end_line < static_cast<int>(lines.size())) {
-        int u8_col = utf16_col_to_utf8_col(lines[end_line], end_col);
-        end_byte += std::min(static_cast<std::size_t>(u8_col), lines[end_line].size());
-    } else {
-        end_byte = doc.size();
-    }
-
+    std::size_t start_byte = lsp_pos_to_byte_offset(doc, start_line, start_col);
+    std::size_t end_byte = lsp_pos_to_byte_offset(doc, end_line, end_col);
     if (start_byte > doc.size()) start_byte = doc.size();
     if (end_byte > doc.size()) end_byte = doc.size();
     if (start_byte > end_byte) std::swap(start_byte, end_byte);
@@ -685,6 +814,12 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
     auto is_ident = [](char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '@';
     };
+    auto is_member_dot = [&](int dot_idx) -> bool {
+        if (dot_idx < min_col || dot_idx >= max_col || ln[static_cast<std::size_t>(dot_idx)] != '.') return false;
+        if (dot_idx > min_col && ln[static_cast<std::size_t>(dot_idx - 1)] == '.') return false;
+        if (dot_idx + 1 < max_col && ln[static_cast<std::size_t>(dot_idx + 1)] == '.') return false;
+        return true;
+    };
 
     auto extract_qualifier_before_sep = [&](int sep_idx) -> std::string {
         int qend = sep_idx;
@@ -700,15 +835,41 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
                 bool in_str = false;
                 while (p >= min_col && depth > 0) {
                     char sc = ln[static_cast<std::size_t>(p)];
-                    if (sc == '"' && (p == min_col || ln[static_cast<std::size_t>(p - 1)] != '\\')) {
-                        in_str = !in_str;
+                    if (sc == '"') {
+                        int bs = 0;
+                        while (p - 1 - bs >= min_col && ln[static_cast<std::size_t>(p - 1 - bs)] == '\\') ++bs;
+                        if ((bs & 1) == 0) in_str = !in_str;
                     } else if (!in_str) {
                         if (sc == close_ch) ++depth;
                         else if (sc == open_ch) --depth;
                     }
                     --p;
                 }
-            } else if (is_ident(c) || c == '.') {
+            } else if (c == '"' && p == qend - 1) {
+                --p;
+                while (p >= min_col) {
+                    if (ln[static_cast<std::size_t>(p)] == '"') {
+                        int bs = 0;
+                        while (p - 1 - bs >= min_col && ln[static_cast<std::size_t>(p - 1 - bs)] == '\\') ++bs;
+                        if ((bs & 1) == 0) {
+                            --p;
+                            break;
+                        }
+                    }
+                    --p;
+                }
+                break;
+            } else if (c == '`' && p == qend - 1) {
+                --p;
+                while (p >= min_col && ln[static_cast<std::size_t>(p)] != '`') --p;
+                if (p >= min_col) --p;
+                break;
+            } else if (is_ident(c)) {
+                --p;
+            } else if (c == '.') {
+                if (p > min_col && ln[static_cast<std::size_t>(p - 1)] == '.') {
+                    break; // Stop at `..` / `..=` range operators (`0..arr.`).
+                }
                 --p;
             } else if (p >= min_col + 1 && c == ':' && ln[static_cast<std::size_t>(p - 1)] == ':') {
                 p -= 2;
@@ -735,24 +896,24 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
     };
 
     // Check if cursor is immediately after `.` (e.g. `m_out.|`) or `::` (e.g. `cpp::|`) with no following ident
-    if (character > min_col && character <= max_col && ln[static_cast<std::size_t>(character - 1)] == '.' &&
+    if (character > min_col && character <= max_col && is_member_dot(character - 1) &&
         (character == max_col || !is_ident(ln[static_cast<std::size_t>(character)]))) {
-        return CursorSymbol{extract_qualifier_before_sep(character - 1), "", character, character};
+        return CursorSymbol{extract_qualifier_before_sep(character - 1), "", character, character, false, character - 1};
     }
     if (character >= min_col + 2 && character <= max_col &&
         ln[static_cast<std::size_t>(character - 1)] == ':' && ln[static_cast<std::size_t>(character - 2)] == ':' &&
         (character == max_col || !is_ident(ln[static_cast<std::size_t>(character)]))) {
-        return CursorSymbol{extract_qualifier_before_sep(character - 2), "", character, character};
+        return CursorSymbol{extract_qualifier_before_sep(character - 2), "", character, character, true, character - 2};
     }
     if (!is_ident(ln[static_cast<std::size_t>(idx)]) && idx > min_col && is_ident(ln[static_cast<std::size_t>(idx - 1)])) {
         --idx;
     }
     if (!is_ident(ln[static_cast<std::size_t>(idx)])) {
-        if (ln[static_cast<std::size_t>(idx)] == '.' && idx > min_col) {
-            return CursorSymbol{extract_qualifier_before_sep(idx), "", idx + 1, idx + 1};
+        if (is_member_dot(idx) && idx > min_col) {
+            return CursorSymbol{extract_qualifier_before_sep(idx), "", idx + 1, idx + 1, false, idx};
         }
         if (ln[static_cast<std::size_t>(idx)] == ':' && idx > min_col && ln[static_cast<std::size_t>(idx - 1)] == ':') {
-            return CursorSymbol{extract_qualifier_before_sep(idx - 1), "", idx + 1, idx + 1};
+            return CursorSymbol{extract_qualifier_before_sep(idx - 1), "", idx + 1, idx + 1, true, idx - 1};
         }
         return {};
     }
@@ -763,12 +924,17 @@ CFIRE_LSP_RPC_INLINE void apply_incremental_edit(std::string& doc, int start_lin
     std::string word = ln.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start));
 
     std::string qual;
-    if (start > min_col && ln[static_cast<std::size_t>(start - 1)] == '.') {
-        qual = extract_qualifier_before_sep(start - 1);
+    bool is_dc = false;
+    int sep_col = -1;
+    if (start > min_col && is_member_dot(start - 1)) {
+        sep_col = start - 1;
+        qual = extract_qualifier_before_sep(sep_col);
     } else if (start > min_col + 1 && ln[static_cast<std::size_t>(start - 1)] == ':' && ln[static_cast<std::size_t>(start - 2)] == ':') {
-        qual = extract_qualifier_before_sep(start - 2);
+        is_dc = true;
+        sep_col = start - 2;
+        qual = extract_qualifier_before_sep(sep_col);
     }
-    return CursorSymbol{qual, word, start, end};
+    return CursorSymbol{qual, word, start, end, is_dc, sep_col};
 }
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_call_context(const std::vector<std::string>& lines, int line, int character) -> std::optional<CallContext> {
@@ -1077,9 +1243,19 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const std::vector<std::string>& lines,
     int max_line,
     std::unordered_map<std::string, LocalBindingInfo>& env,
-    std::vector<LocalBindingInfo>& ordered_out
+    std::vector<LocalBindingInfo>& ordered_out,
+    const cfire::frontend::TypeTable* sema_types
 ) {
     using namespace cfire::frontend;
+    auto resolve_tid = [&](uint32_t tid_idx, std::string& cf_out, std::string& cpp_out) -> bool {
+        if (!sema_types || tid_idx == 0) return false;
+        std::string cf_t = format_sema_type_id(tid_idx, sema_types);
+        if (cf_t.empty() || cf_t == "void") return false;
+        cf_out = std::move(cf_t);
+        std::string cpp_t = sema_type_id_to_cpp_preview(tid_idx, sema_types);
+        cpp_out = !cpp_t.empty() ? std::move(cpp_t) : cf_type_string_to_cpp(cf_out);
+        return true;
+    };
     for (const auto& s : stmts) {
         if (!s) continue;
         if (const auto* vd = std::get_if<VarDeclStmt>(&s->node)) {
@@ -1093,8 +1269,10 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                     info.cpp_type = lower_type_preview(*vd->type);
                     info.inferred_colon_eq = false;
                 } else {
-                    info.cf_type = infer_expr_cf_type(vd->init, ast, ws, env);
-                    info.cpp_type = cf_type_string_to_cpp(info.cf_type);
+                    if (!resolve_tid(vd->resolved_type_id, info.cf_type, info.cpp_type)) {
+                        info.cf_type = infer_expr_cf_type(vd->init, ast, ws, env, sema_types);
+                        info.cpp_type = cf_type_string_to_cpp(info.cf_type);
+                    }
                     info.inferred_colon_eq = true;
                 }
                 if (vd->line >= 1 && static_cast<std::size_t>(vd->line) <= lines.size()) {
@@ -1119,26 +1297,58 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                             ei.decl_line = vd->line;
                             or_env[ei.name] = ei;
                         }
-                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out);
+                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out, sema_types);
                         if (max_line > 0) env = std::move(or_env);
+                    }
+                } else if (const auto* cl = std::get_if<ClosureExpr>(&vd->init->node); cl && !cl->body.empty()) {
+                    int cl_end = get_block_end_line(cl->body, lines, vd->line);
+                    if (max_line <= 0 || (max_line >= vd->line && max_line <= cl_end)) {
+                        auto cl_env = env;
+                        for (std::size_t pi = 0; pi < cl->params.size(); ++pi) {
+                            const auto& pname = cl->params[pi];
+                            if (pname.empty() || pname == "_") continue;
+                            LocalBindingInfo pinfo;
+                            pinfo.name = pname;
+                            pinfo.is_param = true;
+                            pinfo.intent = (pi < cl->param_intents.size() && !cl->param_intents[pi].empty()) ? cl->param_intents[pi] : "in";
+                            pinfo.is_mut = (pinfo.intent == "mut" || pinfo.intent == "out");
+                            pinfo.decl_line = vd->line;
+                            if (pi < cl->param_types.size() && cl->param_types[pi]) {
+                                pinfo.cf_type = cfire::fmt::format_type_ref(*cl->param_types[pi]);
+                                pinfo.cpp_type = lower_type_preview(*cl->param_types[pi], true, pinfo.intent);
+                            } else if (!(pi < cl->resolved_param_types.size() &&
+                                         resolve_tid(cl->resolved_param_types[pi], pinfo.cf_type, pinfo.cpp_type))) {
+                                pinfo.cf_type = "auto";
+                                pinfo.cpp_type = "auto";
+                            }
+                            cl_env[pname] = std::move(pinfo);
+                        }
+                        collect_stmt_bindings(cl->body, ast, ws, lines, max_line, cl_env, ordered_out, sema_types);
+                        if (max_line > 0) env = std::move(cl_env);
                     }
                 }
             }
         } else if (const auto* dvs = std::get_if<DestructureVarDeclStmt>(&s->node)) {
             std::vector<std::string> elem_types;
             if (dvs->init) {
-                std::string init_type = infer_expr_cf_type(dvs->init, ast, ws, env);
+                std::string init_type = infer_expr_cf_type(dvs->init, ast, ws, env, sema_types);
                 while (init_type.ends_with("!") || init_type.ends_with("?")) init_type.pop_back();
                 if (init_type.starts_with("(") && init_type.ends_with(")")) {
                     std::string inner = init_type.substr(1, init_type.size() - 2);
                     std::size_t start = 0;
-                    while (start < inner.size()) {
-                        auto comma = inner.find(',', start);
-                        std::string part = (comma == std::string::npos) ? inner.substr(start) : inner.substr(start, comma - start);
-                        start = (comma == std::string::npos) ? inner.size() : comma + 1;
+                    int tdepth = 0;
+                    for (std::size_t k = 0; k <= inner.size(); ++k) {
+                        if (k < inner.size()) {
+                            char c = inner[k];
+                            if (c == '(' || c == '[') ++tdepth;
+                            else if (c == ')' || c == ']') --tdepth;
+                            if (c != ',' || tdepth != 0) continue;
+                        }
+                        std::string part = inner.substr(start, k - start);
+                        start = k + 1;
                         while (!part.empty() && part.front() == ' ') part.erase(part.begin());
                         while (!part.empty() && part.back() == ' ') part.pop_back();
-                        elem_types.push_back(part);
+                        elem_types.push_back(std::move(part));
                     }
                 }
             }
@@ -1149,8 +1359,11 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                     info.name = name;
                     info.is_mut = is_mut;
                     info.decl_line = dvs->line;
-                    info.cf_type = (i < elem_types.size()) ? elem_types[i] : "auto";
-                    info.cpp_type = cf_type_string_to_cpp(info.cf_type);
+                    if (!(i < dvs->resolved_binding_types.size() &&
+                          resolve_tid(dvs->resolved_binding_types[i], info.cf_type, info.cpp_type))) {
+                        info.cf_type = (i < elem_types.size()) ? elem_types[i] : "auto";
+                        info.cpp_type = cf_type_string_to_cpp(info.cf_type);
+                    }
                     info.inferred_colon_eq = true;
                     if (dvs->line >= 1 && static_cast<std::size_t>(dvs->line) <= lines.size()) {
                         const std::string& ln = lines[static_cast<std::size_t>(dvs->line - 1)];
@@ -1167,14 +1380,28 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
             int then_end = get_block_end_line(ifs->then_body, lines, then_start);
             if (max_line <= 0 || (max_line >= then_start && max_line <= then_end)) {
                 auto then_env = env;
-                collect_stmt_bindings(ifs->then_body, ast, ws, lines, max_line, then_env, ordered_out);
+                if (!ifs->unwrap_var.empty() && ifs->unwrap_var != "_" && ifs->unwrap_init) {
+                    LocalBindingInfo ui;
+                    ui.name = ifs->unwrap_var;
+                    ui.is_mut = ifs->unwrap_mut;
+                    ui.decl_line = ifs->line;
+                    if (!resolve_tid(ifs->resolved_unwrap_type_id, ui.cf_type, ui.cpp_type)) {
+                        std::string u_cf = infer_expr_cf_type(ifs->unwrap_init, ast, ws, env, sema_types);
+                        while (u_cf.ends_with("!") || u_cf.ends_with("?")) u_cf.pop_back();
+                        ui.cf_type = u_cf;
+                        ui.cpp_type = cf_type_string_to_cpp(u_cf);
+                    }
+                    ui.inferred_colon_eq = true;
+                    then_env[ui.name] = ui;
+                }
+                collect_stmt_bindings(ifs->then_body, ast, ws, lines, max_line, then_env, ordered_out, sema_types);
                 if (max_line > 0) env = std::move(then_env);
             }
             int else_start = ifs->then_body.empty() ? ifs->line : then_end;
             int else_end = get_block_end_line(ifs->else_body, lines, else_start);
             if (max_line <= 0 || (max_line >= else_start && max_line <= else_end)) {
                 auto else_env = env;
-                collect_stmt_bindings(ifs->else_body, ast, ws, lines, max_line, else_env, ordered_out);
+                collect_stmt_bindings(ifs->else_body, ast, ws, lines, max_line, else_env, ordered_out, sema_types);
                 if (max_line > 0) env = std::move(else_env);
             }
         } else if (const auto* fs = std::get_if<ForStmt>(&s->node)) {
@@ -1182,45 +1409,95 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
             int for_end = get_block_end_line(fs->body, lines, for_start);
             if (max_line <= 0 || (max_line >= for_start && max_line <= for_end)) {
                 auto for_env = env;
+                std::string idx_cf = "usize";
+                std::string idx_cpp = "std::size_t";
+                std::string item_cf = "auto";
+                std::string item_cpp;
+                bool item_mut = false;
+                if (fs->range_end) {
+                    if (!resolve_tid(fs->resolved_index_type_id, item_cf, item_cpp)) {
+                        item_cf = "i64";
+                        item_cpp = "std::int64_t";
+                    }
+                } else if (fs->is_unwrap) {
+                    item_mut = fs->unwrap_mut;
+                    if (!resolve_tid(fs->resolved_unwrap_type_id, item_cf, item_cpp) && fs->iter_expr) {
+                        std::string raw_iter = infer_expr_cf_type(fs->iter_expr, ast, ws, env, sema_types);
+                        while (raw_iter.ends_with("!") || raw_iter.ends_with("?")) raw_iter.pop_back();
+                        if (raw_iter.starts_with("sync.Channel[") && raw_iter.ends_with("]")) {
+                            raw_iter = raw_iter.substr(13, raw_iter.size() - 14);
+                        } else if (raw_iter.starts_with("Channel[") && raw_iter.ends_with("]")) {
+                            raw_iter = raw_iter.substr(8, raw_iter.size() - 9);
+                        }
+                        item_cf = raw_iter;
+                    }
+                } else {
+                    bool has_idx = resolve_tid(fs->resolved_index_type_id, idx_cf, idx_cpp);
+                    bool has_item = resolve_tid(fs->resolved_item_type_id, item_cf, item_cpp);
+                    if ((!has_idx || !has_item) && fs->iter_expr) {
+                        std::string raw_iter = infer_expr_cf_type(fs->iter_expr, ast, ws, env, sema_types);
+                        std::string col_t = strip_wrappers(raw_iter);
+                        std::string fallback_item = "auto";
+                        if (col_t.starts_with("[]")) {
+                            fallback_item = col_t.substr(2);
+                        } else if (col_t.starts_with("map[")) {
+                            int bdepth = 0;
+                            std::size_t rb = std::string::npos;
+                            for (std::size_t k = 3; k < col_t.size(); ++k) {
+                                if (col_t[k] == '[') ++bdepth;
+                                else if (col_t[k] == ']') {
+                                    --bdepth;
+                                    if (bdepth == 0) {
+                                        rb = k;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (rb != std::string::npos && rb + 1 < col_t.size()) {
+                                if (!has_idx) {
+                                    idx_cf = col_t.substr(4, rb - 4);
+                                    idx_cpp = cf_type_string_to_cpp(idx_cf);
+                                }
+                                fallback_item = col_t.substr(rb + 1);
+                            }
+                        } else if (col_t.starts_with("[")) {
+                            if (auto rb = col_t.find(']'); rb != std::string::npos && rb + 1 < col_t.size()) {
+                                fallback_item = col_t.substr(rb + 1);
+                            }
+                        } else if (col_t == "str") {
+                            fallback_item = "u8";
+                        } else if (auto lb = col_t.find('[');
+                                   lb != std::string::npos && col_t.ends_with(']') &&
+                                   (col_t.starts_with("collections.Set[") || col_t.starts_with("Set[") ||
+                                    col_t.starts_with("collections.Deque[") || col_t.starts_with("Deque[") ||
+                                    col_t.starts_with("sync.Channel[") || col_t.starts_with("Channel["))) {
+                            fallback_item = col_t.substr(lb + 1, col_t.size() - lb - 2);
+                        }
+                        if (!has_item) item_cf = fallback_item;
+                    }
+                }
+                if (item_cpp.empty()) item_cpp = cf_type_string_to_cpp(item_cf);
                 if (!fs->index_var.empty() && fs->index_var != "_") {
                     LocalBindingInfo idx_info;
                     idx_info.name = fs->index_var;
                     idx_info.is_mut = false;
                     idx_info.decl_line = fs->line;
-                    idx_info.cf_type = "usize";
-                    idx_info.cpp_type = "std::size_t";
+                    idx_info.cf_type = idx_cf;
+                    idx_info.cpp_type = idx_cpp;
                     idx_info.inferred_colon_eq = false;
                     for_env[idx_info.name] = idx_info;
                 }
                 if (!fs->item_var.empty() && fs->item_var != "_") {
                     LocalBindingInfo item_info;
                     item_info.name = fs->item_var;
-                    item_info.is_mut = false;
+                    item_info.is_mut = item_mut;
                     item_info.decl_line = fs->line;
-                    if (fs->range_end) {
-                        item_info.cf_type = "i64";
-                        item_info.cpp_type = "std::int64_t";
-                    } else if (fs->iter_expr) {
-                        std::string col_t = infer_expr_cf_type(fs->iter_expr, ast, ws, env);
-                        if (col_t.starts_with("&mut ")) col_t = col_t.substr(5);
-                        else if (col_t.starts_with("&")) col_t = col_t.substr(1);
-                        if (col_t.starts_with("[]")) {
-                            item_info.cf_type = col_t.substr(2);
-                        } else if (col_t.starts_with("[")) {
-                            if (auto rb = col_t.find(']'); rb != std::string::npos && rb + 1 < col_t.size()) {
-                                item_info.cf_type = col_t.substr(rb + 1);
-                            }
-                        } else if (col_t == "str") {
-                            item_info.cf_type = "u8";
-                        } else {
-                            item_info.cf_type = "auto";
-                        }
-                        item_info.cpp_type = cf_type_string_to_cpp(item_info.cf_type);
-                    }
+                    item_info.cf_type = item_cf;
+                    item_info.cpp_type = item_cpp;
                     item_info.inferred_colon_eq = false;
                     for_env[item_info.name] = item_info;
                 }
-                collect_stmt_bindings(fs->body, ast, ws, lines, max_line, for_env, ordered_out);
+                collect_stmt_bindings(fs->body, ast, ws, lines, max_line, for_env, ordered_out, sema_types);
                 if (max_line > 0) env = std::move(for_env);
             }
         } else if (const auto* def = std::get_if<DeferStmt>(&s->node)) {
@@ -1228,7 +1505,7 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
             int def_end = get_block_end_line(def->body, lines, def_start);
             if (max_line <= 0 || (max_line >= def_start && max_line <= def_end)) {
                 auto def_env = env;
-                collect_stmt_bindings(def->body, ast, ws, lines, max_line, def_env, ordered_out);
+                collect_stmt_bindings(def->body, ast, ws, lines, max_line, def_env, ordered_out, sema_types);
                 if (max_line > 0) env = std::move(def_env);
             }
         } else if (const auto* as = std::get_if<AsyncScopeStmt>(&s->node)) {
@@ -1236,8 +1513,29 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
             int as_end = get_block_end_line(as->body, lines, as_start);
             if (max_line <= 0 || (max_line >= as_start && max_line <= as_end)) {
                 auto as_env = env;
-                collect_stmt_bindings(as->body, ast, ws, lines, max_line, as_env, ordered_out);
+                collect_stmt_bindings(as->body, ast, ws, lines, max_line, as_env, ordered_out, sema_types);
                 if (max_line > 0) env = std::move(as_env);
+            }
+            if (!as->result_var.empty() && as->result_var != "_" && (max_line <= 0 || as->line <= max_line)) {
+                std::string elem_cf;
+                std::string elem_cpp;
+                if (resolve_tid(as->resolved_result_elem_type_id, elem_cf, elem_cpp)) {
+                    LocalBindingInfo info;
+                    info.name = as->result_var;
+                    info.is_mut = as->result_mut;
+                    info.decl_line = as->line;
+                    info.cf_type = "[]" + elem_cf;
+                    info.cpp_type = elem_cpp.empty() ? cf_type_string_to_cpp(info.cf_type) : std::format("std::vector<{}>", elem_cpp);
+                    info.inferred_colon_eq = true;
+                    if (as->line >= 1 && static_cast<std::size_t>(as->line) <= lines.size()) {
+                        const std::string& ln = lines[static_cast<std::size_t>(as->line - 1)];
+                        if (auto p = ln.find(as->result_var); p != std::string::npos) {
+                            info.name_end_col = static_cast<int>(p + as->result_var.size());
+                        }
+                    }
+                    env[info.name] = info;
+                    ordered_out.push_back(info);
+                }
             }
         } else if (const auto* ms = std::get_if<MatchStmt>(&s->node)) {
             std::unordered_set<std::string> known_enum_variants;
@@ -1278,7 +1576,7 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                 }
                 return "auto";
             };
-            std::string target_cf = ms->target ? infer_expr_cf_type(ms->target, ast, ws, env) : "auto";
+            std::string target_cf = ms->target ? infer_expr_cf_type(ms->target, ast, ws, env, sema_types) : "auto";
             for (const auto& arm : ms->arms) {
                 int arm_start = arm.line;
                 int arm_end = get_block_end_line(arm.body, lines, arm_start);
@@ -1327,7 +1625,7 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                             arm_env[pat.variant_name] = bi;
                         }
                     }
-                    collect_stmt_bindings(arm.body, ast, ws, lines, max_line, arm_env, ordered_out);
+                    collect_stmt_bindings(arm.body, ast, ws, lines, max_line, arm_env, ordered_out, sema_types);
                     if (max_line > 0) env = std::move(arm_env);
                 }
             }
@@ -1348,22 +1646,25 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                                 pinfo.is_param = true;
                                 pinfo.intent = "in";
                                 pinfo.decl_line = es->line;
-                                if (pi < call->type_args.size()) {
-                                    pinfo.cf_type = cfire::fmt::format_type_ref(call->type_args[pi]);
-                                } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                                    if (mem->field == "on" || mem->field == "bind_raw") {
-                                        pinfo.cf_type = "str";
+                                if (!(pi < call->block_arg->resolved_param_types.size() &&
+                                      resolve_tid(call->block_arg->resolved_param_types[pi], pinfo.cf_type, pinfo.cpp_type))) {
+                                    if (pi < call->type_args.size()) {
+                                        pinfo.cf_type = cfire::fmt::format_type_ref(call->type_args[pi]);
+                                    } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
+                                        if (mem->field == "on" || mem->field == "bind_raw") {
+                                            pinfo.cf_type = "str";
+                                        } else {
+                                            pinfo.cf_type = "auto";
+                                        }
                                     } else {
                                         pinfo.cf_type = "auto";
                                     }
-                                } else {
-                                    pinfo.cf_type = "auto";
+                                    pinfo.cpp_type = cf_type_string_to_cpp(pinfo.cf_type);
                                 }
-                                pinfo.cpp_type = cf_type_string_to_cpp(pinfo.cf_type);
                                 pinfo.inferred_colon_eq = false;
                                 blk_env[pinfo.name] = pinfo;
                             }
-                            collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, blk_env, ordered_out);
+                            collect_stmt_bindings(call->block_arg->body, ast, ws, lines, max_line, blk_env, ordered_out, sema_types);
                             if (max_line > 0) env = std::move(blk_env);
                         }
                     }
@@ -1380,7 +1681,7 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
                             ei.decl_line = es->line;
                             or_env[ei.name] = ei;
                         }
-                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out);
+                        collect_stmt_bindings(or_ex->handler_body, ast, ws, lines, max_line, or_env, ordered_out, sema_types);
                         if (max_line > 0) env = std::move(or_env);
                     }
                 }
@@ -1395,9 +1696,10 @@ CFIRE_LSP_RPC_INLINE void collect_stmt_bindings(
     const WorkspaceContext& ws,
     const std::vector<std::string>& lines,
     std::unordered_map<std::string, LocalBindingInfo>& env,
-    std::vector<LocalBindingInfo>& ordered_out
+    std::vector<LocalBindingInfo>& ordered_out,
+    const cfire::frontend::TypeTable* sema_types
 ) {
-    collect_stmt_bindings(stmts, ast, ws, lines, 0, env, ordered_out);
+    collect_stmt_bindings(stmts, ast, ws, lines, 0, env, ordered_out, sema_types);
 }
 
 CFIRE_LSP_RPC_INLINE void walk_expr_calls(const cfire::frontend::ExprPtr& expr, const std::function<void(const cfire::frontend::CallExpr&)>& visitor) {
@@ -1420,13 +1722,15 @@ CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::St
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
     const std::vector<std::string>& lines,
-    int cursor_zero_based_line
+    int cursor_zero_based_line,
+    const cfire::frontend::TypeTable* sema_types
 ) -> std::unordered_map<std::string, LocalBindingInfo> {
     std::unordered_map<std::string, LocalBindingInfo> env;
     std::vector<LocalBindingInfo> dummy;
     int one_based = cursor_zero_based_line + 1;
 
     for (const auto& fn : ast.functions) {
+        if (!fn.source_path.empty() && !ast.path.empty() && fn.source_path != ast.path) continue;
         int fn_end = get_block_end_line(fn.body, lines, fn.line);
         if (one_based >= fn.line && one_based <= fn_end) {
             env.clear();
@@ -1452,11 +1756,12 @@ CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::St
                 pi.decl_line = p.line;
                 env[pi.name] = pi;
             }
-            collect_stmt_bindings(fn.body, ast, ws, lines, one_based, env, dummy);
+            collect_stmt_bindings(fn.body, ast, ws, lines, one_based, env, dummy, sema_types);
             return env;
         }
     }
     for (const auto& t : ast.tests) {
+        if (!t.source_path.empty() && !ast.path.empty() && t.source_path != ast.path) continue;
         int t_end = get_block_end_line(t.body, lines, t.line);
         if (one_based >= t.line && one_based <= t_end) {
             env.clear();
@@ -1482,7 +1787,7 @@ CFIRE_LSP_RPC_INLINE void walk_stmts_calls(const std::vector<cfire::frontend::St
                 bi.decl_line = bv.line;
                 env[bi.name] = bi;
             }
-            collect_stmt_bindings(t.body, ast, ws, lines, one_based, env, dummy);
+            collect_stmt_bindings(t.body, ast, ws, lines, one_based, env, dummy, sema_types);
             return env;
         }
     }

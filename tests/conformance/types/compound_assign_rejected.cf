@@ -1,0 +1,7 @@
+package main
+fn main() {
+    mut x: i32 = 1
+    opt := i32.parse("2").ignore_error()
+    x += "a" //~ error cfire/TYPE-MISMATCH
+    x += opt //~ error cfire/UNWRAPPED-OPTIONAL
+}

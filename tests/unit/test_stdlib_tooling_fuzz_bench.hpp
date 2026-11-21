@@ -198,7 +198,7 @@ void test_ide_configuration_setup([[maybe_unused]] const std::filesystem::path& 
 
     // Verify contents of .vscode/settings.json & .zed/settings.json
     auto vs_txt = cfire::fs::read_text(tmp_ide_ws.path / ".vscode" / "settings.json");
-    require(vs_txt.has_value() && vs_txt->contains("\"editor.defaultFormatter\": \"cfire\""), "vs settings formatter (IDE-01)");
+    require(vs_txt.has_value() && vs_txt->contains("\"editor.defaultFormatter\": \"cfire.cfire-lang\""), "vs settings formatter (IDE-01)");
     require(vs_txt->contains("\"cfire.inlayHints.enable\": true"), "vs settings inlay hints (IDE-01)");
     auto zed_txt = cfire::fs::read_text(tmp_ide_ws.path / ".zed" / "settings.json");
     require(zed_txt.has_value() && zed_txt->contains("\"context_servers\""), "zed settings includes context_servers MCP");
@@ -444,8 +444,8 @@ type Args struct {
     C: str `cli:"--c"`
 }
 
-fn main() {
-    opts := cli.parse[Args]()
+fn main() -> void! {
+    opts := try cli.parse[Args]()
     println("arg[1]={}", opts.A)
     println("arg[2]={}", opts.B)
     println("arg[3]={}", opts.C)

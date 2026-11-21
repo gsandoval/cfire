@@ -2,6 +2,7 @@
 // src/cli/common_args.hpp — Shared Flag Parsing, BuildProfile Selection & Target Discovery
 
 #include "../build/manifest.hpp"
+#include "../build/package_loader.hpp"
 #include "../build/pch.hpp"
 #include "../build/toolchain_layout.hpp"
 #include "usage.hpp"
@@ -30,6 +31,12 @@ struct CommonCliArgs {
     bool static_link = false;
     bool universal = false;
     std::string macos_min;
+    std::string ios_min;
+    std::string sign_identity;
+    std::string provisioning_profile;
+    std::string entitlements;
+    bool emit_ipa = false;
+    bool ios_device = false;
     std::string fix_only_codes;
     bool bench_mode = false;
     std::string filter_pattern;
@@ -95,6 +102,11 @@ struct CommonCliArgs {
     cfire::build::g_static_mode = false;
     cfire::build::g_universal_mode = false;
     cfire::build::g_macos_min_version.clear();
+    cfire::build::g_ios_min_version.clear();
+    cfire::build::g_sign_identity_override.clear();
+    cfire::build::g_provisioning_profile_override.clear();
+    cfire::build::g_entitlements_override.clear();
+    cfire::build::g_emit_ipa_mode = false;
     cfire::build::g_sanitizer_set = "address,undefined";
     cfire::build::explicit_entry_file_only() = false;
 
@@ -178,6 +190,85 @@ struct CommonCliArgs {
             }
             cfire::build::g_macos_min_version = mver;
             out.macos_min = std::move(mver);
+            continue;
+        }
+        if (arg == "--ios-min") {
+            if (i + 1 >= argc) {
+                std::println(stderr, "error: --ios-min requires a version argument (e.g. --ios-min 17.0)");
+                return 2;
+            }
+            std::string iver = argv[++i];
+            if (!cfire::build::is_ios_min_supported(iver)) {
+                std::println(stderr, "error: unsupported iOS deployment target '{}': minimum supported iOS version is {}",
+                    iver, cfire::build::kMinSupportedIosVersion);
+                return 2;
+            }
+            cfire::build::g_ios_min_version = iver;
+            out.ios_min = std::move(iver);
+            continue;
+        }
+        if (arg.starts_with("--ios-min=")) {
+            std::string iver(arg.substr(10));
+            if (!cfire::build::is_ios_min_supported(iver)) {
+                std::println(stderr, "error: unsupported iOS deployment target '{}': minimum supported iOS version is {}",
+                    iver, cfire::build::kMinSupportedIosVersion);
+                return 2;
+            }
+            cfire::build::g_ios_min_version = iver;
+            out.ios_min = std::move(iver);
+            continue;
+        }
+        if (arg == "--sign") {
+            if (i + 1 >= argc) {
+                std::println(stderr, "error: --sign requires a signing identity argument");
+                return 2;
+            }
+            std::string sid = argv[++i];
+            cfire::build::g_sign_identity_override = sid;
+            out.sign_identity = std::move(sid);
+            continue;
+        }
+        if (arg.starts_with("--sign=")) {
+            std::string sid(arg.substr(7));
+            cfire::build::g_sign_identity_override = sid;
+            out.sign_identity = std::move(sid);
+            continue;
+        }
+        if (arg == "--provisioning-profile") {
+            if (i + 1 >= argc) {
+                std::println(stderr, "error: --provisioning-profile requires a file path argument");
+                return 2;
+            }
+            std::string pp = argv[++i];
+            cfire::build::g_provisioning_profile_override = pp;
+            out.provisioning_profile = std::move(pp);
+            continue;
+        }
+        if (arg.starts_with("--provisioning-profile=")) {
+            std::string pp(arg.substr(23));
+            cfire::build::g_provisioning_profile_override = pp;
+            out.provisioning_profile = std::move(pp);
+            continue;
+        }
+        if (arg == "--entitlements") {
+            if (i + 1 >= argc) {
+                std::println(stderr, "error: --entitlements requires a file path argument");
+                return 2;
+            }
+            std::string ent = argv[++i];
+            cfire::build::g_entitlements_override = ent;
+            out.entitlements = std::move(ent);
+            continue;
+        }
+        if (arg.starts_with("--entitlements=")) {
+            std::string ent(arg.substr(15));
+            cfire::build::g_entitlements_override = ent;
+            out.entitlements = std::move(ent);
+            continue;
+        }
+        if (arg == "--ipa") {
+            cfire::build::g_emit_ipa_mode = true;
+            out.emit_ipa = true;
             continue;
         }
         if (arg == "--verbose" || arg == "-v") {
@@ -306,6 +397,11 @@ struct CommonCliArgs {
         if (arg == "--ios" || arg == "-ios" || arg == "--ios-sim" || arg == "-ios-sim" ||
             arg == "--target=ios-sim" || arg == "-target=ios-sim") {
             out.target_triple = "ios-sim";
+            continue;
+        }
+        if (arg == "--ios-device" || arg == "-ios-device") {
+            out.ios_device = true;
+            out.target_triple = "ios";
             continue;
         }
         if (arg == "--target=ios" || arg == "-target=ios") {
@@ -446,7 +542,9 @@ struct CommonCliArgs {
                 "--profile", "--sanitize", "--sanitize=address", "--sanitize=thread",
                 "--bench", "--fuzz-runs", "--seed", "--bench-time", "--filter",
                 "--output", "-o", "--icon", "--name", "--app-name", "--bundle-id", "--device",
-                "--ios", "--ios-sim", "--web", "--web-profile", "--subsystem",
+                "--ios", "--ios-sim", "--ios-device", "--ios-min", "--ipa",
+                "--sign", "--provisioning-profile", "--entitlements",
+                "--web", "--web-profile", "--subsystem",
                 "--no-open", "--open", "--port", "-p", "--target", "--sysroot",
                 "--link-lib", "--include", "--pkg-config", "--define", "-D", "--json", "--fix", "--dry-run", "--only",
                 "--verify-cpp", "--full", "--no-shard",
@@ -524,6 +622,38 @@ struct CommonCliArgs {
     if (out.target.empty()) {
         print_usage();
         return 1;
+    }
+
+    if (out.universal && cfire::build::is_ios_target(out.target_triple)) {
+        std::println(stderr, "error: --universal is only supported for macOS desktop targets, not iOS");
+        return 2;
+    }
+    const bool is_manifest_target = (out.target.filename() == "build.cf");
+    if (!out.ios_min.empty() &&
+        ((!out.target_triple.empty() && !cfire::build::is_ios_target(out.target_triple)) ||
+         (out.target_triple.empty() && !is_manifest_target))) {
+        std::println(stderr, "error: --ios-min is only supported for iOS targets (--target=ios or --target=ios-sim)");
+        return 2;
+    }
+    if (out.emit_ipa &&
+        ((!out.target_triple.empty() && !cfire::build::is_ios_target(out.target_triple)) ||
+         (out.target_triple.empty() && !is_manifest_target))) {
+        std::println(stderr, "error: --ipa is only supported for iOS targets (--target=ios or --target=ios-sim)");
+        return 2;
+    }
+    if (out.static_link) {
+        bool explicit_apple = cfire::build::is_ios_target(out.target_triple) ||
+            out.target_triple.find("apple-macos") != std::string::npos ||
+            out.target_triple.find("apple-darwin") != std::string::npos;
+#if defined(__APPLE__)
+        if (out.target_triple.empty() && !is_manifest_target) {
+            explicit_apple = true;
+        }
+#endif
+        if (explicit_apple) {
+            std::println(stderr, "error: --static is not supported on Apple platforms (macOS/iOS); use --portable instead");
+            return 2;
+        }
     }
 
     // `cfire run a.cf` builds a.cf and its imports, like `go run a.go`; a directory builds the package.

@@ -1156,7 +1156,7 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 28 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 8 opt-in native C library, audio, cloud, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:tako</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1209,7 +1209,7 @@ syncCfireThemeBtn();
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
-    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>core:audio</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-webui', this)">8. Hybrid WebUI (<code>ext:webui</code>)</button>
   </div>
@@ -1290,11 +1290,11 @@ inline auto increment(Box&amp; b, std::int32_t amount) -&gt; void {
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 12 &quot;snippet_intents.cf&quot;
-    auto b = Box{.value = 40};
+    Box b = Box{.value = 40};
     #line 14 &quot;snippet_intents.cf&quot;
     (void)(increment(b, 2));
     #line 17 &quot;snippet_intents.cf&quot;
-    auto p = cfire::make_own&lt;Box&gt;(Box{.value = 100});
+    std::unique_ptr&lt;Box&gt; p = cfire::make_own&lt;Box&gt;(Box{.value = 100});
     #line 18 &quot;snippet_intents.cf&quot;
     (void)(std::println(&quot;b={} p={}&quot;, b.value, (*p).value));
     return 0;
@@ -1311,7 +1311,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1442,15 +1442,15 @@ struct cfire::reflect_enum&lt;Token&gt; {
             return &quot;empty&quot;;
         }
         if (!_matched &amp;&amp; _target.size() == 1) {
-            const auto&amp; only = _target[0];
+            const std::string&amp; only = _target[0];
             _matched = true;
             #line 12 &quot;snippet_patterns.cf&quot;
             return (&quot;single=&quot; + only);
         }
         if (!_matched &amp;&amp; _target.size() &gt;= 2) {
-            const auto&amp; first = _target[0];
-            auto mid = cfire::slice(_target, 1, (_target.size() - 1));
-            const auto&amp; last = _target[_target.size() - 1];
+            const std::string&amp; first = _target[0];
+            cfire::slice_ref&lt;std::string&gt; mid = cfire::slice(_target, 1, (_target.size() - 1));
+            const std::string&amp; last = _target[_target.size() - 1];
             _matched = true;
             #line 13 &quot;snippet_patterns.cf&quot;
             return ((((first + &quot;..(&quot;) + cfire::str_ctor(mid.size())) + &quot;)..&quot;) + last);
@@ -1481,7 +1481,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1524,31 +1524,31 @@ fn main() {
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 8 &quot;snippet_net.cf&quot;
-    auto bg = cfire::context::background();
+    cfire::sync::context::Context bg = cfire::context::background();
     #line 9 &quot;snippet_net.cf&quot;
     auto [ctx, cancel] = cfire::context::with_timeout(bg, 500);
     #line 10 &quot;snippet_net.cf&quot;
     auto _defer_1 = cfire::scope_exit([&amp;] { (void)(cancel(&quot;done&quot;)); });
     #line 12 &quot;snippet_net.cf&quot;
-    auto _try_1 = cfire::websocket::pair();
+    std::expected&lt;std::tuple&lt;cfire::websocket::Conn, cfire::websocket::Conn&gt;, cfire::Error&gt; _try_1 = cfire::websocket::pair();
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
     auto [client, server] = std::move(*_try_1);
     #line 13 &quot;snippet_net.cf&quot;
-    auto _try_v_2 = client.send_text(&quot;ping-payload&quot;);
+    std::expected&lt;void, cfire::Error&gt; _try_v_2 = client.send_text(&quot;ping-payload&quot;);
     if (!_try_v_2.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_v_2.error().message());
         return 1;
     }
     #line 14 &quot;snippet_net.cf&quot;
-    auto _try_3 = server.recv_text();
+    std::expected&lt;std::string, cfire::Error&gt; _try_3 = server.recv_text();
     if (!_try_3.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_3.error().message());
         return 1;
     }
-    auto msg = std::move(*_try_3);
+    std::string msg = std::move(*_try_3);
     #line 15 &quot;snippet_net.cf&quot;
     (void)(std::println(&quot;received: {}&quot;, msg));
     return 0;
@@ -1565,7 +1565,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1684,12 +1684,12 @@ auto main(int argc, char** argv) -&gt; int {
     #line 12 &quot;snippet_json.cf&quot;
     std::string payload = R&quot;({&quot;service&quot;:&quot;auth&quot;,&quot;latency_ms&quot;:1.42,&quot;healthy&quot;:true})&quot;;
     #line 13 &quot;snippet_json.cf&quot;
-    auto _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
+    std::expected&lt;Metric, cfire::Error&gt; _try_1 = cfire::json::parse&lt;Metric&gt;(payload);
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
-    auto m = std::move(*_try_1);
+    Metric m = std::move(*_try_1);
     #line 14 &quot;snippet_json.cf&quot;
     (void)(std::println(&quot;service={} latency={}ms&quot;, m.service, m.latency));
     return 0;
@@ -1706,7 +1706,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1744,7 +1744,7 @@ auto main(int argc, char** argv) -&gt; int {
     #line 7 &quot;snippet_interop.cf&quot;
     std::string msg = &quot;cfire systems programming&quot;;
     #line 9 &quot;snippet_interop.cf&quot;
-    auto hash = fh_fnv1a(cfire::c_str(msg), msg.size());
+    std::uint32_t hash = fh_fnv1a(cfire::c_str(msg), msg.size());
     #line 10 &quot;snippet_interop.cf&quot;
     (void)(std::println(&quot;fnv1a hash: 0x{:x}&quot;, hash));
     return 0;
@@ -1761,7 +1761,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1777,7 +1777,7 @@ auto main(int argc, char** argv) -&gt; int {
         <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>package main
 
-import &quot;core:audio&quot;
+import &quot;ext:audio&quot;
 
 fn main() {
     try audio.init(48000, 2)
@@ -1804,7 +1804,7 @@ fn main() {
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 6 &quot;snippet_audio.cf&quot;
-    auto _try_v_1 = cfire::audio::init(48000, 2);
+    std::expected&lt;void, cfire::Error&gt; _try_v_1 = cfire::audio::init(48000, 2);
     if (!_try_v_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_v_1.error().message());
         return 1;
@@ -1812,18 +1812,18 @@ auto main(int argc, char** argv) -&gt; int {
     #line 7 &quot;snippet_audio.cf&quot;
     auto _defer_1 = cfire::scope_exit([&amp;] { (void)(cfire::audio::close()); });
     #line 10 &quot;snippet_audio.cf&quot;
-    auto sfx = cfire::audio::load_sound_from_wave(cfire::audio::gen_sfx(cfire::audio::SfxPreset::Coin));
+    cfire::audio::Sound sfx = cfire::audio::load_sound_from_wave(cfire::audio::gen_sfx(cfire::audio::SfxPreset::Coin));
     #line 11 &quot;snippet_audio.cf&quot;
     (void)(sfx.play());
     #line 14 &quot;snippet_audio.cf&quot;
-    auto tone = cfire::audio::gen_tone(cfire::audio::Waveform::Sine, 440.0, 0.05, 0.4);
+    cfire::audio::Wave tone = cfire::audio::gen_tone(cfire::audio::Waveform::Sine, 440.0, 0.05, 0.4);
     #line 15 &quot;snippet_audio.cf&quot;
-    auto _try_2 = cfire::audio::open_stream(48000, 2);
+    std::expected&lt;cfire::audio::Stream, cfire::Error&gt; _try_2 = cfire::audio::open_stream(48000, 2);
     if (!_try_2.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
         return 1;
     }
-    auto stream = std::move(*_try_2);
+    cfire::audio::Stream stream = std::move(*_try_2);
     #line 16 &quot;snippet_audio.cf&quot;
     (void)(stream.push_samples(tone.samples));
     #line 17 &quot;snippet_audio.cf&quot;
@@ -1842,7 +1842,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2065,54 +2065,54 @@ inline auto cfire::sqlite::map_row&lt;DocEntry&gt;(sqlite3_stmt* stmt) -&gt; Doc
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 20 &quot;snippet_ai.cf&quot;
-    auto schema = cfire::json::schema&lt;QueryPlan&gt;();
+    std::string schema = cfire::json::schema&lt;QueryPlan&gt;();
     #line 23 &quot;snippet_ai.cf&quot;
-    auto _try_1 = cfire::ai::parse_document(&quot;# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;, &quot;arch.md&quot;);
+    std::expected&lt;cfire::ai::Document, cfire::Error&gt; _try_1 = cfire::ai::parse_document(&quot;# Transpiler\ncfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.&quot;, &quot;arch.md&quot;);
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
-    auto doc = std::move(*_try_1);
+    cfire::ai::Document doc = std::move(*_try_1);
     #line 24 &quot;snippet_ai.cf&quot;
-    auto chunks = cfire::ai::chunk_document(doc, 512, 64);
+    std::vector&lt;cfire::ai::DocumentSection&gt; chunks = cfire::ai::chunk_document(doc, 512, 64);
     #line 27 &quot;snippet_ai.cf&quot;
-    auto client = cfire::ai::local();
+    cfire::ai::Client client = cfire::ai::local();
     #line 28 &quot;snippet_ai.cf&quot;
-    auto _try_2 = cfire::sqlite::open(&quot;:memory:&quot;);
+    std::expected&lt;cfire::sqlite::Conn, cfire::Error&gt; _try_2 = cfire::sqlite::open(&quot;:memory:&quot;);
     if (!_try_2.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_2.error().message());
         return 1;
     }
-    auto db = std::move(*_try_2);
+    cfire::sqlite::Conn db = std::move(*_try_2);
     #line 29 &quot;snippet_ai.cf&quot;
-    auto _try_v_3 = db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;);
+    std::expected&lt;void, cfire::Error&gt; _try_v_3 = db.exec(&quot;CREATE TABLE docs (id INTEGER, title TEXT, snippet TEXT, embedding BLOB)&quot;);
     if (!_try_v_3.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_v_3.error().message());
         return 1;
     }
     #line 31 &quot;snippet_ai.cf&quot;
-    for (const auto&amp; ch : cfire::detail::iter_items(chunks)) {
+    for (const cfire::ai::DocumentSection&amp; ch : cfire::detail::iter_items(chunks)) {
         #line 32 &quot;snippet_ai.cf&quot;
-        auto _try_4 = client.embed(ch.text);
+        std::expected&lt;std::vector&lt;float&gt;, cfire::Error&gt; _try_4 = client.embed(ch.text);
         if (!_try_4.has_value()) {
             std::println(stderr, &quot;Error: {}&quot;, _try_4.error().message());
             return 1;
         }
-        auto vec = std::move(*_try_4);
+        std::vector&lt;float&gt; vec = std::move(*_try_4);
         #line 33 &quot;snippet_ai.cf&quot;
-        auto _try_v_5 = db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec);
+        std::expected&lt;void, cfire::Error&gt; _try_v_5 = db.exec(&quot;INSERT INTO docs VALUES (?1, ?2, ?3, ?4)&quot;, ch.index, ch.title, ch.text, vec);
         if (!_try_v_5.has_value()) {
             std::println(stderr, &quot;Error: {}&quot;, _try_v_5.error().message());
             return 1;
         }
     }
     #line 37 &quot;snippet_ai.cf&quot;
-    auto _try_6 = client.embed(&quot;modern C++23 compiler&quot;);
+    std::expected&lt;std::vector&lt;float&gt;, cfire::Error&gt; _try_6 = client.embed(&quot;modern C++23 compiler&quot;);
     if (!_try_6.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_6.error().message());
         return 1;
     }
-    auto qvec = std::move(*_try_6);
+    std::vector&lt;float&gt; qvec = std::move(*_try_6);
     #line 38 &quot;snippet_ai.cf&quot;
     auto _try_7 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
     if (!_try_7.has_value()) {
@@ -2139,7 +2139,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2330,29 +2330,29 @@ inline auto cfire::json::schema_struct&lt;GreetRes&gt;() -&gt; std::string {
 auto main(int argc, char** argv) -&gt; int {
     cfire::detail::set_process_args(argc, argv);
     #line 16 &quot;snippet_webui.cf&quot;
-    auto app = cfire::webui::new_app(&quot;cfire Studio&quot;, 960, 640);
+    cfire::webui::App app = cfire::webui::new_app(&quot;cfire Studio&quot;, 960, 640);
     #line 17 &quot;snippet_webui.cf&quot;
     auto _defer_1 = cfire::scope_exit([&amp;] { (void)(app.close()); });
     #line 18 &quot;snippet_webui.cf&quot;
     (void)(app.serve_dir(&quot;./ui&quot;));
     #line 20 &quot;snippet_webui.cf&quot;
-    (void)(app.bind&lt;GreetReq&gt;(&quot;greet&quot;, [&amp;](auto&amp;&amp; req) {
+    (void)(app.bind&lt;GreetReq&gt;(&quot;greet&quot;, [&amp;](const GreetReq&amp; req) -&gt; GreetRes {
         #line 21 &quot;snippet_webui.cf&quot;
-        auto next = (req.count + 1);
+        std::int32_t next = (req.count + 1);
         #line 22 &quot;snippet_webui.cf&quot;
-        auto res = GreetRes{.message = std::format(&quot;Hello, {}!&quot;, req.name), .count = next};
+        GreetRes res = GreetRes{.message = std::format(&quot;Hello, {}!&quot;, req.name), .count = next};
         #line 23 &quot;snippet_webui.cf&quot;
         (void)(app.emit(&quot;greet:updated&quot;, res));
         #line 24 &quot;snippet_webui.cf&quot;
         return res;
     }));
     #line 27 &quot;snippet_webui.cf&quot;
-    auto _try_1 = app.call_rpc(&quot;greet&quot;, R&quot;({&quot;name&quot;:&quot;Ada&quot;,&quot;count&quot;:1})&quot;);
+    std::expected&lt;std::string, cfire::Error&gt; _try_1 = app.call_rpc(&quot;greet&quot;, R&quot;({&quot;name&quot;:&quot;Ada&quot;,&quot;count&quot;:1})&quot;);
     if (!_try_1.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_1.error().message());
         return 1;
     }
-    auto raw = std::move(*_try_1);
+    std::string raw = std::move(*_try_1);
     #line 28 &quot;snippet_webui.cf&quot;
     (void)(std::println(&quot;rpc={} events={}&quot;, raw, app.emitted_events_count(&quot;greet:updated&quot;)));
     return 0;
@@ -2369,7 +2369,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">91/91 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2445,7 +2445,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>).</td>
+          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 28 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:keychain</code>) + 8 opt-in native extensions (<code>ext:ai</code>, <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:tako</code>, <code>ext:webui</code>).</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -2579,7 +2579,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
       <h4>Audio Synthesis &amp; Real-Time DSP</h4>
-      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>core:audio</code>).</p>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>ext:audio</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-17">
       <div class="roadmap-num">Chapter 17</div>
@@ -2594,7 +2594,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-19">
       <div class="roadmap-num">Chapter 19</div>
       <h4>Production Patterns &amp; Examples</h4>
-      <p>End-to-end architectures, cloud services (<code>core:tako</code>), canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
+      <p>End-to-end architectures, cloud services (<code>ext:tako</code>), canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
     </a>
   </div>
 

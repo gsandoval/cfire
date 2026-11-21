@@ -2395,8 +2395,8 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
 <h3 class="guide-heading" id="ch1-understanding-the-two-stdlib-namespaces-core-ext"><span class="heading-hash">#</span><span class="heading-text">Understanding the Two Stdlib Namespaces (<code>core:*</code>, <code>ext:*</code>)</span></h3>
 <p>One of the biggest pain points in systems programming is pulling in a seemingly innocent utility module only to discover it requires five system C libraries at link time. <code>cfire</code> keeps dependency boundaries honest by organizing its 36 built-in modules into two explicit namespaces based on external link requirements:</p>
 <ul>
-  <li><strong><code>core:*</code> (Foundational &amp; Platform Core — 30 Modules)</strong>: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (<code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:json</code>, <code>core:encoding/*</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:keychain</code>, <code>core:build</code>, <code>core:net</code>, <code>core:net/url</code>, <code>core:net/tls</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:net/websocket</code>, <code>core:audio</code>, <code>core:tako</code>, <code>core:crypto/*</code>) with zero external C library setup required. (String and sort helpers live directly as built-in methods on <code>str</code>, <code>[]T</code>, <code>[N]T</code>, and <code>map[K]V</code>.)</li>
-  <li><strong><code>ext:*</code> (Native C Libraries, WebUI &amp; AI Extensions — 6 Opt-In Modules)</strong>: Specialized domain engines (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>) that link external C libraries, native WebView GUI toolkits, or AI/OCR engines only when imported. <code>ext:db/sqlite</code> builds from its vendored amalgamation by default, <code>ext:crypto/sodium</code> and <code>ext:net/ssh</code> require system <code>libsodium</code> / <code>libssh</code> (failing closed at build time when absent), and <code>ext:compress/zstd</code>, <code>ext:ai</code>, and <code>ext:webui</code> use native platform frameworks or built-in codecs as shown below.</li>
+  <li><strong><code>core:*</code> (Foundational &amp; Platform Core — 28 Modules)</strong>: Everything that compiles and runs out-of-the-box with built-in ISO C++23 or baseline OS APIs/fallbacks (<code>core:unicode</code>, <code>core:regex</code>, <code>core:collections</code>, <code>core:math</code>, <code>core:rand</code>, <code>core:json</code>, <code>core:encoding/*</code>, <code>core:fs</code>, <code>core:os</code>, <code>core:time</code>, <code>core:sync</code>, <code>core:sync/context</code>, <code>core:cli</code>, <code>core:log</code>, <code>core:keychain</code>, <code>core:build</code>, <code>core:net</code>, <code>core:net/url</code>, <code>core:net/tls</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:net/websocket</code>, <code>core:crypto/*</code>) with zero external C library setup required. (String and sort helpers live directly as built-in methods on <code>str</code>, <code>[]T</code>, <code>[N]T</code>, and <code>map[K]V</code>.)</li>
+  <li><strong><code>ext:*</code> (Native C Libraries, Audio, Cloud, WebUI &amp; AI Extensions — 8 Opt-In Modules)</strong>: Specialized domain engines (<code>ext:ai</code>, <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:tako</code>, <code>ext:webui</code>) that link external C libraries, hardware audio/WebView toolkits, cloud SDKs, or AI/OCR engines only when imported. <code>ext:db/sqlite</code> builds from its vendored amalgamation by default, <code>ext:crypto/sodium</code> and <code>ext:net/ssh</code> require system <code>libsodium</code> / <code>libssh</code> (failing closed at build time when absent), and <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:ai</code>, <code>ext:tako</code>, and <code>ext:webui</code> use native platform frameworks or built-in codecs/runtimes as shown below.</li>
   <li><strong>Any other C or C++ library</strong> (raylib, SDL, your own code) is used through <code>import cpp &quot;&lt;header.h&gt;&quot;</code> and, when it needs building, <code>build.CC</code> / <code>build.CMake</code> in <code>build.cf</code> (see Chapter 11). <code>cfire</code> no longer bundles raylib.</li>
 </ul>
 <h4 id="ch1-vendored-first-modules-runtimevendor">Vendored-First Modules (<code>runtime/vendor/</code>)</h4>
@@ -2421,7 +2421,7 @@ sudo apt-get update &amp;&amp; sudo apt-get install -y clang-18 pkg-config libsi
     </thead>
     <tbody>
       <tr><td><code>core:net/tls</code> &amp; <code>core:net/http</code></td><td><code>libssl</code> / <code>libcrypto</code> (<code>pkg-config</code> <code>openssl</code> via dynamic <code>dlopen</code>)</td><td>Apple <code>Foundation</code> <code>NSURLSession</code> on macOS/iOS; WinHTTP/Schannel or OpenSSL on Windows; browser XHR on WASM</td></tr>
-      <tr><td><code>core:audio</code></td><td><code>AudioToolbox.framework</code> (macOS/iOS), <code>libasound2</code> (<code>dlopen(&quot;libasound.so.2&quot;)</code>, Linux), Windows WASAPI/WaveOut</td><td><code>WebAudio</code> on WASM; deterministic software mixer in headless environments</td></tr>
+      <tr><td><code>ext:audio</code></td><td><code>AudioToolbox.framework</code> (macOS/iOS), <code>libasound2</code> (<code>dlopen(&quot;libasound.so.2&quot;)</code>, Linux), Windows WASAPI/WaveOut</td><td><code>WebAudio</code> on WASM; deterministic software mixer in headless environments</td></tr>
       <tr><td><code>core:keychain</code></td><td>macOS/iOS <code>Security.framework</code>; Windows Credential Manager; Linux <code>secret-tool</code> CLI (package <code>libsecret-tools</code>, no <code>pkg-config</code>)</td><td><strong>None.</strong> Any unsupported platform or missing <code>secret-tool</code> returns <code>Err</code>; the in-memory store exists only under <code>CFIRE_TEST_MODE</code> (<code>runtime/core/keychain.hpp</code>).</td></tr>
       <tr><td><code>ext:compress/zstd</code></td><td><code>libzstd</code> (<code>pkg-config</code> <code>libzstd</code>)</td><td>Native <code>libcompression</code> (<code>COMPRESSION_LZFSE</code> / <code>ZLIB</code>) on Apple/iOS; RFC 1951 codec on WASM</td></tr>
       <tr><td><code>ext:crypto/sodium</code></td><td><code>libsodium</code> (<code>pkg-config</code> <code>libsodium</code>, <strong>required</strong>)</td><td><strong>None.</strong> Without <code>libsodium</code> the build fails (<code>#error</code> in <code>runtime/core/sodium.hpp</code>).</td></tr>
@@ -2705,7 +2705,7 @@ auto main(int argc, char** argv) -&gt; int {
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>cfire new my-cli               # Default: CLI / backend service template (--template cli)
 cfire new --template webui app # Hybrid desktop/mobile WebView app (ext:webui + ./ui/index.html)
-cfire new --template tako tool # Local AWS-compatible cloud service workflow (core:tako)
+cfire new --template tako tool # Local AWS-compatible cloud service workflow (ext:tako)
 </code></pre>
 <p>Every scaffolded workspace includes a ready-to-run <code>build.cf</code>, <code>main.cf</code>, a unit test in <code>main_test.cf</code>, and a <code>.gitignore</code> so you can immediately run <code>cfire run</code> and <code>cfire test</code>:</p>
 <div class="table-wrap">
@@ -2717,7 +2717,7 @@ cfire new --template tako tool # Local AWS-compatible cloud service workflow (co
     <tbody>
       <tr><td><code>cli</code> (default)</td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;]</code> (<code>cli</code>)</td><td>CLI tools, microservices, AI agents, systems daemons.</td></tr>
       <tr><td><code>webui</code> (alias <code>gui</code>)</td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>ui/index.html</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;, &quot;ios-sim&quot;]</code> (<code>gui</code>)</td><td>Wails/Tauri-style desktop &amp; mobile apps using HTML/CSS/JS over <code>ext:webui</code>.</td></tr>
-      <tr><td><code>tako</code></td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;]</code></td><td>Local AWS-compatible cloud service &amp; testing scaffold using <code>core:tako</code>.</td></tr>
+      <tr><td><code>tako</code></td><td><code>build.cf</code>, <code>main.cf</code>, <code>main_test.cf</code>, <code>.gitignore</code></td><td><code>[&quot;native&quot;]</code></td><td>Local AWS-compatible cloud service &amp; testing scaffold using <code>ext:tako</code>.</td></tr>
     </tbody>
   </table>
 </div>
@@ -2753,7 +2753,7 @@ cfire new --template tako tool # Local AWS-compatible cloud service workflow (co
   <li><strong>Platform-Specific File Suffixes (<code>_darwin</code>, <code>_macos</code>, <code>_ios</code>, <code>_linux</code>, <code>_windows</code>, <code>_wasm</code>, <code>_unix</code>)</strong>: Any <code>.cf</code> source or <code>_test.cf</code> file whose stem (before an optional <code>_test</code>) ends with <code>_darwin</code> / <code>_macos</code> (desktop macOS), <code>_ios</code> (iOS &amp; iOS Simulator), <code>_linux</code> (Linux), <code>_windows</code> (Windows), <code>_wasm</code> (WebAssembly), or <code>_unix</code> (non-Windows, non-WASM POSIX targets) compiles <strong>only</strong> when targeting that platform (<code>src/build/package_loader.hpp</code>). &gt; [!WARNING] &gt; This filename filter runs automatically in every package directory: an existing file named e.g. <code>foo_linux.cf</code> (or <code>foo_linux_test.cf</code>) is silently omitted on macOS, Windows, and WASM builds. Name files with <code>_&lt;os&gt;</code> only when they hold platform-specific code or tests.</li>
   <li><strong>Local Workspace Packages (<code>import &quot;./pkg/checksum&quot;</code>)</strong>: Scans all platform-matching non-test <code>.cf</code> files in <code>./pkg/checksum/</code> belonging to <code>package checksum</code> and exposes their declarations under the <code>checksum.</code> namespace.</li>
   <li><strong>Standard Library (<code>import &quot;core:...&quot;</code>, <code>&quot;ext:...&quot;</code>)</strong>: Resolves headers from the <code>cfire</code> runtime directory and auto-links required system frameworks.</li>
-  <li><strong>Built-in Cloud Primitives (<code>import &quot;core:tako&quot;</code>)</strong>: Resolves directly against the built-in <code>core:tako</code> standard runtime header (<code>runtime/core/tako.hpp</code>) alongside user packages in <code>~/.local/share/cfire/pkgs</code>.</li>
+  <li><strong>Built-in Cloud Primitives (<code>import &quot;ext:tako&quot;</code>)</strong>: Resolves directly against the built-in <code>ext:tako</code> standard runtime header (<code>runtime/core/tako.hpp</code>) alongside user packages in <code>~/.local/share/cfire/pkgs</code>.</li>
 </ol>
     <div class="chapter-pager topic-pager">
       <a href="#ch3-scaffolding-new-projects-cfire-new-cfire-init" class="pager-card pager-prev" onclick="navigateToSubhead('3', 'ch3-scaffolding-new-projects-cfire-new-cfire-init'); return false;">
@@ -3747,11 +3747,12 @@ fn main() {
 <h2 id="chapter-7"><a id="ch7"></a>7. Error Handling, Optionals, Null Safety &amp; Defer</h2>
   </div>
   <div class="topic-pill-bar">
-    <span class="topic-pill-label">Ch 7 (4)</span>
+    <span class="topic-pill-label">Ch 7 (5)</span>
     <a href="#ch7-separating-errors-from-absence-t-vs-t" class="topic-pill active" data-topic-pill="ch7-separating-errors-from-absence-t-vs-t" title="Separating Errors from Absence (T! vs T?)" onclick="navigateToSubhead('7', 'ch7-separating-errors-from-absence-t-vs-t'); return false;">7.1 T! vs T? Types</a>
     <a href="#ch7-propagating-errors-with-try-and-recovering-with-or" class="topic-pill" data-topic-pill="ch7-propagating-errors-with-try-and-recovering-with-or" title="Propagating Errors with try and Recovering with or" onclick="navigateToSubhead('7', 'ch7-propagating-errors-with-try-and-recovering-with-or'); return false;">7.2 try &amp; or Recovery</a>
     <a href="#ch7-no-null-values-absence-is-t" class="topic-pill" data-topic-pill="ch7-no-null-values-absence-is-t" title="No Null Values: Absence Is T?" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">7.3 No Null Values: Absenc..</a>
-    <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="topic-pill" data-topic-pill="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.4 defer Cleanup</a>
+    <a href="#ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" class="topic-pill" data-topic-pill="ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" title="Choosing T! vs T? and Bridging with .or_error / .ignore_error" onclick="navigateToSubhead('7', 'ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error'); return false;">7.4 Choosing T! vs T? and ..</a>
+    <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="topic-pill" data-topic-pill="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.5 defer Cleanup</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch7-separating-errors-from-absence-t-vs-t" data-topic-id="ch7-separating-errors-from-absence-t-vs-t" data-topic-title="Separating Errors from Absence (T! vs T?)" data-short-title="7.1 T! vs T? Types">
 <h3 class="guide-heading" id="ch7-separating-errors-from-absence-t-vs-t"><span class="heading-hash">#</span><span class="heading-text">Separating Errors from Absence (<code>T!</code> vs <code>T?</code>)</span></h3>
@@ -3858,7 +3859,7 @@ ep=127.0.0.1:8080 q1=10443 q2=50
   </section>
   <section class="guide-topic" id="topic-ch7-no-null-values-absence-is-t" data-topic-id="ch7-no-null-values-absence-is-t" data-topic-title="No Null Values: Absence Is T?" data-short-title="7.3 No Null Values: Absenc..">
 <h3 class="guide-heading" id="ch7-no-null-values-absence-is-t"><span class="heading-hash">#</span><span class="heading-text">No Null Values: Absence Is <code>T?</code></span></h3>
-<p>A <code>cfire</code> value is never null, because there are no raw pointers to be null. A value that may be absent has type <code>T?</code>. Reading through one without unwrapping is a compile-time error: <code>cfire/UNWRAPPED-OPTIONAL</code> for an expression such as <code>find(id).id</code>, and the flow-sensitive <code>cfire/NULL-DEREF</code> for a <code>T?</code> variable until a branch proves it present (<code>if s != none</code>, an early <code>return</code>, <code>assert(s != none)</code>). Unwrap with <code>if x := opt { ... }</code>, <code>or</code>, or <code>try</code>:</p>
+<p>A <code>cfire</code> value is never null, because there are no raw pointers to be null. A value that may be absent has type <code>T?</code>. Reading through one without unwrapping is a compile-time error: <code>cfire/UNWRAPPED-OPTIONAL</code> for an expression such as <code>find(id).id</code>, and the flow-sensitive <code>cfire/NULL-DEREF</code> for a <code>T?</code> variable until a branch proves it present (<code>if s != none</code>, an early <code>return</code>, <code>assert(s != none)</code>). Unwrap with <code>if x := opt { ... }</code> or <code>or</code> (<code>try</code> only propagates <code>T!</code> errors; promote <code>T?</code> to <code>T!</code> with <code>.or_error(...)</code>):</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
@@ -3896,13 +3897,63 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.2)</span>
         <strong class="pager-title">Propagating Errors with try and Recovering with or</strong>
       </a>
-      <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">
+      <a href="#ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 7.4) &rarr;</span>
+        <strong class="pager-title">Choosing T! vs T? and Bridging with .or_error / .ignore_error</strong>
+      </a>
+    </div>
+  </section>
+  <section class="guide-topic" id="topic-ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" data-topic-id="ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" data-topic-title="Choosing T! vs T? and Bridging with .or_error / .ignore_error" data-short-title="7.4 Choosing T! vs T? and ..">
+<h3 class="guide-heading" id="ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error"><span class="heading-hash">#</span><span class="heading-text">Choosing <code>T!</code> vs <code>T?</code> and Bridging with <code>.or_error</code> / <code>.ignore_error</code></span></h3>
+<p><code>cfire</code> enforces a single, non-duplicated error-vs-optional contract across the entire standard library:</p>
+<ul>
+  <li><strong>Use <code>T!</code> whenever invalid input or runtime failure can happen</strong>: every parser (<code>i64.parse(s)</code>, <code>json.parse[T](s)</code>, <code>csv.parse(s)</code>, <code>cli.parse[T](args)</code>), decoder, compiler (<code>regex.compile</code>), and I/O operation returns a single canonical <code>T!</code> API with a diagnostic <code>Error</code>. There are no <code>try_parse</code> twin APIs.</li>
+  <li><strong>Use <code>T?</code> strictly for valid absence</strong>: lookups (<code>m.get(k)</code>, <code>os.getenv(&quot;KEY&quot;)</code>), searches (<code>s.index_of(sub)</code>), and empty-container pops (<code>xs.pop()</code>). There are no <code>*_opt</code> or sentinel-fallback twins.</li>
+  <li><strong>Bridge explicitly in either direction</strong>:
+    <ul>
+      <li><code>(opt: T?).or_error(msg: str, code: i32 = 0) -&gt; T!</code>: promotes <code>none</code> to an <code>Error</code> lazily (the message expression is not evaluated when <code>opt</code> is present) so it composes directly with <code>try</code>.</li>
+      <li><code>(res: T!).ignore_error() -&gt; T?</code>: discards an error payload on a non-<code>void</code> fallible value to yield <code>T?</code>. Calling <code>.ignore_error()</code> on <code>void!</code> is rejected (<code>cfire/TYPE-MISMATCH</code>); use <code>_ = expr or { }</code> or <code>expr or err { ... }</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Closed pure <code>.cf</code> wrapper surface</strong>: raw C++ <code>std::optional</code> / <code>std::expected</code> member pass-throughs (<code>.has_value()</code>, <code>.value()</code>, <code>.value_or(...)</code>, <code>.error()</code>) are rejected in pure <code>.cf</code> (<code>cfire/UNKNOWN-METHOD</code>); use <code>cfire</code>'s own <code>if v :=</code>, <code>or</code>, <code>try</code>, <code>!= none</code>, and <code>match</code>.</li>
+</ul>
+<div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre><code>package main
+
+import &quot;core:os&quot;
+
+fn load_port(env_name: str, cli_raw: str) -&gt; i32! {
+    if cli_raw != &quot;&quot; {
+        return try i32.parse(cli_raw)
+    }
+    raw := try os.getenv(env_name).or_error(&quot;missing port environment variable&quot;)
+    return try i32.parse(raw)
+}
+
+fn main() {
+    os.setenv(&quot;GUIDE_DEMO_PORT&quot;, &quot;8080&quot;)
+    from_env := load_port(&quot;GUIDE_DEMO_PORT&quot;, &quot;&quot;) or -1
+    bad_optional := i32.parse(&quot;not-a-number&quot;).ignore_error() or 3000
+    println(&quot;env={} fallback={}&quot;, from_env, bad_optional)
+}
+</code></pre>
+<div class="terminal-tray">
+  <div class="terminal-tray-header" style="display:inline-flex;align-items:center;gap:0.35rem;"><span class="material-symbols-outlined" style="font-size:0.95rem;" aria-hidden="true">check_circle</span> Expected Terminal Output</div>
+  <pre><code>env=8080 fallback=3000
+</code></pre>
+</div>
+    <div class="chapter-pager topic-pager">
+      <a href="#ch7-no-null-values-absence-is-t" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.3)</span>
+        <strong class="pager-title">No Null Values: Absence Is T?</strong>
+      </a>
+      <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="pager-card pager-next" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">
+        <span class="pager-label">NEXT TOPIC (CH 7.5) &rarr;</span>
         <strong class="pager-title">Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" data-topic-id="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" data-topic-title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" data-short-title="7.4 defer Cleanup">
+  <section class="guide-topic" id="topic-ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" data-topic-id="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" data-topic-title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" data-short-title="7.5 defer Cleanup">
 <h3 class="guide-heading" id="ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer"><span class="heading-hash">#</span><span class="heading-text">Deterministic Scope Cleanup with <code>defer</code> (<code>cfire/RETURN-IN-DEFER</code>)</span></h3>
 <p>Whenever you open a file, lock a resource, or spin up a temporary database handle, write its <code>defer</code> cleanup on the very next line. <code>defer &lt;stmt&gt;</code> and <code>defer { ... }</code> schedule cleanup statements to run in last-in, first-out (LIFO) order when the lexical block exits—whether at the closing <code>}</code>, an early <code>return</code>, or an error propagated via <code>try</code>:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -3943,9 +3994,9 @@ fn main() {
 </div>
 <p>Each <code>defer</code> lowers to a stack-allocated <code>cfire::ScopeGuard</code> lambda whose destructor runs deterministically during C++ stack unwinding. Note that placing a <code>return</code> statement inside a <code>defer { ... }</code> block is rejected at compile time (<code>cfire/RETURN-IN-DEFER</code>), because silently hijacking a function's return value during cleanup masks upstream errors.</p>
     <div class="chapter-pager topic-pager">
-      <a href="#ch7-no-null-values-absence-is-t" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.3)</span>
-        <strong class="pager-title">No Null Values: Absence Is T?</strong>
+      <a href="#ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error'); return false;">
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.4)</span>
+        <strong class="pager-title">Choosing T! vs T? and Bridging with .or_error / .ignore_error</strong>
       </a>
       <a href="#ch8-utf-8-strings-unicode-scalars-regular-expressions" class="pager-card pager-next" onclick="navigateToSubhead('8', 'ch8-utf-8-strings-unicode-scalars-regular-expressions'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 8.1) &rarr;</span>
@@ -3994,7 +4045,7 @@ fn main() {
       <tr><td>builtin</td><td><code>s.index_of(sub)</code> / <code>last_index_of(sub)</code></td><td><code>fn(sub: str) -&gt; usize?</code></td><td>The 0-based byte offset of <code>sub</code>, or <code>none</code> when it is absent (no <code>-1</code> sentinels).</td></tr>
       <tr><td>builtin</td><td><code>s.to_upper()</code> / <code>to_lower()</code> / <code>repeat(n)</code></td><td><code>fn() -&gt; str</code> / <code>fn(n: usize) -&gt; str</code></td><td>ASCII case conversion and <code>n</code>-fold repetition.</td></tr>
       <tr><td>builtin</td><td><code>s.runes()</code> / <code>rune_count()</code></td><td><code>fn() -&gt; []u32</code> / <code>fn() -&gt; usize</code></td><td>Unicode code points (invalid UTF-8 decodes as U+FFFD).</td></tr>
-      <tr><td>builtin</td><td><code>i32.parse(s)</code> / <code>f64.parse(s)</code> / <code>bool.parse(s)</code></td><td><code>fn(s: str) -&gt; T?</code></td><td>Parses a whole literal of the target type; <code>none</code> on invalid or out-of-range input.</td></tr>
+      <tr><td>builtin</td><td><code>i32.parse(s)</code> / <code>f64.parse(s)</code> / <code>bool.parse(s)</code></td><td><code>fn(s: str) -&gt; T!</code></td><td>Parses a whole literal of the target type; returns an <code>Error</code> on empty, invalid, or out-of-range input.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.is_valid_utf8</code> / <code>rune_count</code></td><td><code>fn(s: str) -&gt; bool</code> / <code>fn(s: str) -&gt; usize</code></td><td>Validates RFC 3629 UTF-8 byte sequences and counts Unicode codepoints.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.runes</code> / <code>encode_rune</code></td><td><code>fn(s: str) -&gt; []u32</code> / <code>fn(r: u32) -&gt; str</code></td><td>Decodes UTF-8 into 32-bit scalar values (<code>u32</code>) or encodes a codepoint to UTF-8.</td></tr>
       <tr><td><code>core:unicode</code></td><td><code>unicode.to_lower</code> / <code>to_upper</code></td><td><code>fn(s: str) -&gt; str</code></td><td>Full Unicode case folding across Latin, Greek, and Cyrillic scripts.</td></tr>
@@ -4062,7 +4113,7 @@ fn main() {
 </div>
     <div class="chapter-pager topic-pager">
       <a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" class="pager-card pager-prev" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">
-        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.4)</span>
+        <span class="pager-label">&larr; PREVIOUS TOPIC (CH 7.5)</span>
         <strong class="pager-title">Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)</strong>
       </a>
       <a href="#ch8-zero-copy-byte-access-compile-time-bounds-checks" class="pager-card pager-next" onclick="navigateToSubhead('8', 'ch8-zero-copy-byte-access-compile-time-bounds-checks'); return false;">
@@ -4155,7 +4206,7 @@ import &quot;core:collections&quot;
 fn main() {
     mut latencies: []i64 = [42, 7, 19, 88, 12]
     latencies.sort()
-    idx := latencies.binary_search(19) or -1
+    idx := latencies.binary_search(19) or { return }
 
     mut pq: collections.PriorityQueue[i64]
     for v in latencies { pq.push(v) }
@@ -4230,7 +4281,7 @@ fn main() {
       <tr><td><code>core:fs</code></td><td><code>fs.stat</code> / <code>realpath</code> / <code>ERR_EXISTS</code> / <code>ERR_NOT_FOUND</code> / <code>ERR_PERMISSION</code></td><td><code>fn(path: str) -&gt; FileInfo!</code> / <code>str!</code> / <code>const i32</code></td><td>Metadata inspection (<code>FileInfo{size, mtime_ms, mode, is_dir, is_symlink}</code>), canonical real path resolution, and portable error codes via <code>err.code()</code>.</td></tr>
       <tr><td><code>core:fs</code></td><td><code>fs.exists</code> / <code>is_dir</code> / <code>is_file</code> / <code>file_size</code> / <code>copy_file</code> / <code>mkdir_all</code> / <code>remove</code> / <code>list_dir</code></td><td><code>fn(path: str) -&gt; ...</code></td><td>Path inspection, file copying, recursive directory creation, removal, and directory listing.</td></tr>
       <tr><td><code>core:os</code></td><td><code>os.stdin</code> / <code>os.stdout</code> / <code>os.stderr</code> / <code>os.pipe</code></td><td><code>fn() -&gt; fs.File</code> / <code>fn() -&gt; (fs.File, fs.File)!</code></td><td>Non-owning <code>fs.File</code> stream handles for stdio (<code>0</code>, <code>1</code>, <code>2</code>) and owning <code>(reader, writer)</code> OS pipe pairs.</td></tr>
-      <tr><td><code>core:os</code></td><td><code>os.getenv</code> / <code>os.setenv</code> / <code>os.cwd</code></td><td><code>fn(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td>Reads or sets process environment variables and queries the working directory.</td></tr>
+      <tr><td><code>core:os</code></td><td><code>os.getenv</code> / <code>os.setenv</code> / <code>os.cwd</code></td><td><code>fn(key: str) -&gt; str?</code></td><td>Reads (<code>none</code> if unset) or sets process environment variables and queries the working directory.</td></tr>
       <tr><td><code>core:time</code></td><td><code>time.now_ms</code> / <code>now</code> / <code>parse_rfc3339</code> / <code>sleep_ms</code></td><td><code>fn() -&gt; i64</code> / <code>Time</code> / <code>Time!</code></td><td>Monotonic millisecond clock, wall-clock <code>Time</code> with <code>.local()</code>, <code>.utc()</code>, <code>.format(pattern)</code>, offset-aware <code>.format_rfc3339()</code>, and thread sleep.</td></tr>
       <tr><td><code>core:rand</code></td><td><code>rand.u64</code> / <code>range_i64</code> / <code>f64_unit</code> / <code>bytes</code></td><td><code>fn(n: usize) -&gt; []byte</code></td><td>Thread-local <code>MT19937_64</code> draws and OS-entropy CSPRNG byte slices (<code>rand.bytes</code>).</td></tr>
       <tr><td><code>core:math</code></td><td><code>math.PI</code> / <code>E</code> / <code>TAU</code> / <code>SQRT_2</code> and <code>math.atan2</code> / <code>hypot</code> / <code>gcd</code> / <code>lcm</code></td><td><code>f64</code> constants / multi-input functions</td><td>Constants and functions with no natural receiver; single-value math is a method (<code>x.sqrt()</code>, <code>x.sin()</code>, <code>x.clamp(lo, hi)</code>, <code>a.checked_add(b)</code>).</td></tr>
@@ -4252,7 +4303,7 @@ fn main() -&gt; void! {
     defer { _ = fs.remove(tmp) }
 
     mut f := try fs.open(tmp, fs.OpenMode::Write)
-    _ = try f.write_text(&quot;host=&quot; + os.getenv(&quot;USER&quot;, &quot;ci&quot;) + &quot;\n&quot;)
+    _ = try f.write_text(&quot;host=&quot; + (os.getenv(&quot;USER&quot;) or &quot;ci&quot;) + &quot;\n&quot;)
     f.close()
 
     content := try fs.read_text(tmp)
@@ -4342,8 +4393,8 @@ type ServerFlags struct {
     Workers: i32 `cli:&quot;--workers&quot; default:&quot;4&quot;         desc:&quot;Worker thread count&quot;`
 }
 
-fn main() {
-    flags := cli.parse[ServerFlags]([&quot;--port&quot;, &quot;8088&quot;, &quot;--workers&quot;, &quot;8&quot;])
+fn main() -&gt; void! {
+    flags := try cli.parse[ServerFlags]([&quot;--port&quot;, &quot;8088&quot;, &quot;--workers&quot;, &quot;8&quot;])
     log.set_format(log.Format::Json)
     log.info(&quot;server configured&quot;, &quot;host&quot;, flags.Host, &quot;port&quot;, &quot;{flags.Port}&quot;, &quot;workers&quot;, &quot;{flags.Workers}&quot;)
 }
@@ -4468,7 +4519,7 @@ totals=[5, 10, 15, 20]
     <tbody>
       <tr><td><code>make(sync.Channel[T], cap)</code></td><td><code>-&gt; Channel[T]</code></td><td>Creates a thread-safe channel handle (copying the handle shares the underlying queue); <code>cap = 0</code> is unbuffered.</td></tr>
       <tr><td><code>ch.send(val)</code></td><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td>Enqueues <code>val</code> and wakes one blocked receiver thread.</td></tr>
-      <tr><td><code>ch.recv()</code></td><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td>Blocks until an item is available, or returns an error when closed and drained.</td></tr>
+      <tr><td><code>ch.recv()</code></td><td><code>fn (ch: Channel[T]) recv() -&gt; T?</code></td><td>Blocks until an item is available, or returns <code>none</code> when closed and drained.</td></tr>
       <tr><td><code>ch.recv_ctx(ctx)</code></td><td><code>fn (ch: Channel[T]) recv_ctx(ctx: Context) -&gt; T!</code></td><td>Blocks until an item arrives, the channel closes, or <code>ctx</code> is cancelled/times out.</td></tr>
       <tr><td><code>ch.close()</code></td><td><code>fn (ch: Channel[T]) close()</code></td><td>Marks the channel closed and wakes all blocked <code>recv</code> and <code>for item in ch</code> consumers.</td></tr>
     </tbody>
@@ -5072,6 +5123,7 @@ cfire fix src/main.cf
       <tr><td><code>cfire/FILE-NOT-FOUND</code></td><td>Tooling</td><td>A file named on the command line or imported does not exist.</td></tr>
       <tr><td><code>cfire/IMMUTABLE-MUT-ARG</code></td><td>Detailed rule</td><td>Passing Immutable Binding as <code>mut</code> Argument</td></tr>
       <tr><td><code>cfire/INDEX-OUT-OF-BOUNDS</code></td><td>Detailed rule</td><td>Compile-Time Out-of-Bounds or Negative Constant Sequence Index</td></tr>
+      <tr><td><code>cfire/INTERNAL-BACKEND-ERROR</code></td><td>Tooling</td><td>Internal compiler error: the C++ backend rejected generated code for a pure .cf program that Sema accepted (please report).</td></tr>
       <tr><td><code>cfire/INVALID-ATTRIBUTE</code></td><td>Attributes</td><td>An attribute on a declaration is unknown, misplaced, or has invalid arguments.</td></tr>
       <tr><td><code>cfire/INVALID-CONSTRUCTOR</code></td><td>Detailed rule</td><td>Associated Function Other Than <code>make</code></td></tr>
       <tr><td><code>cfire/INVALID-IMPORT</code></td><td>Imports</td><td>A module imported under a non-canonical path or wrong tier prefix (<code>core:</code> vs <code>ext:</code>).</td></tr>
@@ -5134,11 +5186,11 @@ cfire fix src/main.cf
       <tr><td><code>cfire/UNKNOWN-MODULE</code></td><td>Imports</td><td>An import path that names no known module.</td></tr>
       <tr><td><code>cfire/UNKNOWN-STDLIB-FN</code></td><td>Names</td><td>A function that the stdlib module does not export.</td></tr>
       <tr><td><code>cfire/UNKNOWN-STDLIB-TYPE</code></td><td>Names</td><td>A type that the stdlib module does not export, or a <code>build.*</code> type outside <code>build.cf</code>.</td></tr>
-      <tr><td><code>cfire/UNKNOWN-TYPE</code></td><td>Types</td><td>An expression whose type cannot be inferred (warning).</td></tr>
+      <tr><td><code>cfire/UNKNOWN-TYPE</code></td><td>Types</td><td>An expression whose type cannot be inferred (error in pure .cf, warning in C++ interop).</td></tr>
       <tr><td><code>cfire/UNREACHABLE-MATCH-ARM</code></td><td>Detailed rule</td><td>Unreachable <code>match</code> Arm Shadowed by Earlier Pattern</td></tr>
       <tr><td><code>cfire/UNRESOLVED-PACKAGE</code></td><td>Imports</td><td>A local package import that cannot be found.</td></tr>
       <tr><td><code>cfire/UNSATISFIED-CONSTRAINT</code></td><td>Generics</td><td>A type argument that does not satisfy the interface constraint.</td></tr>
-      <tr><td><code>cfire/UNWRAPPED-OPTIONAL</code></td><td>Errors</td><td>A member access on a <code>T?</code> value without unwrapping.</td></tr>
+      <tr><td><code>cfire/UNWRAPPED-OPTIONAL</code></td><td>Errors</td><td>An optional <code>T?</code> value used where its non-optional <code>T</code> value is required without unwrapping (<code>or</code> / <code>if x := ...</code>).</td></tr>
       <tr><td><code>cfire/USE-AFTER-FREE</code></td><td>Detailed rule</td><td>Use of a Slice View After Owner Invalidation</td></tr>
       <tr><td><code>cfire/USE-AFTER-MOVE</code></td><td>Detailed rule</td><td>Use of Value After Explicit <code>move</code></td></tr>
       <tr><td><code>cfire/WRONG-ARG-COUNT</code></td><td>Types</td><td>A builtin called with the wrong number of arguments.</td></tr>
@@ -5222,7 +5274,7 @@ cfire fix src/main.cf
     <tbody>
       <tr><td><code>http.get</code></td><td><code>fn(url: str, headers = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -&gt; Response!</code></td><td>Sends an <code>HTTP GET</code> request over <code>http://</code> or <code>https://</code> with an end-to-end deadline (<code>0</code> disables; <code>verify_peer: false</code> accepts self-signed certificates).</td></tr>
       <tr><td><code>http.post</code> / <code>http.request</code></td><td><code>fn(url: str, body: str, ..., timeout_ms: i64 = 30000) -&gt; Response!</code></td><td>Sends an <code>HTTP POST</code> or custom HTTP verb (<code>PUT</code>, <code>PATCH</code>, <code>DELETE</code>) with headers and an end-to-end <code>timeout_ms</code> deadline.</td></tr>
-      <tr><td><code>http.post_sse</code></td><td><code>fn(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -&gt; bool, ..., timeout_ms: i64 = 30000) -&gt; void!</code></td><td>Streams <code>text/event-stream</code> chunks in real time, invoking <code>on_event</code> for each frame until the stream ends or <code>on_event</code> returns <code>false</code>.</td></tr>
+      <tr><td><code>http.post_sse</code></td><td><code>fn(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -&gt; bool, ..., timeout_ms: i64 = 30000) -&gt; Response!</code></td><td>Streams <code>text/event-stream</code> chunks in real time, invoking <code>on_event</code> for each frame until the stream ends or <code>on_event</code> returns <code>false</code>.</td></tr>
       <tr><td><code>make(http.Router)</code></td><td><code>-&gt; Router</code></td><td>Constructs a pattern-matching router supporting static paths, <code>:param</code> segments, and <code>*</code> wildcards.</td></tr>
       <tr><td><code>router.get</code> / <code>post</code> / <code>put</code> / <code>delete_</code></td><td><code>fn(pattern: str, handler: fn(Request) -&gt; Response)</code></td><td>Registers a route handler for the specified HTTP method and path pattern.</td></tr>
       <tr><td><code>router.use</code></td><td><code>fn(middleware: fn(Request) -&gt; int)</code></td><td>Runs before route dispatch (<code>0</code> continues; non-zero HTTP status code short-circuits).</td></tr>
@@ -5645,9 +5697,9 @@ AES-GCM + Zstd verified: true, HMAC valid: true
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 14.3)</span>
         <strong class="pager-title">Zstandard Compression, AES-256-GCM &amp; Cryptographic Hashing</strong>
       </a>
-      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">
+      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="pager-card pager-next" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 16.1) &rarr;</span>
-        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)</strong>
+        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)</strong>
       </a>
     </div>
   </section>
@@ -5669,12 +5721,12 @@ AES-GCM + Zstd verified: true, HMAC valid: true
   </div>
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 16 (2)</span>
-    <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="topic-pill active" data-topic-pill="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">16.1 64-Voice Mixer</a>
+    <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="topic-pill active" data-topic-pill="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">16.1 64-Voice Mixer</a>
     <a href="#ch16-streaming-real-time-dsp-encoding-riffwav-files" class="topic-pill" data-topic-pill="ch16-streaming-real-time-dsp-encoding-riffwav-files" title="Streaming Real-Time DSP &amp; Encoding RIFF/WAV Files" onclick="navigateToSubhead('16', 'ch16-streaming-real-time-dsp-encoding-riffwav-files'); return false;">16.2 Real-Time DSP</a>
   </div>
-  <section class="guide-topic active-topic" id="topic-ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" data-topic-id="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" data-topic-title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" data-short-title="16.1 64-Voice Mixer">
-<h3 class="guide-heading" id="ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio"><span class="heading-hash">#</span><span class="heading-text">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (<code>core:audio</code>)</span></h3>
-<p><code>core:audio</code> gives you a zero-dependency, 64-voice lock-free stereo <code>f32</code> audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (<code>Stream</code>), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:</p>
+  <section class="guide-topic active-topic" id="topic-ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" data-topic-id="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" data-topic-title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" data-short-title="16.1 64-Voice Mixer">
+<h3 class="guide-heading" id="ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio"><span class="heading-hash">#</span><span class="heading-text">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (<code>ext:audio</code>)</span></h3>
+<p><code>ext:audio</code> gives you a 64-voice lock-free stereo <code>f32</code> audio mixer, procedural waveform and SFX generators, ADSR envelope shaping, real-time SPSC ring-buffer streams (<code>Stream</code>), master RMS/peak metering, and a pure-C++23 RIFF/WAV file codec:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
   <table>
@@ -5720,7 +5772,7 @@ AES-GCM + Zstd verified: true, HMAC valid: true
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;core:audio&quot;
+import &quot;ext:audio&quot;
 import &quot;core:fs&quot;
 
 fn main() -&gt; void! {
@@ -5760,9 +5812,9 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" class="pager-card pager-prev" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">
+      <a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" class="pager-card pager-prev" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 16.1)</span>
-        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)</strong>
+        <strong class="pager-title">Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)</strong>
       </a>
       <a href="#ch17-unified-cloud-on-device-inference-extai" class="pager-card pager-next" onclick="navigateToSubhead('17', 'ch17-unified-cloud-on-device-inference-extai'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 17.1) &rarr;</span>
@@ -6052,7 +6104,7 @@ fn main() -&gt; void! {
     <a href="#ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend" class="topic-pill" data-topic-pill="ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend" title="Typed RPC Bindings (bind[T], bind_action, bind_raw) &amp; window.backend" onclick="navigateToSubhead('18', 'ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend'); return false;">18.2 Typed RPC Bindings</a>
     <a href="#ch18-bidirectional-event-bus-reactive-state-on-emit-set-state" class="topic-pill" data-topic-pill="ch18-bidirectional-event-bus-reactive-state-on-emit-set-state" title="Bidirectional Event Bus &amp; Reactive State (on, emit, set_state)" onclick="navigateToSubhead('18', 'ch18-bidirectional-event-bus-reactive-state-on-emit-set-state'); return false;">18.3 Events &amp; State</a>
     <a href="#ch18-frameless-window-chrome-drag-regions-native-os-dialogs" class="topic-pill" data-topic-pill="ch18-frameless-window-chrome-drag-regions-native-os-dialogs" title="Frameless Window Chrome, Drag Regions &amp; Native OS Dialogs" onclick="navigateToSubhead('18', 'ch18-frameless-window-chrome-drag-regions-native-os-dialogs'); return false;">18.4 Window Chrome</a>
-    <a href="#ch18-release-security-defaults-desktop-lifecycle-events" class="topic-pill" data-topic-pill="ch18-release-security-defaults-desktop-lifecycle-events" title="Release Security Defaults &amp; Desktop Lifecycle Events" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-lifecycle-events'); return false;">18.5 Release Security Defau..</a>
+    <a href="#ch18-release-security-defaults-desktop-mobile-lifecycle-events" class="topic-pill" data-topic-pill="ch18-release-security-defaults-desktop-mobile-lifecycle-events" title="Release Security Defaults &amp; Desktop / Mobile Lifecycle Events" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-mobile-lifecycle-events'); return false;">18.5 Release Security Defau..</a>
     <a href="#ch18-headless-live-offscreen-wkwebview-testing-cfire-test" class="topic-pill" data-topic-pill="ch18-headless-live-offscreen-wkwebview-testing-cfire-test" title="Headless &amp; Live Offscreen WKWebView Testing (cfire test)" onclick="navigateToSubhead('18', 'ch18-headless-live-offscreen-wkwebview-testing-cfire-test'); return false;">18.6 Offscreen Testing</a>
   </div>
   <section class="guide-topic active-topic" id="topic-ch18-why-extwebui-architecture-zero-port-vfs-applocalhost" data-topic-id="ch18-why-extwebui-architecture-zero-port-vfs-applocalhost" data-topic-title="Why ext:webui? Architecture &amp; Zero-Port VFS (app://localhost/)" data-short-title="18.1 WebUI Architecture">
@@ -6250,9 +6302,11 @@ fn main() {
       <tr><td><code>app.set_dark_mode(true)</code> / <code>set_always_on_top(true)</code></td><td><code>fn(bool)</code></td><td>Forces <code>NSAppearanceNameDarkAqua</code> (macOS) / dark GTK theme or floats the window above other apps.</td></tr>
       <tr><td><code>app.center()</code> / <code>fullscreen()</code> / <code>minimize()</code> / <code>maximize()</code></td><td><code>fn()</code></td><td>Controls window placement (also callable from JS via <code>window.runtime.WindowCenter()</code>, <code>WindowMinimise()</code>, <code>WindowMaximise()</code>, <code>WindowFullscreen()</code>, <code>Quit()</code>).</td></tr>
       <tr><td><strong>CSS / HTML Drag Regions</strong></td><td><code>data-webui-drag-region</code> or <code>--wails-draggable: drag</code></td><td>Add <code>data-webui-drag-region</code> (or CSS <code>-webkit-app-region: drag</code>) to your custom HTML header bar to initiate native OS window dragging (<code>performWindowDragWithEvent:</code> on macOS, <code>begin_move_drag</code> on GTK); interactive <code>&lt;button&gt;</code> and <code>&lt;input&gt;</code> children remain clickable automatically.</td></tr>
-      <tr><td><code>app.open_file_dialog(title, dir, filter)</code></td><td><code>fn(str, str = &quot;&quot;, str = &quot;&quot;) -&gt; str</code></td><td>Opens a native <code>NSOpenPanel</code> (macOS) or <code>zenity</code> file picker and returns the selected path.</td></tr>
-      <tr><td><code>app.save_file_dialog(title, default_name)</code></td><td><code>fn(str, str = &quot;&quot;) -&gt; str</code></td><td>Opens a native <code>NSSavePanel</code> save dialog and returns the target path.</td></tr>
-      <tr><td><code>app.message_dialog(title, message, level)</code></td><td><code>fn(str, str, str = &quot;info&quot;) -&gt; bool</code></td><td>Displays a native <code>NSAlert</code> modal (<code>&quot;info&quot;</code>, <code>&quot;warning&quot;</code>, <code>&quot;error&quot;</code>, or <code>&quot;confirm&quot;</code> with Cancel/OK buttons).</td></tr>
+      <tr><td><code>app.open_file_dialog(title, dir, filter)</code></td><td><code>fn(str, str = &quot;&quot;, str = &quot;&quot;) -&gt; str</code></td><td>Opens a native <code>NSOpenPanel</code> (macOS) or <code>GtkFileChooser</code> / <code>GetOpenFileNameW</code> file picker and returns the selected path.</td></tr>
+      <tr><td><code>app.save_file_dialog(title, default_name)</code></td><td><code>fn(str, str = &quot;&quot;) -&gt; str</code></td><td>Opens a native <code>NSSavePanel</code> / OS save dialog and returns the target path.</td></tr>
+      <tr><td><code>app.allow_navigation_origin(origin)</code></td><td><code>fn(str)</code></td><td>Allows an extra exact <code>scheme://host[:port]</code> origin inside the WebView; other external HTTP(S) or custom-scheme links emit <code>&quot;app:external_navigation&quot;</code> and open safely in <code>SFSafariViewController</code> (iOS) or the OS default browser.</td></tr>
+      <tr><td><code>app.initial_url()</code></td><td><code>fn() -&gt; str?</code></td><td>Returns the cold-start deep link or Universal Link URL that launched the app, or <code>none</code> on normal launch.</td></tr>
+      <tr><td><code>app.is_clipboard_concealed()</code></td><td><code>fn() -&gt; bool</code></td><td>Reports whether the most recent <code>clipboard_set</code> / <code>clipboard_set_secret</code> call marked the item concealed/local-only (note: on iOS 16+, calling <code>app.clipboard_get()</code> triggers the OS paste-permission alert when reading another app's pasteboard).</td></tr>
     </tbody>
   </table>
 </div>
@@ -6261,14 +6315,14 @@ fn main() {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 18.3)</span>
         <strong class="pager-title">Bidirectional Event Bus &amp; Reactive State (on, emit, set_state)</strong>
       </a>
-      <a href="#ch18-release-security-defaults-desktop-lifecycle-events" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-lifecycle-events'); return false;">
+      <a href="#ch18-release-security-defaults-desktop-mobile-lifecycle-events" class="pager-card pager-next" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-mobile-lifecycle-events'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 18.5) &rarr;</span>
-        <strong class="pager-title">Release Security Defaults &amp; Desktop Lifecycle Events</strong>
+        <strong class="pager-title">Release Security Defaults &amp; Desktop / Mobile Lifecycle Events</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch18-release-security-defaults-desktop-lifecycle-events" data-topic-id="ch18-release-security-defaults-desktop-lifecycle-events" data-topic-title="Release Security Defaults &amp; Desktop Lifecycle Events" data-short-title="18.5 Release Security Defau..">
-<h3 class="guide-heading" id="ch18-release-security-defaults-desktop-lifecycle-events"><span class="heading-hash">#</span><span class="heading-text">Release Security Defaults &amp; Desktop Lifecycle Events</span></h3>
+  <section class="guide-topic" id="topic-ch18-release-security-defaults-desktop-mobile-lifecycle-events" data-topic-id="ch18-release-security-defaults-desktop-mobile-lifecycle-events" data-topic-title="Release Security Defaults &amp; Desktop / Mobile Lifecycle Events" data-short-title="18.5 Release Security Defau..">
+<h3 class="guide-heading" id="ch18-release-security-defaults-desktop-mobile-lifecycle-events"><span class="heading-hash">#</span><span class="heading-text">Release Security Defaults &amp; Desktop / Mobile Lifecycle Events</span></h3>
 <p>Release binaries (<code>cfire build</code>) follow secure-by-default WebView settings while development runs (<code>cfire run</code> / <code>cfire test</code>) keep debugging ergonomics enabled:</p>
 <div class="table-wrap">
   <div class="table-scroll-cue">Scroll table &rarr;</div>
@@ -6280,8 +6334,14 @@ fn main() {
       <tr><td><code>app.set_devtools(enabled)</code> / <code>devtools_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Toggles Web Inspector / DevTools across <code>WKWebView</code>, <code>WebKitGTK</code>, and <code>WebView2</code>. Defaults to <code>false</code> in <code>Release</code> (<code>cfire build</code>) and <code>true</code> in debug/test runs unless overridden.</td></tr>
       <tr><td><code>app.set_context_menu(enabled)</code> / <code>context_menu_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Toggles the browser's default right-click context menu. Defaults to <code>false</code> in <code>Release</code> (<code>cfire build</code>) and <code>true</code> in debug/test runs unless overridden.</td></tr>
       <tr><td><code>app.set_autofill(enabled)</code> / <code>autofill_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Opts windows and sensitive secret inputs out of password autosave and form autofill (<code>ICoreWebView2Settings4</code> on Windows plus preload <code>autocomplete=&quot;off&quot;</code> enforcement on WebKit).</td></tr>
+      <tr><td><code>app.on(&quot;app:active&quot;)</code> / <code>app.on(&quot;app:inactive&quot;)</code></td><td><code>{}</code></td><td>Emitted on focus/activation transitions across all 4 OSes (iOS <code>UISceneDelegate</code>, macOS <code>NSApplicationDelegate</code>, Linux GTK <code>focus-in-event</code>/<code>focus-out-event</code>, Windows <code>WM_ACTIVATE</code>).</td></tr>
+      <tr><td><code>app.on(&quot;app:foreground&quot;)</code> / <code>app.on(&quot;app:background&quot;)</code></td><td><code>{}</code></td><td>Emitted on iOS foreground/background scene lifecycle transitions.</td></tr>
+      <tr><td><code>app.on(&quot;app:open_url&quot;)</code> / <code>app.on(&quot;app:notification_opened&quot;)</code></td><td><code>{&quot;url&quot;:&quot;...&quot;}</code> / <code>{&quot;id&quot;:&quot;...&quot;,&quot;payload&quot;:&quot;...&quot;}</code></td><td>Emitted for Universal Links, custom URL schemes, and local/push notification opens across iOS and macOS (cold-start events are buffered until the WebView bridge reports DOM ready).</td></tr>
+      <tr><td><code>app.on(&quot;app:external_navigation&quot;)</code> / <code>app.on(&quot;app:webview_reloaded&quot;)</code></td><td><code>{&quot;url&quot;:&quot;...&quot;}</code> / <code>{}</code></td><td>Emitted when an external link is routed out to <code>SFSafariViewController</code>/OS browser, or when WebKit recovers from a background WebContent process termination.</td></tr>
+      <tr><td><code>app.on(&quot;keyboard:change&quot;)</code></td><td><code>{&quot;visible&quot;:bool,&quot;height&quot;:px}</code></td><td>Emitted on iOS software keyboard show/hide transitions with end-frame pixel height.</td></tr>
       <tr><td><code>app.on(&quot;window:fullscreen&quot;)</code></td><td><code>{&quot;fullscreen&quot;:true}</code> / <code>{&quot;fullscreen&quot;:false}</code></td><td>Emitted on native fullscreen entry and exit transitions across macOS, Linux GTK3, Windows, and headless tests.</td></tr>
       <tr><td><code>app.on(&quot;window:file_drop&quot;)</code></td><td><code>{&quot;paths&quot;:[&quot;/path/to/file&quot;]}</code></td><td>Emitted when files are dropped onto the window, carrying native OS filesystem paths (macOS <code>NSDraggingDestination</code>, Linux GTK URI drops, Windows <code>WM_DROPFILES</code> &amp; WebView2 <code>ICoreWebView2File</code>).</td></tr>
+      <tr><td>iOS Safe Areas &amp; Native Escape Hatch</td><td><code>viewport-fit=cover</code> / C++ interop</td><td>Include <code>&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1, viewport-fit=cover&quot;&gt;</code> and style against <code>env(safe-area-inset-top)</code> / <code>env(safe-area-inset-bottom)</code> on iOS; use <code>native_window_handle()</code>, <code>native_webview_handle()</code>, and <code>native_view_controller_handle()</code> in C++/ObjC++ plugins for direct SDK customization.</td></tr>
       <tr><td>Desktop OS Integrations</td><td>Automatic</td><td>Clicking the macOS Dock icon reopens a hidden or miniaturized window (<code>&quot;window:reopen&quot;</code>), and Windows enables Per-Monitor-V2 HiDPI scaling automatically (<code>SetProcessDpiAwarenessContext</code> + <code>WM_DPICHANGED</code>).</td></tr>
     </tbody>
   </table>
@@ -6348,9 +6408,9 @@ fn main() -&gt; void! {
 </code></pre>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch18-release-security-defaults-desktop-lifecycle-events" class="pager-card pager-prev" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-lifecycle-events'); return false;">
+      <a href="#ch18-release-security-defaults-desktop-mobile-lifecycle-events" class="pager-card pager-prev" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-mobile-lifecycle-events'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 18.5)</span>
-        <strong class="pager-title">Release Security Defaults &amp; Desktop Lifecycle Events</strong>
+        <strong class="pager-title">Release Security Defaults &amp; Desktop / Mobile Lifecycle Events</strong>
       </a>
       <a href="#ch19-blueprint-rag-httpjson-microservice" class="pager-card pager-next" onclick="navigateToSubhead('19', 'ch19-blueprint-rag-httpjson-microservice'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 19.1) &rarr;</span>
@@ -6377,7 +6437,7 @@ fn main() -&gt; void! {
   <div class="topic-pill-bar">
     <span class="topic-pill-label">Ch 19 (4)</span>
     <a href="#ch19-blueprint-rag-httpjson-microservice" class="topic-pill active" data-topic-pill="ch19-blueprint-rag-httpjson-microservice" title="Blueprint: RAG + HTTP/JSON Microservice" onclick="navigateToSubhead('19', 'ch19-blueprint-rag-httpjson-microservice'); return false;">19.1 RAG Microservice</a>
-    <a href="#ch19-cloud-local-service-primitives-coretako" class="topic-pill" data-topic-pill="ch19-cloud-local-service-primitives-coretako" title="Cloud &amp; Local Service Primitives (core:tako)" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-coretako'); return false;">19.2 Cloud Primitives</a>
+    <a href="#ch19-cloud-local-service-primitives-exttako" class="topic-pill" data-topic-pill="ch19-cloud-local-service-primitives-exttako" title="Cloud &amp; Local Service Primitives (ext:tako)" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-exttako'); return false;">19.2 Cloud Primitives</a>
     <a href="#ch19-canonical-projects-index-examples01-hello-core-examples17-webui-studio" class="topic-pill" data-topic-pill="ch19-canonical-projects-index-examples01-hello-core-examples17-webui-studio" title="Canonical Projects Index (examples/01-hello-core – examples/17-webui-studio)" onclick="navigateToSubhead('19', 'ch19-canonical-projects-index-examples01-hello-core-examples17-webui-studio'); return false;">19.3 Examples Index</a>
     <a href="#ch19-further-reference-module-index" class="topic-pill" data-topic-pill="ch19-further-reference-module-index" title="Further Reference &amp; Module Index" onclick="navigateToSubhead('19', 'ch19-further-reference-module-index'); return false;">19.4 Module Index</a>
   </div>
@@ -6409,7 +6469,7 @@ fn main() -&gt; void! {
     try db.exec(&quot;CREATE TABLE kb (title TEXT, body TEXT, vec BLOB)&quot;)
 
     docs := [
-        &quot;Lock-Free Audio: core:audio mixes 64 stereo f32 voices in real time.&quot;,
+        &quot;Lock-Free Audio: ext:audio mixes 64 stereo f32 voices in real time.&quot;,
         &quot;Zero-Cost Safety: cfire lowers T! and T? to std::expected and std::optional.&quot;,
         &quot;TLS 1.3 &amp; WebSockets: core:net/http upgrades RFC 6455 connections natively.&quot;
     ]
@@ -6452,19 +6512,19 @@ fn main() -&gt; void! {
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 18.6)</span>
         <strong class="pager-title">Headless &amp; Live Offscreen WKWebView Testing (cfire test)</strong>
       </a>
-      <a href="#ch19-cloud-local-service-primitives-coretako" class="pager-card pager-next" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-coretako'); return false;">
+      <a href="#ch19-cloud-local-service-primitives-exttako" class="pager-card pager-next" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-exttako'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 19.2) &rarr;</span>
-        <strong class="pager-title">Cloud &amp; Local Service Primitives (core:tako)</strong>
+        <strong class="pager-title">Cloud &amp; Local Service Primitives (ext:tako)</strong>
       </a>
     </div>
   </section>
-  <section class="guide-topic" id="topic-ch19-cloud-local-service-primitives-coretako" data-topic-id="ch19-cloud-local-service-primitives-coretako" data-topic-title="Cloud &amp; Local Service Primitives (core:tako)" data-short-title="19.2 Cloud Primitives">
-<h3 class="guide-heading" id="ch19-cloud-local-service-primitives-coretako"><span class="heading-hash">#</span><span class="heading-text">Cloud &amp; Local Service Primitives (<code>core:tako</code>)</span></h3>
-<p>When you want to prototype or test AWS-style cloud workflows—IAM permission evaluation, S3 object buckets, DynamoDB key-value tables, SQS FIFO queues, Secrets Manager, and CloudWatch metrics/alarms—without network credentials or cloud bills, <code>import &quot;core:tako&quot;</code> (scaffolded via <code>cfire new my-cloud --template tako</code>) provides an in-memory cloud runtime backed by the built-in <code>core:tako</code> standard module:</p>
+  <section class="guide-topic" id="topic-ch19-cloud-local-service-primitives-exttako" data-topic-id="ch19-cloud-local-service-primitives-exttako" data-topic-title="Cloud &amp; Local Service Primitives (ext:tako)" data-short-title="19.2 Cloud Primitives">
+<h3 class="guide-heading" id="ch19-cloud-local-service-primitives-exttako"><span class="heading-hash">#</span><span class="heading-text">Cloud &amp; Local Service Primitives (<code>ext:tako</code>)</span></h3>
+<p>When you want to prototype or test AWS-style cloud workflows—IAM permission evaluation, S3 object buckets, DynamoDB key-value tables, SQS FIFO queues, Secrets Manager, and CloudWatch metrics/alarms—without network credentials or cloud bills, <code>import &quot;ext:tako&quot;</code> (scaffolded via <code>cfire new my-cloud --template tako</code>) provides an in-memory cloud runtime backed by the built-in <code>ext:tako</code> standard module:</p>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
 
-import &quot;core:tako&quot; as tk
+import &quot;ext:tako&quot; as tk
 
 fn main() -&gt; void! {
     mut s3  := tk.NewS3Service()
@@ -6520,15 +6580,15 @@ fn main() -&gt; void! {
       <tr><td><a href="../examples/11-http-server-router"><code>examples/11-http-server-router</code></a></td><td>HTTP Web Server</td><td>Multi-threaded HTTP/1.1 server (<code>core:net/http</code>), fluent request router, URL <code>:param</code> &amp; query extraction</td><td><code>cfire run examples/11-http-server-router/main.cf</code></td></tr>
       <tr><td><a href="../examples/14-ai-rag-sqlite"><code>examples/14-ai-rag-sqlite</code></a></td><td>AI Vector RAG</td><td>Local normalized embeddings (<code>ext:ai</code>), SQLite <code>vec_cosine_similarity</code> (<code>ext:db/sqlite</code>), compile-time <code>json.schema[T]()</code></td><td><code>cfire run examples/14-ai-rag-sqlite/main.cf</code></td></tr>
       <tr><td><a href="../examples/15-mcp-server"><code>examples/15-mcp-server</code></a></td><td>MCP Agent Server</td><td>Model Context Protocol server (<code>make(ai.McpServer, ...)</code>), schema-typed <code>register_tool[T]</code>, JSON-RPC 2.0 dispatch</td><td><code>cfire run examples/15-mcp-server/main.cf</code></td></tr>
-      <tr><td><a href="../examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>core:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
+      <tr><td><a href="../examples/16-audio-synth"><code>examples/16-audio-synth</code></a></td><td>Audio Synthesis</td><td>Procedural SFX (<code>audio.gen_sfx</code>), ADSR tone synthesis (<code>audio.gen_tone</code>), polyphonic mixer, RIFF/WAV file codec (<code>ext:audio</code>)</td><td><code>cfire run examples/16-audio-synth/main.cf</code></td></tr>
       <tr><td><a href="../examples/17-webui-studio"><code>examples/17-webui-studio</code></a></td><td>Hybrid WebUI Studio</td><td>Wails/Tauri-style native WebView (<code>ext:webui</code>), typed <code>app.bind[T]</code> JSON-RPC 2.0, <code>window.backend</code> ES6 Proxy, <code>app://localhost/</code> VFS, offscreen <code>WKWebView</code> test (<code>--ios</code> &amp; desktop)</td><td><code>cfire run examples/17-webui-studio/main.cf</code></td></tr>
     </tbody>
   </table>
 </div>
     <div class="chapter-pager topic-pager">
-      <a href="#ch19-cloud-local-service-primitives-coretako" class="pager-card pager-prev" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-coretako'); return false;">
+      <a href="#ch19-cloud-local-service-primitives-exttako" class="pager-card pager-prev" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-exttako'); return false;">
         <span class="pager-label">&larr; PREVIOUS TOPIC (CH 19.2)</span>
-        <strong class="pager-title">Cloud &amp; Local Service Primitives (core:tako)</strong>
+        <strong class="pager-title">Cloud &amp; Local Service Primitives (ext:tako)</strong>
       </a>
       <a href="#ch19-further-reference-module-index" class="pager-card pager-next" onclick="navigateToSubhead('19', 'ch19-further-reference-module-index'); return false;">
         <span class="pager-label">NEXT TOPIC (CH 19.4) &rarr;</span>
@@ -6627,7 +6687,8 @@ fn main() -&gt; void! {
         <li><a href="#ch7-separating-errors-from-absence-t-vs-t" title="Separating Errors from Absence (T! vs T?)" onclick="navigateToSubhead('7', 'ch7-separating-errors-from-absence-t-vs-t'); return false;">7.1 T! vs T? Types</a></li>
         <li><a href="#ch7-propagating-errors-with-try-and-recovering-with-or" title="Propagating Errors with try and Recovering with or" onclick="navigateToSubhead('7', 'ch7-propagating-errors-with-try-and-recovering-with-or'); return false;">7.2 try &amp; or Recovery</a></li>
         <li><a href="#ch7-no-null-values-absence-is-t" title="No Null Values: Absence Is T?" onclick="navigateToSubhead('7', 'ch7-no-null-values-absence-is-t'); return false;">7.3 No Null Values: Absenc..</a></li>
-        <li><a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.4 defer Cleanup</a></li>
+        <li><a href="#ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error" title="Choosing T! vs T? and Bridging with .or_error / .ignore_error" onclick="navigateToSubhead('7', 'ch7-choosing-t-vs-t-and-bridging-with-or-error-ignore-error'); return false;">7.4 Choosing T! vs T? and ..</a></li>
+        <li><a href="#ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer" title="Deterministic Scope Cleanup with defer (cfire/RETURN-IN-DEFER)" onclick="navigateToSubhead('7', 'ch7-deterministic-scope-cleanup-with-defer-cfirereturn-in-defer'); return false;">7.5 defer Cleanup</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-8" style="display: none;">
@@ -6689,7 +6750,7 @@ fn main() -&gt; void! {
     </div>
     <div class="toc-chapter-group" id="toc-group-16" style="display: none;">
       <ul class="toc-list">
-        <li><a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (core:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-coreaudio'); return false;">16.1 64-Voice Mixer</a></li>
+        <li><a href="#ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio" title="Lock-Free 64-Voice Mixer &amp; Procedural Waveforms (ext:audio)" onclick="navigateToSubhead('16', 'ch16-lock-free-64-voice-mixer-procedural-waveforms-extaudio'); return false;">16.1 64-Voice Mixer</a></li>
         <li><a href="#ch16-streaming-real-time-dsp-encoding-riffwav-files" title="Streaming Real-Time DSP &amp; Encoding RIFF/WAV Files" onclick="navigateToSubhead('16', 'ch16-streaming-real-time-dsp-encoding-riffwav-files'); return false;">16.2 Real-Time DSP</a></li>
       </ul>
     </div>
@@ -6708,14 +6769,14 @@ fn main() -&gt; void! {
         <li><a href="#ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend" title="Typed RPC Bindings (bind[T], bind_action, bind_raw) &amp; window.backend" onclick="navigateToSubhead('18', 'ch18-typed-rpc-bindings-bindt-bind-action-bind-raw-windowbackend'); return false;">18.2 Typed RPC Bindings</a></li>
         <li><a href="#ch18-bidirectional-event-bus-reactive-state-on-emit-set-state" title="Bidirectional Event Bus &amp; Reactive State (on, emit, set_state)" onclick="navigateToSubhead('18', 'ch18-bidirectional-event-bus-reactive-state-on-emit-set-state'); return false;">18.3 Events &amp; State</a></li>
         <li><a href="#ch18-frameless-window-chrome-drag-regions-native-os-dialogs" title="Frameless Window Chrome, Drag Regions &amp; Native OS Dialogs" onclick="navigateToSubhead('18', 'ch18-frameless-window-chrome-drag-regions-native-os-dialogs'); return false;">18.4 Window Chrome</a></li>
-        <li><a href="#ch18-release-security-defaults-desktop-lifecycle-events" title="Release Security Defaults &amp; Desktop Lifecycle Events" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-lifecycle-events'); return false;">18.5 Release Security Defau..</a></li>
+        <li><a href="#ch18-release-security-defaults-desktop-mobile-lifecycle-events" title="Release Security Defaults &amp; Desktop / Mobile Lifecycle Events" onclick="navigateToSubhead('18', 'ch18-release-security-defaults-desktop-mobile-lifecycle-events'); return false;">18.5 Release Security Defau..</a></li>
         <li><a href="#ch18-headless-live-offscreen-wkwebview-testing-cfire-test" title="Headless &amp; Live Offscreen WKWebView Testing (cfire test)" onclick="navigateToSubhead('18', 'ch18-headless-live-offscreen-wkwebview-testing-cfire-test'); return false;">18.6 Offscreen Testing</a></li>
       </ul>
     </div>
     <div class="toc-chapter-group" id="toc-group-19" style="display: none;">
       <ul class="toc-list">
         <li><a href="#ch19-blueprint-rag-httpjson-microservice" title="Blueprint: RAG + HTTP/JSON Microservice" onclick="navigateToSubhead('19', 'ch19-blueprint-rag-httpjson-microservice'); return false;">19.1 RAG Microservice</a></li>
-        <li><a href="#ch19-cloud-local-service-primitives-coretako" title="Cloud &amp; Local Service Primitives (core:tako)" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-coretako'); return false;">19.2 Cloud Primitives</a></li>
+        <li><a href="#ch19-cloud-local-service-primitives-exttako" title="Cloud &amp; Local Service Primitives (ext:tako)" onclick="navigateToSubhead('19', 'ch19-cloud-local-service-primitives-exttako'); return false;">19.2 Cloud Primitives</a></li>
         <li><a href="#ch19-canonical-projects-index-examples01-hello-core-examples17-webui-studio" title="Canonical Projects Index (examples/01-hello-core – examples/17-webui-studio)" onclick="navigateToSubhead('19', 'ch19-canonical-projects-index-examples01-hello-core-examples17-webui-studio'); return false;">19.3 Examples Index</a></li>
         <li><a href="#ch19-further-reference-module-index" title="Further Reference &amp; Module Index" onclick="navigateToSubhead('19', 'ch19-further-reference-module-index'); return false;">19.4 Module Index</a></li>
       </ul>

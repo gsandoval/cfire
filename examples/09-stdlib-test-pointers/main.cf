@@ -37,7 +37,7 @@ fn run_app() -> void! {
     // 1. core:str, core:os, core:math, core:rand, core:time
     t0 := time.now_ms()
     os.setenv("CFIRE_ENV_MODE", "production")
-    env_mode := os.getenv("CFIRE_ENV_MODE", "dev").to_upper()
+    env_mode := (os.getenv("CFIRE_ENV_MODE") or "dev").to_upper()
     parts := "alpha,beta,gamma".split(",")
     joined := parts.join("-")
     clamped := rand.range_i64(10, 20).clamp(0, 100)

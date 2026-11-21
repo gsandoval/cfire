@@ -1,0 +1,7 @@
+package main
+fn main() {
+    a := i32.parse("1").ignore_error()
+    for i in a..10 { //~ error cfire/UNWRAPPED-OPTIONAL
+        println("{}", i)
+    }
+}

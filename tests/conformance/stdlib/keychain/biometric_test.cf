@@ -1,0 +1,33 @@
+// expect: stdout
+// | biometric ok
+package main
+
+import "core:keychain"
+import "core:os"
+
+fn is_bio_rejected(reason: str, allow_passcode: bool) -> bool {
+    _ = keychain.authenticate_biometric(reason, allow_passcode: allow_passcode) or { return true }
+    return false
+}
+
+test "core:keychain authenticate_biometric headless mock" {
+    os.setenv("CFIRE_HEADLESS_TEST", "1")
+    defer os.setenv("CFIRE_MOCK_BIOMETRIC", "")
+
+    assert(is_bio_rejected("", true))
+
+    os.setenv("CFIRE_MOCK_BIOMETRIC", "")
+    assert_eq(try keychain.authenticate_biometric("Unlock vault"), true)
+
+    os.setenv("CFIRE_MOCK_BIOMETRIC", "1")
+    assert_eq(try keychain.authenticate_biometric("Unlock vault", allow_passcode: false), true)
+
+    os.setenv("CFIRE_MOCK_BIOMETRIC", "0")
+    assert_eq(try keychain.authenticate_biometric("Unlock vault"), false)
+    assert_eq(try keychain.authenticate_biometric("Unlock vault", allow_passcode: true), false)
+
+    os.setenv("CFIRE_MOCK_BIOMETRIC", "err")
+    assert(is_bio_rejected("Unlock vault", true))
+
+    println("biometric ok")
+}

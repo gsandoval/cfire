@@ -472,3 +472,123 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
     - Tier 1 (`make -j8 check`, Darwin arm64): **PASS** (`0` C++ warnings across split TUs & single-TU `-Iruntime -Werror`, `fmt --check examples/` `0` updated, all examples `--verify-cpp`, C++ suites `PASS` including `test_vendored_archives_and_portable_releases`, `test_toolchain_upgrade`, `test_formatter_lsp_and_docgen`, and `test_generated_doc_integrity`, `stdlib_suite_test.cf` `14/14`, `./cfire doc --check` `100% up-to-date`, `guide` `45/45`, `conformance` `209 passed, 2 skipped` (`sodium.cf`/`ssh.cf` on host), `0 failed`).
     - Tier 2 (`make check-deep`, Darwin arm64, serial): **PASS** (`ASan+UBSan` C++ suites & conformance `209 passed, 2 skipped, 0 failed`, `TSan` C++ concurrency & `concurrency/*` `13/13`, and all `8` `fuzz-replay` targets: `parser`/`sema`/`fmt` `458`, `http` `2`, `url` `1`, `websocket` `1`, `json_rpc` `1`, `deflate` `5`).
     - Tier 3 (`CFIRE_UTMCTL=/Users/memo/.local/bin/utmctl-proxy make check-platforms`): **PASS** — UTM `Linux` (`linux_20261117_160154`: `make check` + `make check-deep`, `0` warnings, `45/45` GUIDE, **`211 passed, 0 skipped, 0 failed`** conformance, ASan+UBSan, TSan, 8 `fuzz-replay`) and UTM `Windows` (`windows_20261117_161950`: `0` warnings multi-TU, `-static` single-TU, & `unit-build`; `doctor`, `fmt`, `doc`, `stdlib-suite 14/14`, `unit` `PASS` including real PowerShell `install.ps1` E2E & live `cfire.exe upgrade` self-replacement, **`211 passed, 0 skipped, 0 failed`** conformance).
+
+- [x] **Wave B7: Test, Cache, Sanitizer & VM Gate Acceleration (`CF-246`)**. Source: [`backlog-build-distribution.md`](./backlog-build-distribution.md); Decision `Q74`.
+  - [x] `Workstream 1`: 5 ms loopback TCP sandbox preflight (`tests/test_main.cpp`), `--fail-fast`, `make check-fast` target in `Makefile`, and updated sandbox/gate docs in `AGENTS.md` and `scripts/vm/README.md`.
+  - [x] `Workstream 2`: Removed `kVersion`/`kGitSha` from `compute_composite_pch_stem()`, stopped mutating `plan.cflags` with temp `-I` before PCH (`src/buildsys.hpp`), added `2 GiB` PCH LRU eviction (`evict_pch_cache_to_budget()`), and passed `--no-cache` (`g_no_binary_cache`) for one-shot temp runs (`eval`, `conformance`, `guide`, `run_cfire_source`).
+  - [x] `Workstream 3`: Added `tests/test_pch.hpp` + `-MMD -MP` depfiles for `$(TEST_OBJS)` and `$(TEST_ASAN_OBJS)`, persistent `.cfire_test_runner_asan` / `.cfire_test_runner_tsan` / parallel `.fuzz_replay_%` targets, RAM-aware `SAN_JOBS`/`SAN_RUN_JOBS` caps (`Makefile`), and parallel `examples/*/` verification.
+  - [x] `Workstream 4`: Raised `default_jobs()` in `tests/process_run.hpp`, implemented declarative LPT multi-process parallel `.cfire_test_runner` in `tests/test_main.cpp` with PCH pre-warming (`init_build_plan_flags`), serialized repo-shared `docs/`/`examples/` suites via `touches_shared_examples`, and deduplicated `--verify-cpp` on runnable conformance files in `tests/conformance_runner.hpp`.
+  - [x] `Workstream 5`: Reused warmed portable archive cache across Blocks 1, 5, and `smoke.cf` in `tests/unit/test_vendored_libs_and_release.hpp` (dropped `EM_CACHE` override and redundant external cross-toolchain subprocesses under ASan) and added composite PCH + fallback in `compile_and_run_cpp()` (`tests/test_harness.hpp`).
+  - [x] `Workstream 6`: Added `./.vmtest both` concurrent VM driver with incremental timestamp-preserving sync (`.vmtest_manifest`), `systemd-run` guest job isolation, and 90s heartbeat abort (`tools/vmtest/main.cpp` + `Makefile` `check-platforms`), incremental `rsync --delete` (`scripts/vm/linux_gate.sh`), and incremental manifest/SHA-256 sync + parallel `make` + unified `GIT_SHA=vm` + `-fsyntax-only` single-TU check (`scripts/vm/windows_gate.sh`).
+  - [x] Verification: Extended `tests/runner_self_tests.hpp` (PCH stem invariance, `evict_pch_cache_to_budget` LRU cleanup, `--list`/`--run-single`), single-TU `-Werror` check, sandboxed `make check-fast`, instant `EPERM` preflight (`0.00s`, `exit 2`), PCH cache pruning (`72 GB` -> `2.1G`), and full 3-tier verification across macOS host + concurrent Linux & Windows UTM VMs.
+  - **Results (2026-11-18, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+    ```text
+    === make check-all summary: f8304b1-dirty, 2026-11-18T16:59Z, Darwin
+      check            PASS (128s cold / 122s warm; 0 warnings, 111/111 suites, 14/14 stdlib, 45/45 GUIDE, 209/211 conformance [2 skipped])
+      check-deep       PASS (278s clean ASan+TSan+fuzz / 383s warm no-rebuild; 111/111 ASan, 209/211 --sanitize, TSan, 8 fuzz-replay)
+      check-platforms  PASS (513s initial / 375s warm concurrent via .vmtest both; Linux 248.6s [211/211 + check-deep], Windows 374.9s [211/211])
+    ```
+    - Sandboxed inner loop (`make check-fast`, `BypassSandbox: false`): **13.39s** warm (`0` warnings, `fmt`, `doc --check`, `86/86` offline suites); full suite sandbox preflight (`./.cfire_test_runner unit`) fails in **0.00s** (`exit 2`).
+    - PCH cache (`~/Library/Caches/cfire/pch`): pruned from **72 GB** (`1,904` `.pch` files) to **2.1G** (`<= 2048 MiB` binary budget).
+
+- [x] **Wave I1: Stdlib Taxonomy Realignment & Core OS/Keychain Foundations (`CF-254`, `CF-247`, `CF-248`)**. Source: [`backlog-ios-desktop-webui.md`](./backlog-ios-desktop-webui.md); Decisions `Q75`, `Q76`, `Q80`.
+  - [x] `CF-254`: Reclassify `core:tako` -> `ext:tako` and `core:audio` -> `ext:audio` (`28 core:* + 8 ext:*`) with hard `cfire/INVALID-IMPORT` diagnostics and `cfire fix` rewrites (`src/module_registry.hpp` including `pkg:tako` -> `ext:tako`, `src/sema/type_inference_impl.hpp`, `src/doctor.hpp`, `src/lsp/ide_setup.hpp`, `runtime/tako.hpp`, `src/buildsys.hpp` vendored-archive `simdjson` map + auto-linker blocks, `src/cli/scaffold.hpp` `--template tako`, `src/docgen/catalog.hpp`, sorted `src/docgen/stdlib_catalog_entries.hpp`, `src/docgen/{catalog_examples,catalog_type_docs,markdown,html}.hpp`, `examples/16-audio-synth/main.cf`, `README.md`, `docs/GUIDE.md`, `docs/index.template.html`, regenerated `docs/`, new `tests/conformance/ext_smoke/{audio,tako}.cf`, and all 7 existing unit/conformance tests whose polarity flips).
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T01:41Z, Darwin
+        check            PASS (111/111 suites, 14/14 stdlib, 45/45 GUIDE, 211/213 conformance [2 skipped])
+        check-deep       PASS (111/111 ASan+UBSan, 211/213 --sanitize, TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 599.7s [check 213/213 + check-deep], Windows 403.3s [60/60 suites + 213/213 conformance])
+      ```
+  - [x] `CF-247`: Add `core:os` `data_dir(app = "")`, `cache_dir(app = "")`, `documents_dir()`, and `open_url(url)` (`runtime/core/os.hpp`, `src/docgen/stdlib_catalog_entries.hpp`), add `if (imp.path == "core:os")` auto-linking (`-lshell32 -lole32 -luuid` on Windows, `-lobjc -framework Foundation -framework UIKit` on iOS) in `src/buildsys.hpp` + `Makefile` `LDFLAGS`, and validate via `tests/conformance/stdlib/os/dirs_and_open_url_test.cf` (`*_test.cf` for `-DCFIRE_TEST_MODE=1` + `CFIRE_HEADLESS_TEST=1`), ObjC++ `-fobjc-arc` + `ios-sim` `build_native` checks in `tests/unit/test_build_manifest_ios.hpp`, and Linux/Windows VMs.
+  - [x] `CF-248`: Add `core:keychain` `authenticate_biometric(reason, allow_passcode = true) -> bool!` (`runtime/core/keychain.hpp`, `src/docgen/stdlib_catalog_entries.hpp`) via lazy `dlopen` `LAContext` + `<objc/message.h>` (worker-thread discipline, clean `Err` on Windows/Linux/WASM), add `"-lobjc"` to `core:keychain` auto-linking on `__APPLE__` in `src/buildsys.hpp` + `Makefile` `LDFLAGS`, and validate via `tests/conformance/stdlib/keychain/biometric_test.cf` (`*_test.cf` + `CFIRE_HEADLESS_TEST=1` + `CFIRE_MOCK_BIOMETRIC`), pure-C++ macOS CLI build+link, ObjC++ `-fobjc-arc`, and `ios-sim` checks in `tests/unit/test_build_manifest_ios.hpp`.
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T02:33Z, Darwin
+        check            PASS (112/112 suites, 14/14 stdlib, 45/45 GUIDE, 213/215 conformance [2 skipped])
+        check-deep       PASS (112/112 ASan+UBSan, 213/215 --sanitize, TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 607.0s [check 215/215 + check-deep], Windows 434.8s [61/61 suites + 215/215 conformance])
+      ```
+
+- [x] **Wave I2: Packaging, Signing, `Assets.car`, Privacy Manifest & Physical Device CLI (`CF-249`, `CF-250`)**. Source: [`backlog-ios-desktop-webui.md`](./backlog-ios-desktop-webui.md); Decision `Q77`.
+  - [x] `CF-249`: Declarative `build.cf` ↔ CLI symmetry (`Version`, `BuildNumber`, `Resources`, `IosMin`/`--ios-min` floor `16.3`/default `17.0`, `--sign`, `--entitlements`, `--provisioning-profile`, `--ipa`, `InfoPlist`, XML-escaped `Info.plist`, dynamic `DT*` metadata, `.xcassets` `actool` `Assets.car` + partial plist merge, runtime-accurate `PrivacyInfo.xcprivacy`, profile entitlements extraction via `security cms`/`plutil`, inside-out non-`--deep` `codesign` with `shell_quote`, `.ipa` export, macOS `--debug` `.app` `minos` consistency, Windows `VERSIONINFO`, iOS `ext:webui` frameworks excluding `AVFoundation`/`Photos`, binary cache key, `-DCFIRE_APP_ICON_PATH` space-path shell quoting, and `test_build_manifest_ios.hpp` verification).
+  - [x] `CF-250`: Add `cfire run --ios-device [--device <name|udid>]` (`src/build/apple_bundle.hpp` `parse_devicectl_devices_json` + `launch_ios_device`, `src/cli/{common_args.hpp,build_commands.cpp,usage.hpp}`) requiring non-adhoc signing identity, with unit & CLI error tests in `tests/unit/test_build_manifest_ios.hpp`.
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T03:35Z, Darwin
+        check            PASS (112/112 suites, 14/14 stdlib, 45/45 GUIDE, 213/215 conformance [2 skipped])
+        check-deep       PASS (112/112 ASan+UBSan, 213/215 --sanitize, TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 573.9s [check 215/215 + check-deep], Windows 377.1s [61/61 suites + 215/215 conformance])
+      ```
+
+- [x] **Wave I3: 4-OS Navigation/IPC Security, Lifecycle, Recovery, Escape Hatch & iOS Parity (`CF-251`)**. Source: [`backlog-ios-desktop-webui.md`](./backlog-ios-desktop-webui.md); Decisions `Q78`, `Q79`.
+  - [x] Top-frame VFS-only (`app://localhost` & Windows `https://app.localhost`) IPC gate + WebKitGTK `__tok` + remove wildcard CORS + `allow_navigation_origin` + external URL navigation/new-window interception (`SFSafariViewController`, `NSWorkspace`, `os::open_url`, `ShellExecuteW`).
+  - [x] `UIApplicationSceneManifest` -> `CfireWebUISceneDelegate` + iOS `CfireWebUIViewController` + buffered cold-start deep links/notifications (`initial_url()`, `app:open_url`, `app:notification_opened`) + `keyboard:change` + `app:active`/`app:inactive` across all 4 OSes + `webViewWebContentProcessDidTerminate:` recovery + macOS `application:openURLs:` + `scrollView.bounces` + iOS `UIPasteboard` + native handle escape hatch (`AppState` / `webui.hpp`) + retire `message_dialog` (`Q79`) + catalog/LSP/docs/unit & integration verification.
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T04:36Z, Darwin
+        check            PASS (112/112 suites, 14/14 stdlib, 45/45 GUIDE, 213/215 conformance [2 skipped])
+        check-deep       PASS (112/112 ASan+UBSan, 213/215 --sanitize, TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 619.9s [check 215/215 + check-deep], Windows 417.2s [61/61 suites + 215/215 conformance])
+      ```
+
+- [x] **LSP Brace/Enter Sync, Method Discoverability & Valid Token Completion (`CF-256`, `Q82`–`Q85`)**. Source: [`backlog.md`](./backlog.md); Decisions `Q82`, `Q83`, `Q84`, `Q85`.
+  - [x] `Q82` (*Brace Tabbing & Multi-Edit Incremental Sync*): Added `ContentChangeEvent` / `extract_content_changes` and CRLF-safe UTF-16 `lsp_pos_to_byte_offset` in `src/lsp/json_rpc.hpp` + sequential change application in `src/lsp/server.hpp`; removed `documentOnTypeFormattingProvider` and `@` completion trigger (keeping `textDocument/onTypeFormatting` returning `[]`); updated `src/lsp/ide_setup.hpp`, `.vscode/settings.json` (removed `editor.formatOnType`), and `.vscode/extensions/cfire.cfire-lang/language-configuration.json` (`onEnterRules` + `decreaseIndentPattern`).
+  - [x] `Q83` (*Method Discoverability & AST/Sema Recovery*): Added semantic builtin param names and `byte`/`int`/`uint`/`char`/`rune`/`mut ` normalization in `src/sema/builtin_methods.hpp`; added `core:collections` (`Set`, `Deque`, `PriorityQueue`, `MinQueue`) catalog entries in `src/docgen/stdlib_catalog_entries.hpp` with `find_ret` optional/`[]T` support in `src/sema/type_inference_impl.hpp` and `lookup_builtin_method` guard in `src/sema/expression_checker_impl.hpp`; upgraded `src/lsp/type_query.hpp` (`[]T` array-literal inference, `StructLitExpr` generics/`map[K]V`, `MatchExpr`/`IfExpr`, balanced `IndexExpr`, aliased modules, stdlib field/handle disambiguation), `src/lsp/json_rpc.hpp` (range-operator stop, quoted receivers, `IfStmt`/`ForStmt` loop bindings), and `src/lsp/server.hpp` (`parse_source_resilient` + cursor-line isolation + unclosed-brace balancing); ranked all methods on known receivers (noting `requires mut` / `unwrap ? first` / `unwrap ! first`) with low-ranked `9_*` fallback for genuinely unresolved receivers.
+  - [x] `Q84` & `Q85` (*Valid Token Insertion, Snippets, Tiers & Context Gating*): Rewrote `src/lsp/completion.hpp` with explicit UTF-16 `textEdit` on every item, `isIncomplete` `CompletionList`, empty-parens call snippets (with explicit `[$1]` generic slots where required and `snippetSupport: false` handling), `[]byte`/`[]u8` bracket-prefix replacement, `sortText` tiers `0_`–`7_`, LSP 3.17 `labelDetails`, receiver-method unqualified omission, `core:build` gating to `build.cf`, post-delimiter cursor clearing, and strict context gating (suppressing strings, comments, decl names, single `:`; `import "..."`, `Struct{ | }`, `Enum::`, `Enum.`->`::`, TypePosition, `type Foo <kind>`); upgraded `src/lsp/hover.hpp` (`.len()` hover, builtin/handle/aliased `signatureHelp`).
+  - [x] *Verification*: Regenerated and verified `docs/` (`./cfire doc && ./cfire doc --check`), updated `tests/unit/test_lsp_docgen.hpp`, added `tests/unit/test_lsp_completion_and_sync.hpp` (wired in `test_frontend.cpp`, `test_harness.hpp`, `test_main.cpp`), and ran all 3 tiers on the identical uncommitted tree:
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the exact same tree)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T17:26Z, Darwin
+        check            PASS (0 warnings; 113/113 suites, 14/14 stdlib, 45/45 GUIDE, 213/215 conformance [2 skipped])
+        check-deep       PASS (113/113 ASan+UBSan, 213/215 --sanitize, TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 589.6s [check 215/215 + check-deep], Windows 451.1s [62/62 suites + 215/215 conformance])
+      ```
+      - Sandboxed inner loop (`make check-fast`, `BypassSandbox: false`): PASS (`0` C++ warnings, `cfire fmt --check examples/` clean, `cfire doc --check` clean, `88/88` offline suites).
+
+- [x] **Wave T1: Closed Type Checker, Typed AST, Built-In Generic Constraints & Pure-`.cf` ICE Boundary (`CF-257`, `Q86`–`Q91`)**. Source: [`backlog.md`](./backlog.md); Decisions `Q86`–`Q91`.
+  - *In scope*: `TypeTable` (`Error`, `Foreign`, `TypeParam`, `GenericInst`, `Function` with `fn_min_params`, `substitute`, `unify`), AST `resolved_type_id` fields, `cfire::constraints::{Comparable,Ordered,Numeric,Integer}`, unified `T?`/`T!` inference without stripping, `ClangBridge` return-type forwarding, closed bidirectional Sema validation (ranges, `for-in`, unwraps, `SliceExpr`/`IndexExpr` including `json.Value`, unary/binary/compound ops including float `%`/`%=`, stdlib catalog call args including `[]byte`/`path`/default-skipped callbacks, generic calls/structs, `match`/`or`/array literals/closures/interpolations), consistent `cfire/UNWRAPPED-OPTIONAL` (`Q91`), `cfire/UNKNOWN-TYPE` hard error (`Q88`), pure-`.cf` `cfire/INTERNAL-BACKEND-ERROR` + real `.cf` source-snippet rendering (`Q90`), conformance ICE gate extension, and unit/conformance/doc updates (`docs/GUIDE.md:1376` fixed `or -1` -> `or { return }` on `usize?`).
+  - *Deferred*: `CF-258` (Wave T2 — Fully Typed C++23 Codegen, Golden Snapshots & LSP Typed-AST Integration).
+  - [x] `TypeTable` lattice + AST `resolved_type_id` fields (`src/sema/types.hpp`, `src/ast.hpp`)
+  - [x] Built-in generic constraints (`Comparable`, `Ordered`, `Numeric`, `Integer`) (`runtime/cfire_prelude.hpp`, `src/sema/analyze.hpp`, `src/codegen.hpp`)
+  - [x] Closed bidirectional Sema + unified `T?`/`T!` + `ClangBridge` return mapping (`src/sema/*`, `src/buildsys.hpp`, `src/analysis.hpp`, `src/docgen/html.hpp`)
+  - [x] Pure-`.cf` `cfire/INTERNAL-BACKEND-ERROR` ICE boundary & `.cf` source-snippet rendering (`src/diagnostics*`, `src/buildsys.hpp`, `src/build/syntax_check.hpp`, `src/analysis.hpp`, `tests/conformance_runner.hpp`)
+  - [x] Conformance/unit tests (`tests/unit/test_closed_type_checker.hpp`, 3 updated + 10 new conformance tests), `./cfire doc` sync, live `day2_01.cf` verification (`cfire/UNWRAPPED-OPTIONAL` at line 13 in `cfire check` and `cfire build`, 0 C++ output), and 3-tier verification:
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the identical codebase)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T20:13Z, Darwin
+        check            PASS (0 warnings; 114/114 suites, all examples/*, 14/14 stdlib, 45/45 GUIDE, 223/225 conformance [2 skipped, 0 fail])
+        check-deep       PASS (114/114 ASan+UBSan, 223/225 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 652.8s [check 225/225 + check-deep], Windows 432.0s [63/63 suites + 225/225 conformance, 0 warnings single-TU])
+      ```
+      - Sandboxed inner loop (`make check-fast` + single-TU `-Werror`, `BypassSandbox: false`): PASS (`0` C++ warnings, `cfire fmt --check examples/` clean, `cfire doc --check` clean, `89/89` offline suites).
+
+- [x] **Wave T2: Fully Typed C++23 Codegen, Golden Snapshots & LSP Typed-AST Integration (`CF-258`, `Q86`, `Q89`)**. Source: [`backlog.md`](./backlog.md); Decisions `Q86`, `Q89`.
+  - [x] `Emitter::lower_type_id(TypeId, LowerContext)` typed C++23 codegen across `src/codegen.hpp` and `src/codegen/{declarations,stmt,expr}.hpp`, deletion of `lower_type_text()`, `cfire::to_bytes` -> `slice_ref<std::uint8_t>` in `runtime/cfire_prelude.hpp`, and selective `auto` retention for CTAD on unparameterized generic `StructDecl`/`EnumDecl` literals.
+  - [x] Regenerated all 5 `tests/golden/*.expected.cpp` snapshots and updated typed global checks in `tests/unit/test_stdlib.cpp`.
+  - [x] Integrated Sema `CheckedFile` / `resolved_type_id` (`CheckedDocResult` & `Server::get_or_check_doc`) into LSP hover, inlay hints, type preview, and multi-file scope isolation across `src/lsp/{server,type_query,json_rpc,hover,inlay_hints}.hpp`.
+  - [x] Fixed Sema/stdlib-catalog mismatches exposed by concrete typed locals: qualified module method lookup (`pa.make_rec()`) and removal of hardcoded `ocr`/`detect_language` `-> str` override in `src/sema/type_inference_impl.hpp`, `http.post_sse -> Response!` (`runtime/core/net/http.hpp`), and `Channel.recv -> T?` (`runtime/core/sync.hpp`) across `src/docgen/stdlib_catalog_entries.hpp`, `docs/GUIDE.md`, and `src/lsp/type_query.hpp` + `./cfire doc` sync.
+  - [x] Added Wave 2 tests (`tests/unit/test_closed_type_checker.hpp` Section 4 & `tests/unit/test_lsp_completion_and_sync.hpp` `test_typed_ast_hover_and_inlay_hints`) and verified all 3 tiers on the identical codebase:
+    - **Results (2026-11-20, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the identical codebase)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-20T21:37Z, Darwin
+        check            PASS (0 warnings; 114/114 suites, 14/14 stdlib, 45/45 GUIDE, 223/225 conformance [2 skipped, 0 fail])
+        check-deep       PASS (114/114 ASan+UBSan, 223/225 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 703.7s [check 225/225 + check-deep], Windows 489.2s [63/63 suites + 225/225 conformance, 0 warnings single-TU])
+      ```
+      - Sandboxed inner loop (`make check-fast` + single-TU `-Werror`, `BypassSandbox: false`): PASS (`0` C++ warnings, `cfire fmt --check examples/` clean, `cfire doc --check` clean, `89/89` offline suites).
+
+- [x] **Wave S1: Unified Stdlib Failure (`T!`) vs Absence (`T?`) Contract & Wrapper Bridge (`CF-259`, `Q92`–`Q93`)**. Source: [`backlog.md`](./backlog.md); Decisions `Q92`–`Q93`.
+  - *In scope*: `T.parse(s) -> T!`, `cli.parse[T] -> T!` (fixing runtime/codegen silent error drop and removing `stdlib_index.hpp` `cli.parse` fallibility override), `csv.parse -> [][]str!`, `os.getenv(key) -> str?` (plus Win32 `SetEnvironmentVariableW`/`GetEnvironmentVariableW` empty-value parity alongside `_wputenv_s`); retire `cli.try_parse`, `os.getenv_opt`, and 2-arg `os.getenv(key, fallback)` via `cfire/RETIRED-API` + `cfire fix`; add lazy `.or_error(msg, code = 0) -> T!` on `T?` and `.ignore_error() -> T?` on non-`void` `T!`; close raw C++ `.has_value`/`.value`/`.value_or`/`.error` exemptions on `T?`/`T!` (`Q14`); allow direct call-argument transfer into `T!` parameters; update docgen, LSP, `docs/GUIDE.md`, examples, golden snapshots, unit/conformance tests, and `/Users/memo/Programming/adventofcode/2025/day3_01.cf`.
+  - *Deferred*: `CF-260` (stream `read_line() -> str?!`).
+  - [x] Runtime prelude & stdlib headers (`cfire_prelude.hpp`, `core/{builtin_methods,cli,encoding,os,str}.hpp`, `core/ai/{client,vision}.hpp`)
+  - [x] Compiler frontend (`src/sema/`, `src/diagnostics_registry_impl.hpp`) & codegen (`src/codegen/`, `src/codegen.hpp`)
+  - [x] Docgen, catalog, LSP completions/hover/signatureHelp, `docs/GUIDE.md`, regenerated docs (`./cfire doc`)
+  - [x] Migrated examples, golden snapshots, unit + conformance tests (6 new conformance tests + LSP/migration tests), `cfire fix` checks, AoC `day3_01.cf`, and 3-tier verification:
+    - **Results (2026-11-21, uncommitted working tree on `f8304b1-dirty`, verified across all 3 tiers on the identical codebase)**:
+      ```text
+      === make check-all summary: f8304b1-dirty, 2026-11-21T04:00Z, Darwin
+        check            PASS (0 warnings; 114/114 suites, all examples/*, 14/14 stdlib, 46/46 GUIDE, 229/231 conformance [2 skipped, 0 fail])
+        check-deep       PASS (114/114 ASan+UBSan, 229/231 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 649.9s [check 231/231 + check-deep], Windows 429.3s [63/63 suites + 231/231 conformance, rc=0])
+      ```

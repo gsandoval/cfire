@@ -39,7 +39,7 @@ namespace cfire::build {
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto is_ios_simulator_target(std::string_view target) noexcept -> bool;
 
-[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target) -> std::string;
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target, std::string_view ios_min = "") -> std::string;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto resolve_ios_sdk_path(bool simulator) -> std::expected<std::string, std::string>;
 
@@ -636,12 +636,20 @@ namespace cfire::build {
            (target.find("-apple-ios") != std::string_view::npos && target.find("simulator") != std::string_view::npos);
 }
 
-[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto normalize_ios_triple(std::string_view target, std::string_view ios_min) -> std::string {
+    std::string ver = ios_min.empty() ? std::string(kDefaultIosMinVersion) : std::string(ios_min);
     if (target == "ios-sim" || target == "ios-simulator") {
-        return "arm64-apple-ios17.0-simulator";
+        return "arm64-apple-ios" + ver + "-simulator";
     }
     if (target == "ios") {
-        return "arm64-apple-ios17.0";
+        return "arm64-apple-ios" + ver;
+    }
+    if (!ios_min.empty()) {
+        if (auto pos = target.find("-apple-ios"); pos != std::string_view::npos) {
+            std::string arch(target.substr(0, pos));
+            bool sim = target.find("simulator") != std::string_view::npos;
+            return arch + "-apple-ios" + ver + (sim ? "-simulator" : "");
+        }
     }
     return std::string(target);
 }

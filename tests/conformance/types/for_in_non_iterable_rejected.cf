@@ -1,0 +1,7 @@
+package main
+fn main() {
+    x := 42
+    for v in x { //~ error cfire/TYPE-MISMATCH
+        println("{}", v)
+    }
+}

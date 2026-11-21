@@ -1,10 +1,10 @@
 # Build Performance & Binary Distribution Backlog
 
-This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, cross-platform pre-compiled binary distribution, Wave B5 consistency/soundness/docs remediation, and Wave B6 release automation, installer parity, and self-upgrade tooling for `cfire` (**`CF-198` – `CF-210`** and **`CF-240` – `CF-245`**, architectural decisions **`Q55` – `Q61`** and **`Q70` – `Q73`**).
+This topic-focused backlog tracks compiler/build performance optimizations, progressive compilation, caching, cross-platform pre-compiled binary distribution, Wave B5 consistency/soundness/docs remediation, Wave B6 release automation, installer parity, and self-upgrade tooling, and Wave B7 test/cache/VM gate acceleration for `cfire` (**`CF-198` – `CF-210`** and **`CF-240` – `CF-246`**, architectural decisions **`Q55` – `Q61`** and **`Q70` – `Q74`**).
 
-It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14) and `14a1a51` (2026-11-17). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
+It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14) and `71adeb7` (2026-11-18). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
 
-> **ID Allocation**: Waves B1–B5 use **`CF-198` – `CF-210`** (`Q55` – `Q61`), [`flint.md`](./flint.md) uses **`CF-211` – `CF-239`** (`Q62` – `Q69`), and Wave B6 below uses **`CF-240` – `CF-245`** (`Q70` – `Q73`). Future items anywhere in `docs/planning/` should start at **`CF-246`** and **`Q74`**.
+> **ID Allocation**: Waves B1–B5 use **`CF-198` – `CF-210`** (`Q55` – `Q61`), [`flint.md`](./flint.md) uses **`CF-211` – `CF-239`** (`Q62` – `Q69`), Wave B6 uses **`CF-240` – `CF-245`** (`Q70` – `Q73`), and Wave B7 uses **`CF-246`** (`Q74`). Future items anywhere in `docs/planning/` should start at **`CF-247`** and **`Q75`**.
 
 ---
 
@@ -660,3 +660,32 @@ flowchart TD
     - Hermetic mock `file://` upgrade tests across both `PortableDir` and `UserHome`/`SystemPrefix` staged temp directories: `--check` output & zero mutation, valid upgrade replacing `cfire` + pruning stale `runtime/obsolete.hpp`, `--force` reinstall on same version, corrupted `SHA256SUMS.txt` aborting cleanly without altering `bin/cfire` or `runtime/`, and `WorkspaceFallback` refusal when running from a source repo tree without `--force`.
     - On `_WIN32`: live self-replacement test confirming a running copy of `cfire.exe` copied to a temp `PortableDir` successfully executes `cfire.exe upgrade` on itself using a mock `file://` `.zip`, leaving the upgraded `cfire.exe` runnable afterward!
 - **Acceptance Criteria**: `cfire upgrade` and `cfire self-update` work offline/hermetically in tests and end-to-end against releases on macOS, Linux, and Windows; `CF-198` zero-`runtime/core/*` include constraint in `src/` remains intact; `./cfire doc --check` and `make check-all` pass.
+
+---
+
+## Wave B7: Test, Cache, Sanitizer & VM Gate Acceleration (`CF-246`)
+
+### B7.1 Architectural Decision Record (`Q74`, resolved interactively 2026-11-18)
+
+74. **Test Parallelism, Cache Stabilization, Sandbox Preflight & Concurrent VM Gates (`Q74`, Options A + A + A)**:
+    - **Linux VM gate depth (`scripts/vm/linux_gate.sh`, Option A)**: Keep both `make check` and incremental `make check-deep` inside the Ubuntu ARM64 VM so Linux ASan/UBSan/TSan and optional-lib conformance (`libsodium`, `libssh`) continue running concurrently alongside the Windows VM in `make check-platforms`.
+    - **Pre-commit hook tier (`.githooks/pre-commit`, Option A)**: Keep full `make check` on every commit (accelerated via parallel test runner, stabilized PCH keys, and `-j` builds, with a 5 ms loopback preflight rather than multi-minute sandbox timeouts).
+    - **Execution scope (`CF-246`, Option A)**: Execute all 6 workstreams together (sandbox preflight + `make check-fast`, PCH key stabilization + 2 GiB LRU cap + one-shot `BinaryCache` bypass, `.cfire_test.pch` + incremental parallel sanitizer/fuzz targets, multi-process parallel `.cfire_test_runner` + conformance `--verify-cpp` deduplication, cold-cache amalgamation deduplication in `unit`, and concurrent incremental Linux + Windows VM gates via `.vmtest both`).
+
+### B7.2 Item Specification (`CF-246`)
+
+#### `CF-246` — Test Runner Parallelism, PCH Key Stabilization & LRU Cap, Incremental Sanitizer/Fuzz Targets, Sandbox Preflight & Concurrent Incremental VM Gates `[DONE]`
+- **Wave / ADR**: Wave B7 (`Q74`).
+- **Problem & Evidence (`main` @ `71adeb7`, 2026-11-18)**:
+  - `~/Library/Caches/cfire/pch` accumulated `72 GB` (`1,904` `.pch` files) because `compute_composite_pch_stem()` hashed `kVersion`/`kGitSha`, `populate_checked_build_plan()` pushed ephemeral temp `-I` dirs into `plan.cflags` before PCH creation, and `pch/` had zero LRU eviction.
+  - One-shot `ScopedTempDir` builds (`conformance`, `guide`, `eval`, `run_cfire_source`) suffered a 0% `BinaryCache` hit rate while copying disposable binaries into `bin/` and scanning 3,250 files on every build.
+  - `.cfire_test_runner` compiled 5 giant header-only TUs (`25.1 MB` `.o`s) without a PCH, `test-asan`/`test-tsan`/`fuzz-replay` compiled serially and deleted binaries (`rm -f`), and `.cfire_test_runner` ran all 112 suites single-threaded while `conformance_runner.hpp` spawned `clang++` twice per runnable file.
+  - `test_vendored_archives_and_portable_releases` compiled `sqlite3.c` + `simdjson.cpp` + cold `EM_CACHE` from scratch 6+ times per `unit` run.
+  - `make check-platforms` ran Linux (`18.0m`) and Windows (`15.5m`) serially (`33.5m`) while `rm -rf`ing guest trees on every run and building Windows test TUs on 1 emulated core without PCH (`GIT_SHA=dev` vs `vm`).
+  - OS sandbox runs allowed `bind("127.0.0.1")` while failing `connect("127.0.0.1")` with `EPERM`, wasting 5–8 minutes per retry cycle before failing.
+- **Acceptance Criteria**:
+  - `make check-fast` runs zero-warning build + `fmt --check` + `doc --check` + non-network compiler/Sema suites in `< 20s` inside Standard Sandbox Mode, and network-dependent runner categories exit `2` in `< 1s` when `connect(127.0.0.1)` returns `EPERM`.
+  - `~/Library/Caches/cfire/pch` stays bounded at `<= 2 GiB` (`CFIRE_PCH_CACHE_MAX_MB`) with stable `kVersion`/`kGitSha`-independent stems.
+  - `.cfire_test_runner` runs suites in parallel across `default_jobs()` worker processes with zero drop in coverage (`209/211` macOS, `211/211` Linux & Windows, `45/45` GUIDE, `14/14` stdlib suite, `0` C++ warnings).
+  - `make check-deep` builds incrementally in parallel (`%.asan.o`, `.cfire_test_asan.pch`, `.fuzz_replay_%`) and persists sanitizer/fuzz artifacts between runs.
+  - `make check-platforms` drives Linux and Windows concurrently via `.vmtest both` with incremental guest trees and unified `GIT_SHA=vm` PCHs, passing `make check-all`.

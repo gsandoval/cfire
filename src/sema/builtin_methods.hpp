@@ -13,7 +13,7 @@
 namespace cfire::frontend {
 
 // Receiver kinds, as a bitmask so one row can serve several kinds (`len` on str, slices, arrays and maps).
-enum BmRecv : std::uint8_t {
+enum BmRecv : std::uint16_t {
     BmInt = 1u << 0,
     BmFloat = 1u << 1,
     BmStr = 1u << 2,
@@ -21,14 +21,16 @@ enum BmRecv : std::uint8_t {
     BmArray = 1u << 4,
     BmMap = 1u << 5,
     BmBool = 1u << 6,
+    BmOptional = 1u << 7,
+    BmFallible = 1u << 8,
 };
-inline constexpr std::uint8_t BmNum = BmInt | BmFloat;
-inline constexpr std::uint8_t BmSeq = BmSlice | BmArray;
-inline constexpr std::uint8_t BmSized = BmStr | BmSlice | BmArray | BmMap;
+inline constexpr std::uint16_t BmNum = BmInt | BmFloat;
+inline constexpr std::uint16_t BmSeq = BmSlice | BmArray;
+inline constexpr std::uint16_t BmSized = BmStr | BmSlice | BmArray | BmMap;
 
 struct BuiltinMethod {
     std::string_view name;
-    std::uint8_t recv;
+    std::uint16_t recv;
     // Parameter types, comma separated, using the placeholders below. `fn` is a closure argument.
     //   Self = the receiver type, T = slice/array element, K/V = map key/value.
     std::string_view params;
@@ -169,10 +171,14 @@ inline constexpr std::array kBuiltinMethods = {
     // --- Raw access for C interop (dedicated lowering) ---
     BuiltinMethod{"bytes", BmSlice, "", "[]byte", false, false, false, "Byte view of the slice's storage.", "raw := xs.bytes()"},
     BuiltinMethod{"with_ext", BmStr, "&str", "str", false, false, false, "Path with its extension replaced.", "out := path.with_ext(\".o\")"},
+
+    // --- Wrapper bridges (`T?` <-> `T!`, Q93) ---
+    BuiltinMethod{"or_error", BmOptional, "&str, i32=", "T!", false, false, false, "Promote `none` into an error value lazily, unwrapping `some`.", "user := find_user(id).or_error(\"not found\")"},
+    BuiltinMethod{"ignore_error", BmFallible, "", "T?", false, false, false, "Discard the error of a non-void fallible value, yielding `T?`.", "age := i32.parse(raw).ignore_error()"},
 };
 // clang-format on
 
-[[nodiscard]] constexpr auto find_builtin_method(std::uint8_t recv_kind, std::string_view name) -> const BuiltinMethod* {
+[[nodiscard]] constexpr auto find_builtin_method(std::uint16_t recv_kind, std::string_view name) -> const BuiltinMethod* {
     for (const auto& m : kBuiltinMethods) {
         if ((m.recv & recv_kind) != 0 && m.name == name) return &m;
     }
@@ -202,7 +208,7 @@ inline constexpr std::array kBuiltinMethods = {
 // Builtin associated items on numeric types: `i32.MAX`, `f64.NAN`. `{}` is the lowered C++ type.
 struct BuiltinAssocConst {
     std::string_view name;
-    std::uint8_t recv;
+    std::uint16_t recv;
     std::string_view cpp;
     std::string_view summary;
 };
@@ -221,7 +227,7 @@ inline constexpr std::array kBuiltinAssocConsts = {
 };
 // clang-format on
 
-[[nodiscard]] constexpr auto find_builtin_assoc_const(std::uint8_t recv_kind, std::string_view name) -> const BuiltinAssocConst* {
+[[nodiscard]] constexpr auto find_builtin_assoc_const(std::uint16_t recv_kind, std::string_view name) -> const BuiltinAssocConst* {
     for (const auto& c : kBuiltinAssocConsts) {
         if ((c.recv & recv_kind) != 0 && c.name == name) return &c;
     }
@@ -238,6 +244,7 @@ enum class ApiMigrationKind : std::uint8_t {
     AppendVerifyOff,  // `ns.f(args)`        ->  `ns.to(args, verify_peer: false)`
     TlsServerFiles,   // `ns.make_tls_server(p, c, k)` -> `make(ns.Server, p, tls: ns.TlsConfig{cert_file: c, key_file: k})`
     TlsServerPem,     // the same with `cert_pem` / `key_pem`
+    CliTryParse,   // `cli.try_parse[T](args)` -> `cli.parse[T](args).ignore_error()`
 };
 struct ApiMigration {
     std::string_view ns;
@@ -297,6 +304,8 @@ inline constexpr std::array kApiMigrations = {
     ApiMigration{"sort", "binary_search", ApiMigrationKind::CallToMethod, "binary_search"},
     ApiMigration{"sort", "reverse", ApiMigrationKind::CallToMethod, "reverse"},
     ApiMigration{"sort", "is_sorted", ApiMigrationKind::CallToMethod, "is_sorted"},
+    ApiMigration{"cli", "try_parse", ApiMigrationKind::CliTryParse, "parse"},
+    ApiMigration{"os", "getenv_opt", ApiMigrationKind::RenameFn, "getenv"},
 };
 // clang-format on
 
@@ -550,24 +559,77 @@ inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", 
 
 // Receiver kind of a spelled `.cf` type (`str`, `&str`, `[]i32`, `[4]u8`, `map[str]i32`, `i64`, `f32`), for the
 // tools that only have type names (LSP completion, hover, docgen).
-[[nodiscard]] constexpr auto builtin_recv_bits_for_type_name(std::string_view t) -> std::uint8_t {
+[[nodiscard]] constexpr auto builtin_recv_bits_for_type_name(std::string_view t) -> std::uint16_t {
+    while (t.starts_with("mut ")) t.remove_prefix(4);
     while (t.starts_with("&mut ") || t.starts_with("*mut ")) t.remove_prefix(5);
     while (t.starts_with("&") || t.starts_with("*")) t.remove_prefix(1);
+    while (!t.empty() && t.back() == ' ') t.remove_suffix(1);
+    if (t.size() > 1 && t.ends_with('?')) return BmOptional;
+    if (t.size() > 1 && t.ends_with('!')) return BmFallible;
     if (t == "str" || t == "string") return BmStr;
     if (t.starts_with("[]")) return BmSlice;
     if (t.starts_with("[") && t.size() > 1 && t[1] >= '0' && t[1] <= '9') return BmArray;
     if (t.starts_with("map[")) return BmMap;
     if (t == "bool") return BmBool;
     if (t == "f32" || t == "f64") return BmFloat;
-    constexpr std::array<std::string_view, 10> ints = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "isize", "usize"};
+    constexpr std::array<std::string_view, 15> ints = {
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "isize", "usize",
+        "int", "uint", "byte", "char", "rune"
+    };
     for (auto i : ints) if (t == i) return BmInt;
     return 0;
 }
 
-// `fn trim() -> &str`, `fn insert(i: usize, v: T)` — a display signature with the receiver placeholders kept.
+[[nodiscard]] constexpr auto builtin_method_requires_type_arg(std::string_view name) -> bool {
+    return name == "wrapping_as" || name == "saturating_as" || name == "try_as";
+}
+
+[[nodiscard]] constexpr auto builtin_method_param_name(std::string_view name, std::uint16_t recv, std::size_t idx) -> std::string_view {
+    if (name == "or_error") return idx == 0 ? "msg" : "code";
+    if (name == "clamp") return idx == 0 ? "lo" : "hi";
+    if (name == "min" || name == "max") return "other";
+    if (name == "pow" || name == "powi") return "exp";
+    if (name == "div_euclid" || name == "rem_euclid" ||
+        name == "checked_add" || name == "checked_sub" || name == "checked_mul" || name == "checked_div" ||
+        name == "wrapping_add" || name == "wrapping_sub" || name == "wrapping_mul" || name == "wrapping_div" ||
+        name == "saturating_add" || name == "saturating_sub" || name == "saturating_mul" || name == "saturating_div") {
+        return "rhs";
+    }
+    if (name == "wrapping_shl" || name == "wrapping_shr" || name == "checked_shl" || name == "checked_shr") return "bits";
+    if (name == "contains") {
+        if ((recv & BmStr) != 0) return "sub";
+        if ((recv & BmMap) != 0) return "key";
+        return "val";
+    }
+    if (name == "starts_with" || name == "strip_prefix") return "prefix";
+    if (name == "ends_with" || name == "strip_suffix") return "suffix";
+    if (name == "index_of") {
+        if ((recv & BmStr) != 0) return idx == 0 ? "needle" : "start";
+        return "val";
+    }
+    if (name == "last_index_of") return "needle";
+    if (name == "split" || name == "join") return "sep";
+    if (name == "split_n") return idx == 0 ? "sep" : "n";
+    if (name == "replace" || name == "replace_all") return idx == 0 ? "from" : "to";
+    if (name == "repeat" || name == "truncate") return "n";
+    if (name == "sort_by") return "cmp";
+    if (name == "binary_search" || name == "push") return "val";
+    if (name == "insert") {
+        if ((recv & BmMap) != 0) return idx == 0 ? "key" : "val";
+        return idx == 0 ? "idx" : "val";
+    }
+    if (name == "remove") return (recv & BmMap) != 0 ? "key" : "idx";
+    if (name == "swap_remove") return "idx";
+    if (name == "extend") return "other";
+    if (name == "get") return "key";
+    if (name == "with_ext") return "ext";
+    return "arg";
+}
+
+// `fn trim() -> str`, `fn insert(idx: usize, val: T)` — a display signature with the receiver placeholders kept.
 [[nodiscard]] inline auto builtin_method_signature(const BuiltinMethod& m) -> std::string {
     std::string params;
-    char pname = 'a';
+    std::size_t p_idx = 0;
     for (std::string_view rest = m.params; !rest.empty();) {
         auto comma = rest.find(',');
         std::string_view p = rest.substr(0, comma);
@@ -576,7 +638,8 @@ inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", 
         const bool optional = p.ends_with('=');
         if (optional) p.remove_suffix(1);
         if (!params.empty()) params += ", ";
-        params += std::string(1, pname++) + ": " + std::string(p == "fn" ? std::string_view("fn(T, T) -> bool") : p) + (optional ? " = default" : "");
+        std::string_view pname = builtin_method_param_name(m.name, m.recv, p_idx++);
+        params += std::string(pname) + ": " + std::string(p == "fn" ? std::string_view("fn(T, T) -> bool") : p) + (optional ? " = default" : "");
         if (comma == std::string_view::npos) break;
         rest.remove_prefix(comma + 1);
     }
@@ -590,7 +653,7 @@ inline constexpr std::array<std::string_view, 2> kRetiredModules = {"core:str", 
 // Retired spellings: a hard error with a fix-it that renames the method.
 struct RetiredBuiltinMethod {
     std::string_view name;
-    std::uint8_t recv;
+    std::uint16_t recv;
     std::string_view replacement;
 };
 inline constexpr std::array kRetiredBuiltinMethods = {

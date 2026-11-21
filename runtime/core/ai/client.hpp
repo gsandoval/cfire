@@ -371,7 +371,7 @@ public:
         std::string_view text
     ) const -> std::expected<std::vector<float>, cfire::Error> {
         if (model.empty() || model == "local" || model == "apple" || model == "native" || provider == Provider::Local) {
-            std::string local_override = cfire::os::getenv("CFIRE_LOCAL_EMBED_MODEL", "");
+            std::string local_override = cfire::os::getenv("CFIRE_LOCAL_EMBED_MODEL").value_or("");
             if (!local_override.empty() && (model.empty() || model == "local")) {
                 Client oll(Provider::Ollama, "", "http://127.0.0.1:11434", local_override);
                 if (auto res = oll.embed(local_override, text)) return res;
@@ -882,17 +882,17 @@ private:
 }
 
 [[nodiscard]] inline auto openai(std::string_view api_key = "", std::string_view model = "gpt-4o-mini") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("OPENAI_API_KEY", "") : std::string(api_key);
+    std::string key = api_key.empty() ? cfire::os::getenv("OPENAI_API_KEY").value_or("") : std::string(api_key);
     return Client(Provider::OpenAI, std::move(key), "https://api.openai.com", std::string(model));
 }
 
 [[nodiscard]] inline auto anthropic(std::string_view api_key = "", std::string_view model = "claude-3-5-sonnet-latest") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("ANTHROPIC_API_KEY", "") : std::string(api_key);
+    std::string key = api_key.empty() ? cfire::os::getenv("ANTHROPIC_API_KEY").value_or("") : std::string(api_key);
     return Client(Provider::Anthropic, std::move(key), "https://api.anthropic.com", std::string(model));
 }
 
 [[nodiscard]] inline auto gemini(std::string_view api_key = "", std::string_view model = "gemini-2.5-flash") -> Client {
-    std::string key = api_key.empty() ? cfire::os::getenv("GEMINI_API_KEY", "") : std::string(api_key);
+    std::string key = api_key.empty() ? cfire::os::getenv("GEMINI_API_KEY").value_or("") : std::string(api_key);
     return Client(Provider::Gemini, std::move(key), "https://generativelanguage.googleapis.com", std::string(model));
 }
 
@@ -943,7 +943,7 @@ template <typename Fn>
     std::string_view text
 ) -> std::expected<std::vector<float>, cfire::Error> {
     if (model.empty() || model == "local" || model == "apple" || model == "native") {
-        std::string local_override = cfire::os::getenv("CFIRE_LOCAL_EMBED_MODEL", "");
+        std::string local_override = cfire::os::getenv("CFIRE_LOCAL_EMBED_MODEL").value_or("");
         if (!local_override.empty() && model == "local") {
             if (auto res = ollama().embed(local_override, text)) return res;
         }

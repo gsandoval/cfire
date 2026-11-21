@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <set>
 #include <span>
 #include <string>
@@ -41,6 +42,8 @@ extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #import <WebKit/WebKit.h>
 #if CFIRE_WEBUI_IOS
 #import <UIKit/UIKit.h>
+#import <SafariServices/SafariServices.h>
+#import <UserNotifications/UserNotifications.h>
 #else
 #import <Cocoa/Cocoa.h>
 #endif
@@ -73,6 +76,13 @@ extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #endif
 
 namespace cfire::webui {
+
+enum class StatusBarStyle {
+    Auto = 0,
+    Light,
+    Dark,
+    Hidden,
+};
 
 namespace detail {
 
@@ -158,17 +168,92 @@ struct is_expected<std::expected<V, E>> : std::true_type {};
     return ec ? std::filesystem::path(".") : cwd;
 }
 
+[[nodiscard]] inline auto is_headless_webui_env() noexcept -> bool {
+    const char* env_h = std::getenv("CFIRE_HEADLESS_TEST");
+    return env_h != nullptr && std::string_view(env_h) == "1";
+}
+
+[[nodiscard]] inline auto generate_ipc_session_token() -> std::string {
+    static std::atomic<std::uint64_t> counter{0};
+    std::uint64_t hi = 0;
+    std::uint64_t lo = 0;
+    try {
+        std::random_device rd;
+        hi = (static_cast<std::uint64_t>(rd()) << 32) ^ static_cast<std::uint64_t>(rd());
+        lo = (static_cast<std::uint64_t>(rd()) << 32) ^ static_cast<std::uint64_t>(rd());
+    } catch (...) {
+        hi = 0x9e3779b97f4a7c15ULL;
+        lo = 0xbf58476d1ce4e5b9ULL;
+    }
+    const auto now = static_cast<std::uint64_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto seq = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    hi ^= now ^ (seq * 0x9e3779b97f4a7c15ULL);
+    lo ^= (now >> 17) ^ (seq * 0x94d049bb133111ebULL);
+    if (hi == 0 && lo == 0) lo = 1;
+    return std::format("{:016x}{:016x}", hi, lo);
+}
+
+[[nodiscard]] inline auto is_app_origin(std::string_view url) noexcept -> bool {
+    auto match_origin = [&](std::string_view prefix) -> bool {
+        if (url.size() < prefix.size()) return false;
+        for (std::size_t i = 0; i < prefix.size(); ++i) {
+            char a = url[i];
+            if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+            if (a != prefix[i]) return false;
+        }
+        if (url.size() == prefix.size()) return true;
+        char next = url[prefix.size()];
+        return next == '/' || next == '?' || next == '#';
+    };
+    return match_origin("app://localhost") || match_origin("https://app.localhost");
+}
+
+[[nodiscard]] inline auto extract_url_origin(std::string_view url) -> std::string {
+    auto sep = url.find("://");
+    if (sep == std::string_view::npos || sep == 0) return {};
+    std::string scheme;
+    scheme.reserve(sep);
+    for (std::size_t i = 0; i < sep; ++i) {
+        char c = url[i];
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '.' || c == '-';
+        if (!ok) return {};
+        scheme.push_back(c);
+    }
+    std::string_view rest = url.substr(sep + 3);
+    auto end = rest.find_first_of("/?#");
+    std::string_view authority = (end == std::string_view::npos) ? rest : rest.substr(0, end);
+    if (authority.empty()) return {};
+    if (authority.find('@') != std::string_view::npos) return {};
+    std::string norm_auth;
+    norm_auth.reserve(authority.size());
+    for (char c : authority) {
+        if (static_cast<unsigned char>(c) <= 0x20) return {};
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        norm_auth.push_back(c);
+    }
+    return scheme + "://" + norm_auth;
+}
+
 inline constexpr std::string_view kPreloadBridgeJs = R"JS(
 (function() {
   if (window.__cfire_webui_initialized) return;
   window.__cfire_webui_initialized = true;
+
+  const initCfg = window.__cfire_initial_config || {};
+  const ipcToken = typeof initCfg.ipcToken === "string" ? initCfg.ipcToken : "";
+  try { delete initCfg.ipcToken; } catch (_) {}
 
   const pending = new Map();
   const listeners = new Map();
   let seq = 1;
 
   function postRaw(obj) {
-    const msg = JSON.stringify(obj);
+    const payload = (ipcToken && obj && typeof obj === "object" && !Array.isArray(obj))
+      ? Object.assign({}, obj, { __tok: ipcToken })
+      : obj;
+    const msg = JSON.stringify(payload);
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.external) {
       window.webkit.messageHandlers.external.postMessage(msg);
     } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
@@ -387,6 +472,19 @@ inline constexpr std::string_view kPreloadBridgeJs = R"JS(
       el = el.parentElement;
     }
   });
+
+  function notifyBridgeReady() {
+    postRaw({ __sys: "ready" });
+  }
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function() {
+        setTimeout(notifyBridgeReady, 0);
+      }, { once: true });
+    } else {
+      setTimeout(notifyBridgeReady, 0);
+    }
+  }
 })();
 )JS";
 
@@ -489,6 +587,20 @@ struct AppState {
     std::function<void()> platform_show_window{};
     std::function<void()> platform_quit{};
     std::function<void(const std::string&, std::function<void(bool)>)> platform_screenshot{};
+    std::function<void(bool)> platform_set_scroll_bounce{};
+    std::function<void(StatusBarStyle)> platform_set_status_bar_style{};
+
+    std::vector<std::string> allowed_navigation_origins{};
+    std::optional<std::string> initial_url{};
+    bool js_ready{false};
+    std::vector<std::pair<std::string, std::string>> pending_cold_start_events{};
+    std::string ipc_session_token{generate_ipc_session_token()};
+    bool scroll_bounce_enabled{true};
+    StatusBarStyle status_bar_style{StatusBarStyle::Auto};
+
+    void* native_window_handle{nullptr};
+    void* native_webview_handle{nullptr};
+    void* native_view_controller_handle{nullptr};
 #if defined(CFIRE_HAS_WIN32_BACKEND)
     HWND win32_hwnd{nullptr};
 #endif
@@ -510,6 +622,96 @@ struct AppState {
         dispatch_event_internal(event, json_payload);
         std::string ev_escaped = cfire::json::escape_string(event);
         eval_js(std::format("window.__cfire_event_dispatch(\"{}\", {});", ev_escaped, json_payload));
+    }
+
+    void emit_buffered_system_event(std::string_view event, const std::string& json_payload) {
+        bool ready_now = false;
+        {
+            std::lock_guard<std::recursive_mutex> lock(mtx);
+            ready_now = js_ready;
+            if (!ready_now) {
+                if (max_history_entries == 0 || pending_cold_start_events.size() < max_history_entries) {
+                    pending_cold_start_events.emplace_back(std::string(event), json_payload);
+                }
+            }
+        }
+        if (ready_now) {
+            emit_system_event(event, json_payload);
+        }
+    }
+
+    void flush_cold_start_events() {
+        std::vector<std::pair<std::string, std::string>> queued;
+        {
+            std::lock_guard<std::recursive_mutex> lock(mtx);
+            js_ready = true;
+            queued.swap(pending_cold_start_events);
+        }
+        for (const auto& [ev, payload] : queued) {
+            emit_system_event(ev, payload);
+        }
+    }
+
+    void notify_open_url(std::string_view url) {
+        if (url.empty()) return;
+        {
+            std::lock_guard<std::recursive_mutex> lock(mtx);
+            if (!initial_url.has_value()) {
+                initial_url = std::string(url);
+            }
+        }
+        std::string payload = std::format("{{\"url\":\"{}\"}}", cfire::json::escape_string(url));
+        emit_buffered_system_event("app:open_url", payload);
+    }
+
+    void notify_notification_opened(std::string_view id, std::string_view payload_str) {
+        std::string payload = std::format(
+            "{{\"id\":\"{}\",\"payload\":\"{}\"}}",
+            cfire::json::escape_string(id),
+            cfire::json::escape_string(payload_str));
+        emit_buffered_system_event("app:notification_opened", payload);
+    }
+
+    void notify_external_navigation(std::string_view url) {
+        if (url.empty()) return;
+        std::string payload = std::format("{{\"url\":\"{}\"}}", cfire::json::escape_string(url));
+        emit_system_event("app:external_navigation", payload);
+    }
+
+    void add_allowed_navigation_origin(std::string_view origin) {
+        std::string norm = extract_url_origin(origin);
+        if (norm.empty()) return;
+        std::lock_guard<std::recursive_mutex> lock(mtx);
+        if (std::find(allowed_navigation_origins.begin(), allowed_navigation_origins.end(), norm) ==
+            allowed_navigation_origins.end()) {
+            allowed_navigation_origins.push_back(std::move(norm));
+        }
+    }
+
+    [[nodiscard]] auto should_allow_in_webview(std::string_view url) const -> bool {
+        if (is_app_origin(url)) return true;
+        auto ci_starts_with = [](std::string_view hay, std::string_view needle) noexcept -> bool {
+            if (hay.size() < needle.size()) return false;
+            for (std::size_t i = 0; i < needle.size(); ++i) {
+                char a = hay[i];
+                if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+                if (a != needle[i]) return false;
+            }
+            return true;
+        };
+        if (ci_starts_with(url, "about:blank")) {
+            if (url.size() == 11) return true;
+            char c = url[11];
+            return c == '?' || c == '#';
+        }
+        if (ci_starts_with(url, "data:") || ci_starts_with(url, "blob:")) {
+            return true;
+        }
+        std::string orig = extract_url_origin(url);
+        if (orig.empty()) return false;
+        std::lock_guard<std::recursive_mutex> lock(mtx);
+        return std::find(allowed_navigation_origins.begin(), allowed_navigation_origins.end(), orig) !=
+               allowed_navigation_origins.end();
     }
 
     void notify_fullscreen_changed(bool fullscreen) {
@@ -581,8 +783,36 @@ struct AppState {
     }
 
     void handle_ipc_message(std::string_view raw_json) {
+        handle_ipc_message_internal(raw_json, false);
+    }
+
+    void handle_ipc_message_verified(std::string_view source_url,
+                                     std::string_view raw_json,
+                                     bool require_token = false) {
+        if (!is_app_origin(source_url)) return;
+        handle_ipc_message_internal(raw_json, require_token);
+    }
+
+    void handle_ipc_message_internal(std::string_view raw_json, bool require_token = false) {
         auto parsed = cfire::json::parse_dynamic(raw_json);
         if (!parsed || !parsed->is_object()) return;
+
+        if (require_token) {
+            auto tok_v = parsed->get("__tok");
+            if (!tok_v || !tok_v->is_string()) return;
+            std::string_view got = tok_v->as_str();
+            std::string expected;
+            {
+                std::lock_guard<std::recursive_mutex> lock(mtx);
+                expected = ipc_session_token;
+            }
+            if (expected.empty() || got.size() != expected.size()) return;
+            unsigned char diff = 0;
+            for (std::size_t i = 0; i < expected.size(); ++i) {
+                diff |= static_cast<unsigned char>(got[i] ^ expected[i]);
+            }
+            if (diff != 0) return;
+        }
 
         // 1. Check for system window command (`__sys`)
         if (auto sys_cmd = parsed->get("__sys"); sys_cmd && sys_cmd->is_string()) {
@@ -660,6 +890,8 @@ struct AppState {
                     dfn = platform_drag;
                 }
                 if (dfn) dfn();
+            } else if (cmd == "ready") {
+                flush_cold_start_events();
             }
             return;
         }
@@ -784,15 +1016,27 @@ struct AppState {
     }
 };
 
-[[nodiscard]] inline auto build_preload_script(const AppState& st) -> std::string {
+[[nodiscard]] inline auto build_preload_script(const AppState& st, bool include_ipc_token = false) -> std::string {
     bool dev = kDefaultWebUIDevExtras;
     bool ctx = kDefaultWebUIDevExtras;
     bool autofill = true;
+    std::string tok;
     {
         std::lock_guard<std::recursive_mutex> lock(st.mtx);
         dev = st.devtools_enabled;
         ctx = st.context_menu_enabled;
         autofill = st.autofill_enabled;
+        if (include_ipc_token) {
+            tok = st.ipc_session_token;
+        }
+    }
+    if (!tok.empty()) {
+        return std::format(
+            "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"autofill\":{},\"ipcToken\":\"{}\"}};\n",
+            dev ? "true" : "false",
+            ctx ? "true" : "false",
+            autofill ? "true" : "false",
+            cfire::json::escape_string(tok)) + std::string(kPreloadBridgeJs);
     }
     return std::format(
         "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"autofill\":{}}};\n",

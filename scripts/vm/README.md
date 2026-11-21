@@ -1,9 +1,6 @@
 # Local VM gates (`make check-platforms`)
 
-`make check-platforms` (= `make test-vm-linux` + `make test-vm-windows`) runs the CI `linux` and `windows` jobs from
-`.github/workflows/ci.yml` on your working tree, uncommitted changes included, inside local
-[UTM](https://mac.getutm.app) virtual machines. It is one of the three test tiers (`docs/planning/README.md`): run it
-before a CF item is marked done and before a release.
+`make check-platforms` runs `./.vmtest both`, executing the CI `linux` (`make check` + incremental `make check-deep` in `linux_gate.sh`) and `windows` (`windows_gate.sh`) jobs concurrently on your working tree, uncommitted changes included, inside local [UTM](https://mac.getutm.app) virtual machines (`make test-vm-linux` and `make test-vm-windows` still invoke each guest individually). It is one of the three test tiers (`docs/planning/README.md`): run it before a CF item is marked done and before a release.
 
 The host side is a C++ program, `tools/vmtest/` (built by make as `.vmtest`); it needs only clang, `git` and `tar`.
 The files here run inside the guests.
@@ -35,9 +32,7 @@ Every setting is an environment variable with a default, so the same targets wor
 Example: `CFIRE_VM_LINUX=ubuntu make test-vm-linux`.
 
 ## How it works
-- The driver copies the working tree (`git ls-files -co --exclude-standard`) into the share, plus `cfire.tar`, and
-  serves the share on the host-only address. It serves files read-only and accepts uploads only as
-  `PUT /results/<name>`.
+- The driver performs an incremental, timestamp-preserving sync of the working tree (`git ls-files -co --exclude-standard`) into the share (once per `make check-platforms` / `.vmtest both` invocation), plus `cfire.tar` with `.vmtest_manifest`, and serves the share on the host-only address. Both `linux_gate.sh` and `windows_gate.sh` preserve unchanged guest build trees and `.o`/`.pch` caches across runs so incremental checks only rebuild changed translation units. The server exposes files read-only and accepts uploads only as `PUT /results/<name>`.
 - It starts the VM if needed, waits for its guest agent, and launches the job with `utmctl exec`. That call can return
   before a guest command finishes, so every job uploads its log and exit code to the file server instead, and the
   driver waits for them, printing the log and exiting with the guest's exit code.

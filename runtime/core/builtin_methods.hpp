@@ -519,23 +519,50 @@ inline auto pop(std::string& s) -> std::optional<std::uint8_t> {
 }
 
 // --- Type-associated parsing: `i32.parse(s)`, `f64.parse(s)`, `bool.parse(s)` ---------------------
-// Surrounding ASCII whitespace is ignored; anything else that is not a complete, in-range literal is `none`.
+// Surrounding ASCII whitespace is ignored; invalid or out-of-range input returns a `cfire::Error`.
 template <typename T>
-[[nodiscard]] inline auto parse(std::string_view s) noexcept -> std::optional<T> {
+[[nodiscard]] inline auto parse(
+    std::string_view s,
+    std::string_view type_name = cfire::detail::cfire_scalar_type_name<T>()
+) -> std::expected<T, cfire::Error> {
     std::string_view t = detail::trim_end_view(detail::trim_start_view(s));
     if constexpr (std::same_as<T, bool>) {
+        if (t.empty()) {
+            return cfire::make_error("cannot parse empty string as bool");
+        }
         if (t.size() == 4 || t.size() == 5 || t.size() == 1) {
             std::string low(t);
             for (char& c : low) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
             if (low == "true" || low == "1") return true;
             if (low == "false" || low == "0") return false;
         }
-        return std::nullopt;
+        return cfire::make_error(std::format("invalid bool: '{}'", t));
     } else if constexpr (std::floating_point<T>) {
-        return cfire::detail::parse_float<T>(t);
+        return cfire::detail::parse_float<T>(t, type_name);
     } else {
-        return cfire::detail::parse_int<T>(t);
+        return cfire::detail::parse_int<T>(t, type_name);
     }
+}
+
+// --- Wrapper bridges: `T?.or_error(msg[, code]) -> T!` and `T!.ignore_error() -> T?` -----------------
+template <typename Opt, typename ErrFn>
+[[nodiscard]] inline auto or_error(Opt&& opt, ErrFn&& make_err)
+    -> std::expected<typename std::remove_cvref_t<Opt>::value_type, cfire::Error> {
+    using V = typename std::remove_cvref_t<Opt>::value_type;
+    if (opt.has_value()) {
+        return std::expected<V, cfire::Error>(std::in_place, *std::forward<Opt>(opt));
+    }
+    return std::forward<ErrFn>(make_err)();
+}
+
+template <typename Res>
+    requires (!std::is_void_v<typename std::remove_cvref_t<Res>::value_type>)
+[[nodiscard]] inline auto ignore_error(Res&& res) noexcept
+    -> std::optional<typename std::remove_cvref_t<Res>::value_type> {
+    if (res.has_value()) {
+        return std::optional<typename std::remove_cvref_t<Res>::value_type>(std::in_place, *std::forward<Res>(res));
+    }
+    return std::nullopt;
 }
 
 // --- Slices and fixed arrays --------------------------------------------------------------------------

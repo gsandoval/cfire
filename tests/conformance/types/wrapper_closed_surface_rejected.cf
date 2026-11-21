@@ -1,0 +1,45 @@
+package main
+
+fn get_opt() -> i32? {
+    return 10
+}
+
+fn get_res() -> i32! {
+    return 20
+}
+
+fn do_void() -> void! {
+    return
+}
+
+fn bad_parse() {
+    x := i32.parse("42") //~ error cfire/UNHANDLED-RESULT
+    _ = x
+}
+
+fn bad_void_ignore() {
+    _ = do_void().ignore_error() //~ error cfire/TYPE-MISMATCH
+}
+
+fn bad_wrong_direction(o: i32?, r: i32!) {
+    _ = o.ignore_error() //~ error cfire/UNKNOWN-METHOD
+    _ = r.or_error("nope") //~ error cfire/UNKNOWN-METHOD
+}
+
+fn bad_raw_cpp_optional(o: i32?) {
+    _ = o.has_value() //~ error cfire/UNKNOWN-METHOD
+    _ = o.value() //~ error cfire/UNKNOWN-METHOD
+    _ = o.value_or(1) //~ error cfire/UNKNOWN-METHOD
+    _ = o.error() //~ error cfire/UNKNOWN-METHOD
+}
+
+fn bad_raw_cpp_fallible(r: i32!) {
+    _ = r.has_value() //~ error cfire/UNKNOWN-METHOD
+    _ = r.value() //~ error cfire/UNKNOWN-METHOD
+    _ = r.value_or(1) //~ error cfire/UNKNOWN-METHOD
+    _ = r.error() //~ error cfire/UNKNOWN-METHOD
+    _ = get_opt().value() //~ error cfire/UNKNOWN-METHOD
+    _ = get_res().error() //~ error cfire/UNKNOWN-METHOD
+}
+
+fn main() {}

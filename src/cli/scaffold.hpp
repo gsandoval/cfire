@@ -76,7 +76,7 @@ app := build.Executable{{
 )CF", proj_name);
         main_cf_txt = std::format(R"CF(package main
 
-import "core:tako"
+import "ext:tako"
 
 fn store_greeting(bucket: str, key: str, message: str) -> str! {{
     mut s3 := tako.NewS3Service()
@@ -87,13 +87,13 @@ fn store_greeting(bucket: str, key: str, message: str) -> str! {{
 }}
 
 fn main() -> void! {{
-    body := try store_greeting("{}", "hello.txt", "Hello from cfire core:tako!")
+    body := try store_greeting("{}", "hello.txt", "Hello from cfire ext:tako!")
     println("{{}}", body)
 }}
 )CF", proj_name);
         test_cf_txt = R"CF(package main
 
-test "store_greeting round-trips via core:tako S3Service" {
+test "store_greeting round-trips via ext:tako S3Service" {
     body := try store_greeting("tako-test", "hello.txt", "Hello, tako!")
     assert_eq(body, "Hello, tako!")
 }
@@ -480,9 +480,14 @@ inline auto wrap_eval_code(std::string_view raw_code, bool expr_mode) -> std::st
 #endif
         struct ProfileRestoreGuard {
             cfire::build::BuildProfile prev;
-            ~ProfileRestoreGuard() { cfire::build::set_build_profile(prev); }
-        } prof_guard{cfire::build::current_build_profile()};
+            bool prev_no_cache;
+            ~ProfileRestoreGuard() {
+                cfire::build::set_build_profile(prev);
+                cfire::build::g_no_binary_cache = prev_no_cache;
+            }
+        } prof_guard{cfire::build::current_build_profile(), cfire::build::g_no_binary_cache};
         cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
+        cfire::build::g_no_binary_cache = true;
         auto plan = cfire::build::build_native(cf_file, runtime_dir, eval_bin, false, false);
         if (!plan) {
             std::println(stderr, "{}", plan.error());

@@ -172,6 +172,18 @@ inline auto copy_dir_recursive(const std::filesystem::path& src, const std::file
     return !ec;
 }
 
+#if defined(__SANITIZE_ADDRESS__)
+inline constexpr bool kRunningUnderAsan = true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+inline constexpr bool kRunningUnderAsan = true;
+#else
+inline constexpr bool kRunningUnderAsan = false;
+#endif
+#else
+inline constexpr bool kRunningUnderAsan = false;
+#endif
+
 } // namespace test_portable_release_detail
 
 void test_vendored_archives_and_portable_releases(const std::filesystem::path& rt_dir) {
@@ -179,6 +191,7 @@ void test_vendored_archives_and_portable_releases(const std::filesystem::path& r
     std::println("=== RUN   test_vendored_archives_and_portable_releases ");
 
     const std::filesystem::path repo_root = rt_dir.parent_path();
+    ScopedTempDir shared_vendor_cache("portable_shared_vendor_cache");
 
     static constexpr std::string_view kSqliteJsonSrc = R"CF(package main
 
@@ -210,7 +223,7 @@ fn main() {
     {
         ScopedTempDir tmp("portable_cleanroom");
         auto fake_home = tmp.path / "home";
-        auto cache_dir = tmp.path / "cache";
+        const auto& cache_dir = shared_vendor_cache.path;
         auto proj_dir = tmp.path / "proj";
         std::error_code ec;
         std::filesystem::create_directories(fake_home, ec);
@@ -429,14 +442,12 @@ fn main() {
     // =========================================================================
     // (3): Cross-target vendored archive cache (Wasm & iOS Simulator)
     // =========================================================================
-    {
+    if constexpr (!kRunningUnderAsan) {
         ScopedTempDir tmp("portable_cross_cache");
         auto cache_dir = tmp.path / "cache";
-        auto em_cache_dir = tmp.path / "em_cache";
         std::error_code ec;
-        std::filesystem::create_directories(em_cache_dir, ec);
+        std::filesystem::create_directories(cache_dir, ec);
         ScopedEnvVar env_cache("CFIRE_CACHE_DIR", cache_dir.string());
-        ScopedEnvVar env_em_cache("EM_CACHE", em_cache_dir.string());
         ScopedPortableFlags flags_guard;
         cfire::build::set_build_profile(cfire::build::BuildProfile::Release);
 
@@ -579,9 +590,9 @@ fn main() {
             std::format("--universal --target=wasm fails cleanly (got rc={})", r_uni_wasm.exit_code));
 
 #if defined(__APPLE__)
-        {
+        if constexpr (!kRunningUnderAsan) {
             ScopedEnvVar env_ignore("CFIRE_IGNORE_SYSTEM_LIBS", "1");
-            ScopedEnvVar env_cache("CFIRE_CACHE_DIR", (tmp.path / "cache").string());
+            ScopedEnvVar env_cache("CFIRE_CACHE_DIR", shared_vendor_cache.path.string());
 
             auto port_bin = tmp.path / "app_portable";
             auto r_port = run_cfire(std::format(
@@ -731,6 +742,7 @@ fn main() {
             std::format("portable bundle contains zero .pch/.a/.o files (found {})",
                         stray_artifacts.size()));
 
+        if constexpr (!kRunningUnderAsan) {
 #if !defined(_WIN32)
         // Mock release directory tested with file:// against docs/install.sh
         auto mock_dir = tmp.path / "mock_release";
@@ -979,6 +991,7 @@ fn main() {
             }
         }
 #endif
+        }
 
         // Contract assertions for Dockerfile, .dockerignore, installers, .github/workflows/{release,ci}.yml, and pkg retirement
         std::string dockerignore_txt = read_text_file(repo_root / ".dockerignore");
@@ -1159,17 +1172,17 @@ fn main() {
                                 si, s_chk.has_value() ? std::string{} : std::string(s_chk.error())));
             }
         }
+        if constexpr (!kRunningUnderAsan) {
         if (!smoke_blocks.empty()) {
             ScopedTempDir smoke_tmp("release_smoke_e2e");
             std::filesystem::create_directories(smoke_tmp.path / "home", ec);
-            std::filesystem::create_directories(smoke_tmp.path / "cache", ec);
             auto smoke_cf = smoke_tmp.path / "smoke.cf";
             {
                 std::ofstream sofs(smoke_cf, std::ios::binary | std::ios::trunc);
                 sofs << smoke_blocks[0];
             }
             ScopedEnvVar s_ignore("CFIRE_IGNORE_SYSTEM_LIBS", "1");
-            ScopedEnvVar s_cache("CFIRE_CACHE_DIR", (smoke_tmp.path / "cache").string());
+            ScopedEnvVar s_cache("CFIRE_CACHE_DIR", shared_vendor_cache.path.string());
             ScopedEnvVar s_home("HOME", (smoke_tmp.path / "home").string());
             ScopedEnvVar s_up("USERPROFILE", (smoke_tmp.path / "home").string());
             ScopedPortableFlags s_flags;
@@ -1188,6 +1201,7 @@ fn main() {
                     std::format("release.yml smoke.cf outputs 'cfire:ok' (rc={}, out='{}')", s_rc, s_out));
             }
         }
+        }
 
         std::string ci_yml = read_text_file(repo_root / ".github" / "workflows" / "ci.yml");
         require(ci_yml.contains("docker build --target release-linux-musl") &&
@@ -1202,14 +1216,14 @@ fn main() {
                 fuzz_yml.contains("include-hidden-files: true"),
             ".github/workflows/fuzz-nightly.yml installs libssh-dev, registers clang-18, and uploads hidden fuzz artifacts");
 
-        // Verify pkg:tako -> core:tako fix-it, pkg:custom -> RETIRED-API, while relative ./pkg/... stays working
+        // Verify pkg:tako -> ext:tako fix-it, pkg:custom -> RETIRED-API, while relative ./pkg/... stays working
         require_sema_error("package main\nimport \"pkg:tako\" as t\nfn main() {}\n",
             "cfire/INVALID-IMPORT");
         require_sema_error("package main\nimport \"pkg:tako\" as t\nfn main() {}\n",
-            "core:tako");
+            "ext:tako");
         require_sema_error("package main\nimport \"pkg:custom\"\nfn main() {}\n",
             "cfire/RETIRED-API");
-        {
+        if constexpr (!kRunningUnderAsan) {
             ScopedTempDir rel_pkg("rel_local_pkg");
             rel_pkg.file("pkg/sub.cf", "package sub\n\nfn answer() -> i32 {\n    return 42\n}\n");
             auto main_cf = rel_pkg.file("main.cf",

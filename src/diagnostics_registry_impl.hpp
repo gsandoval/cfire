@@ -41,21 +41,55 @@ namespace cfire::diag {
     if (c1 != std::string_view::npos && c1 > 0) {
         auto c2 = err_str.find(':', c1 + 1);
         if (c2 != std::string_view::npos) {
+            auto parsed_line = cfire::detail::parse_int<int>(err_str.substr(c1 + 1, c2 - c1 - 1));
             auto c3 = err_str.find(':', c2 + 1);
+            std::optional<int> parsed_col;
             if (c3 != std::string_view::npos) {
-                auto parsed_line = cfire::detail::parse_int<int>(err_str.substr(c1 + 1, c2 - c1 - 1));
-                auto parsed_col = cfire::detail::parse_int<int>(err_str.substr(c2 + 1, c3 - c2 - 1));
-                if (parsed_line && *parsed_line > 0 && parsed_col && *parsed_col > 0) {
+                if (auto pc = cfire::detail::parse_int<int>(err_str.substr(c2 + 1, c3 - c2 - 1))) {
+                    parsed_col = *pc;
+                }
+            }
+            if (parsed_line && *parsed_line > 0 && parsed_col && *parsed_col > 0) {
+                d.file = std::string(err_str.substr(0, c1));
+                d.line = *parsed_line;
+                d.col = *parsed_col;
+                d.end_line = *parsed_line;
+                d.end_col = *parsed_col + 1;
+
+                std::string_view rest = err_str.substr(c3 + 1);
+                while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front()))) {
+                    rest.remove_prefix(1);
+                }
+                if (rest.starts_with("warning: ")) {
+                    d.severity = "warning";
+                    rest.remove_prefix(9);
+                } else if (rest.starts_with("fatal error: ")) {
+                    d.severity = "error";
+                    rest.remove_prefix(13);
+                } else if (rest.starts_with("error: ")) {
+                    d.severity = "error";
+                    rest.remove_prefix(7);
+                }
+                d.message = std::string(rest);
+                if (!default_file.empty() &&
+                    (d.file == "<stdin>" || d.file.ends_with("_check.cpp") || d.file.ends_with("_check.mm"))) {
+                    d.file = std::string(default_file);
+                    d.line = 1;
+                    d.col = 1;
+                    d.end_line = 1;
+                    d.end_col = 1;
+                }
+            } else if (parsed_line && *parsed_line > 0) {
+                std::string_view rest = err_str.substr(c2 + 1);
+                while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front()))) {
+                    rest.remove_prefix(1);
+                }
+                if (rest.starts_with("warning: ") || rest.starts_with("fatal error: ") || rest.starts_with("error: ")) {
                     d.file = std::string(err_str.substr(0, c1));
                     d.line = *parsed_line;
-                    d.col = *parsed_col;
+                    d.col = 1;
                     d.end_line = *parsed_line;
-                    d.end_col = *parsed_col + 1;
-
-                    std::string_view rest = err_str.substr(c3 + 1);
-                    while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front()))) {
-                        rest.remove_prefix(1);
-                    }
+                    d.end_col = 1;
                     if (rest.starts_with("warning: ")) {
                         d.severity = "warning";
                         rest.remove_prefix(9);
@@ -517,6 +551,66 @@ CFIRE_DIAG_IMPL_INLINE void synthesize_fixits_for_diagnostic(
             edit.start_col = static_cast<int>(pos) + 1;
             edit.end_line = d.line;
             edit.end_col = static_cast<int>(close) + 2;
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+        if (kind == "cli_try_parse") {
+            // `cli.try_parse[T](args...)` -> `cli.parse[T](args...).ignore_error()`
+            std::string head = fact_of(d, "from");
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(head, from_col);
+            if (pos == std::string::npos) pos = ln.find(head);
+            if (pos == std::string::npos) return;
+            std::size_t i = pos + head.size();
+            std::string type_part;
+            if (i < ln.size() && ln[i] == '[') {
+                int depth = 0;
+                std::size_t close_br = std::string::npos;
+                for (std::size_t k = i; k < ln.size(); ++k) {
+                    if (ln[k] == '[') ++depth;
+                    else if (ln[k] == ']' && --depth == 0) { close_br = k; break; }
+                }
+                if (close_br == std::string::npos) return;
+                type_part = ln.substr(i, close_br - i + 1);
+                i = close_br + 1;
+            }
+            if (i >= ln.size() || ln[i] != '(') return;
+            std::vector<std::string> args;
+            std::size_t close = rewrite_detail::split_call_args(ln, i, args);
+            if (close == std::string::npos) return;
+            std::string arg_str;
+            for (std::size_t ai = 0; ai < args.size(); ++ai) {
+                if (ai > 0) arg_str += ", ";
+                arg_str += args[ai];
+            }
+            FixItEdit edit;
+            edit.replacement = std::format("{}{}({}).ignore_error()", fact_of(d, "to"), type_part, arg_str);
+            edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+            edit.start_line = d.line;
+            edit.start_col = static_cast<int>(pos) + 1;
+            edit.end_line = d.line;
+            edit.end_col = static_cast<int>(close) + 2;
+            edit.is_preferred = true;
+            d.fixits.push_back(std::move(edit));
+            return;
+        }
+        if (kind == "getenv_fallback") {
+            // `os.getenv(key, fallback)` -> `(os.getenv(key) or fallback)`
+            std::string from = fact_of(d, "from") + "(";
+            std::size_t from_col = d.col > 0 ? static_cast<std::size_t>(d.col - 1) : 0;
+            std::size_t pos = ln.find(from, from_col);
+            if (pos == std::string::npos) pos = ln.find(from);
+            std::vector<std::string> args;
+            std::size_t close = pos == std::string::npos ? pos : rewrite_detail::split_call_args(ln, pos + from.size() - 1, args);
+            if (close == std::string::npos || args.size() != 2) return;
+            FixItEdit edit;
+            edit.replacement = std::format("({}({}) or {})", fact_of(d, "from"), args[0], args[1]);
+            edit.title = std::format("Rewrite as '{}' ({})", edit.replacement, d.code);
+            edit.start_line = d.line;
+            edit.start_col = static_cast<int>(pos) + 1;
+            edit.end_line = d.line;
+            edit.end_col = static_cast<int>(close) + 2;
+            edit.is_preferred = true;
             d.fixits.push_back(std::move(edit));
             return;
         }
@@ -1434,6 +1528,143 @@ CFIRE_DIAG_IMPL_INLINE auto apply_fixits(
     }
 
     return s;
+}
+
+[[nodiscard]] CFIRE_DIAG_IMPL_INLINE auto format_backend_failure(
+    std::string_view raw_out,
+    bool has_cpp_interop,
+    bool verbose
+) -> std::string {
+    std::string humanized = humanize_cpp_compiler_output(raw_out);
+    auto lines = split_lines(humanized);
+
+    std::unordered_map<std::string, std::vector<std::string>> cf_file_cache;
+    auto read_cf_line = [&](const std::string& file, int line_no) -> std::optional<std::string> {
+        if (line_no <= 0 || file.empty() || file == "<stdin>" || file == "<cfire-synthetic>" || !file.ends_with(".cf")) {
+            return std::nullopt;
+        }
+        auto it = cf_file_cache.find(file);
+        if (it == cf_file_cache.end()) {
+            std::vector<std::string> flines;
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(file, ec) && !ec) {
+                std::ifstream in(file, std::ios::binary);
+                if (in) {
+                    std::string buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    flines = split_lines(buf);
+                }
+            }
+            it = cf_file_cache.emplace(file, std::move(flines)).first;
+        }
+        if (static_cast<std::size_t>(line_no) <= it->second.size()) {
+            return it->second[static_cast<std::size_t>(line_no - 1)];
+        }
+        return std::nullopt;
+    };
+
+    auto is_clang_snippet_line = [](std::string_view ln) -> bool {
+        while (!ln.empty() && ln.front() == ' ') ln.remove_prefix(1);
+        if (ln.starts_with("|")) return true;
+        if (!ln.empty() && std::isdigit(static_cast<unsigned char>(ln.front()))) {
+            while (!ln.empty() && std::isdigit(static_cast<unsigned char>(ln.front()))) ln.remove_prefix(1);
+            while (!ln.empty() && ln.front() == ' ') ln.remove_prefix(1);
+            return ln.starts_with("|");
+        }
+        return false;
+    };
+
+    struct ParsedCfHeader {
+        std::string file;
+        int line = 0;
+        std::optional<int> col;
+        std::string_view rest;
+    };
+    auto parse_cf_diag_header = [](std::string_view ln) -> std::optional<ParsedCfHeader> {
+        if (ln.starts_with("In file included from ")) return std::nullopt;
+        auto cf_pos = ln.find(".cf:");
+        if (cf_pos == std::string_view::npos) return std::nullopt;
+        std::string file(ln.substr(0, cf_pos + 3));
+        if (file == "<cfire-synthetic>" || file.contains("note:")) return std::nullopt;
+        std::size_t line_start = cf_pos + 4;
+        auto c2 = ln.find(':', line_start);
+        if (c2 == std::string_view::npos) return std::nullopt;
+        auto line_num = cfire::detail::parse_int<int>(ln.substr(line_start, c2 - line_start));
+        if (!line_num || *line_num <= 0) return std::nullopt;
+        std::string_view after_line = ln.substr(c2 + 1);
+        std::optional<int> col_num;
+        std::string_view rest = after_line;
+        if (auto c3 = after_line.find(':'); c3 != std::string_view::npos) {
+            if (auto pc = cfire::detail::parse_int<int>(after_line.substr(0, c3)); pc && *pc > 0) {
+                col_num = *pc;
+                rest = after_line.substr(c3 + 1);
+            }
+        }
+        while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front()))) rest.remove_prefix(1);
+        if (!rest.starts_with("error:") && !rest.starts_with("fatal error:") &&
+            !rest.starts_with("warning:") && !rest.starts_with("note:")) {
+            return std::nullopt;
+        }
+        return ParsedCfHeader{std::move(file), *line_num, col_num, rest};
+    };
+
+    if (!has_cpp_interop) {
+        std::vector<std::pair<std::string, int>> error_locs;
+        std::unordered_set<std::string> seen_locs;
+        for (const auto& ln : lines) {
+            if (auto hdr = parse_cf_diag_header(ln)) {
+                if (hdr->rest.starts_with("error:") || hdr->rest.starts_with("fatal error:")) {
+                    if (seen_locs.emplace(std::format("{}:{}", hdr->file, hdr->line)).second) {
+                        error_locs.emplace_back(hdr->file, hdr->line);
+                    }
+                }
+            }
+        }
+        std::string out;
+        if (!error_locs.empty()) {
+            for (const auto& [file, line_no] : error_locs) {
+                out += std::format(
+                    "{}:{}: error: internal compiler error: C++ backend rejected generated code for a pure .cf file that Sema accepted (cfire/INTERNAL-BACKEND-ERROR)\n",
+                    file, line_no);
+                if (auto src = read_cf_line(file, line_no)) {
+                    out += std::format("  {:>4} | {}\n", line_no, *src);
+                }
+            }
+        } else {
+            out += "error: internal compiler error: C++ backend rejected generated code for a pure .cf file that Sema accepted (cfire/INTERNAL-BACKEND-ERROR)\n";
+        }
+        out += "note: please report this bug with a minimal reproducer; re-run with --verbose to see raw C++ backend output";
+        if (verbose && !humanized.empty()) {
+            out += "\n--- raw C++ backend output ---\n";
+            out += humanized;
+        }
+        return out;
+    }
+
+    std::vector<std::string> filtered;
+    filtered.reserve(lines.size() + 4);
+    for (const auto& ln : lines) {
+        if (is_clang_snippet_line(ln)) continue;
+        if (auto hdr = parse_cf_diag_header(ln)) {
+            auto src = read_cf_line(hdr->file, hdr->line);
+            const bool keep_col = hdr->col.has_value() && (!src || static_cast<std::size_t>(*hdr->col) <= src->size() + 1);
+            if (keep_col) {
+                filtered.push_back(std::format("{}:{}:{}: {}", hdr->file, hdr->line, *hdr->col, hdr->rest));
+            } else {
+                filtered.push_back(std::format("{}:{}: {}", hdr->file, hdr->line, hdr->rest));
+            }
+            if (src && (hdr->rest.starts_with("error:") || hdr->rest.starts_with("fatal error:") || hdr->rest.starts_with("warning:"))) {
+                filtered.push_back(std::format("  {:>4} | {}", hdr->line, *src));
+            }
+        } else {
+            filtered.push_back(ln);
+        }
+    }
+    std::string out;
+    for (std::size_t i = 0; i < filtered.size(); ++i) {
+        if (i > 0) out += '\n';
+        out += filtered[i];
+    }
+    return out;
 }
 
 #undef CFIRE_DIAG_IMPL_INLINE

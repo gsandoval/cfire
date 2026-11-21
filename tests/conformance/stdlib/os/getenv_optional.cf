@@ -1,0 +1,36 @@
+// expect: stdout
+// | missing=none fallback=default
+// | present=alpha
+// | empty_is_present=true val=''
+// | err_missing=true err_present=ok
+package main
+
+import "core:os"
+
+fn opt_label(is_none: bool) -> str {
+    if is_none {
+        return "none"
+    }
+    return "some"
+}
+
+fn main() {
+    missing := os.getenv("CFIRE_MISSING_ENV_XYZ_999")
+    println("missing={} fallback={}", opt_label(missing == none), missing or "default")
+
+    os.setenv("CFIRE_TEST_ENV_A", "alpha")
+    println("present={}", os.getenv("CFIRE_TEST_ENV_A") or "none")
+
+    os.setenv("CFIRE_TEST_ENV_EMPTY", "")
+    empty_v := os.getenv("CFIRE_TEST_ENV_EMPTY")
+    println("empty_is_present={} val='{}'", empty_v != none, empty_v or "BAD")
+
+    mut got_err := false
+    match os.getenv("CFIRE_MISSING_ENV_XYZ_999").or_error("not set") {
+        Ok(_) => {}
+        Err(e) => got_err = e.message() == "not set"
+    }
+    os.setenv("CFIRE_TEST_ENV_B", "ok")
+    got_ok := os.getenv("CFIRE_TEST_ENV_B").or_error("not set") or "err"
+    println("err_missing={} err_present={}", got_err, got_ok)
+}

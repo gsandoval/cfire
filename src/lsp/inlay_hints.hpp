@@ -16,9 +16,12 @@ namespace cfire::lsp {
 CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
-    auto [ast_res, ws] = get_or_parse_ast(uri, text);
-    if (!ast_res) return "[]";
-    const auto& ast = *ast_res;
+    auto doc_opt = get_or_check_doc(uri, text);
+    if (!doc_opt || !doc_opt->checked) return "[]";
+    const auto& doc = *doc_opt;
+    const auto& ast = doc.checked->ast;
+    const auto& ws = doc.ws;
+    const auto* sema_types = &doc.checked->type_table;
 
     struct InlayHintItem {
         int line;
@@ -33,19 +36,27 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -
     // 1. Collect Type Inlay Hints (kind: 1) for `:=` variable bindings
     std::vector<detail::LocalBindingInfo> all_inferred;
     std::unordered_map<std::string, detail::LocalBindingInfo> env;
-    for (const auto& fn : ast.functions) {
+    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+        const auto& fn = ast.functions[fi];
         env.clear();
+        if (fn.receiver) {
+            detail::LocalBindingInfo r;
+            r.name = fn.receiver->name;
+            r.cf_type = cfire::fmt::format_type_ref(fn.receiver->type);
+            env[r.name] = r;
+        }
         for (const auto& p : fn.params) {
             detail::LocalBindingInfo pi;
             pi.name = p.name;
             pi.cf_type = cfire::fmt::format_type_ref(p.type);
             env[pi.name] = pi;
         }
-        detail::collect_stmt_bindings(fn.body, ast, ws, lines, env, all_inferred);
+        detail::collect_stmt_bindings(fn.body, ast, ws, lines, env, all_inferred, sema_types);
     }
-    for (const auto& t : ast.tests) {
+    for (std::size_t ti = 0; ti < doc.local_test_count && ti < ast.tests.size(); ++ti) {
+        const auto& t = ast.tests[ti];
         env.clear();
-        detail::collect_stmt_bindings(t.body, ast, ws, lines, env, all_inferred);
+        detail::collect_stmt_bindings(t.body, ast, ws, lines, env, all_inferred, sema_types);
     }
 
     for (const auto& b : all_inferred) {
@@ -99,7 +110,8 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -
             std::vector<std::string> param_names;
             if (const auto* id = std::get_if<cfire::frontend::IdentExpr>(&call.callee->node)) {
                 if (id->name != "println" && id->name != "print" && id->name != "panic" && id->name != "make") {
-                    for (const auto& fn : ast.functions) {
+                    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+                        const auto& fn = ast.functions[fi];
                         if (fn.name == id->name) {
                             for (const auto& p : fn.params) param_names.push_back(p.name);
                             break;
@@ -164,14 +176,15 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -
                     }
                 }
                 if (param_names.empty()) {
-                    std::string recv_type = detail::infer_expr_cf_type(mem->object, ast, ws, local_env);
+                    std::string recv_type = detail::infer_expr_cf_type(mem->object, ast, ws, local_env, sema_types);
                     while (recv_type.ends_with("!") || recv_type.ends_with("?")) recv_type.pop_back();
                     if (recv_type.starts_with("own[") && recv_type.ends_with("]")) {
                         recv_type = recv_type.substr(4, recv_type.size() - 5);
                     } else if (recv_type.starts_with("shared[") && recv_type.ends_with("]")) {
                         recv_type = recv_type.substr(7, recv_type.size() - 8);
                     }
-                    for (const auto& fn : ast.functions) {
+                    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+                        const auto& fn = ast.functions[fi];
                         if (fn.receiver && fn.name == mem->field) {
                             std::string fn_recv = cfire::fmt::format_type_ref(fn.receiver->type);
                             if (fn_recv == recv_type) {
@@ -235,7 +248,8 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -
         });
     };
 
-    for (const auto& fn : ast.functions) {
+    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+        const auto& fn = ast.functions[fi];
         std::unordered_map<std::string, detail::LocalBindingInfo> fn_env;
         if (fn.receiver) {
             detail::LocalBindingInfo r;
@@ -250,13 +264,14 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_inlay_hints(const std::string& uri) -
             fn_env[pi.name] = pi;
         }
         std::vector<detail::LocalBindingInfo> dummy;
-        detail::collect_stmt_bindings(fn.body, ast, ws, lines, fn_env, dummy);
+        detail::collect_stmt_bindings(fn.body, ast, ws, lines, fn_env, dummy, sema_types);
         process_calls(fn.body, fn_env);
     }
-    for (const auto& t : ast.tests) {
+    for (std::size_t ti = 0; ti < doc.local_test_count && ti < ast.tests.size(); ++ti) {
+        const auto& t = ast.tests[ti];
         std::unordered_map<std::string, detail::LocalBindingInfo> t_env;
         std::vector<detail::LocalBindingInfo> dummy;
-        detail::collect_stmt_bindings(t.body, ast, ws, lines, t_env, dummy);
+        detail::collect_stmt_bindings(t.body, ast, ws, lines, t_env, dummy, sema_types);
         process_calls(t.body, t_env);
     }
 

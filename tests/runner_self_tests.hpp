@@ -116,4 +116,71 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
     auto skip_res = conformance::classify(opt, skip_file);
     test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "");
     require(skip_res.outcome == Outcome::Skip, std::format("missing requires-lib yields SKIP (got {})", conformance::outcome_name(skip_res.outcome)));
+
+    // Composite PCH stem invariance against ephemeral temp -I flags, plus LRU budget eviction.
+    {
+        ScopedTempDir ephem_inc("pch_ephem_inc");
+        const std::string umb = "#pragma once\n#include \"cfire_prelude.hpp\"\n";
+        const std::vector<std::string> base_cflags = {"-std=c++2b", "-I" + rt_dir.string()};
+        std::vector<std::string> ephem_cflags = base_cflags;
+        ephem_cflags.push_back("-I" + ephem_inc.path.string());
+        std::vector<std::string> diff_cflags = base_cflags;
+        diff_cflags.push_back("-DTEST_PCH_STEM_CHANGE=1");
+
+        const std::string stem_base = cfire::build::compute_composite_pch_stem(rt_dir, umb, "-O2", base_cflags);
+        const std::string stem_ephem = cfire::build::compute_composite_pch_stem(rt_dir, umb, "-O2", ephem_cflags);
+        const std::string stem_diff = cfire::build::compute_composite_pch_stem(rt_dir, umb, "-O2", diff_cflags);
+        require(stem_base == stem_ephem, "compute_composite_pch_stem ignores ephemeral temp -I directories");
+        require(stem_base != stem_diff, "compute_composite_pch_stem changes when semantic flags change");
+
+        ScopedTempDir lru_dir("pch_lru_budget");
+        const auto write_entry = [&](std::string_view stem, std::size_t bytes, std::chrono::seconds age) {
+            auto pch = lru_dir.file(std::format("{}.pch", stem), std::string(bytes, 'P'));
+            (void)lru_dir.file(std::format("{}.hpp", stem), "#pragma once\n");
+            std::error_code tec;
+            std::filesystem::last_write_time(pch, std::filesystem::file_time_type::clock::now() - age, tec);
+        };
+        write_entry("cfire_rel_oldest00000001", 1024, std::chrono::seconds(300));
+        write_entry("cfire_rel_middle00000002", 1024, std::chrono::seconds(150));
+        write_entry("cfire_rel_newest00000003", 1024, std::chrono::seconds(10));
+
+        cfire::build::evict_pch_cache_to_budget(lru_dir.path, 1500, "cfire_rel_newest00000003");
+        std::error_code eec;
+        require(!std::filesystem::exists(lru_dir.path / "cfire_rel_oldest00000001.pch", eec) &&
+                    !std::filesystem::exists(lru_dir.path / "cfire_rel_oldest00000001.hpp", eec),
+            "evict_pch_cache_to_budget removes oldest .pch and .hpp first");
+        require(std::filesystem::exists(lru_dir.path / "cfire_rel_newest00000003.pch", eec) &&
+                    std::filesystem::exists(lru_dir.path / "cfire_rel_newest00000003.hpp", eec),
+            "evict_pch_cache_to_budget preserves active newest stem within budget");
+        uint64_t remaining_pch_bytes = 0;
+        for (const auto& de : std::filesystem::directory_iterator(lru_dir.path, eec)) {
+            if (de.is_regular_file(eec) && de.path().extension() == ".pch") {
+                remaining_pch_bytes += de.file_size(eec);
+            }
+        }
+        require(remaining_pch_bytes <= 1500,
+            std::format("evict_pch_cache_to_budget enforces byte budget (remaining={})", remaining_pch_bytes));
+    }
+
+    // Parallel test runner CLI flags (--list and --run-single).
+    {
+        std::error_code rec;
+        const std::filesystem::path runner_exe = std::filesystem::current_path() /
+#if defined(_WIN32)
+            ".cfire_test_runner.exe";
+#else
+            ".cfire_test_runner";
+#endif
+        if (std::filesystem::exists(runner_exe, rec)) {
+            auto lr = run_process({runner_exe.string(), "--list", "fast"}, std::filesystem::current_path(), 30);
+            require(!lr.spawn_failed && !lr.timed_out && lr.exit_code == 0 &&
+                        lr.out.find("test_sema_intent_and_move_diagnostics") != std::string::npos &&
+                        lr.out.find("test_end_to_end_canonical_examples") == std::string::npos,
+                "--list fast lists offline compiler suites and omits loopback/e2e suites");
+            auto sr = run_process({runner_exe.string(), "--run-single", "test_sema_intent_and_move_diagnostics"},
+                                  std::filesystem::current_path(), 60);
+            require(!sr.spawn_failed && !sr.timed_out && sr.exit_code == 0,
+                "--run-single executes a single unit suite cleanly");
+        }
+    }
 }

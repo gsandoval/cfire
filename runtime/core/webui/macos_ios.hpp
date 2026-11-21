@@ -41,7 +41,6 @@
     NSDictionary* headers = @{
         @"Content-Type": ns_mime ? ns_mime : @"application/octet-stream",
         @"Content-Length": [NSString stringWithFormat:@"%lu", static_cast<unsigned long>(body_str.size())],
-        @"Access-Control-Allow-Origin": @"*",
         @"Cache-Control": @"no-store"
     };
 
@@ -76,13 +75,126 @@
 - (void)userContentController:(WKUserContentController*)userContentController
       didReceiveScriptMessage:(WKScriptMessage*)message {
     (void)userContentController;
-    if (!state) return;
+    if (!state || !message) return;
+    WKFrameInfo* frameInfo = message.frameInfo;
+    if (!frameInfo || !frameInfo.isMainFrame) return;
+    NSURL* reqUrl = frameInfo.request.URL;
+    NSString* scheme = reqUrl.scheme ? [reqUrl.scheme lowercaseString] : nil;
+    NSString* host = reqUrl.host ? [reqUrl.host lowercaseString] : nil;
+    if (![scheme isEqualToString:@"app"] || ![host isEqualToString:@"localhost"]) {
+        return;
+    }
+    NSString* urlStr = [reqUrl absoluteString];
+    const char* urlUtf8 = urlStr ? [urlStr UTF8String] : nullptr;
+    if (!urlUtf8) return;
     if ([message.body isKindOfClass:[NSString class]]) {
         NSString* body = (NSString*)message.body;
         const char* utf8 = [body UTF8String];
         if (utf8) {
-            state->handle_ipc_message(utf8);
+            state->handle_ipc_message_verified(urlUtf8, utf8, false);
         }
+    }
+}
+@end
+
+@interface CfireWebUINavigationDelegate : NSObject <WKNavigationDelegate, WKUIDelegate> {
+@public
+    std::shared_ptr<cfire::webui::detail::AppState> state;
+#if CFIRE_WEBUI_IOS
+    __weak UIViewController* presentingVC;
+#endif
+}
+- (void)openExternalURL:(NSURL*)url;
+@end
+
+@implementation CfireWebUINavigationDelegate
+- (void)openExternalURL:(NSURL*)url {
+    if (!url) return;
+    NSString* urlStr = [url absoluteString];
+    const char* urlUtf8 = urlStr ? [urlStr UTF8String] : nullptr;
+    if (state && urlUtf8) {
+        state->notify_external_navigation(urlUtf8);
+    }
+#if CFIRE_WEBUI_IOS
+    NSString* scheme = url.scheme ? [url.scheme lowercaseString] : @"";
+    if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
+        UIViewController* vc = presentingVC;
+        if (vc && !vc.presentedViewController) {
+            SFSafariViewController* safari = [[SFSafariViewController alloc] initWithURL:url];
+            [vc presentViewController:safari animated:YES completion:nil];
+            return;
+        }
+    }
+    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+#else
+    if (!cfire::webui::detail::is_headless_webui_env()) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
+    }
+#endif
+}
+
+- (void)webView:(WKWebView*)webView
+decidePolicyForNavigationAction:(WKNavigationAction*)navigationAction
+decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSURL* url = navigationAction.request.URL;
+    NSString* urlStr = url ? [url absoluteString] : nil;
+    if (!urlStr) {
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
+    }
+    const char* urlUtf8 = [urlStr UTF8String];
+    std::string_view sv = urlUtf8 ? std::string_view(urlUtf8) : std::string_view{};
+    bool allowed = state ? state->should_allow_in_webview(sv) : cfire::webui::detail::is_app_origin(sv);
+    if (navigationAction.targetFrame != nil && !navigationAction.targetFrame.isMainFrame) {
+        decisionHandler(allowed ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+        return;
+    }
+    if (allowed) {
+        if (navigationAction.targetFrame == nil) {
+            [webView loadRequest:navigationAction.request];
+            decisionHandler(WKNavigationActionPolicyCancel);
+            return;
+        }
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
+    }
+    [self openExternalURL:url];
+    decisionHandler(WKNavigationActionPolicyCancel);
+}
+
+- (WKWebView*)webView:(WKWebView*)webView
+createWebViewWithConfiguration:(WKWebViewConfiguration*)configuration
+  forNavigationAction:(WKNavigationAction*)navigationAction
+       windowFeatures:(WKWindowFeatures*)windowFeatures {
+    (void)configuration;
+    (void)windowFeatures;
+    NSURL* url = navigationAction.request.URL;
+    NSString* urlStr = url ? [url absoluteString] : nil;
+    if (url && urlStr) {
+        const char* urlUtf8 = [urlStr UTF8String];
+        std::string_view sv = urlUtf8 ? std::string_view(urlUtf8) : std::string_view{};
+        bool allowed = state ? state->should_allow_in_webview(sv) : cfire::webui::detail::is_app_origin(sv);
+        if (allowed) {
+            [webView loadRequest:navigationAction.request];
+        } else {
+            [self openExternalURL:url];
+        }
+    }
+    return nil;
+}
+
+- (void)webViewWebContentProcessDidTerminate:(WKWebView*)webView {
+    NSURL* cur = webView.URL;
+    NSString* curStr = cur ? [cur absoluteString] : nil;
+    const char* curUtf8 = curStr ? [curStr UTF8String] : nullptr;
+    if (curUtf8 && cfire::webui::detail::is_app_origin(curUtf8)) {
+        [webView reload];
+    } else {
+        NSURL* home = [NSURL URLWithString:@"app://localhost/index.html"];
+        [webView loadRequest:[NSURLRequest requestWithURL:home]];
+    }
+    if (state) {
+        state->emit_system_event("app:webview_reloaded", "{}");
     }
 }
 @end
@@ -94,25 +206,122 @@ inline std::shared_ptr<AppState>& active_ios_state() {
     static std::shared_ptr<AppState> s;
     return s;
 }
+
+inline void dispatch_ios_open_url(const std::shared_ptr<AppState>& st, NSURL* url) {
+    if (!st || !url) return;
+    NSString* urlStr = [url absoluteString];
+    const char* utf8 = urlStr ? [urlStr UTF8String] : nullptr;
+    if (utf8 && utf8[0] != '\0') {
+        st->notify_open_url(utf8);
+    }
+}
+
+inline void dispatch_ios_user_activity(const std::shared_ptr<AppState>& st, NSUserActivity* activity) {
+    if (!st || !activity) return;
+    if ([activity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb] && activity.webpageURL) {
+        dispatch_ios_open_url(st, activity.webpageURL);
+    }
+}
 } // namespace cfire::webui::detail
 
-@interface CfireWebUIAppDelegate : UIResponder <UIApplicationDelegate>
-@property (strong, nonatomic) UIWindow* window;
-@property (strong, nonatomic) WKWebView* webView;
+@interface CfireWebUIViewController : UIViewController {
+@public
+    std::shared_ptr<cfire::webui::detail::AppState> state;
+}
 @end
 
-@implementation CfireWebUIAppDelegate
-- (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-    (void)application;
-    (void)launchOptions;
-    auto st = cfire::webui::detail::active_ios_state();
+@implementation CfireWebUIViewController
+- (UIStatusBarStyle)preferredStatusBarStyle {
+    if (!state) return UIStatusBarStyleDefault;
+    cfire::webui::StatusBarStyle s;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state->mtx);
+        s = state->status_bar_style;
+    }
+    if (s == cfire::webui::StatusBarStyle::Light) return UIStatusBarStyleLightContent;
+    if (s == cfire::webui::StatusBarStyle::Dark) {
+        if (@available(iOS 13.0, *)) return UIStatusBarStyleDarkContent;
+    }
+    return UIStatusBarStyleDefault;
+}
 
-    CGRect bounds = [[UIScreen mainScreen] bounds];
-    self.window = [[UIWindow alloc] initWithFrame:bounds];
-    UIViewController* rootVC = [[UIViewController alloc] init];
+- (BOOL)prefersStatusBarHidden {
+    if (!state) return NO;
+    std::lock_guard<std::recursive_mutex> lock(state->mtx);
+    return state->status_bar_style == cfire::webui::StatusBarStyle::Hidden ? YES : NO;
+}
+@end
+
+@interface CfireWebUINotificationDelegate : NSObject <UNUserNotificationCenterDelegate> {
+@public
+    std::shared_ptr<cfire::webui::detail::AppState> state;
+}
+@end
+
+@implementation CfireWebUINotificationDelegate
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+       willPresentNotification:(UNNotification*)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions options))completionHandler {
+    (void)center;
+    (void)notification;
+#if defined(__IPHONE_OS_VERSION_MIN_REQUIRED) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 140000
+    completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionList |
+                      UNNotificationPresentationOptionSound | UNNotificationPresentationOptionBadge);
+#else
+    completionHandler(UNNotificationPresentationOptionSound | UNNotificationPresentationOptionBadge);
+#endif
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+didReceiveNotificationResponse:(UNNotificationResponse*)response
+         withCompletionHandler:(void (^)(void))completionHandler {
+    (void)center;
+    if (state && response && response.notification && response.notification.request) {
+        NSString* reqId = response.notification.request.identifier;
+        NSDictionary* userInfo = response.notification.request.content.userInfo;
+        std::string idStr = (reqId && [reqId UTF8String]) ? [reqId UTF8String] : "";
+        std::string payloadStr{};
+        if (userInfo && [NSJSONSerialization isValidJSONObject:userInfo]) {
+            NSData* jsonData = [NSJSONSerialization dataWithJSONObject:userInfo options:0 error:nil];
+            if (jsonData) {
+                NSString* jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                if (jsonStr && [jsonStr UTF8String]) {
+                    payloadStr = [jsonStr UTF8String];
+                }
+            }
+        }
+        state->notify_notification_opened(idStr, payloadStr);
+    }
+    if (completionHandler) completionHandler();
+}
+@end
+
+namespace cfire::webui::detail {
+
+struct IosMountedWindow {
+    UIWindow* window{nil};
+    WKWebView* webView{nil};
+    CfireWebUIViewController* rootVC{nil};
+    CfireWebUINavigationDelegate* navDelegate{nil};
+    id keyboardShowObserver{nil};
+    id keyboardHideObserver{nil};
+};
+
+[[nodiscard]] inline auto ios_mount_webview_in_window(
+    const std::shared_ptr<AppState>& st,
+    UIWindow* window
+) -> IosMountedWindow {
+    IosMountedWindow mounted;
+    mounted.window = window;
+
+    CfireWebUIViewController* rootVC = [[CfireWebUIViewController alloc] init];
+    rootVC->state = st;
     rootVC.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.07 blue:0.09 alpha:1.0];
+    mounted.rootVC = rootVC;
 
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
+    config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     WKUserContentController* ucm = [[WKUserContentController alloc] init];
 
     std::string preload_cpp = st
@@ -135,71 +344,320 @@ inline std::shared_ptr<AppState>& active_ios_state() {
 
     bool dev_enabled = cfire::webui::detail::kDefaultWebUIDevExtras;
     bool ctx_enabled = cfire::webui::detail::kDefaultWebUIDevExtras;
+    bool bounce_enabled = true;
     if (st) {
         std::lock_guard<std::recursive_mutex> lock(st->mtx);
         dev_enabled = st->devtools_enabled;
         ctx_enabled = st->context_menu_enabled;
+        bounce_enabled = st->scroll_bounce_enabled;
     }
     [config.preferences setValue:(dev_enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
 
-    self.webView = [[WKWebView alloc] initWithFrame:bounds configuration:config];
-    self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.webView.scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
-    self.webView.opaque = NO;
-    self.webView.backgroundColor = [UIColor clearColor];
+    WKWebView* webView = [[WKWebView alloc] initWithFrame:rootVC.view.bounds configuration:config];
+    webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    webView.scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    webView.scrollView.bounces = bounce_enabled ? YES : NO;
+    webView.opaque = NO;
+    webView.backgroundColor = [UIColor clearColor];
     if (@available(iOS 16.4, *)) {
-        if ([self.webView respondsToSelector:@selector(setInspectable:)]) {
-            self.webView.inspectable = dev_enabled ? YES : NO;
+        if ([webView respondsToSelector:@selector(setInspectable:)]) {
+            webView.inspectable = dev_enabled ? YES : NO;
         }
     }
-    if ([self.webView respondsToSelector:@selector(setAllowsLinkPreview:)]) {
-        self.webView.allowsLinkPreview = ctx_enabled ? YES : NO;
+    if ([webView respondsToSelector:@selector(setAllowsLinkPreview:)]) {
+        webView.allowsLinkPreview = ctx_enabled ? YES : NO;
     }
 
-    [rootVC.view addSubview:self.webView];
-    self.window.rootViewController = rootVC;
-    [self.window makeKeyAndVisible];
+    CfireWebUINavigationDelegate* navDelegate = [[CfireWebUINavigationDelegate alloc] init];
+    navDelegate->state = st;
+    navDelegate->presentingVC = rootVC;
+    webView.navigationDelegate = navDelegate;
+    webView.UIDelegate = navDelegate;
+    mounted.navDelegate = navDelegate;
+    mounted.webView = webView;
+
+    [rootVC.view addSubview:webView];
+    window.rootViewController = rootVC;
+    [window makeKeyAndVisible];
 
     if (st) {
-        WKWebView* wv = self.webView;
-        std::lock_guard<std::recursive_mutex> lock(st->mtx);
-        st->platform_eval = [wv](const std::string& js) {
-            NSString* ns_js = [NSString stringWithUTF8String:js.c_str()];
-            if (!ns_js) return;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [wv evaluateJavaScript:ns_js completionHandler:nil];
-            });
-        };
-        st->platform_set_devtools = [wv, config](bool enabled) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [config.preferences setValue:(enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
-                if (@available(iOS 16.4, *)) {
-                    if ([wv respondsToSelector:@selector(setInspectable:)]) {
-                        wv.inspectable = enabled ? YES : NO;
+        {
+            std::lock_guard<std::recursive_mutex> lock(st->mtx);
+            st->native_window_handle = (__bridge void*)window;
+            st->native_webview_handle = (__bridge void*)webView;
+            st->native_view_controller_handle = (__bridge void*)rootVC;
+            st->platform_eval = [webView](const std::string& js) {
+                NSString* ns_js = [NSString stringWithUTF8String:js.c_str()];
+                if (!ns_js) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [webView evaluateJavaScript:ns_js completionHandler:nil];
+                });
+            };
+            st->platform_set_devtools = [webView, config](bool enabled) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [config.preferences setValue:(enabled ? @YES : @NO) forKey:@"developerExtrasEnabled"];
+                    if (@available(iOS 16.4, *)) {
+                        if ([webView respondsToSelector:@selector(setInspectable:)]) {
+                            webView.inspectable = enabled ? YES : NO;
+                        }
                     }
-                }
-            });
-        };
-        st->platform_set_context_menu = [wv](bool enabled) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if ([wv respondsToSelector:@selector(setAllowsLinkPreview:)]) {
-                    wv.allowsLinkPreview = enabled ? YES : NO;
-                }
-            });
-        };
-        st->platform_set_autofill = [wv](bool enabled) {
-            NSString* ns_js = enabled
-                ? @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
-                : @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);";
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [wv evaluateJavaScript:ns_js completionHandler:nil];
-            });
-        };
+                });
+            };
+            st->platform_set_context_menu = [webView](bool enabled) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if ([webView respondsToSelector:@selector(setAllowsLinkPreview:)]) {
+                        webView.allowsLinkPreview = enabled ? YES : NO;
+                    }
+                });
+            };
+            st->platform_set_autofill = [webView](bool enabled) {
+                NSString* ns_js = enabled
+                    ? @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(true);"
+                    : @"if(window.__cfire_set_autofill)window.__cfire_set_autofill(false);";
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [webView evaluateJavaScript:ns_js completionHandler:nil];
+                });
+            };
+            st->platform_set_scroll_bounce = [webView](bool enabled) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    webView.scrollView.bounces = enabled ? YES : NO;
+                });
+            };
+            st->platform_set_status_bar_style = [rootVC](StatusBarStyle) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [rootVC setNeedsStatusBarAppearanceUpdate];
+                });
+            };
+        }
+
+        std::weak_ptr<AppState> weakSt = st;
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        mounted.keyboardShowObserver = [nc addObserverForName:UIKeyboardWillShowNotification
+                                                       object:nil
+                                                        queue:[NSOperationQueue mainQueue]
+                                                   usingBlock:^(NSNotification* note) {
+            auto s = weakSt.lock();
+            if (!s) return;
+            NSValue* val = note.userInfo[UIKeyboardFrameEndUserInfoKey];
+            long height_px = 0;
+            if (val) {
+                CGRect r = [val CGRectValue];
+                if (r.size.height > 0) height_px = static_cast<long>(r.size.height + 0.5);
+            }
+            s->emit_system_event("keyboard:change",
+                std::format("{{\"visible\":true,\"height\":{}}}", height_px));
+        }];
+        mounted.keyboardHideObserver = [nc addObserverForName:UIKeyboardWillHideNotification
+                                                       object:nil
+                                                        queue:[NSOperationQueue mainQueue]
+                                                   usingBlock:^(NSNotification* note) {
+            (void)note;
+            auto s = weakSt.lock();
+            if (!s) return;
+            s->emit_system_event("keyboard:change", "{\"visible\":false,\"height\":0}");
+        }];
     }
 
     NSURL* startURL = [NSURL URLWithString:@"app://localhost/index.html"];
-    [self.webView loadRequest:[NSURLRequest requestWithURL:startURL]];
+    [webView loadRequest:[NSURLRequest requestWithURL:startURL]];
+    return mounted;
+}
+
+inline void ios_unmount_window(const std::shared_ptr<AppState>& st, IosMountedWindow& mounted) {
+    NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+    if (mounted.keyboardShowObserver) {
+        [nc removeObserver:mounted.keyboardShowObserver];
+        mounted.keyboardShowObserver = nil;
+    }
+    if (mounted.keyboardHideObserver) {
+        [nc removeObserver:mounted.keyboardHideObserver];
+        mounted.keyboardHideObserver = nil;
+    }
+    if (mounted.webView) {
+        mounted.webView.navigationDelegate = nil;
+        mounted.webView.UIDelegate = nil;
+        [mounted.webView.configuration.userContentController removeScriptMessageHandlerForName:@"external"];
+        mounted.webView = nil;
+    }
+    mounted.navDelegate = nil;
+    mounted.rootVC = nil;
+    mounted.window = nil;
+    if (st) {
+        std::lock_guard<std::recursive_mutex> lock(st->mtx);
+        st->native_window_handle = nullptr;
+        st->native_webview_handle = nullptr;
+        st->native_view_controller_handle = nullptr;
+        st->platform_eval = nullptr;
+        st->platform_set_devtools = nullptr;
+        st->platform_set_context_menu = nullptr;
+        st->platform_set_autofill = nullptr;
+        st->platform_set_scroll_bounce = nullptr;
+        st->platform_set_status_bar_style = nullptr;
+    }
+}
+
+} // namespace cfire::webui::detail
+
+@interface CfireWebUISceneDelegate : UIResponder <UIWindowSceneDelegate> {
+@public
+    cfire::webui::detail::IosMountedWindow mounted;
+}
+@property (strong, nonatomic) UIWindow* window;
+@end
+
+@implementation CfireWebUISceneDelegate
+- (void)scene:(UIScene*)scene
+willConnectToSession:(UISceneSession*)session
+      options:(UISceneConnectionOptions*)connectionOptions {
+    (void)session;
+    if (![scene isKindOfClass:[UIWindowScene class]]) return;
+    UIWindowScene* windowScene = (UIWindowScene*)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+
+    for (UIOpenURLContext* ctx in connectionOptions.URLContexts) {
+        cfire::webui::detail::dispatch_ios_open_url(st, ctx.URL);
+    }
+    for (NSUserActivity* activity in connectionOptions.userActivities) {
+        cfire::webui::detail::dispatch_ios_user_activity(st, activity);
+    }
+
+    UIWindow* win = [[UIWindow alloc] initWithWindowScene:windowScene];
+    self.window = win;
+    mounted = cfire::webui::detail::ios_mount_webview_in_window(st, win);
+}
+
+- (void)scene:(UIScene*)scene openURLContexts:(NSSet<UIOpenURLContext*>*)URLContexts {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    for (UIOpenURLContext* ctx in URLContexts) {
+        cfire::webui::detail::dispatch_ios_open_url(st, ctx.URL);
+    }
+}
+
+- (void)scene:(UIScene*)scene continueUserActivity:(NSUserActivity*)userActivity {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    cfire::webui::detail::dispatch_ios_user_activity(st, userActivity);
+}
+
+- (void)sceneDidBecomeActive:(UIScene*)scene {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:active", "{}");
+}
+
+- (void)sceneWillResignActive:(UIScene*)scene {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:inactive", "{}");
+}
+
+- (void)sceneWillEnterForeground:(UIScene*)scene {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:foreground", "{}");
+}
+
+- (void)sceneDidEnterBackground:(UIScene*)scene {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:background", "{}");
+}
+
+- (void)sceneDidDisconnect:(UIScene*)scene {
+    (void)scene;
+    auto st = cfire::webui::detail::active_ios_state();
+    cfire::webui::detail::ios_unmount_window(st, mounted);
+}
+@end
+
+@interface CfireWebUIAppDelegate : UIResponder <UIApplicationDelegate> {
+@public
+    cfire::webui::detail::IosMountedWindow fallbackMounted;
+    CfireWebUINotificationDelegate* notificationDelegate;
+    bool usingScenes;
+}
+@property (strong, nonatomic) UIWindow* window;
+@property (strong, nonatomic) WKWebView* webView;
+@end
+
+@implementation CfireWebUIAppDelegate
+- (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
+    (void)application;
+    auto st = cfire::webui::detail::active_ios_state();
+
+    notificationDelegate = [[CfireWebUINotificationDelegate alloc] init];
+    notificationDelegate->state = st;
+    [UNUserNotificationCenter currentNotificationCenter].delegate = notificationDelegate;
+
+    if (launchOptions) {
+        NSURL* launchUrl = launchOptions[UIApplicationLaunchOptionsURLKey];
+        if ([launchUrl isKindOfClass:[NSURL class]]) {
+            cfire::webui::detail::dispatch_ios_open_url(st, launchUrl);
+        }
+    }
+
+    NSDictionary* sceneManifest = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIApplicationSceneManifest"];
+    usingScenes = (sceneManifest != nil);
+    if (!usingScenes) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        CGRect bounds = [[UIScreen mainScreen] bounds];
+#pragma clang diagnostic pop
+        UIWindow* win = [[UIWindow alloc] initWithFrame:bounds];
+        self.window = win;
+        fallbackMounted = cfire::webui::detail::ios_mount_webview_in_window(st, win);
+        self.webView = fallbackMounted.webView;
+    }
     return YES;
+}
+
+- (BOOL)application:(UIApplication*)app
+            openURL:(NSURL*)url
+            options:(NSDictionary<UIApplicationOpenURLOptionsKey, id>*)options {
+    (void)app;
+    (void)options;
+    auto st = cfire::webui::detail::active_ios_state();
+    cfire::webui::detail::dispatch_ios_open_url(st, url);
+    return YES;
+}
+
+- (BOOL)application:(UIApplication*)application
+continueUserActivity:(NSUserActivity*)userActivity
+ restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>>*))restorationHandler {
+    (void)application;
+    (void)restorationHandler;
+    auto st = cfire::webui::detail::active_ios_state();
+    cfire::webui::detail::dispatch_ios_user_activity(st, userActivity);
+    return YES;
+}
+
+- (void)applicationDidBecomeActive:(UIApplication*)application {
+    (void)application;
+    if (usingScenes) return;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:active", "{}");
+}
+
+- (void)applicationWillResignActive:(UIApplication*)application {
+    (void)application;
+    if (usingScenes) return;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:inactive", "{}");
+}
+
+- (void)applicationWillEnterForeground:(UIApplication*)application {
+    (void)application;
+    if (usingScenes) return;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:foreground", "{}");
+}
+
+- (void)applicationDidEnterBackground:(UIApplication*)application {
+    (void)application;
+    if (usingScenes) return;
+    auto st = cfire::webui::detail::active_ios_state();
+    if (st) st->emit_system_event("app:background", "{}");
 }
 @end
 
@@ -330,6 +788,28 @@ inline std::shared_ptr<AppState>& active_ios_state() {
         return NO;
     }
     return YES;
+}
+
+- (void)application:(NSApplication*)application openURLs:(NSArray<NSURL*>*)urls {
+    (void)application;
+    if (!state || !urls) return;
+    for (NSURL* url in urls) {
+        NSString* urlStr = url ? [url absoluteString] : nil;
+        const char* utf8 = urlStr ? [urlStr UTF8String] : nullptr;
+        if (utf8 && utf8[0] != '\0') {
+            state->notify_open_url(utf8);
+        }
+    }
+}
+
+- (void)applicationDidBecomeActive:(NSNotification*)notification {
+    (void)notification;
+    if (state) state->emit_system_event("app:active", "{}");
+}
+
+- (void)applicationDidResignActive:(NSNotification*)notification {
+    (void)notification;
+    if (state) state->emit_system_event("app:inactive", "{}");
 }
 @end
 
@@ -499,10 +979,23 @@ inline void apply_macos_webview_prefs(
                                                           configuration:config];
         webView->state = state_;
         apply_macos_webview_prefs(config, webView, init_devtools);
+
+        CfireWebUINavigationDelegate* navDelegate = [[CfireWebUINavigationDelegate alloc] init];
+        navDelegate->state = state_;
+        webView.navigationDelegate = navDelegate;
+        webView.UIDelegate = navDelegate;
+
+        CfireWebUIMacAppDelegate* testAppDelegate = [[CfireWebUIMacAppDelegate alloc] init];
+        testAppDelegate->state = state_;
+        testAppDelegate->window = window;
+        [NSApp setDelegate:testAppDelegate];
+
         [window setContentView:webView];
 
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->native_window_handle = (__bridge void*)window;
+            state_->native_webview_handle = (__bridge void*)webView;
             state_->platform_eval = [webView](const std::string& js) {
                 NSString* ns_js = [NSString stringWithUTF8String:js.c_str()];
                 if (!ns_js) return;
@@ -585,9 +1078,14 @@ inline void apply_macos_webview_prefs(
             }
         }
 
+        [NSApp setDelegate:nil];
+        webView.navigationDelegate = nil;
+        webView.UIDelegate = nil;
         [ucm removeScriptMessageHandlerForName:@"external"];
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->native_window_handle = nullptr;
+            state_->native_webview_handle = nullptr;
             state_->platform_eval = nullptr;
             state_->platform_set_title = nullptr;
             state_->platform_set_devtools = nullptr;
@@ -835,6 +1333,12 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                                                           configuration:config];
         webView->state = state_;
         apply_macos_webview_prefs(config, webView, init_devtools);
+
+        CfireWebUINavigationDelegate* navDelegate = [[CfireWebUINavigationDelegate alloc] init];
+        navDelegate->state = state_;
+        webView.navigationDelegate = navDelegate;
+        webView.UIDelegate = navDelegate;
+
         [webView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
         if (state_->transparent) {
             [webView setValue:@NO forKey:@"drawsBackground"];
@@ -843,6 +1347,8 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
 
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->native_window_handle = (__bridge void*)window;
+            state_->native_webview_handle = (__bridge void*)webView;
             state_->platform_eval = [webView](const std::string& js) {
                 NSString* ns_js = [NSString stringWithUTF8String:js.c_str()];
                 if (!ns_js) return;
@@ -959,12 +1465,16 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
 
         [NSApp setDelegate:nil];
         [window setDelegate:nil];
+        webView.navigationDelegate = nil;
+        webView.UIDelegate = nil;
         [ucm removeScriptMessageHandlerForName:@"external"];
         if (statusItem) {
             [[NSStatusBar systemStatusBar] removeStatusItem:statusItem];
         }
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->native_window_handle = nullptr;
+            state_->native_webview_handle = nullptr;
             state_->platform_eval = nullptr;
             state_->platform_set_title = nullptr;
             state_->platform_set_size = nullptr;

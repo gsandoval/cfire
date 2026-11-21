@@ -27,21 +27,26 @@ namespace cfire::doc {
         m.title = "Builtin Types: Methods, Associated Items & make";
         m.link_flags = "(always available)";
         m.overview = "Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. "
-                     "Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. "
+                     "Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32!`. "
+                     "Bridge wrappers explicitly via `opt.or_error(msg[, code]) -> T!` and `res.ignore_error() -> T?`. "
                      "`make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, "
                      "`make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, "
                      "`T` the element type and `K`/`V` the map key/value types.";
-        struct Kind { std::uint8_t bit; std::string_view recv; std::string_view cpp; };
+        struct Kind { std::uint16_t bit; std::string_view recv; std::string_view cpp; };
         constexpr Kind kinds[] = {
             {cfire::frontend::BmInt, "i64", "x"}, {cfire::frontend::BmFloat, "f64", "f"}, {cfire::frontend::BmStr, "str", "s"},
             {cfire::frontend::BmSlice, "[]T", "xs"}, {cfire::frontend::BmArray, "[N]T", "arr"}, {cfire::frontend::BmMap, "map[K]V", "m"},
+            {cfire::frontend::BmOptional, "T?", "opt"}, {cfire::frontend::BmFallible, "T!", "res"},
         };
         for (const auto& k : kinds) {
             for (const auto& bm : cfire::frontend::kBuiltinMethods) {
                 if ((bm.recv & k.bit) == 0) continue;
                 std::string sig = cfire::frontend::builtin_method_signature(bm);
                 sig.insert(3, std::format("({}: {}) ", k.cpp, k.recv));
-                std::string lowered = bm.lowered ? std::format("cfire::bm::{}({}, ...)", bm.name, k.cpp) : std::string("(dedicated lowering)");
+                std::string lowered = bm.lowered ? std::format("cfire::bm::{}({}, ...)", bm.name, k.cpp)
+                    : (bm.name == "or_error" ? std::string("cfire::bm::or_error(opt, ...)")
+                    : (bm.name == "ignore_error" ? std::string("cfire::bm::ignore_error(res)")
+                    : std::string("(dedicated lowering)")));
                 m.functions.push_back({std::format("{}.{}", k.recv, bm.name), sig, lowered, std::string(bm.summary), std::string(bm.example)});
             }
         }
@@ -53,9 +58,9 @@ namespace cfire::doc {
             m.functions.push_back({std::format("{}.{}", t, c.name), std::format("const {}.{}: {}", is_float ? "<float>" : "<int>", c.name, c.name == "BITS" ? "u32" : "Self"),
                                    lowered, std::string(c.summary), std::format("v := {}.{}", is_float ? "f64" : "i32", c.name)});
         }
-        m.functions.push_back({"T.parse", "fn T.parse(s: str) -> T?", "cfire::bm::parse<T>(s)",
-                               "Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`); `none` on invalid or out-of-range input.",
-                               "port := u16.parse(arg) or 8080"});
+        m.functions.push_back({"T.parse", "fn T.parse(s: str) -> T!", "cfire::bm::parse<T>(s, \"T\")",
+                               "Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`), returning an `Error` on empty, invalid, or out-of-range input.",
+                               "port := try u16.parse(arg)"});
         m.functions.push_back({"make(T)", "make(T) / make(T, args...)", "T{} / cfire_ctor_T(args...)",
                                "A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type).",
                                "p := make(Point, 3, 4)"});
@@ -149,7 +154,8 @@ struct DiscoveredModule {
             else if (rel == "sqlite.hpp") discovered.push_back({"ext:db/sqlite", "core/" + rel, false});
             else if (rel == "time.hpp") discovered.push_back({"core:time", "core/" + rel, false});
             else if (rel == "unicode.hpp") discovered.push_back({"core:unicode", "core/" + rel, false});
-            else if (rel == "audio.hpp") discovered.push_back({"core:audio", "core/" + rel, false});
+            else if (rel == "audio.hpp") discovered.push_back({"ext:audio", "core/" + rel, false});
+            else if (rel == "tako.hpp") discovered.push_back({"ext:tako", "core/" + rel, false});
             else if (rel == "ai.hpp") discovered.push_back({"ext:ai", "core/" + rel, false});
             else if (rel == "webui.hpp") discovered.push_back({"ext:webui", "core/" + rel, false});
             else if (rel == "sodium.hpp") discovered.push_back({"ext:crypto/sodium", "core/" + rel, false});

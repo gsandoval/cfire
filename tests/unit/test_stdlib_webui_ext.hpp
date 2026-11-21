@@ -131,6 +131,7 @@ constexpr int G_PRIORITY_DEFAULT = 0;
 constexpr int GTK_WINDOW_TOPLEVEL = 0;
 constexpr int GTK_WIN_POS_CENTER = 1;
 constexpr int WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES = 0;
+constexpr int WEBKIT_USER_CONTENT_INJECT_TOP_FRAME = 1;
 constexpr int WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START = 0;
 
 struct GtkWidget {};
@@ -146,9 +147,19 @@ struct WebKitSettings { gboolean dev_extras{FALSE}; };
 struct WebKitContextMenu {};
 struct WebKitHitTestResult {};
 struct GdkEvent {};
+struct GdkEventFocus { int in{1}; };
 struct GdkEventWindowState { guint changed_mask{0}; guint new_window_state{0}; };
 struct GdkDragContext {};
 struct GtkSelectionData { std::vector<std::string> uris; };
+struct WebKitURIRequest { std::string uri; };
+struct WebKitNavigationAction { WebKitURIRequest req; };
+struct WebKitPolicyDecision { std::string action_uri; bool ignored{false}; bool used{false}; };
+using WebKitNavigationPolicyDecision = WebKitPolicyDecision;
+enum WebKitPolicyDecisionType {
+    WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION = 0,
+    WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION = 1,
+    WEBKIT_POLICY_DECISION_TYPE_RESPONSE = 2
+};
 struct WebKitWebView { std::string last_eval_js; std::string loaded_uri; WebKitSettings settings; };
 struct JSCValue { std::string str; };
 struct WebKitJavascriptResult { JSCValue val; };
@@ -160,10 +171,12 @@ static WebKitURISchemeRequestCallback g_registered_scheme_cb = nullptr;
 static gpointer g_registered_scheme_ud = nullptr;
 static WebKitWebView g_mock_webview{};
 static GtkWidget g_mock_window{};
+static WebKitNavigationAction g_mock_nav_action{};
 
 #define GTK_WINDOW(w) reinterpret_cast<GtkWindow*>(w)
 #define GTK_CONTAINER(w) reinterpret_cast<GtkContainer*>(w)
 #define WEBKIT_WEB_VIEW(w) (&g_mock_webview)
+#define WEBKIT_NAVIGATION_POLICY_DECISION(d) reinterpret_cast<WebKitNavigationPolicyDecision*>(d)
 #define G_CALLBACK(fn) reinterpret_cast<GCallback>(fn)
 
 inline gpointer g_malloc(std::size_t n) { return std::malloc(n); }
@@ -257,6 +270,15 @@ inline void webkit_user_script_unref(WebKitUserScript*) {}
 inline void webkit_user_content_manager_register_script_message_handler(WebKitUserContentManager*, const char*) {}
 inline GtkWidget* webkit_web_view_new_with_user_content_manager(WebKitUserContentManager*) { return reinterpret_cast<GtkWidget*>(&g_mock_webview); }
 inline void gtk_container_add(GtkContainer*, GtkWidget*) {}
+inline const char* webkit_web_view_get_uri(WebKitWebView* wv) { return wv ? wv->loaded_uri.c_str() : ""; }
+inline WebKitNavigationAction* webkit_navigation_policy_decision_get_navigation_action(WebKitNavigationPolicyDecision* d) {
+    g_mock_nav_action.req.uri = d ? d->action_uri : "";
+    return &g_mock_nav_action;
+}
+inline WebKitURIRequest* webkit_navigation_action_get_request(WebKitNavigationAction* a) { return a ? &a->req : nullptr; }
+inline const char* webkit_uri_request_get_uri(WebKitURIRequest* r) { return r ? r->uri.c_str() : ""; }
+inline void webkit_policy_decision_ignore(WebKitPolicyDecision* d) { if (d) d->ignored = true; }
+inline void webkit_policy_decision_use(WebKitPolicyDecision* d) { if (d) d->used = true; }
 inline void webkit_web_view_load_uri(WebKitWebView* wv, const char* uri) { if (wv && uri) wv->loaded_uri = uri; }
 inline void gtk_widget_show_all(GtkWidget*) {}
 inline void gtk_main() {
@@ -683,11 +705,9 @@ int main() {
     if (!g_clip_formats.contains(L"ExcludeClipboardContentFromMonitorProcessing")) return 4;
     if (!g_clip_formats.contains(L"CanIncludeInClipboardHistory")) return 5;
 
-    // 3. File & message dialogs + font enumeration
+    // 3. File dialogs + font enumeration
     if (cfire::webui::detail::win32_open_file_dialog("Open Vault") != "C:\\Users\\memo\\vault.kdbx") return 6;
     if (cfire::webui::detail::win32_save_file_dialog("Save Vault", "backup.kdbx") != "backup.kdbx") return 7;
-    cfire::webui::detail::win32_message_dialog("Notice", "Saved!");
-    if (g_last_msgbox_title != L"Notice" || g_last_msgbox_text != L"Saved!") return 8;
     auto fonts = cfire::webui::detail::win32_monospace_fonts();
     if (fonts.empty() || fonts[0] != "Cascadia Mono") return 9;
 

@@ -170,7 +170,7 @@ inline auto run_cfire(std::string_view args) -> RunResult {
 inline auto run_cfire_source(std::string_view source, std::string_view prefix = "cfire_run") -> RunResult {
     ScopedTempDir dir(prefix);
     auto file = dir.file("main.cf", source);
-    return run_cfire(std::format("run \"{}\"", file.string()));
+    return run_cfire(std::format("run --no-cache \"{}\"", file.string()));
 }
 
 inline auto compile_and_run_cpp(std::string_view cpp_source, const std::filesystem::path& rt_dir, std::string_view test_name = "test") -> RunResult {
@@ -178,13 +178,31 @@ inline auto compile_and_run_cpp(std::string_view cpp_source, const std::filesyst
     auto cpp_file = dir.file("test.cpp", cpp_source);
     auto bin_file = dir.path / "test_bin";
     std::string linux_flags;
+    std::vector<std::string> pch_cflags = {"-std=c++2b", "-I" + rt_dir.string()};
 #if defined(__linux__)
     linux_flags = " -Wno-builtin-macro-redefined -D__cpp_concepts=202002L";
+    pch_cflags.push_back("-Wno-builtin-macro-redefined");
+    pch_cflags.push_back("-D__cpp_concepts=202002L");
 #endif
-    std::string cmd = std::format("clang++ -std=c++2b{} -O2 -I\"{}\" \"{}\" -o \"{}\"",
-        linux_flags, rt_dir.string(), cpp_file.string(), bin_file.string());
-    int rc = 0;
-    std::string comp_out = cfire::bridge::run_command_capture(cmd, rc);
+    const std::string cxx_bin = cfire::build::resolve_cxx_compiler();
+    const std::string umb = cfire::build::extract_pch_umbrella_header(cpp_source);
+    std::string pch_path;
+    if (!umb.empty()) {
+        pch_path = cfire::build::ensure_composite_pch(rt_dir, umb, "-O2", pch_cflags);
+    }
+
+    int rc = -1;
+    std::string comp_out;
+    if (!pch_path.empty()) {
+        std::string pch_cmd = std::format("{} -std=c++2b{}{} -O2 -I\"{}\" -include-pch \"{}\" \"{}\" -o \"{}\"",
+            cxx_bin, linux_flags, cfire::build::pch_static_flag(), rt_dir.string(), pch_path, cpp_file.string(), bin_file.string());
+        comp_out = cfire::bridge::run_command_capture(pch_cmd, rc);
+    }
+    if (rc != 0) {
+        std::string cmd = std::format("{} -std=c++2b{}{} -O2 -I\"{}\" \"{}\" -o \"{}\"",
+            cxx_bin, linux_flags, cfire::build::pch_static_flag(), rt_dir.string(), cpp_file.string(), bin_file.string());
+        comp_out = cfire::bridge::run_command_capture(cmd, rc);
+    }
     if (rc != 0) {
         return RunResult{.exit_code = rc, .output = std::format("compile error: {}", comp_out)};
     }
@@ -274,6 +292,7 @@ inline void require_sema_ok(std::string_view src, std::string_view filename = "t
 
 // Frontend Suites
 void test_formatter_lsp_and_docgen(const std::filesystem::path& rt_dir);
+void test_lsp_completion_and_sync(const std::filesystem::path& rt_dir);
 void test_golden_codegen_snapshots(const std::filesystem::path& repo_root);
 void test_cfire_refactor_rename(const std::filesystem::path& rt_dir);
 void test_lsp_refactor_and_docgen_depth(const std::filesystem::path& rt_dir);
@@ -384,6 +403,8 @@ void test_http_host_bind_and_client_timeout(const std::filesystem::path& rt_dir)
 void test_time_local_offset_and_format(const std::filesystem::path& rt_dir);
 void test_ipc_stream_security_and_concurrency(const std::filesystem::path& rt_dir);
 void test_webui_security_and_desktop(const std::filesystem::path& rt_dir);
+void test_build_manifest_ios(const std::filesystem::path& rt_dir);
+void test_closed_type_checker();
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);

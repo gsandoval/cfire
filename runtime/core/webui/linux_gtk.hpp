@@ -3,8 +3,20 @@
 #include "bridge.hpp"
 
 #if defined(CFIRE_HAS_LINUX_WEBKITGTK)
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+#include "../os.hpp"
+#endif
 
 namespace cfire::webui::detail {
+
+inline void linux_open_external_url(std::string_view url) {
+    if (url.empty() || is_headless_webui_env()) return;
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+    (void)cfire::os::open_url(url);
+#else
+    (void)url;
+#endif
+}
 
 inline void linux_scheme_cb(WebKitURISchemeRequest* request, gpointer user_data) {
     auto* st = static_cast<detail::AppState*>(user_data);
@@ -29,14 +41,86 @@ inline void linux_script_msg_cb(WebKitUserContentManager* ucm, WebKitJavascriptR
     (void)ucm;
     auto* st = static_cast<detail::AppState*>(user_data);
     if (!st || !js_result) return;
+    WebKitWebView* wv = nullptr;
+    {
+        std::lock_guard<std::recursive_mutex> lock(st->mtx);
+        wv = static_cast<WebKitWebView*>(st->native_webview_handle);
+    }
+    const char* uri_c = wv ? webkit_web_view_get_uri(wv) : nullptr;
+    std::string_view source_uri = uri_c ? std::string_view(uri_c) : std::string_view{};
     JSCValue* value = webkit_javascript_result_get_js_value(js_result);
     if (value && jsc_value_is_string(value)) {
         char* str_val = jsc_value_to_string(value);
         if (str_val) {
-            st->handle_ipc_message(str_val);
+            st->handle_ipc_message_verified(source_uri, str_val, true);
             g_free(str_val);
         }
     }
+}
+
+inline gboolean linux_decide_policy_cb(
+    WebKitWebView* webview,
+    WebKitPolicyDecision* decision,
+    WebKitPolicyDecisionType decision_type,
+    gpointer user_data
+) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (decision_type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION &&
+        decision_type != WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
+        return FALSE;
+    }
+    if (!decision) return FALSE;
+    WebKitNavigationPolicyDecision* nav_dec = WEBKIT_NAVIGATION_POLICY_DECISION(decision);
+    WebKitNavigationAction* nav_act = nav_dec ? webkit_navigation_policy_decision_get_navigation_action(nav_dec) : nullptr;
+    WebKitURIRequest* req = nav_act ? webkit_navigation_action_get_request(nav_act) : nullptr;
+    const char* uri_c = req ? webkit_uri_request_get_uri(req) : nullptr;
+    if (!uri_c || uri_c[0] == '\0') return FALSE;
+
+    const bool allowed = st ? st->should_allow_in_webview(uri_c) : is_app_origin(uri_c);
+    if (!allowed) {
+        webkit_policy_decision_ignore(decision);
+        if (st) st->notify_external_navigation(uri_c);
+        linux_open_external_url(uri_c);
+        return TRUE;
+    }
+    if (decision_type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION && webview) {
+        webkit_web_view_load_uri(webview, uri_c);
+        webkit_policy_decision_ignore(decision);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+inline GtkWidget* linux_create_cb(
+    WebKitWebView* webview,
+    WebKitNavigationAction* navigation_action,
+    gpointer user_data
+) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    WebKitURIRequest* req = navigation_action ? webkit_navigation_action_get_request(navigation_action) : nullptr;
+    const char* uri_c = req ? webkit_uri_request_get_uri(req) : nullptr;
+    if (uri_c && uri_c[0] != '\0') {
+        const bool allowed = st ? st->should_allow_in_webview(uri_c) : is_app_origin(uri_c);
+        if (allowed) {
+            if (webview) webkit_web_view_load_uri(webview, uri_c);
+        } else {
+            if (st) st->notify_external_navigation(uri_c);
+            linux_open_external_url(uri_c);
+        }
+    }
+    return nullptr;
+}
+
+inline gboolean linux_focus_in_cb(GtkWidget* /*widget*/, GdkEventFocus* /*event*/, gpointer user_data) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (st) st->emit_system_event("app:active", "{}");
+    return FALSE;
+}
+
+inline gboolean linux_focus_out_cb(GtkWidget* /*widget*/, GdkEventFocus* /*event*/, gpointer user_data) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (st) st->emit_system_event("app:inactive", "{}");
+    return FALSE;
 }
 
 inline void linux_destroy_cb(GtkWidget* widget, gpointer user_data) {
@@ -294,17 +378,20 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 #endif
     g_signal_connect(window, "destroy", G_CALLBACK(linux_destroy_cb), state_.get());
     g_signal_connect(window, "window-state-event", G_CALLBACK(linux_window_state_event_cb), state_.get());
+    g_signal_connect(window, "focus-in-event", G_CALLBACK(linux_focus_in_cb), state_.get());
+    g_signal_connect(window, "focus-out-event", G_CALLBACK(linux_focus_out_cb), state_.get());
 
     WebKitWebContext* context = webkit_web_context_get_default();
     webkit_web_context_register_uri_scheme(context, "app", linux_scheme_cb, state_.get(), nullptr);
 
     WebKitUserContentManager* ucm = webkit_user_content_manager_new();
-    std::string preload_cpp = detail::build_preload_script(*state_);
+    static const char* const kWebkitAllowList[] = {"app://localhost/*", nullptr};
+    std::string preload_cpp = detail::build_preload_script(*state_, true);
     WebKitUserScript* preload = webkit_user_script_new(
         preload_cpp.c_str(),
-        WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+        WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
         WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
-        nullptr,
+        kWebkitAllowList,
         nullptr);
     webkit_user_content_manager_add_script(ucm, preload);
     webkit_user_script_unref(preload);
@@ -314,6 +401,11 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 
     GtkWidget* webview_widget = webkit_web_view_new_with_user_content_manager(ucm);
     WebKitWebView* webview = WEBKIT_WEB_VIEW(webview_widget);
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->native_window_handle = window;
+        state_->native_webview_handle = webview;
+    }
     bool init_devtools = kDefaultWebUIDevExtras;
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
@@ -323,6 +415,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         webkit_settings_set_enable_developer_extras(wks, init_devtools ? TRUE : FALSE);
     }
     g_signal_connect(webview_widget, "context-menu", G_CALLBACK(linux_context_menu_cb), state_.get());
+    g_signal_connect(webview_widget, "decide-policy", G_CALLBACK(linux_decide_policy_cb), state_.get());
+    g_signal_connect(webview_widget, "create", G_CALLBACK(linux_create_cb), state_.get());
     gtk_drag_dest_add_uri_targets(webview_widget);
     g_signal_connect(webview_widget, "drag-data-received", G_CALLBACK(linux_drag_data_received_cb), state_.get());
     gtk_container_add(GTK_CONTAINER(window), webview_widget);
@@ -394,6 +488,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 #endif
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->native_window_handle = nullptr;
+        state_->native_webview_handle = nullptr;
         state_->platform_eval = nullptr;
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
@@ -424,14 +520,17 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     WebKitWebContext* context = webkit_web_context_get_default();
     webkit_web_context_register_uri_scheme(context, "app", linux_scheme_cb, state_.get(), nullptr);
     g_signal_connect(window, "window-state-event", G_CALLBACK(linux_window_state_event_cb), state_.get());
+    g_signal_connect(window, "focus-in-event", G_CALLBACK(linux_focus_in_cb), state_.get());
+    g_signal_connect(window, "focus-out-event", G_CALLBACK(linux_focus_out_cb), state_.get());
 
     WebKitUserContentManager* ucm = webkit_user_content_manager_new();
-    std::string preload_cpp = detail::build_preload_script(*state_);
+    static const char* const kWebkitAllowList[] = {"app://localhost/*", nullptr};
+    std::string preload_cpp = detail::build_preload_script(*state_, true);
     WebKitUserScript* preload = webkit_user_script_new(
         preload_cpp.c_str(),
-        WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+        WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
         WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
-        nullptr,
+        kWebkitAllowList,
         nullptr);
     webkit_user_content_manager_add_script(ucm, preload);
     webkit_user_script_unref(preload);
@@ -441,6 +540,11 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 
     GtkWidget* webview_widget = webkit_web_view_new_with_user_content_manager(ucm);
     WebKitWebView* webview = WEBKIT_WEB_VIEW(webview_widget);
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->native_window_handle = window;
+        state_->native_webview_handle = webview;
+    }
     bool init_devtools = kDefaultWebUIDevExtras;
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
@@ -450,6 +554,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         webkit_settings_set_enable_developer_extras(wks, init_devtools ? TRUE : FALSE);
     }
     g_signal_connect(webview_widget, "context-menu", G_CALLBACK(linux_context_menu_cb), state_.get());
+    g_signal_connect(webview_widget, "decide-policy", G_CALLBACK(linux_decide_policy_cb), state_.get());
+    g_signal_connect(webview_widget, "create", G_CALLBACK(linux_create_cb), state_.get());
     gtk_drag_dest_add_uri_targets(webview_widget);
     g_signal_connect(webview_widget, "drag-data-received", G_CALLBACK(linux_drag_data_received_cb), state_.get());
     gtk_container_add(GTK_CONTAINER(window), webview_widget);
@@ -494,6 +600,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->native_window_handle = nullptr;
+        state_->native_webview_handle = nullptr;
         state_->platform_eval = nullptr;
         state_->platform_set_devtools = nullptr;
         state_->platform_set_context_menu = nullptr;

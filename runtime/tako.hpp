@@ -1,6 +1,6 @@
 #pragma once
 // sdk/cfire/include/tako.hpp — Normative Tako Cloud SDK Surface for cfire
-// Bridges cfire language surface (import "core:tako") to libtako (cmd/libtako/main.go)
+// Bridges cfire language surface (import "ext:tako") to libtako (cmd/libtako/main.go)
 // and provides a complete in-memory local runtime when compiled without CFIRE_HAS_LIBTAKO.
 
 #include "cfire_prelude.hpp"

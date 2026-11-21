@@ -5,6 +5,7 @@
 #include "../clang_bridge.hpp"
 #include "../docgen/catalog_types.hpp"
 #include "../formatter.hpp"
+#include "../sema/types.hpp"
 #include <format>
 #include <string>
 #include <string_view>
@@ -55,7 +56,31 @@ struct LocalBindingInfo {
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto cpp_return_to_cf(std::string_view cpp_t) -> std::string;
 
+struct StrippedTypeInfo {
+    std::string base;
+    bool was_optional = false;
+    bool was_fallible = false;
+};
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers_with_info(std::string t) -> StrippedTypeInfo;
+
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers(std::string t) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
+    -> std::pair<const cfire::doc::StdModuleDoc*, const cfire::doc::StdTypeDoc*>;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto resolve_stdlib_module_by_alias(
+    std::string_view alias,
+    const cfire::frontend::FileAST* ast = nullptr
+) -> const cfire::doc::StdModuleDoc*;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto match_stdlib_handle_type(
+    std::string_view rtype,
+    const cfire::doc::StdModuleDoc& mod,
+    std::string_view htype
+) -> bool;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_generic_arg(std::string_view rtype) -> std::string;
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string;
 
@@ -63,19 +88,44 @@ struct LocalBindingInfo {
     std::string_view qualifier,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
-    const std::unordered_map<std::string, LocalBindingInfo>& env
+    const std::unordered_map<std::string, LocalBindingInfo>& env,
+    bool preserve_wrappers = false
+) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto format_sema_type_id(
+    uint32_t tid_idx,
+    const cfire::frontend::TypeTable* sema_types
+) -> std::string;
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto sema_type_id_to_cpp_preview(
+    uint32_t tid_idx,
+    const cfire::frontend::TypeTable* sema_types
 ) -> std::string;
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto infer_expr_cf_type(
     const cfire::frontend::ExprPtr& e,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
-    const std::unordered_map<std::string, LocalBindingInfo>& env
+    const std::unordered_map<std::string, LocalBindingInfo>& env,
+    const cfire::frontend::TypeTable* sema_types = nullptr
 ) -> std::string;
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string;
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
+
+[[nodiscard]] inline auto unmangle_cf_type_display(std::string s) -> std::string {
+    std::size_t pos = 0;
+    while ((pos = s.find("cfire_pkg_", pos)) != std::string::npos) {
+        std::size_t mod_start = pos + 10;
+        std::size_t dunder = s.find("__", mod_start);
+        if (dunder == std::string::npos) break;
+        std::string_view mod = std::string_view(s).substr(mod_start, dunder - mod_start);
+        s.replace(pos, (dunder + 2) - pos, std::string(mod) + ".");
+        pos += mod.size() + 1;
+    }
+    return s;
+}
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto map_cf_named_type_to_cpp(std::string_view n, bool param_borrow) -> std::string {
     if (n == "i8") return "std::int8_t";
@@ -92,7 +142,8 @@ struct LocalBindingInfo {
     if (n == "f32") return "float";
     if (n == "f64") return "double";
     if (n == "bool") return "bool";
-    if (n == "void") return "void";
+    if (n == "void" || n == "c_void") return "void";
+    if (n == "c_char" || n == "char") return "char";
     if (n == "str") return param_borrow ? "std::string_view" : "std::string";
     if (n == "path") return param_borrow ? "const std::filesystem::path&" : "std::filesystem::path";
     if (n == "fs.FileInfo" || n == "FileInfo") return "cfire::fs::FileInfo";
@@ -102,6 +153,7 @@ struct LocalBindingInfo {
     if (n == "ipc.PeerCred" || n == "PeerCred") return "cfire::ipc::PeerCred";
     if (n == "Error") return "cfire::Error";
     if (n == "sync.Mutex" || n == "Mutex") return "cfire::sync::Mutex";
+    if (n == "sync.MutexGuard" || n == "MutexGuard") return "cfire::sync::MutexGuard";
     if (n == "net.TcpListener") return "cfire::net::TcpListener";
     if (n == "net.TcpConn") return "cfire::net::TcpConn";
     if (n == "sqlite.Conn") return "cfire::sqlite::Conn";
@@ -112,7 +164,224 @@ struct LocalBindingInfo {
     if (n == "ssh.SftpEntry" || n == "SftpEntry") return "cfire::ssh::SftpEntry";
     if (n == "context.Context" || n == "Context") return "cfire::sync::context::Context";
     if (n == "websocket.Conn") return "cfire::websocket::Conn";
+    if (n == "websocket.TlsConfig") return "cfire::http::TlsConfig";
+    if (auto dot = n.find('.'); dot != std::string_view::npos) {
+        std::string_view ns = n.substr(0, dot);
+        std::string_view rest = n.substr(dot + 1);
+        for (const auto& mod : cfire::doc::stdlib_catalog()) {
+            if (mod.ns_alias == ns) {
+                return std::format("cfire::{}::{}", ns, rest);
+            }
+        }
+    }
     return std::string(n);
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto format_sema_type_id(
+    uint32_t tid_idx,
+    const cfire::frontend::TypeTable* sema_types
+) -> std::string {
+    using namespace cfire::frontend;
+    if (!sema_types || tid_idx == 0) return "";
+    auto is_concrete = [&](const auto& self, TypeId tid, int depth) -> bool {
+        if (depth > 32) return false;
+        if (!tid.is_valid() || tid.is_unknown() || tid.is_error() || tid.is_foreign() || tid.is_never()) {
+            return false;
+        }
+        const TypeDesc& d = sema_types->get(tid);
+        switch (d.kind) {
+            case TypeKind::Unknown:
+            case TypeKind::Error:
+            case TypeKind::Foreign:
+            case TypeKind::Never:
+                return false;
+            case TypeKind::Slice:
+            case TypeKind::Array:
+            case TypeKind::Optional:
+            case TypeKind::Fallible:
+            case TypeKind::Own:
+            case TypeKind::Shared:
+            case TypeKind::Borrow:
+            case TypeKind::MutBorrow:
+            case TypeKind::RawPtr:
+            case TypeKind::MutPtr:
+                return d.elem_type.is_valid() && (d.kind == TypeKind::Fallible && d.elem_type.is_void() ? true : self(self, d.elem_type, depth + 1));
+            case TypeKind::Map:
+                return self(self, d.key_type, depth + 1) && self(self, d.elem_type, depth + 1);
+            case TypeKind::Tuple:
+                if (d.param_types.empty()) return false;
+                for (TypeId pt : d.param_types) {
+                    if (!self(self, pt, depth + 1)) return false;
+                }
+                return true;
+            case TypeKind::Function:
+                if (!d.ret_type.is_void() && !self(self, d.ret_type, depth + 1)) return false;
+                for (TypeId pt : d.param_types) {
+                    if (!self(self, pt, depth + 1)) return false;
+                }
+                return true;
+            case TypeKind::GenericInst:
+                for (TypeId ta : d.type_args) {
+                    if (!self(self, ta, depth + 1)) return false;
+                }
+                return !d.base_name.empty();
+            default:
+                return true;
+        }
+    };
+    TypeId tid{tid_idx};
+    if (!is_concrete(is_concrete, tid, 0)) return "";
+    std::string formatted = sema_types->to_string(tid);
+    if (formatted.empty() || formatted == "unknown" || formatted == "<error>" ||
+        formatted == "<foreign>" || formatted == "never" || formatted == "!") {
+        return "";
+    }
+    return unmangle_cf_type_display(std::move(formatted));
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto sema_type_id_to_cpp_preview(
+    uint32_t tid_idx,
+    const cfire::frontend::TypeTable* sema_types
+) -> std::string {
+    using namespace cfire::frontend;
+    if (!sema_types || tid_idx == 0) return "";
+    auto lower = [&](const auto& self, TypeId tid, int depth) -> std::string {
+        if (depth > 32) return "";
+        if (!tid.is_valid() || tid.is_unknown() || tid.is_error() || tid.is_foreign() || tid.is_never()) {
+            return "";
+        }
+        const TypeDesc& d = sema_types->get(tid);
+        switch (d.kind) {
+            case TypeKind::Void: return "void";
+            case TypeKind::Bool: return "bool";
+            case TypeKind::Int8: return "std::int8_t";
+            case TypeKind::Int16: return "std::int16_t";
+            case TypeKind::Int32: return "std::int32_t";
+            case TypeKind::Int64: return "std::int64_t";
+            case TypeKind::Uint8:
+            case TypeKind::Byte: return "std::uint8_t";
+            case TypeKind::Uint16: return "std::uint16_t";
+            case TypeKind::Uint32: return "std::uint32_t";
+            case TypeKind::Uint64: return "std::uint64_t";
+            case TypeKind::Isize: return "std::ptrdiff_t";
+            case TypeKind::Usize: return "std::size_t";
+            case TypeKind::Float32: return "float";
+            case TypeKind::Float64: return "double";
+            case TypeKind::Str: return "std::string";
+            case TypeKind::Error: return "cfire::Error";
+            case TypeKind::Slice: {
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::vector<{}>", el);
+            }
+            case TypeKind::Array: {
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::array<{}, {}>", el, d.array_len);
+            }
+            case TypeKind::Map: {
+                std::string k = self(self, d.key_type, depth + 1);
+                std::string v = self(self, d.elem_type, depth + 1);
+                return (k.empty() || v.empty()) ? "" : std::format("cfire::Map<{}, {}>", k, v);
+            }
+            case TypeKind::Optional: {
+                const TypeDesc& ed = sema_types->get(d.elem_type);
+                std::string el = (ed.kind == TypeKind::Borrow && ed.elem_type == TypeId::Str())
+                    ? std::string("std::string")
+                    : self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::optional<{}>", el);
+            }
+            case TypeKind::Fallible: {
+                std::string el = d.elem_type.is_void() ? std::string("void") : self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::expected<{}, cfire::Error>", el);
+            }
+            case TypeKind::Own: {
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::unique_ptr<{}>", el);
+            }
+            case TypeKind::Shared: {
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("std::shared_ptr<{}>", el);
+            }
+            case TypeKind::Borrow: {
+                if (d.elem_type == TypeId::Str()) return "std::string_view";
+                const TypeDesc& ed = sema_types->get(d.elem_type);
+                if (ed.kind == TypeKind::Slice) {
+                    std::string inner = self(self, ed.elem_type, depth + 1);
+                    return inner.empty() ? "" : std::format("cfire::slice_ref<{}>", inner);
+                }
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("const {}&", el);
+            }
+            case TypeKind::MutBorrow: {
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : (el + "&");
+            }
+            case TypeKind::RawPtr: {
+                const TypeDesc& ed = sema_types->get(d.elem_type);
+                if (ed.name == "c_void" || d.elem_type.is_void()) return "const void*";
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : std::format("const {}*", el);
+            }
+            case TypeKind::MutPtr: {
+                const TypeDesc& ed = sema_types->get(d.elem_type);
+                if (ed.name == "c_void" || d.elem_type.is_void()) return "void*";
+                std::string el = self(self, d.elem_type, depth + 1);
+                return el.empty() ? "" : (el + "*");
+            }
+            case TypeKind::Tuple: {
+                if (d.param_types.empty()) return "";
+                std::string inner;
+                for (std::size_t i = 0; i < d.param_types.size(); ++i) {
+                    if (i > 0) inner += ", ";
+                    std::string pt = self(self, d.param_types[i], depth + 1);
+                    if (pt.empty()) return "";
+                    inner += pt;
+                }
+                return std::format("std::tuple<{}>", inner);
+            }
+            case TypeKind::Function: {
+                std::string ret = d.ret_type.is_void() ? std::string("void") : self(self, d.ret_type, depth + 1);
+                if (ret.empty()) return "";
+                std::string params;
+                for (std::size_t i = 0; i < d.param_types.size(); ++i) {
+                    if (i > 0) params += ", ";
+                    std::string pt = self(self, d.param_types[i], depth + 1);
+                    if (pt.empty()) return "";
+                    params += pt;
+                }
+                return std::format("std::function<{}({})>", ret, params);
+            }
+            case TypeKind::TypeParam:
+                return d.name;
+            case TypeKind::NominalStruct:
+            case TypeKind::NominalEnum:
+            case TypeKind::Interface: {
+                std::string clean = unmangle_cf_type_display(d.name);
+                return map_cf_named_type_to_cpp(clean, false);
+            }
+            case TypeKind::GenericInst: {
+                std::string base = unmangle_cf_type_display(d.base_name);
+                if (base == "sync.Mutex" || base == "Mutex") {
+                    base = d.type_args.empty() ? "cfire::sync::Mutex" : "cfire::sync::MutexT";
+                } else if (base == "sync.Channel" || base == "Channel") {
+                    base = "cfire::sync::Channel";
+                } else {
+                    base = map_cf_named_type_to_cpp(base, false);
+                }
+                if (d.type_args.empty()) return base;
+                std::string args;
+                for (std::size_t i = 0; i < d.type_args.size(); ++i) {
+                    if (i > 0) args += ", ";
+                    std::string at = self(self, d.type_args[i], depth + 1);
+                    if (at.empty()) return "";
+                    args += at;
+                }
+                return std::format("{}<{}>", base, args);
+            }
+            default:
+                return "";
+        }
+    };
+    return lower(lower, TypeId{tid_idx}, 0);
 }
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto lower_type_preview(const cfire::frontend::TypeRef& t, bool is_param, std::string_view intent) -> std::string {
@@ -188,15 +457,95 @@ struct LocalBindingInfo {
     return s;
 }
 
-[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers(std::string t) -> std::string {
-    while (t.ends_with("!") || t.ends_with("?")) t.pop_back();
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers_with_info(std::string t) -> StrippedTypeInfo {
+    StrippedTypeInfo info;
+    while (t.ends_with("!") || t.ends_with("?")) {
+        if (t.back() == '?') info.was_optional = true;
+        if (t.back() == '!') info.was_fallible = true;
+        t.pop_back();
+    }
+    if (t.starts_with("mut ")) t = t.substr(4);
     if (t.starts_with("&mut ")) t = t.substr(5);
     else if (t.starts_with("&")) t = t.substr(1);
-    if (t.starts_with("own[") && t.ends_with("]")) return t.substr(4, t.size() - 5);
-    if (t.starts_with("shared[") && t.ends_with("]")) return t.substr(7, t.size() - 8);
-    if (t.starts_with("*mut ")) return t.substr(5);
-    if (t.starts_with("*")) return t.substr(1);
-    return t;
+    if (t.starts_with("own[") && t.ends_with("]")) t = t.substr(4, t.size() - 5);
+    else if (t.starts_with("shared[") && t.ends_with("]")) t = t.substr(7, t.size() - 8);
+    else if (t.starts_with("*mut ")) t = t.substr(5);
+    else if (t.starts_with("*")) t = t.substr(1);
+    info.base = std::move(t);
+    return info;
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto strip_wrappers(std::string t) -> std::string {
+    return strip_wrappers_with_info(std::move(t)).base;
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
+    -> std::pair<const cfire::doc::StdModuleDoc*, const cfire::doc::StdTypeDoc*> {
+    if (auto br = name.find('['); br != std::string_view::npos) name = name.substr(0, br);
+    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+        if (mod.ns_alias != ns) continue;
+        for (const auto& td : mod.type_docs) {
+            if (td.bare_name() == name) return {&mod, &td};
+        }
+    }
+    return {nullptr, nullptr};
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto resolve_stdlib_module_by_alias(
+    std::string_view alias,
+    const cfire::frontend::FileAST* ast
+) -> const cfire::doc::StdModuleDoc* {
+    if (alias.empty()) return nullptr;
+    if (ast) {
+        for (const auto& imp : ast->imports) {
+            if (imp.is_cpp) continue;
+            for (const auto& mod : cfire::doc::stdlib_catalog()) {
+                bool path_match = (mod.import_path == imp.path) ||
+                    std::ranges::find(mod.aliases, imp.path) != mod.aliases.end();
+                if (!path_match) continue;
+                std::string_view eff_alias = !imp.alias.empty() ? std::string_view(imp.alias) : std::string_view(mod.ns_alias);
+                if (eff_alias == alias) return &mod;
+            }
+        }
+    }
+    for (const auto& mod : cfire::doc::stdlib_catalog()) {
+        if (mod.ns_alias == alias) return &mod;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto match_stdlib_handle_type(
+    std::string_view rtype,
+    const cfire::doc::StdModuleDoc& mod,
+    std::string_view htype
+) -> bool {
+    std::string_view base = rtype;
+    if (auto br = base.find('['); br != std::string_view::npos) {
+        base = base.substr(0, br);
+    }
+    if (auto dot = base.find('.'); dot != std::string_view::npos) {
+        std::string_view rns = base.substr(0, dot);
+        std::string_view rname = base.substr(dot + 1);
+        if (rns != mod.ns_alias) return false;
+        if (rname == htype) return true;
+        if (mod.ns_alias == "http" &&
+            ((rname == "Server" && htype == "HttpServer") || (rname == "HttpServer" && htype == "Server"))) {
+            return true;
+        }
+        return false;
+    }
+    if (base == htype) return true;
+    if (mod.ns_alias == "http" && base == "Server" && htype == "HttpServer") return true;
+    return false;
+}
+
+[[nodiscard]] CFIRE_LSP_RPC_INLINE auto extract_generic_arg(std::string_view rtype) -> std::string {
+    auto b1 = rtype.find('[');
+    auto b2 = rtype.rfind(']');
+    if (b1 != std::string_view::npos && b2 != std::string_view::npos && b2 > b1 + 1) {
+        return std::string(rtype.substr(b1 + 1, b2 - b1 - 1));
+    }
+    return "";
 }
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto qualify_module_types(std::string_view t, const cfire::doc::StdModuleDoc& mod) -> std::string {
@@ -222,7 +571,8 @@ struct LocalBindingInfo {
     std::string_view qualifier,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
-    const std::unordered_map<std::string, LocalBindingInfo>& env
+    const std::unordered_map<std::string, LocalBindingInfo>& env,
+    bool preserve_wrappers
 ) -> std::string {
     while (!qualifier.empty() && (qualifier.front() == ' ' || qualifier.front() == '\t')) qualifier.remove_prefix(1);
     while (!qualifier.empty() && (qualifier.back() == ' ' || qualifier.back() == '\t')) qualifier.remove_suffix(1);
@@ -234,13 +584,56 @@ struct LocalBindingInfo {
         qualifier = qualifier.substr(2, qualifier.size() - 3);
     }
 
+    if (qualifier.size() >= 2 &&
+        ((qualifier.front() == '"' && qualifier.back() == '"') ||
+         (qualifier.front() == '`' && qualifier.back() == '`'))) {
+        return "str";
+    }
+    if (qualifier.size() >= 2 && qualifier.front() == '\'' && qualifier.back() == '\'') {
+        return "byte";
+    }
+    if (qualifier == "true" || qualifier == "false") {
+        return "bool";
+    }
+    if (!qualifier.empty() && std::isdigit(static_cast<unsigned char>(qualifier.front()))) {
+        bool is_hex = (qualifier.size() > 2 && qualifier[0] == '0' && (qualifier[1] == 'x' || qualifier[1] == 'X'));
+        bool is_num = true;
+        bool has_dot_or_exp = false;
+        for (std::size_t k = is_hex ? 2 : 0; k < qualifier.size(); ++k) {
+            char c = qualifier[k];
+            if (is_hex) {
+                if (!std::isxdigit(static_cast<unsigned char>(c)) && c != '_') {
+                    is_num = false;
+                    break;
+                }
+            } else {
+                if (std::isdigit(static_cast<unsigned char>(c)) || c == '_') continue;
+                if (c == '.') {
+                    if (k + 1 == qualifier.size()) {
+                        is_num = false;
+                        break;
+                    }
+                    has_dot_or_exp = true;
+                } else if (c == 'e' || c == 'E') {
+                    has_dot_or_exp = true;
+                    if (k + 1 < qualifier.size() && (qualifier[k + 1] == '+' || qualifier[k + 1] == '-')) ++k;
+                } else {
+                    is_num = false;
+                    break;
+                }
+            }
+        }
+        if (is_num) return (!is_hex && has_dot_or_exp) ? "f64" : "i64";
+    }
+
     if (qualifier.find('(') != std::string_view::npos || qualifier.find('[') != std::string_view::npos) {
         std::string wrapped = std::format("package __lsp\nfn __q() {{\n    __tmp := {}\n}}\n", qualifier);
         if (auto q_ast = cfire::frontend::parse_source("<qualifier>", wrapped)) {
             if (!q_ast->functions.empty() && !q_ast->functions[0].body.empty()) {
                 if (const auto* vd = std::get_if<cfire::frontend::VarDeclStmt>(&q_ast->functions[0].body[0]->node)) {
                     if (vd->init) {
-                        std::string inferred = strip_wrappers(infer_expr_cf_type(vd->init, ast, ws, env));
+                        std::string inferred = infer_expr_cf_type(vd->init, ast, ws, env);
+                        if (!preserve_wrappers) inferred = strip_wrappers(inferred);
                         if (!inferred.empty() && inferred != "auto") {
                             return inferred;
                         }
@@ -264,18 +657,25 @@ struct LocalBindingInfo {
     if (parts.empty()) return "";
 
     std::string cur_type = parts[0];
+    const cfire::doc::StdModuleDoc* cur_mod = nullptr;
     if (auto it = env.find(parts[0]); it != env.end()) {
-        cur_type = strip_wrappers(it->second.cf_type);
+        cur_type = preserve_wrappers ? it->second.cf_type : strip_wrappers(it->second.cf_type);
+    } else {
+        cur_mod = resolve_stdlib_module_by_alias(parts[0], &ast);
     }
     for (std::size_t i = 1; i < parts.size(); ++i) {
+        cur_type = strip_wrappers(cur_type);
         const std::string& fld = parts[i];
         bool found = false;
+        std::string base_cur = cur_type;
+        if (auto br = base_cur.find('['); br != std::string::npos) base_cur.erase(br);
         auto find_in_structs = [&](const std::vector<cfire::frontend::StructDecl>& structs) {
             for (const auto& st : structs) {
-                if (st.name == cur_type) {
+                if (st.name == cur_type || st.name == base_cur) {
                     for (const auto& f : st.fields) {
                         if (f.name == fld) {
-                            cur_type = strip_wrappers(cfire::fmt::format_type_ref(f.type));
+                            cur_type = cfire::fmt::format_type_ref(f.type);
+                            if (!preserve_wrappers) cur_type = strip_wrappers(cur_type);
                             found = true;
                             return;
                         }
@@ -288,6 +688,42 @@ struct LocalBindingInfo {
             if (found) break;
             find_in_structs(pkg.ast.structs);
         }
+        if (!found) {
+            if (auto dot = base_cur.find('.'); dot != std::string::npos) {
+                std::string_view ns = std::string_view(base_cur).substr(0, dot);
+                std::string_view tn = std::string_view(base_cur).substr(dot + 1);
+                if (auto [m, td] = find_stdlib_type_doc(ns, tn); m != nullptr && td != nullptr) {
+                    for (const auto& f : td->fields) {
+                        if (f.name == fld) {
+                            cur_type = qualify_module_types(f.type, *m);
+                            if (!preserve_wrappers) cur_type = strip_wrappers(cur_type);
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    if (const auto* sst = cfire::frontend::find_stdlib_struct(ns, tn)) {
+                        for (const auto& sf : cfire::frontend::stdlib_struct_fields(*sst)) {
+                            if (sf.name == fld) {
+                                cur_type = std::string(sf.type);
+                                if (!preserve_wrappers) cur_type = strip_wrappers(cur_type);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else if (i == 1 && cur_mod != nullptr) {
+                for (const auto& td : cur_mod->type_docs) {
+                    if (td.bare_name() == fld) {
+                        cur_type = cur_mod->ns_alias + "." + std::string(td.bare_name());
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
         if (!found) break;
     }
     return cur_type;
@@ -297,10 +733,17 @@ struct LocalBindingInfo {
     const cfire::frontend::ExprPtr& e,
     const cfire::frontend::FileAST& ast,
     const WorkspaceContext& ws,
-    const std::unordered_map<std::string, LocalBindingInfo>& env
+    const std::unordered_map<std::string, LocalBindingInfo>& env,
+    const cfire::frontend::TypeTable* sema_types
 ) -> std::string {
     using namespace cfire::frontend;
     if (!e) return "auto";
+    if (sema_types && e->resolved_type_id != 0) {
+        if (std::string st = format_sema_type_id(e->resolved_type_id, sema_types);
+            !st.empty() && st != "void") {
+            return st;
+        }
+    }
     if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
         if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return "str";
         if (lit->kind == TokenKind::Char) return "byte";
@@ -309,11 +752,47 @@ struct LocalBindingInfo {
         return "i64";
     }
     if (const auto* sl = std::get_if<StructLitExpr>(&e->node)) {
-        return sl->type_name;
+        std::string tname = sl->type_name;
+        if (auto dot = tname.find('.'); dot != std::string::npos) {
+            std::string_view al = std::string_view(tname).substr(0, dot);
+            if (const auto* mod = resolve_stdlib_module_by_alias(al, &ast)) {
+                tname = mod->ns_alias + tname.substr(dot);
+            }
+        }
+        if (sl->type_name == "map" && sl->type_args.size() == 2) {
+            return std::format("map[{}]{}",
+                cfire::fmt::format_type_ref(sl->type_args[0]),
+                cfire::fmt::format_type_ref(sl->type_args[1]));
+        }
+        if (!sl->type_args.empty()) {
+            std::string targs;
+            for (std::size_t i = 0; i < sl->type_args.size(); ++i) {
+                if (i > 0) targs += ", ";
+                targs += cfire::fmt::format_type_ref(sl->type_args[i]);
+            }
+            return std::format("{}[{}]", tname, targs);
+        }
+        return tname;
+    }
+    if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+        if (!me->result_type.empty()) return me->result_type;
+        for (const auto& arm : me->arms) {
+            if (arm.body.empty()) continue;
+            const auto& last_s = arm.body.back();
+            if (!last_s) continue;
+            ExprPtr val_expr = nullptr;
+            if (const auto* es = std::get_if<ExprStmt>(&last_s->node)) val_expr = es->expr;
+            else if (const auto* rs = std::get_if<ReturnStmt>(&last_s->node)) val_expr = rs->value;
+            if (val_expr) {
+                std::string t = infer_expr_cf_type(val_expr, ast, ws, env, sema_types);
+                if (!t.empty() && t != "auto" && t != "void") return t;
+            }
+        }
+        return "auto";
     }
     if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
         if (!arr->elements.empty()) {
-            return std::format("[{}]{}", arr->elements.size(), infer_expr_cf_type(arr->elements[0], ast, ws, env));
+            return std::format("[]{}", infer_expr_cf_type(arr->elements[0], ast, ws, env, sema_types));
         }
         return "[]auto";
     }
@@ -321,14 +800,14 @@ struct LocalBindingInfo {
         std::string res = "(";
         for (std::size_t i = 0; i < tup->elements.size(); ++i) {
             if (i > 0) res += ", ";
-            res += infer_expr_cf_type(tup->elements[i], ast, ws, env);
+            res += infer_expr_cf_type(tup->elements[i], ast, ws, env, sema_types);
         }
         res += ")";
         return res;
     }
     if (const auto* un = std::get_if<UnaryExpr>(&e->node)) {
         if (un->op == "!") return "bool";
-        std::string inner = infer_expr_cf_type(un->operand, ast, ws, env);
+        std::string inner = infer_expr_cf_type(un->operand, ast, ws, env, sema_types);
         if (un->op == "*") return strip_wrappers(inner);
         if (un->op == "&mut") return "*mut " + inner;
         if (un->op == "&") return "*" + inner;
@@ -339,21 +818,29 @@ struct LocalBindingInfo {
             bin->op == ">" || bin->op == ">=" || bin->op == "&&" || bin->op == "||") {
             return "bool";
         }
-        return infer_expr_cf_type(bin->left, ast, ws, env);
+        return infer_expr_cf_type(bin->left, ast, ws, env, sema_types);
     }
     if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
-        std::string obj_t = strip_wrappers(infer_expr_cf_type(idx->object, ast, ws, env));
+        std::string obj_t = strip_wrappers(infer_expr_cf_type(idx->object, ast, ws, env, sema_types));
+        if (obj_t == "str") return "byte";
         if (obj_t.starts_with("[]")) return obj_t.substr(2);
         if (obj_t.starts_with("[")) {
             if (auto rb = obj_t.find(']'); rb != std::string::npos) return obj_t.substr(rb + 1);
         }
         if (obj_t.starts_with("map[")) {
-            if (auto rb = obj_t.find(']'); rb != std::string::npos) return obj_t.substr(rb + 1);
+            int bdepth = 0;
+            for (std::size_t k = 3; k < obj_t.size(); ++k) {
+                if (obj_t[k] == '[') ++bdepth;
+                else if (obj_t[k] == ']') {
+                    --bdepth;
+                    if (bdepth == 0) return obj_t.substr(k + 1);
+                }
+            }
         }
         return "auto";
     }
     if (const auto* slc = std::get_if<SliceExpr>(&e->node)) {
-        std::string obj_t = strip_wrappers(infer_expr_cf_type(slc->object, ast, ws, env));
+        std::string obj_t = strip_wrappers(infer_expr_cf_type(slc->object, ast, ws, env, sema_types));
         if (obj_t == "str") return "str";
         if (obj_t.starts_with("[")) {
             if (auto rb = obj_t.find(']'); rb != std::string::npos) return "[]" + obj_t.substr(rb + 1);
@@ -361,12 +848,12 @@ struct LocalBindingInfo {
         return obj_t;
     }
     if (const auto* tr = std::get_if<TryExpr>(&e->node)) {
-        std::string inner = infer_expr_cf_type(tr->inner, ast, ws, env);
+        std::string inner = infer_expr_cf_type(tr->inner, ast, ws, env, sema_types);
         if (inner.ends_with("!")) inner.pop_back();
         return inner;
     }
     if (const auto* orex = std::get_if<OrExpr>(&e->node)) {
-        std::string inner = infer_expr_cf_type(orex->inner, ast, ws, env);
+        std::string inner = infer_expr_cf_type(orex->inner, ast, ws, env, sema_types);
         if (inner.ends_with("!") || inner.ends_with("?")) inner.pop_back();
         return inner;
     }
@@ -383,7 +870,14 @@ struct LocalBindingInfo {
                 return cid->name;
             }
             if (cid->name == "make" && !call->type_args.empty()) {
-                return cfire::fmt::format_type_ref(call->type_args[0]);
+                std::string mt = cfire::fmt::format_type_ref(call->type_args[0]);
+                if (auto dot = mt.find('.'); dot != std::string::npos) {
+                    std::string_view al = std::string_view(mt).substr(0, dot);
+                    if (const auto* mod = resolve_stdlib_module_by_alias(al, &ast)) {
+                        mt = mod->ns_alias + mt.substr(dot);
+                    }
+                }
+                return mt;
             }
             for (const auto& fn : ast.functions) {
                 if (fn.name == cid->name) {
@@ -400,10 +894,16 @@ struct LocalBindingInfo {
         }
         if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
             if (const auto* mid = std::get_if<IdentExpr>(&mem->object->node)) {
-                // 1. Check `core:*` module functions
-                for (const auto& mod : cfire::doc::stdlib_catalog()) {
-                    if (mod.ns_alias == mid->name) {
-                        for (const auto& sfn : mod.functions) {
+                if (mem->field == "parse" && !env.contains(mid->name)) {
+                    std::uint16_t pbits = cfire::frontend::builtin_recv_bits_for_type_name(mid->name);
+                    if ((pbits & (cfire::frontend::BmInt | cfire::frontend::BmFloat | cfire::frontend::BmBool)) != 0) {
+                        return mid->name + "!";
+                    }
+                }
+                // 1. Check `core:*` / `ext:*` module functions (supports import aliases like `import "core:fs" as f`)
+                if (!env.contains(mid->name)) {
+                    if (const auto* mod = resolve_stdlib_module_by_alias(mid->name, &ast)) {
+                        for (const auto& sfn : mod->functions) {
                             if (sfn.name == mem->field) {
                                 if (auto arrow = sfn.cf_sig.find("-> "); arrow != std::string::npos) {
                                     std::string ret = sfn.cf_sig.substr(arrow + 3);
@@ -420,7 +920,7 @@ struct LocalBindingInfo {
                                     if (ret == "(File, File)!") return "(fs.File, fs.File)!";
                                     if (ret == "(TcpConn, TcpConn)!") return "(net.TcpConn, net.TcpConn)!";
                                     // The module's own types are written bare in its signatures (`-> ExecResult!`).
-                                    return qualify_module_types(ret, mod);
+                                    return qualify_module_types(ret, *mod);
                                 }
                                 return "void";
                             }
@@ -449,10 +949,19 @@ struct LocalBindingInfo {
                 }
             }
             // 5. Check receiver methods (`os.stdin().read_lines()`, `listener.accept()`, `s.trim()`, `ch.recv()`, user methods)
-            std::string rtype = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
+            std::string raw_rtype = infer_expr_cf_type(mem->object, ast, ws, env, sema_types);
+            while (!raw_rtype.empty() && raw_rtype.back() == ' ') raw_rtype.pop_back();
+            if (mem->field == "or_error" && raw_rtype.size() > 1 && raw_rtype.ends_with('?')) {
+                return raw_rtype.substr(0, raw_rtype.size() - 1) + "!";
+            }
+            if (mem->field == "ignore_error" && raw_rtype.size() > 1 && raw_rtype.ends_with('!')) {
+                std::string inner = raw_rtype.substr(0, raw_rtype.size() - 1);
+                if (inner != "void") return inner + "?";
+            }
+            std::string rtype = strip_wrappers(raw_rtype);
             if (!rtype.empty() && rtype != "auto") {
                 // builtin method return types come from the single table; `T`/`K`/`V`/`Self` resolve here.
-                if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
+                if (std::uint16_t bits = cfire::frontend::builtin_recv_bits_for_type_name(rtype); bits != 0) {
                     if (const auto* bm = cfire::frontend::find_builtin_method(bits, mem->field); bm && !bm->ret.empty()) {
                         std::string self = rtype;
                         while (self.starts_with("&")) self.erase(0, 1);
@@ -531,7 +1040,7 @@ struct LocalBindingInfo {
                     auto b2 = rtype.rfind(']');
                     std::string elem = (b1 != std::string::npos && b2 != std::string::npos)
                         ? rtype.substr(b1 + 1, b2 - b1 - 1) : "auto";
-                    if (mem->field == "recv") return elem + "!";
+                    if (mem->field == "recv") return elem + "?";
                     return "void";
                 }
                 if (rtype == "sqlite.Conn" || rtype == "Conn") {
@@ -539,24 +1048,6 @@ struct LocalBindingInfo {
                         return "[]" + cfire::fmt::format_type_ref(call->type_args[0]) + "!";
                     }
                     return "void!";
-                }
-                if (rtype == "webui.App" || rtype == "App") {
-                    if (mem->field == "get_state" || mem->field == "open_file_dialog" ||
-                        mem->field == "save_file_dialog" || mem->field == "last_emitted_payload" ||
-                        mem->field == "clipboard_get") {
-                        return "str";
-                    }
-                    if (mem->field == "call_rpc") return "str!";
-                    if (mem->field == "emitted_events_count") return "i64";
-                    if (mem->field == "run_webview_test") return "bool!";
-                    if (mem->field == "is_clipboard_concealed" ||
-                        mem->field == "devtools_enabled" ||
-                        mem->field == "context_menu_enabled" ||
-                        mem->field == "autofill_enabled") {
-                        return "bool";
-                    }
-                    if (mem->field == "monospace_fonts") return "[]str";
-                    return "void";
                 }
                 if (rtype == "ssh.Session" || rtype == "Session") {
                     if (mem->field == "host_key_fingerprint") return "str";
@@ -580,15 +1071,21 @@ struct LocalBindingInfo {
                 if (mem->field == "size") return "usize";
                 if (mem->field == "empty") return "bool";
                 if (mem->field == "clone") return rtype;
+                std::string generic_arg = extract_generic_arg(rtype);
                 for (const auto& mod : cfire::doc::stdlib_catalog()) {
                     for (const auto& sfn : mod.functions) {
                         if (auto dot = sfn.name.find('.'); dot != std::string::npos) {
                             std::string htype = sfn.name.substr(0, dot);
                             std::string mname = sfn.name.substr(dot + 1);
-                            if ((rtype == htype || rtype == mod.ns_alias + "." + htype || rtype.starts_with("sync." + htype)) &&
-                                mname == mem->field) {
+                            if (match_stdlib_handle_type(rtype, mod, htype) && mname == mem->field) {
                                 if (auto arrow = sfn.cf_sig.find("-> "); arrow != std::string::npos) {
                                     std::string ret = sfn.cf_sig.substr(arrow + 3);
+                                    if (!generic_arg.empty()) {
+                                        if (ret == "T") return generic_arg;
+                                        if (ret == "T?") return generic_arg + "?";
+                                        if (ret == "T!") return generic_arg + "!";
+                                        if (ret == "[]T") return "[]" + generic_arg;
+                                    }
                                     if (ret == "File") return "fs.File";
                                     if (ret == "File!") return "fs.File!";
                                     if (ret == "TcpConn!") return "net.TcpConn!";
@@ -620,18 +1117,16 @@ struct LocalBindingInfo {
         if (mem->field == "len") return "usize";
         if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
             oid && !env.contains(oid->name)) {
-            for (const auto& mod : cfire::doc::stdlib_catalog()) {
-                if (mod.ns_alias == oid->name) {
-                    const std::string prefix = "const " + mem->field + ": ";
-                    for (const auto& sfn : mod.functions) {
-                        if (sfn.name == mem->field && sfn.cf_sig.starts_with(prefix)) {
-                            return qualify_module_types(sfn.cf_sig.substr(prefix.size()), mod);
-                        }
+            if (const auto* mod = resolve_stdlib_module_by_alias(oid->name, &ast)) {
+                const std::string prefix = "const " + mem->field + ": ";
+                for (const auto& sfn : mod->functions) {
+                    if (sfn.name == mem->field && sfn.cf_sig.starts_with(prefix)) {
+                        return qualify_module_types(sfn.cf_sig.substr(prefix.size()), *mod);
                     }
                 }
             }
         }
-        std::string obj_t = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env));
+        std::string obj_t = strip_wrappers(infer_expr_cf_type(mem->object, ast, ws, env, sema_types));
         if (auto dot = obj_t.find('.'); dot != std::string::npos) {
             std::string_view ns = std::string_view(obj_t).substr(0, dot);
             std::string_view tn = std::string_view(obj_t).substr(dot + 1);
@@ -669,6 +1164,9 @@ struct LocalBindingInfo {
 }
 
 [[nodiscard]] CFIRE_LSP_RPC_INLINE auto cf_type_string_to_cpp(std::string_view cf_t) -> std::string {
+    while (!cf_t.empty() && (cf_t.front() == ' ' || cf_t.front() == '\t')) cf_t.remove_prefix(1);
+    while (!cf_t.empty() && (cf_t.back() == ' ' || cf_t.back() == '\t')) cf_t.remove_suffix(1);
+    if (cf_t.empty()) return "";
     std::string s(cf_t);
     bool fallible = false;
     bool optional = false;
@@ -681,17 +1179,83 @@ struct LocalBindingInfo {
         s.pop_back();
     }
     auto map_inner = [](std::string_view v) -> std::string {
+        while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.remove_prefix(1);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.remove_suffix(1);
+        if (v == "&str") return "std::string_view";
+        if (v.starts_with("&mut ")) {
+            return cf_type_string_to_cpp(v.substr(5)) + "&";
+        }
+        if (v.starts_with("&")) {
+            std::string_view inner = v.substr(1);
+            if (inner.starts_with("[]")) {
+                return std::format("cfire::slice_ref<{}>", cf_type_string_to_cpp(inner.substr(2)));
+            }
+            return std::format("const {}&", cf_type_string_to_cpp(inner));
+        }
+        if (v.starts_with("*mut ")) {
+            std::string_view inner = v.substr(5);
+            return inner == "c_void" || inner == "void" ? "void*" : (cf_type_string_to_cpp(inner) + "*");
+        }
+        if (v.starts_with("*")) {
+            std::string_view inner = v.substr(1);
+            return inner == "c_void" || inner == "void" ? "const void*" : std::format("const {}*", cf_type_string_to_cpp(inner));
+        }
         if (v.starts_with("[]")) {
-            return std::format("std::vector<{}>", map_cf_named_type_to_cpp(v.substr(2)));
+            return std::format("std::vector<{}>", cf_type_string_to_cpp(v.substr(2)));
+        }
+        if (v.starts_with("[")) {
+            auto rb = v.find(']');
+            if (rb != std::string_view::npos && rb > 1 && rb + 1 < v.size()) {
+                std::string_view len_sv = v.substr(1, rb - 1);
+                return std::format("std::array<{}, {}>", cf_type_string_to_cpp(v.substr(rb + 1)), len_sv);
+            }
+        }
+        if (v.starts_with("map[")) {
+            int depth = 0;
+            for (std::size_t k = 3; k < v.size(); ++k) {
+                if (v[k] == '[') ++depth;
+                else if (v[k] == ']') {
+                    --depth;
+                    if (depth == 0 && k + 1 < v.size()) {
+                        return std::format("cfire::Map<{}, {}>",
+                            cf_type_string_to_cpp(v.substr(4, k - 4)),
+                            cf_type_string_to_cpp(v.substr(k + 1)));
+                    }
+                }
+            }
         }
         if (v.starts_with("own[") && v.ends_with("]")) {
-            return std::format("std::unique_ptr<{}>", v.substr(4, v.size() - 5));
+            return std::format("std::unique_ptr<{}>", cf_type_string_to_cpp(v.substr(4, v.size() - 5)));
         }
         if (v.starts_with("shared[") && v.ends_with("]")) {
-            return std::format("std::shared_ptr<{}>", v.substr(7, v.size() - 8));
+            return std::format("std::shared_ptr<{}>", cf_type_string_to_cpp(v.substr(7, v.size() - 8)));
         }
         if (v.starts_with("sync.Channel[") && v.ends_with("]")) {
-            return std::format("cfire::sync::Channel<{}>", v.substr(13, v.size() - 14));
+            return std::format("cfire::sync::Channel<{}>", cf_type_string_to_cpp(v.substr(13, v.size() - 14)));
+        }
+        if (auto br = v.find('['); br != std::string_view::npos && v.ends_with(']')) {
+            std::string_view base = v.substr(0, br);
+            std::string_view args_sv = v.substr(br + 1, v.size() - br - 2);
+            std::string mapped_base = map_cf_named_type_to_cpp(base, false);
+            if (mapped_base == "cfire::sync::Mutex") mapped_base = "cfire::sync::MutexT";
+            std::string args_cpp;
+            int depth = 0;
+            std::size_t pstart = 0;
+            bool first_arg = true;
+            for (std::size_t i = 0; i < args_sv.size(); ++i) {
+                char c = args_sv[i];
+                if (c == '[' || c == '(') ++depth;
+                else if (c == ']' || c == ')') --depth;
+                else if (c == ',' && depth == 0) {
+                    if (!first_arg) args_cpp += ", ";
+                    first_arg = false;
+                    args_cpp += cf_type_string_to_cpp(args_sv.substr(pstart, i - pstart));
+                    pstart = i + 1;
+                }
+            }
+            if (!first_arg) args_cpp += ", ";
+            args_cpp += cf_type_string_to_cpp(args_sv.substr(pstart));
+            return std::format("{}<{}>", mapped_base, args_cpp);
         }
         return map_cf_named_type_to_cpp(v, false);
     };
@@ -700,11 +1264,17 @@ struct LocalBindingInfo {
         std::string inner = s.substr(1, s.size() - 2);
         std::string tuple_cpp = "std::tuple<";
         std::size_t start = 0;
+        int depth = 0;
         bool first = true;
-        while (start < inner.size()) {
-            auto comma = inner.find(',', start);
-            std::string part = (comma == std::string::npos) ? inner.substr(start) : inner.substr(start, comma - start);
-            start = (comma == std::string::npos) ? inner.size() : comma + 1;
+        for (std::size_t i = 0; i <= inner.size(); ++i) {
+            if (i < inner.size()) {
+                char c = inner[i];
+                if (c == '(' || c == '[') ++depth;
+                else if (c == ')' || c == ']') --depth;
+                if (c != ',' || depth != 0) continue;
+            }
+            std::string part = inner.substr(start, i - start);
+            start = i + 1;
             while (!part.empty() && part.front() == ' ') part.erase(part.begin());
             while (!part.empty() && part.back() == ' ') part.pop_back();
             if (!first) tuple_cpp += ", ";
@@ -717,6 +1287,7 @@ struct LocalBindingInfo {
         cpp = map_inner(s);
     }
     if (optional) {
+        if (cpp == "std::string_view") cpp = "std::string";
         cpp = std::format("std::optional<{}>", cpp);
     }
     if (fallible) {

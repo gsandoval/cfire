@@ -34,7 +34,7 @@ auto main(int argc, char** argv) -> int {
     #line 19 "functions_and_intents.cf"
     std::string msg = "temporary buffer";
     #line 20 "functions_and_intents.cf"
-    auto len = consume_payload(std::move(msg));
+    std::size_t len = consume_payload(std::move(msg));
     #line 21 "functions_and_intents.cf"
     (void)(std::println("q: {}, r: {}, nums_len: {}, len: {}", q, r, nums.size(), len));
     return 0;

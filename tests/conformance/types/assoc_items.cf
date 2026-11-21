@@ -6,7 +6,7 @@ fn main() {
     b := i8.MIN
     c := i64.BITS
     d := i32.parse(" 42 ") or 0
-    e := u8.parse("300")
+    e := u8.parse("300").ignore_error()
     f := bool.parse("TRUE") or false
     g := f64.parse("2.5") or 0.0
     h := u16.MIN

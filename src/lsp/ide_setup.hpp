@@ -3,6 +3,7 @@
 
 #include "../version.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
@@ -249,7 +250,7 @@ struct DetectedIde {
 - **Language Overview**: `cfire` (`.cf`) is a memory-safe, zero-overhead systems programming language that transpiles 1-to-1 to human-readable ISO C++23.
 - **Packages & Imports**:
   - **Same-Directory Package Merging**: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants. Never write `import "./sibling.cf"` for same-directory files.
-  - **Standard Library, Cloud & Hybrid Native WebUI Packages**: Use `import "core:tako"` (`cfire new <dir> --template tako` / `cfire init --template tako`) for local/cloud S3 & SQS primitives, or `import "ext:webui"` (`cfire new <dir> --template webui`) for hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, Linux, and Windows.
+  - **Standard Library, Cloud & Hybrid Native WebUI Packages**: Use `import "ext:tako"` (`cfire new <dir> --template tako` / `cfire init --template tako`) for local/cloud S3 & SQS primitives, or `import "ext:webui"` (`cfire new <dir> --template webui`) for hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, iOS, Linux, and Windows.
   - **C/C++ Interop & Declarative `build.cf` Linkage**: Use `import cpp "<header.h>"` (with optional `as <alias>`) for foreign C/C++ headers, and declare preprocessor defines and native linkage (`Defines: {{...}}`, `PkgConfig: [...]`, `Libraries: [...]`, `Frameworks: [...]`, `Includes: [...]`, or `build.Define(...)`) in `build.cf` (never `@pkg` or `@define` attributes on imports).
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={{a + b}} hex={{mask:04x}}"`.
@@ -288,10 +289,13 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
   "publisher": "cfire",
   "version": "{}",
   "displayName": "cfire Language Support",
-  "description": "Syntax highlighting, bracket matching, and block auto-indentation for cfire (.cf)",
+  "description": "Syntax highlighting, bracket matching, auto-indentation, and LSP language intelligence for cfire (.cf)",
   "engines": {{
     "vscode": "^1.75.0"
   }},
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:cfire"],
+  "main": "./extension.js",
   "contributes": {{
     "languages": [
       {{
@@ -307,7 +311,36 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
         "scopeName": "source.cfire",
         "path": "./syntaxes/cfire.tmLanguage.json"
       }}
-    ]
+    ],
+    "commands": [
+      {{
+        "command": "cfire.restartServer",
+        "title": "cfire: Restart Language Server"
+      }}
+    ],
+    "configuration": {{
+      "title": "cfire",
+      "properties": {{
+        "cfire.lsp.path": {{
+          "type": "string",
+          "default": "cfire",
+          "description": "Path to the cfire executable used for LSP code intelligence."
+        }},
+        "cfire.lsp.arguments": {{
+          "type": "array",
+          "items": {{
+            "type": "string"
+          }},
+          "default": ["lsp"],
+          "description": "Arguments passed to the cfire binary to launch the language server."
+        }},
+        "cfire.inlayHints.enable": {{
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inferred type and parameter inlay hints for cfire files."
+        }}
+      }}
+    }}
   }}
 }}
 )cfjson", cfire::version::kVersion);
@@ -343,8 +376,30 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
   ],
   "indentationRules": {
     "increaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*)$",
-    "decreaseIndentPattern": "^\\s*[}\\])]"
-  }
+    "decreaseIndentPattern": "^((?!.*?\\/\\*).*\\*/)?\\s*[}\\])]"
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^.*\\{\\s*$",
+      "afterText": "^\\s*\\}",
+      "action": { "indent": "indentOutdent" }
+    },
+    {
+      "beforeText": "^.*\\(\\s*$",
+      "afterText": "^\\s*\\)",
+      "action": { "indent": "indentOutdent" }
+    },
+    {
+      "beforeText": "^.*\\[\\s*$",
+      "afterText": "^\\s*\\]",
+      "action": { "indent": "indentOutdent" }
+    },
+    {
+      "beforeText": "^\\s*/\\*\\*(?!/)([^\\*]|\\*(?!/))*$",
+      "afterText": "^\\s*\\*/$",
+      "action": { "indent": "indentOutdent", "appendText": " * " }
+    }
+  ]
 }
 )cfjson";
     }
@@ -410,6 +465,864 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
 }
 )cfjson";
     }
+
+    {
+        std::ofstream js_ofs(ext_dir / "extension.js", std::ios::trunc);
+        js_ofs << R"cfjs('use strict';
+
+const vscode = require('vscode');
+const cp = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const TOKEN_TYPES = [
+  'type', 'struct', 'enum', 'interface', 'parameter', 'variable', 'property',
+  'enumMember', 'function', 'method', 'keyword', 'modifier', 'string', 'number',
+  'operator', 'namespace'
+];
+const TOKEN_MODIFIERS = [
+  'declaration', 'definition', 'readonly', 'modification', 'defaultLibrary', 'async'
+];
+const SEMANTIC_LEGEND = new vscode.SemanticTokensLegend(TOKEN_TYPES, TOKEN_MODIFIERS);
+const SELECTOR = [
+  { language: 'cfire', scheme: 'file' },
+  { language: 'cfire', scheme: 'untitled' }
+];
+
+function resolveCfireBinary() {
+  const cfg = vscode.workspace.getConfiguration('cfire');
+  const configured = cfg.get('lsp.path');
+  if (typeof configured === 'string' && configured.trim()) {
+    const p = configured.trim();
+    if (path.isAbsolute(p) && fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  const exeName = process.platform === 'win32' ? 'cfire.exe' : 'cfire';
+  const folders = vscode.workspace.workspaceFolders || [];
+  for (const folder of folders) {
+    const wsBin = path.join(folder.uri.fsPath, exeName);
+    if (fs.existsSync(wsBin)) return wsBin;
+  }
+
+  const candidates = process.platform === 'win32'
+    ? [path.join(os.homedir(), '.local', 'bin', exeName)]
+    : [
+        path.join(os.homedir(), '.local', 'bin', 'cfire'),
+        '/opt/homebrew/bin/cfire',
+        '/usr/local/bin/cfire'
+      ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return (typeof configured === 'string' && configured.trim()) ? configured.trim() : exeName;
+}
+
+function getRootUri() {
+  const folders = vscode.workspace.workspaceFolders || [];
+  if (folders.length > 0) return folders[0].uri.toString();
+  const active = vscode.window.activeTextEditor;
+  if (active && active.document.uri.scheme === 'file') {
+    return vscode.Uri.file(path.dirname(active.document.uri.fsPath)).toString();
+  }
+  return null;
+}
+
+function toVsPosition(p) {
+  return new vscode.Position(Math.max(0, p?.line || 0), Math.max(0, p?.character || 0));
+}
+
+function toVsRange(r) {
+  return new vscode.Range(toVsPosition(r?.start), toVsPosition(r?.end));
+}
+
+function toLspPosition(p) {
+  return { line: p.line, character: p.character };
+}
+
+function toLspRange(r) {
+  return { start: toLspPosition(r.start), end: toLspPosition(r.end) };
+}
+
+function toMdDocumentation(doc) {
+  if (!doc) return undefined;
+  if (typeof doc === 'string') return doc ? new vscode.MarkdownString(doc) : undefined;
+  if (typeof doc.value === 'string') return doc.value ? new vscode.MarkdownString(doc.value) : undefined;
+  return undefined;
+}
+
+function toWorkspaceEdit(lspEdit) {
+  const edit = new vscode.WorkspaceEdit();
+  if (!lspEdit || !lspEdit.changes) return edit;
+  for (const [uriStr, textEdits] of Object.entries(lspEdit.changes)) {
+    if (!Array.isArray(textEdits)) continue;
+    const uri = vscode.Uri.parse(uriStr);
+    for (const te of textEdits) {
+      edit.replace(uri, toVsRange(te.range), String(te.newText ?? ''));
+    }
+  }
+  return edit;
+}
+
+class CfireLspClient {
+  constructor(output, diagnostics) {
+    this.output = output;
+    this.diagnostics = diagnostics;
+    this.proc = null;
+    this.recvBuf = Buffer.alloc(0);
+    this.nextId = 1;
+    this.pending = new Map();
+    this.openDocs = new Set();
+    this.initPromise = null;
+    this.stopping = false;
+    this.crashCount = 0;
+  }
+
+  async ensureStarted() {
+    if (this.proc && !this.proc.killed && this.initPromise) {
+      return this.initPromise;
+    }
+    this.startProcess();
+    return this.initPromise;
+  }
+
+  startProcess() {
+    this.stopping = false;
+    const bin = resolveCfireBinary();
+    const cfg = vscode.workspace.getConfiguration('cfire');
+    const argsCfg = cfg.get('lsp.arguments');
+    const args = Array.isArray(argsCfg) && argsCfg.length > 0 ? argsCfg.map(String) : ['lsp'];
+
+    this.output.appendLine(`Starting cfire LSP: ${bin} ${args.join(' ')}`);
+    const proc = cp.spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.proc = proc;
+    this.recvBuf = Buffer.alloc(0);
+    this.openDocs.clear();
+
+    proc.stdout.on('data', (chunk) => this.onData(chunk));
+    proc.stderr.on('data', (chunk) => {
+      const msg = chunk.toString('utf8').trimEnd();
+      if (msg) this.output.appendLine(`[stderr] ${msg}`);
+    });
+    proc.on('error', (err) => {
+      this.output.appendLine(`cfire LSP spawn error (${bin}): ${err.message}`);
+      this.failAllPending(err);
+      this.proc = null;
+      this.initPromise = null;
+    });
+    proc.on('exit', (code, signal) => {
+      this.output.appendLine(`cfire LSP exited (code=${code}, signal=${signal})`);
+      this.failAllPending(new Error(`cfire LSP exited (${code})`));
+      if (this.proc === proc) {
+        this.proc = null;
+        this.initPromise = null;
+        this.openDocs.clear();
+      }
+      if (!this.stopping && this.crashCount < 3) {
+        this.crashCount += 1;
+        setTimeout(() => {
+          if (!this.stopping) this.ensureStarted().catch(() => {});
+        }, 500);
+      }
+    });
+
+    this.initPromise = (async () => {
+      const initResult = await this.sendRequestRaw('initialize', {
+        processId: process.pid,
+        rootUri: getRootUri(),
+        capabilities: {
+          textDocument: {
+            synchronization: {
+              didSave: true,
+              willSave: false
+            },
+            completion: {
+              completionItem: {
+                snippetSupport: true,
+                labelDetailsSupport: true,
+                documentationFormat: ['markdown', 'plaintext']
+              }
+            },
+            hover: {
+              contentFormat: ['markdown', 'plaintext']
+            },
+            signatureHelp: {
+              signatureInformation: {
+                parameterInformation: { labelOffsetSupport: false }
+              }
+            },
+            semanticTokens: {
+              requests: { full: true },
+              tokenTypes: TOKEN_TYPES,
+              tokenModifiers: TOKEN_MODIFIERS,
+              formats: ['relative']
+            }
+          }
+        }
+      }, 15000);
+
+      this.crashCount = 0;
+      this.sendNotificationRaw('initialized', {});
+      for (const doc of vscode.workspace.textDocuments) {
+        if (doc.languageId === 'cfire') {
+          this.didOpenDoc(doc);
+        }
+      }
+      return initResult;
+    })();
+  }
+
+  failAllPending(err) {
+    for (const [, entry] of this.pending) {
+      clearTimeout(entry.timer);
+      entry.reject(err);
+    }
+    this.pending.clear();
+  }
+
+  onData(chunk) {
+    this.recvBuf = Buffer.concat([this.recvBuf, chunk]);
+    while (true) {
+      const hdrEnd = this.recvBuf.indexOf('\r\n\r\n');
+      if (hdrEnd < 0) break;
+      const hdrStr = this.recvBuf.slice(0, hdrEnd).toString('ascii');
+      const m = /Content-Length:\s*(\d+)/i.exec(hdrStr);
+      if (!m) {
+        this.recvBuf = this.recvBuf.slice(hdrEnd + 4);
+        continue;
+      }
+      const len = Number(m[1]);
+      const bodyStart = hdrEnd + 4;
+      if (this.recvBuf.length < bodyStart + len) break;
+      const bodyBuf = this.recvBuf.slice(bodyStart, bodyStart + len);
+      this.recvBuf = this.recvBuf.slice(bodyStart + len);
+
+      let msg;
+      try {
+        msg = JSON.parse(bodyBuf.toString('utf8'));
+      } catch (e) {
+        this.output.appendLine(`Invalid JSON from cfire LSP: ${e.message}`);
+        continue;
+      }
+      this.handleIncoming(msg);
+    }
+  }
+
+  handleIncoming(msg) {
+    if (msg && Object.prototype.hasOwnProperty.call(msg, 'id')) {
+      const key = String(msg.id);
+      const pending = this.pending.get(key);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pending.delete(key);
+        if (msg.error) {
+          pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+        } else {
+          pending.resolve(msg.result);
+        }
+      }
+      return;
+    }
+
+    if (msg && msg.method === 'textDocument/publishDiagnostics' && msg.params) {
+      const uriStr = msg.params.uri;
+      if (!uriStr) return;
+      const uri = vscode.Uri.parse(uriStr);
+      const rawDiags = Array.isArray(msg.params.diagnostics) ? msg.params.diagnostics : [];
+      const vsDiags = rawDiags.map((d) => {
+        const sevMap = {
+          1: vscode.DiagnosticSeverity.Error,
+          2: vscode.DiagnosticSeverity.Warning,
+          3: vscode.DiagnosticSeverity.Information,
+          4: vscode.DiagnosticSeverity.Hint
+        };
+        const sev = sevMap[d.severity] ?? vscode.DiagnosticSeverity.Error;
+        const diag = new vscode.Diagnostic(toVsRange(d.range), String(d.message || ''), sev);
+        diag.source = d.source || 'cfire';
+        if (d.code !== undefined) diag.code = d.code;
+        return diag;
+      });
+      this.diagnostics.set(uri, vsDiags);
+    }
+  }
+
+  writeFrame(obj) {
+    if (!this.proc || !this.proc.stdin || !this.proc.stdin.writable) return false;
+    const json = JSON.stringify(obj);
+    const body = Buffer.from(json, 'utf8');
+    const hdr = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii');
+    this.proc.stdin.write(Buffer.concat([hdr, body]));
+    return true;
+  }
+
+  sendNotificationRaw(method, params) {
+    this.writeFrame({ jsonrpc: '2.0', method, params });
+  }
+
+  sendRequestRaw(method, params, timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      const key = String(id);
+      const timer = setTimeout(() => {
+        this.pending.delete(key);
+        reject(new Error(`cfire LSP timeout for ${method}`));
+      }, timeoutMs);
+      this.pending.set(key, { resolve, reject, timer });
+      if (!this.writeFrame({ jsonrpc: '2.0', id, method, params })) {
+        clearTimeout(timer);
+        this.pending.delete(key);
+        reject(new Error(`cfire LSP stdin not writable for ${method}`));
+      }
+    });
+  }
+
+  async request(method, params, doc = null) {
+    try {
+      await this.ensureStarted();
+      if (doc) this.ensureDocOpen(doc);
+      return await this.sendRequestRaw(method, params);
+    } catch (err) {
+      this.output.appendLine(`${method} failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  didOpenDoc(doc) {
+    if (!doc || doc.languageId !== 'cfire') return;
+    const uri = doc.uri.toString();
+    if (this.openDocs.has(uri)) return;
+    this.openDocs.add(uri);
+    this.sendNotificationRaw('textDocument/didOpen', {
+      textDocument: {
+        uri,
+        languageId: 'cfire',
+        version: doc.version,
+        text: doc.getText()
+      }
+    });
+  }
+
+  ensureDocOpen(doc) {
+    if (!doc || doc.languageId !== 'cfire') return;
+    const uri = doc.uri.toString();
+    if (!this.openDocs.has(uri)) {
+      this.didOpenDoc(doc);
+    }
+  }
+
+  didChangeDoc(event) {
+    const doc = event.document;
+    if (!doc || doc.languageId !== 'cfire') return;
+    if (!this.proc || !this.initPromise) return;
+    const uri = doc.uri.toString();
+    if (!this.openDocs.has(uri)) {
+      this.didOpenDoc(doc);
+      return;
+    }
+    const contentChanges = event.contentChanges.map((c) => ({
+      range: toLspRange(c.range),
+      rangeLength: c.rangeLength,
+      text: c.text
+    }));
+    this.sendNotificationRaw('textDocument/didChange', {
+      textDocument: { uri, version: doc.version },
+      contentChanges
+    });
+  }
+
+  didSaveDoc(doc) {
+    if (!doc || doc.languageId !== 'cfire' || !this.proc) return;
+    const uri = doc.uri.toString();
+    if (!this.openDocs.has(uri)) {
+      this.didOpenDoc(doc);
+      return;
+    }
+    this.sendNotificationRaw('textDocument/didSave', {
+      textDocument: { uri },
+      text: doc.getText()
+    });
+  }
+
+  didCloseDoc(doc) {
+    if (!doc || doc.languageId !== 'cfire') return;
+    const uri = doc.uri.toString();
+    this.openDocs.delete(uri);
+    this.diagnostics.delete(doc.uri);
+    if (this.proc) {
+      this.sendNotificationRaw('textDocument/didClose', {
+        textDocument: { uri }
+      });
+    }
+  }
+
+  async stop() {
+    this.stopping = true;
+    const proc = this.proc;
+    if (!proc) return;
+    try {
+      await this.sendRequestRaw('shutdown', null, 1500);
+      this.sendNotificationRaw('exit', null);
+    } catch (_) {
+      // Ignore shutdown error on exit
+    }
+    setTimeout(() => {
+      try {
+        if (!proc.killed) proc.kill();
+      } catch (_) {}
+    }, 300);
+    this.proc = null;
+    this.initPromise = null;
+    this.openDocs.clear();
+  }
+}
+
+let client = null;
+
+function activate(context) {
+  const output = vscode.window.createOutputChannel('cfire LSP');
+  const diagnostics = vscode.languages.createDiagnosticCollection('cfire');
+  client = new CfireLspClient(output, diagnostics);
+  context.subscriptions.push(output, diagnostics);
+
+  client.ensureStarted().catch((err) => {
+    output.appendLine(`Initial start failed: ${err.message}`);
+  });
+
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument((doc) => {
+      if (doc.languageId === 'cfire') {
+        client.ensureStarted().then(() => client.didOpenDoc(doc)).catch(() => {});
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument((e) => client.didChangeDoc(e)),
+    vscode.workspace.onDidSaveTextDocument((doc) => client.didSaveDoc(doc)),
+    vscode.workspace.onDidCloseTextDocument((doc) => client.didCloseDoc(doc)),
+    vscode.commands.registerCommand('cfire.restartServer', async () => {
+      await client.stop();
+      client.crashCount = 0;
+      await client.ensureStarted();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider(
+      SELECTOR,
+      {
+        async provideCompletionItems(doc, pos, _token, compCtx) {
+          const res = await client.request('textDocument/completion', {
+            textDocument: { uri: doc.uri.toString() },
+            position: toLspPosition(pos),
+            context: compCtx ? { triggerKind: compCtx.triggerKind, triggerCharacter: compCtx.triggerCharacter } : undefined
+          }, doc);
+          if (!res) return undefined;
+          const isIncomplete = Array.isArray(res) ? false : Boolean(res.isIncomplete);
+          const rawItems = Array.isArray(res) ? res : (Array.isArray(res.items) ? res.items : []);
+          const items = rawItems.map((it) => {
+            const kind = typeof it.kind === 'number' ? Math.max(0, it.kind - 1) : vscode.CompletionItemKind.Text;
+            const label = it.labelDetails
+              ? {
+                  label: String(it.label),
+                  detail: it.labelDetails.detail ? String(it.labelDetails.detail) : undefined,
+                  description: it.labelDetails.description ? String(it.labelDetails.description) : undefined
+                }
+              : String(it.label);
+            const ci = new vscode.CompletionItem(label, kind);
+            if (it.detail) ci.detail = String(it.detail);
+            const docMd = toMdDocumentation(it.documentation);
+            if (docMd) ci.documentation = docMd;
+            if (it.sortText) ci.sortText = String(it.sortText);
+            if (it.filterText) ci.filterText = String(it.filterText);
+            if (it.textEdit && it.textEdit.range) {
+              ci.range = toVsRange(it.textEdit.range);
+              const newText = String(it.textEdit.newText ?? it.label);
+              ci.insertText = it.insertTextFormat === 2 ? new vscode.SnippetString(newText) : newText;
+            } else if (it.insertText !== undefined) {
+              const ins = String(it.insertText);
+              ci.insertText = it.insertTextFormat === 2 ? new vscode.SnippetString(ins) : ins;
+            }
+            if (Array.isArray(it.additionalTextEdits)) {
+              ci.additionalTextEdits = it.additionalTextEdits.map((ae) =>
+                vscode.TextEdit.replace(toVsRange(ae.range), String(ae.newText ?? ''))
+              );
+            }
+            return ci;
+          });
+          return new vscode.CompletionList(items, isIncomplete);
+        }
+      },
+      '.', ':'
+    ),
+
+    vscode.languages.registerHoverProvider(SELECTOR, {
+      async provideHover(doc, pos) {
+        const res = await client.request('textDocument/hover', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!res || !res.contents) return null;
+        const md = toMdDocumentation(res.contents) || new vscode.MarkdownString(String(res.contents));
+        return new vscode.Hover(md, res.range ? toVsRange(res.range) : undefined);
+      }
+    }),
+
+    vscode.languages.registerSignatureHelpProvider(
+      SELECTOR,
+      {
+        async provideSignatureHelp(doc, pos) {
+          const res = await client.request('textDocument/signatureHelp', {
+            textDocument: { uri: doc.uri.toString() },
+            position: toLspPosition(pos)
+          }, doc);
+          if (!res || !Array.isArray(res.signatures) || res.signatures.length === 0) return null;
+          const sh = new vscode.SignatureHelp();
+          sh.activeSignature = res.activeSignature || 0;
+          sh.activeParameter = res.activeParameter || 0;
+          sh.signatures = res.signatures.map((s) => {
+            const si = new vscode.SignatureInformation(String(s.label), toMdDocumentation(s.documentation));
+            if (Array.isArray(s.parameters)) {
+              si.parameters = s.parameters.map((p) => new vscode.ParameterInformation(p.label, toMdDocumentation(p.documentation)));
+            }
+            return si;
+          });
+          return sh;
+        }
+      },
+      '(', ','
+    ),
+
+    vscode.languages.registerDefinitionProvider(SELECTOR, {
+      async provideDefinition(doc, pos) {
+        const res = await client.request('textDocument/definition', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!res) return null;
+        const arr = Array.isArray(res) ? res : [res];
+        return arr.filter((l) => l && l.uri && l.range).map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toVsRange(l.range)));
+      }
+    }),
+
+    vscode.languages.registerTypeDefinitionProvider(SELECTOR, {
+      async provideTypeDefinition(doc, pos) {
+        const res = await client.request('textDocument/typeDefinition', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!res) return null;
+        const arr = Array.isArray(res) ? res : [res];
+        return arr.filter((l) => l && l.uri && l.range).map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toVsRange(l.range)));
+      }
+    }),
+
+    vscode.languages.registerImplementationProvider(SELECTOR, {
+      async provideImplementation(doc, pos) {
+        const res = await client.request('textDocument/implementation', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!res) return null;
+        const arr = Array.isArray(res) ? res : [res];
+        return arr.filter((l) => l && l.uri && l.range).map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toVsRange(l.range)));
+      }
+    }),
+
+    vscode.languages.registerReferenceProvider(SELECTOR, {
+      async provideReferences(doc, pos, ctx) {
+        const res = await client.request('textDocument/references', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos),
+          context: { includeDeclaration: ctx ? Boolean(ctx.includeDeclaration) : true }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.filter((l) => l && l.uri && l.range).map((l) => new vscode.Location(vscode.Uri.parse(l.uri), toVsRange(l.range)));
+      }
+    }),
+
+    vscode.languages.registerDocumentHighlightProvider(SELECTOR, {
+      async provideDocumentHighlights(doc, pos) {
+        const res = await client.request('textDocument/documentHighlight', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.filter((h) => h && h.range).map((h) =>
+          new vscode.DocumentHighlight(toVsRange(h.range), typeof h.kind === 'number' ? Math.max(0, h.kind - 1) : vscode.DocumentHighlightKind.Text)
+        );
+      }
+    }),
+
+    vscode.languages.registerDocumentSymbolProvider(SELECTOR, {
+      async provideDocumentSymbols(doc) {
+        const res = await client.request('textDocument/documentSymbol', {
+          textDocument: { uri: doc.uri.toString() }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        const conv = (s) => {
+          const kind = typeof s.kind === 'number' ? Math.max(0, s.kind - 1) : vscode.SymbolKind.Function;
+          if (s.range && s.selectionRange) {
+            const ds = new vscode.DocumentSymbol(String(s.name), String(s.detail || ''), kind, toVsRange(s.range), toVsRange(s.selectionRange));
+            if (Array.isArray(s.children)) ds.children = s.children.map(conv);
+            return ds;
+          }
+          if (s.location && s.location.uri && s.location.range) {
+            return new vscode.SymbolInformation(String(s.name), kind, String(s.containerName || ''), new vscode.Location(vscode.Uri.parse(s.location.uri), toVsRange(s.location.range)));
+          }
+          return null;
+        };
+        return res.map(conv).filter(Boolean);
+      }
+    }),
+
+    vscode.languages.registerWorkspaceSymbolProvider({
+      async provideWorkspaceSymbols(query) {
+        const res = await client.request('workspace/symbol', { query: String(query || '') });
+        if (!Array.isArray(res)) return [];
+        return res.filter((s) => s && s.location && s.location.uri).map((s) =>
+          new vscode.SymbolInformation(
+            String(s.name),
+            typeof s.kind === 'number' ? Math.max(0, s.kind - 1) : vscode.SymbolKind.Function,
+            String(s.containerName || ''),
+            new vscode.Location(vscode.Uri.parse(s.location.uri), toVsRange(s.location.range))
+          )
+        );
+      }
+    }),
+
+    vscode.languages.registerFoldingRangeProvider(SELECTOR, {
+      async provideFoldingRanges(doc) {
+        const res = await client.request('textDocument/foldingRange', {
+          textDocument: { uri: doc.uri.toString() }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.map((f) => new vscode.FoldingRange(f.startLine, f.endLine));
+      }
+    }),
+
+    vscode.languages.registerCodeActionsProvider(SELECTOR, {
+      async provideCodeActions(doc, range, ctx) {
+        const res = await client.request('textDocument/codeAction', {
+          textDocument: { uri: doc.uri.toString() },
+          range: toLspRange(range),
+          context: {
+            diagnostics: (ctx?.diagnostics || []).map((d) => ({ code: d.code, message: d.message }))
+          }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.map((a) => {
+          const ca = new vscode.CodeAction(String(a.title || 'Quick Fix'), vscode.CodeActionKind.QuickFix);
+          ca.isPreferred = Boolean(a.isPreferred);
+          if (a.edit) ca.edit = toWorkspaceEdit(a.edit);
+          return ca;
+        });
+      }
+    }),
+
+    vscode.languages.registerRenameProvider(SELECTOR, {
+      async prepareRename(doc, pos) {
+        const res = await client.request('textDocument/prepareRename', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos)
+        }, doc);
+        if (!res) return null;
+        return toVsRange(res.range || res);
+      },
+      async provideRenameEdits(doc, pos, newName) {
+        const res = await client.request('textDocument/rename', {
+          textDocument: { uri: doc.uri.toString() },
+          position: toLspPosition(pos),
+          newName: String(newName)
+        }, doc);
+        return res ? toWorkspaceEdit(res) : null;
+      }
+    }),
+
+    vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, {
+      async provideDocumentFormattingEdits(doc) {
+        const res = await client.request('textDocument/formatting', {
+          textDocument: { uri: doc.uri.toString() },
+          options: { tabSize: 4, insertSpaces: true }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.map((te) => vscode.TextEdit.replace(toVsRange(te.range), String(te.newText ?? '')));
+      }
+    }),
+
+    vscode.languages.registerDocumentRangeFormattingEditProvider(SELECTOR, {
+      async provideDocumentRangeFormattingEdits(doc, range) {
+        const res = await client.request('textDocument/rangeFormatting', {
+          textDocument: { uri: doc.uri.toString() },
+          range: toLspRange(range),
+          options: { tabSize: 4, insertSpaces: true }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.map((te) => vscode.TextEdit.replace(toVsRange(te.range), String(te.newText ?? '')));
+      }
+    }),
+
+    vscode.languages.registerInlayHintsProvider(SELECTOR, {
+      async provideInlayHints(doc) {
+        if (!vscode.workspace.getConfiguration('cfire').get('inlayHints.enable', true)) return [];
+        const res = await client.request('textDocument/inlayHint', {
+          textDocument: { uri: doc.uri.toString() }
+        }, doc);
+        if (!Array.isArray(res)) return [];
+        return res.map((h) => {
+          const hint = new vscode.InlayHint(toVsPosition(h.position), String(h.label || ''), h.kind || 1);
+          hint.paddingLeft = Boolean(h.paddingLeft);
+          hint.paddingRight = Boolean(h.paddingRight);
+          return hint;
+        });
+      }
+    }),
+
+    vscode.languages.registerDocumentSemanticTokensProvider(SELECTOR, {
+      async provideDocumentSemanticTokens(doc) {
+        const res = await client.request('textDocument/semanticTokens/full', {
+          textDocument: { uri: doc.uri.toString() }
+        }, doc);
+        if (!res || !Array.isArray(res.data)) return null;
+        return new vscode.SemanticTokens(new Uint32Array(res.data));
+      }
+    }, SEMANTIC_LEGEND)
+  );
+}
+
+async function deactivate() {
+  if (client) {
+    await client.stop();
+    client = null;
+  }
+}
+
+module.exports = { activate, deactivate };
+)cfjs";
+    }
+}
+
+[[nodiscard]] inline auto ide_json_escape(std::string_view s) -> std::string {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    out += std::format("\\u{:04x}", c);
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
+                break;
+        }
+    }
+    return out;
+}
+
+inline void register_vscode_extension_manifest(
+    const std::filesystem::path& ext_root,
+    std::string_view folder_name,
+    std::string_view version
+) {
+    std::error_code ec;
+    std::filesystem::create_directories(ext_root, ec);
+
+    std::filesystem::path full_dir = ext_root / folder_name;
+    std::string fs_path = full_dir.string();
+    std::string uri_path = fs_path;
+    std::replace(uri_path.begin(), uri_path.end(), '\\', '/');
+    if (uri_path.size() >= 2 && std::isalpha(static_cast<unsigned char>(uri_path[0])) && uri_path[1] == ':') {
+        uri_path.insert(uri_path.begin(), '/');
+    }
+    std::string external = "file://" + uri_path;
+    auto ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
+
+    std::string new_entry = std::format(
+        R"({{"identifier":{{"id":"cfire.cfire-lang"}},"version":"{}","location":{{"$mid":1,"fsPath":"{}","external":"{}","path":"{}","scheme":"file"}},"relativeLocation":"{}","metadata":{{"installedTimestamp":{},"pinned":false,"source":"vsix"}}}})",
+        ide_json_escape(version),
+        ide_json_escape(fs_path),
+        ide_json_escape(external),
+        ide_json_escape(uri_path),
+        ide_json_escape(folder_name),
+        ts_ms);
+
+    std::vector<std::string> entries;
+    std::filesystem::path manifest_path = ext_root / "extensions.json";
+    if (std::filesystem::exists(manifest_path, ec)) {
+        std::ifstream ifs(manifest_path, std::ios::binary);
+        std::ostringstream ss;
+        ss << ifs.rdbuf();
+        std::string existing = ss.str();
+
+        std::size_t i = existing.find('[');
+        if (i != std::string::npos) {
+            ++i;
+            while (i < existing.size()) {
+                while (i < existing.size() &&
+                       (existing[i] == ' ' || existing[i] == '\t' || existing[i] == '\n' ||
+                        existing[i] == '\r' || existing[i] == ',')) {
+                    ++i;
+                }
+                if (i >= existing.size() || existing[i] == ']') break;
+                if (existing[i] != '{') {
+                    ++i;
+                    continue;
+                }
+                std::size_t start = i;
+                int depth = 0;
+                bool in_str = false;
+                while (i < existing.size()) {
+                    char c = existing[i];
+                    if (in_str) {
+                        if (c == '\\' && i + 1 < existing.size()) {
+                            i += 2;
+                            continue;
+                        }
+                        if (c == '"') in_str = false;
+                    } else {
+                        if (c == '"') in_str = true;
+                        else if (c == '{') ++depth;
+                        else if (c == '}') {
+                            --depth;
+                            if (depth == 0) {
+                                ++i;
+                                break;
+                            }
+                        }
+                    }
+                    ++i;
+                }
+                std::string obj = existing.substr(start, i - start);
+                if (!obj.contains(R"("id":"cfire.cfire-lang")") &&
+                    !obj.contains(R"("id": "cfire.cfire-lang")")) {
+                    entries.push_back(std::move(obj));
+                }
+            }
+        }
+    }
+
+    entries.push_back(std::move(new_entry));
+    std::string out = "[";
+    for (std::size_t idx = 0; idx < entries.size(); ++idx) {
+        if (idx > 0) out += ",";
+        out += entries[idx];
+    }
+    out += "]";
+
+    std::filesystem::path tmp_path = ext_root / "extensions.json.tmp";
+    {
+        std::ofstream ofs(tmp_path, std::ios::binary | std::ios::trunc);
+        ofs << out;
+    }
+    std::filesystem::rename(tmp_path, manifest_path, ec);
 }
 
 [[nodiscard]] CFIRE_LSP_IDE_INLINE auto configure_ide(
@@ -474,9 +1387,8 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
     "*.cf": "cfire"
   }},
   "[cfire]": {{
-    "editor.defaultFormatter": "cfire",
+    "editor.defaultFormatter": "cfire.cfire-lang",
     "editor.formatOnSave": true,
-    "editor.formatOnType": true,
     "editor.autoIndent": "full"
   }},
   "cfire.lsp.path": "{}",
@@ -493,13 +1405,24 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
             e_ofs << "{\n  \"recommendations\": [\"cfire.cfire-lang\"]\n}\n";
         }
         write_cfire_vscode_extension_bundle(vscode_dir / "extensions" / "cfire.cfire-lang");
+        std::vector<std::string> global_ext_paths;
         if (global_scope) {
             if (const char* home = std::getenv("HOME")) {
                 std::filesystem::path h(home);
                 for (const char* ext_root : {".vscode/extensions", ".antigravity/extensions", ".cursor/extensions"}) {
-                    if (std::filesystem::exists(h / ext_root, ec)) {
-                        write_cfire_vscode_extension_bundle(
-                            h / ext_root / std::format("cfire.cfire-lang-{}", cfire::version::kVersion));
+                    auto root_dir = h / ext_root;
+                    if (std::filesystem::exists(root_dir, ec)) {
+                        for (const auto& entry : std::filesystem::directory_iterator(root_dir, ec)) {
+                            std::string fname = entry.path().filename().string();
+                            if (fname == "cfire.cfire-lang" || fname.starts_with("cfire.cfire-lang-")) {
+                                std::filesystem::remove_all(entry.path(), ec);
+                            }
+                        }
+                        std::string folder_name = std::format("cfire.cfire-lang-{}", cfire::version::kVersion);
+                        auto dst = root_dir / folder_name;
+                        write_cfire_vscode_extension_bundle(dst);
+                        register_vscode_extension_manifest(root_dir, folder_name, cfire::version::kVersion);
+                        global_ext_paths.push_back(dst.string());
                     }
                 }
             }
@@ -519,7 +1442,15 @@ inline void write_cfire_vscode_extension_bundle(const std::filesystem::path& ext
             m_ofs << vs_mcp;
         }
         if (has_target("vscode", targets)) {
-            configured.push_back("VS Code (.vscode/settings.json + .vscode/mcp.json + .vscode/extensions/cfire.cfire-lang)");
+            std::string desc = "VS Code (.vscode/settings.json + .vscode/mcp.json + .vscode/extensions/cfire.cfire-lang";
+            if (!global_ext_paths.empty()) {
+                desc += "; global extension installed in " + global_ext_paths.front();
+                for (std::size_t gi = 1; gi < global_ext_paths.size(); ++gi) desc += ", " + global_ext_paths[gi];
+                desc += ")";
+            } else {
+                desc += "; run `cfire ide vscode --global` to install into ~/.vscode/extensions/)";
+            }
+            configured.push_back(std::move(desc));
         }
     }
 

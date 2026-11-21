@@ -65,11 +65,12 @@ Before editing code for any non-trivial task:
    - **Integration Tests**: Inter-module compiler pipelines (e.g., driver CLI flags, eject workflows, vendor builds).
    - **Conformance Tests**: End-to-end language execution, memory safety, and LSP JSON-RPC stream assertions in `tests/unit/` and `tests/e2e/`.
    - **Manual Validation**: Live reproduction in target environments (e.g. Zed editor, VS Code, or interactive shell) confirming interactive UI, tabstops, and timing.
-6. **Quality Standards** — three commands cover every gate (details in [`docs/planning/README.md`](docs/planning/README.md)):
+6. **Quality Standards** — three commands cover every gate, plus `make check-fast` for sandbox-safe inner-loop checks (details in [`docs/planning/README.md`](docs/planning/README.md)):
+   - `make check-fast` — sandbox-safe inner-loop compiler, formatting, doc-sync, and offline unit/stdlib checks (skips loopback TCP and E2E suites).
    - `make check` — every commit (zero warnings, formatting, examples, unit/e2e/stdlib suites, `doc --check`, GUIDE doc-tests, conformance corpus). The pre-commit hook runs it; never bypass it with `--no-verify`.
    - `make check-deep` — sanitizers and fuzz replay.
-   - `make check-platforms` — the Linux and Windows VMs.
-   - `make check-all` runs all three; a task is done only when its summary is recorded in `active.md`.
+   - `make check-platforms` — the Linux and Windows VMs running concurrently.
+   - `make check-all` runs all three in order, then a summary table; its summary goes in `active.md`.
 
 ---
 

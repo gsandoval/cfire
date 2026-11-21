@@ -41,25 +41,14 @@ struct cfire::testing_detail::Arbitrary<Config> {
 };
 
 template <>
-inline auto cfire::cli::try_parse<Config>(int argc, char** argv) -> std::optional<Config> {
+inline auto cfire::cli::parse<Config>(int argc, char** argv) -> std::expected<Config, cfire::Error> {
     Config out{};
     out.Host = "127.0.0.1";
     out.Port = static_cast<std::uint16_t>(8080);
     cfire::cli::FlagReader reader(argc, argv);
     reader.bind("--host", "-h", out.Host);
     reader.bind("--port", "-p", out.Port);
-    if (reader.has_errors()) return std::nullopt;
-    return out;
-}
-
-template <>
-inline auto cfire::cli::parse<Config>(int argc, char** argv) -> Config {
-    Config out{};
-    out.Host = "127.0.0.1";
-    out.Port = static_cast<std::uint16_t>(8080);
-    cfire::cli::FlagReader reader(argc, argv);
-    reader.bind("--host", "-h", out.Host);
-    reader.bind("--port", "-p", out.Port);
+    if (reader.has_errors()) return std::unexpected(cfire::make_error(cfire::cli::join_errors(reader.errors())));
     return out;
 }
 
@@ -181,11 +170,11 @@ inline auto cfire::json::schema_struct<Shape>() -> std::string {
     double res = 0.0;
     #line 18 "structs_and_enums.cf"
     {
-        const auto& _target = s;
+        const Shape& _target = s;
         bool _matched = false;
         if (!_matched) {
             if (auto* _p = std::get_if<Shape::_Circle>(&_target._v)) {
-                const auto& r = _p->_0;
+                const double& r = _p->_0;
                 _matched = true;
                 #line 20 "structs_and_enums.cf"
                 res = ((3.1415926535 * r) * r);
@@ -193,8 +182,8 @@ inline auto cfire::json::schema_struct<Shape>() -> std::string {
         }
         if (!_matched) {
             if (auto* _p = std::get_if<Shape::_Rectangle>(&_target._v)) {
-                const auto& w = _p->_0;
-                const auto& h = _p->_1;
+                const double& w = _p->_0;
+                const double& h = _p->_1;
                 _matched = true;
                 #line 23 "structs_and_enums.cf"
                 res = (w * h);
@@ -209,13 +198,13 @@ inline auto cfire::json::schema_struct<Shape>() -> std::string {
 auto main(int argc, char** argv) -> int {
     cfire::detail::set_process_args(argc, argv);
     #line 30 "structs_and_enums.cf"
-    auto c = Config{.Host = "localhost", .Port = 9000};
+    Config c = Config{.Host = "localhost", .Port = 9000};
     #line 31 "structs_and_enums.cf"
-    auto c_json = cfire::json::stringify(c);
+    std::string c_json = cfire::json::stringify(c);
     #line 32 "structs_and_enums.cf"
-    auto s = Shape::Circle(2.5);
+    Shape s = Shape::Circle(2.5);
     #line 33 "structs_and_enums.cf"
-    auto a = area(s);
+    double a = area(s);
     #line 34 "structs_and_enums.cf"
     (void)(std::println("config: {}, area: {:.2f}", c_json, a));
     return 0;

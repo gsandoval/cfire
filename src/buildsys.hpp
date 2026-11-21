@@ -129,6 +129,81 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     }
 }
 
+inline void sync_ios_min_flags(BuildPlan& plan) {
+    if (!plan.is_ios) return;
+    plan.target_triple = normalize_ios_triple(plan.target_triple, plan.ios_min);
+    const std::string resolved_cc = resolve_cxx_compiler(plan.target_triple);
+    const bool use_target_flag = !compiler_is_gcc_driver(resolved_cc);
+    auto replace_target = [&](std::vector<std::string>& flags) {
+        std::erase_if(flags, [](const std::string& f) {
+            return f.starts_with("--target=");
+        });
+        if (use_target_flag) {
+            flags.push_back("--target=" + plan.target_triple);
+        }
+    };
+    replace_target(plan.cflags);
+    replace_target(plan.ldflags);
+}
+
+[[nodiscard]] inline auto compute_packaging_cache_fingerprint(const BuildPlan& plan) -> std::string {
+    detail::Sha256State st;
+    auto feed = [&](std::string_view tag, std::string_view val) {
+        st.update(reinterpret_cast<const uint8_t*>(tag.data()), tag.size());
+        const char sep1 = ':';
+        st.update(reinterpret_cast<const uint8_t*>(&sep1), 1);
+        st.update(reinterpret_cast<const uint8_t*>(val.data()), val.size());
+        const char sep2 = '\0';
+        st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
+    };
+    feed("ios_min", plan.ios_min);
+    feed("macos_min", plan.macos_min);
+    feed("version", plan.version);
+    feed("build_number", plan.build_number);
+    feed("app_name", plan.app_name);
+    feed("bundle_id", plan.bundle_id);
+    feed("sign_identity", plan.sign_identity);
+    feed("provisioning_profile", plan.provisioning_profile);
+    feed("entitlements", plan.entitlements);
+    feed("privacy_manifest", plan.privacy_manifest);
+    feed("icon_path", plan.icon_path);
+    feed("emit_ipa", plan.emit_ipa ? "1" : "0");
+    feed("has_res", plan.has_explicit_resources ? "1" : "0");
+    feed("mac_app", plan.macos_app_bundle);
+    feed("ios_app", plan.ios_app_bundle);
+    feed("manifest_dir", plan.manifest_dir);
+    for (const auto& s : plan.resources) feed("res", s);
+    for (const auto& s : plan.url_schemes) feed("scheme", s);
+    for (const auto& s : plan.ios_orientations) feed("orient", s);
+    for (int fam : plan.ios_device_family) feed("family", std::to_string(fam));
+    std::vector<std::pair<std::string, std::string>> sorted_plist = plan.info_plist_extras;
+    std::sort(sorted_plist.begin(), sorted_plist.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [k, v] : sorted_plist) {
+        feed("plist_k", k);
+        feed("plist_v", v);
+        feed("plist_b", plan.info_plist_bool_keys.contains(k) ? "1" : "0");
+    }
+    auto feed_file = [&](std::string_view tag, const std::string& p_str) {
+        if (p_str.empty()) return;
+        std::filesystem::path p(p_str);
+        if (p.is_relative() && !plan.manifest_dir.empty()) {
+            std::error_code ec;
+            auto cand = std::filesystem::path(plan.manifest_dir) / p;
+            if (std::filesystem::exists(cand, ec)) p = cand;
+        }
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(p, ec) && !ec) {
+            feed(tag, file_fingerprint_string(p));
+        }
+    };
+    feed_file("icon_fp", plan.icon_path);
+    feed_file("prof_fp", plan.provisioning_profile);
+    feed_file("ent_fp", plan.entitlements);
+    feed_file("priv_fp", plan.privacy_manifest);
+    return st.final_hex().substr(0, 16);
+}
+
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto init_build_plan_flags(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
@@ -147,7 +222,20 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     plan.extra_defines = extra_defines;
     plan.is_ios = is_ios_target(target_triple);
     plan.is_ios_sim = is_ios_simulator_target(target_triple);
-    plan.target_triple = plan.is_ios ? normalize_ios_triple(target_triple) : target_triple;
+    plan.ios_min = resolve_effective_ios_min(target_triple);
+    plan.target_triple = plan.is_ios ? normalize_ios_triple(target_triple, plan.ios_min) : target_triple;
+    if (!g_sign_identity_override.empty()) plan.sign_identity = g_sign_identity_override;
+    if (!g_provisioning_profile_override.empty()) {
+        std::error_code aec;
+        std::filesystem::path p(g_provisioning_profile_override);
+        plan.provisioning_profile = p.is_relative() ? std::filesystem::absolute(p, aec).string() : p.string();
+    }
+    if (!g_entitlements_override.empty()) {
+        std::error_code aec;
+        std::filesystem::path p(g_entitlements_override);
+        plan.entitlements = p.is_relative() ? std::filesystem::absolute(p, aec).string() : p.string();
+    }
+    if (g_emit_ipa_mode) plan.emit_ipa = true;
     plan.sysroot = sysroot;
     if (plan.is_ios && plan.sysroot.empty()) {
         auto sdk_res = resolve_ios_sdk_path(plan.is_ios_sim);
@@ -259,6 +347,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     auto parsed = parse_build_cf(found_bcf);
     if (!parsed) return std::unexpected(parsed.error());
     auto bcf_parent = found_bcf.parent_path();
+    plan.manifest_dir = bcf_parent.empty() ? std::string(".") : bcf_parent.string();
     apply_manifest_pkg_fields(
         plan,
         bcf_parent,
@@ -284,12 +373,44 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         }
         if (plan.app_name.empty()) plan.app_name = matched_exe->app_name;
         if (plan.bundle_id.empty()) plan.bundle_id = matched_exe->bundle_id;
+        if (plan.version.empty()) plan.version = matched_exe->version;
+        if (plan.build_number.empty()) plan.build_number = matched_exe->build_number;
+        if (!plan.has_explicit_resources && matched_exe->has_explicit_resources) {
+            plan.has_explicit_resources = true;
+            plan.resources = matched_exe->resources;
+        }
         if (plan.url_schemes.empty()) plan.url_schemes = matched_exe->url_schemes;
         if (plan.sign_identity.empty()) plan.sign_identity = matched_exe->sign_identity;
+        if (plan.provisioning_profile.empty()) plan.provisioning_profile = matched_exe->provisioning_profile;
+        if (plan.entitlements.empty()) plan.entitlements = matched_exe->entitlements;
+        if (plan.privacy_manifest.empty()) plan.privacy_manifest = matched_exe->privacy_manifest;
+        if (plan.ios_orientations.empty()) plan.ios_orientations = matched_exe->ios_orientations;
+        if (plan.ios_device_family.empty()) plan.ios_device_family = matched_exe->ios_device_family;
+        auto plan_has_plist = [&](std::string_view key) {
+            return std::any_of(plan.info_plist_extras.begin(), plan.info_plist_extras.end(),
+                [key](const auto& kv) { return kv.first == key; });
+        };
+        for (const auto& [k, v] : matched_exe->info_plist_extras) {
+            if (!plan_has_plist(k)) {
+                plan.info_plist_extras.emplace_back(k, v);
+                if (matched_exe->info_plist_bool_keys.contains(k)) {
+                    plan.info_plist_bool_keys.insert(k);
+                }
+            }
+        }
         if (!matched_exe->macos_min.empty() && !is_macos_min_supported(matched_exe->macos_min)) {
             return std::unexpected(std::format(
                 "unsupported macos_min '{}' in build.cf: cfire C++23 runtime (<format>/<print>) requires macOS >= {}",
                 matched_exe->macos_min, kDefaultMacosMinVersion));
+        }
+        if (!matched_exe->ios_min.empty() && !is_ios_min_supported(matched_exe->ios_min)) {
+            return std::unexpected(std::format(
+                "unsupported ios_min '{}' in build.cf: cfire iOS runtime requires iOS >= {}",
+                matched_exe->ios_min, kMinSupportedIosVersion));
+        }
+        if (plan.is_ios) {
+            plan.ios_min = resolve_effective_ios_min(plan.target_triple, matched_exe->ios_min);
+            sync_ios_min_flags(plan);
         }
         if (matched_exe->portable) plan.portable = true;
         if (matched_exe->static_link) plan.static_link = true;
@@ -367,6 +488,10 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     if (!extra_link_libs.empty() && plan.extra_link_libs.empty()) {
         plan.extra_link_libs = extra_link_libs;
     }
+    plan.has_cpp_interop = plan.has_cpp_interop || checked.has_cpp_interop ||
+                           !checked.cpp_qualifiers.empty() || !checked.vendor_aliases.empty() ||
+                           std::any_of(checked.ast.imports.begin(), checked.ast.imports.end(),
+                               [](const auto& imp) { return imp.is_cpp || imp.path.starts_with("vendor:"); });
     const auto& effective_extra_links = extra_link_libs.empty() ? plan.extra_link_libs : extra_link_libs;
 
     auto install_root = derive_install_root(runtime_dir);
@@ -383,7 +508,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         {"ext:compress/zstd", "libzstd"},
         {"core:json", "simdjson"},
         {"ext:ai", "simdjson"},
-        {"core:tako", "simdjson"},
+        {"ext:tako", "simdjson"},
         {"ext:webui", "simdjson"},
     };
 
@@ -555,7 +680,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             if (imp.path == "ext:db/sqlite") {
                 request_sqlite3_dep();
             }
-            if (imp.path == "core:tako") {
+            if (imp.path == "ext:tako") {
                 if (const char* env_tako = std::getenv("TAKO_SDK_DIR")) {
                     std::error_code tec;
                     if (std::filesystem::is_directory(env_tako, tec)) {
@@ -575,7 +700,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     });
                 }
             }
-            if (imp.path == "core:audio") {
+            if (imp.path == "ext:audio") {
                 if (!is_wasm) {
                     if (plan.is_ios) {
                         plan.ldflags.insert(plan.ldflags.end(), {
@@ -606,11 +731,15 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                             "-framework", "UIKit",
                             "-framework", "WebKit",
                             "-framework", "Foundation",
-                            "-framework", "CoreGraphics"
+                            "-framework", "CoreGraphics",
+                            "-framework", "SafariServices",
+                            "-framework", "PhotosUI",
+                            "-framework", "UniformTypeIdentifiers",
+                            "-framework", "UserNotifications"
                         });
                     } else if (is_win_target) {
                         plan.ldflags.insert(plan.ldflags.end(), {
-                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32", "-lshlwapi"
+                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-luuid", "-ldwmapi", "-ladvapi32", "-lcomdlg32", "-lshlwapi"
                         });
                     } else {
 #if defined(__APPLE__)
@@ -663,15 +792,45 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     }
                 }
             }
+            if (imp.path == "core:os") {
+                if (!is_wasm) {
+                    if (is_win_target) {
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-lshell32", "-lole32", "-luuid"
+                        });
+                    } else if (plan.is_ios) {
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-lobjc", "-framework", "Foundation", "-framework", "UIKit"
+                        });
+                    }
+                }
+            }
             if (imp.path == "core:keychain") {
                 if (!is_wasm) {
                     if (is_win_target) {
                         plan.ldflags.push_back("-ladvapi32");
+                    } else if (plan.is_ios) {
+                        plan.ldflags.insert(plan.ldflags.end(), {
+                            "-framework", "Security",
+                            "-framework", "CoreFoundation",
+                            "-lobjc"
+                        });
+                        const bool has_face_id_desc = std::any_of(
+                            plan.info_plist_extras.begin(), plan.info_plist_extras.end(),
+                            [](const auto& kv) { return kv.first == "NSFaceIDUsageDescription"; });
+                        if (!has_face_id_desc) {
+                            const std::string kc_warn =
+                                "warning: core:keychain on iOS uses LocalAuthentication/Face ID; set InfoPlist = {\"NSFaceIDUsageDescription\": \"...\"} in build.cf before App Store submission";
+                            if (std::find(plan.warnings.begin(), plan.warnings.end(), kc_warn) == plan.warnings.end()) {
+                                plan.warnings.push_back(kc_warn);
+                            }
+                        }
                     } else {
 #if defined(__APPLE__)
                         plan.ldflags.insert(plan.ldflags.end(), {
                             "-framework", "Security",
-                            "-framework", "CoreFoundation"
+                            "-framework", "CoreFoundation",
+                            "-lobjc"
                         });
 #endif
                     }
@@ -728,12 +887,24 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             continue;
         }
         if (inspect_clang_ast && !plan.cpp_headers.contains(imp.path)) {
-            if (!dir.empty()) append_unique_cflag("-I" + dir.string());
-            auto idx = bridge::inspect_header(imp.path, plan.cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
+            std::vector<std::string> hdr_cflags = plan.cflags;
+            if (!dir.empty()) {
+                std::string dir_inc = "-I" + dir.string();
+                if (std::find(hdr_cflags.begin(), hdr_cflags.end(), dir_inc) == hdr_cflags.end()) {
+                    hdr_cflags.push_back(std::move(dir_inc));
+                }
+            }
+            auto idx = bridge::inspect_header(imp.path, hdr_cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
             if (!idx) return std::unexpected(idx.error());
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
+                    std::string qual = imp.alias.empty() ? "cpp" : imp.alias;
                     checked.cpp_fn_params[sym_name] = sym.param_types;
+                    checked.cpp_fn_params[qual + "." + sym_name] = sym.param_types;
+                    if (!sym.return_type.empty()) {
+                        checked.cpp_fn_returns[sym_name] = sym.return_type;
+                        checked.cpp_fn_returns[qual + "." + sym_name] = sym.return_type;
+                    }
                 }
             }
             plan.cpp_headers[imp.path] = std::move(*idx);
@@ -899,6 +1070,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     // Inspect C++ headers before Sema so Sema knows declared C/C++ symbols
     auto cache_dir = dir / ".cfire" / "cache";
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns;
     if (inspect_clang_ast) {
         for (const auto& imp : ast->imports) {
             if (imp.is_cpp) {
@@ -911,9 +1083,15 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                 }
                 auto idx = bridge::inspect_header(imp.path, hdr_cflags, cache_dir, resolve_cxx_compiler(plan.target_triple));
                 if (idx) {
+                    std::string qual = imp.alias.empty() ? "cpp" : imp.alias;
                     for (const auto& [sym_name, sym] : idx->symbols) {
                         if (sym.kind == "FunctionDecl") {
                             pre_cpp_fn_params[sym_name] = sym.param_types;
+                            pre_cpp_fn_params[qual + "." + sym_name] = sym.param_types;
+                            if (!sym.return_type.empty()) {
+                                pre_cpp_fn_returns[sym_name] = sym.return_type;
+                                pre_cpp_fn_returns[qual + "." + sym_name] = sym.return_type;
+                            }
                         }
                     }
                     plan.cpp_headers[imp.path] = std::move(*idx);
@@ -923,7 +1101,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     }
 
     // 3. Semantic Analysis
-    auto checked = frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params));
+    auto checked = frontend::analyze(std::move(*ast), std::move(pre_cpp_fn_params), std::move(pre_cpp_fn_returns));
     if (!checked) return std::unexpected(checked.error());
     plan.warnings = checked->warnings;
 
@@ -1184,6 +1362,9 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 ) -> std::expected<BuildPlan, std::string> {
     static thread_local bool in_universal_slice = false;
     if (!in_universal_slice && g_universal_mode) {
+        if (is_ios_target(target_triple)) {
+            return std::unexpected("--universal is only supported for macOS desktop targets, not iOS");
+        }
 #if !defined(__APPLE__)
         return std::unexpected("--universal (macOS fat binary) requires a macOS host");
 #else
@@ -1237,25 +1418,30 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         );
         if (!x86_res) return std::unexpected(x86_res.error());
 
-        if (out_bin.has_parent_path()) {
-            std::filesystem::create_directories(out_bin.parent_path(), uec);
+        const bool uni_gui = (subsystem == "gui") || (subsystem == "auto" && arm_res->is_gui);
+        std::filesystem::path lipo_out = out_bin;
+        if (uni_gui && !test_mode && out_bin.extension() == ".app") {
+            lipo_out = out_bin / "Contents" / "MacOS" / out_bin.stem().string();
+        }
+        if (lipo_out.has_parent_path()) {
+            std::filesystem::create_directories(lipo_out.parent_path(), uec);
         }
         std::string lipo_cmd = std::format(
             "/usr/bin/lipo -create {} {} -output {} 2>&1",
             bridge::shell_quote(slice_arm64.string()),
             bridge::shell_quote(slice_x86_64.string()),
-            bridge::shell_quote(out_bin.string())
+            bridge::shell_quote(lipo_out.string())
         );
         int lipo_rc = 0;
-        std::string lipo_out = bridge::run_command_capture(lipo_cmd, lipo_rc);
+        std::string lipo_out_str = bridge::run_command_capture(lipo_cmd, lipo_rc);
         if (lipo_rc != 0) {
-            return std::unexpected(std::format("failed to create universal binary via lipo:\n{}", lipo_out));
+            return std::unexpected(std::format("failed to create universal binary via lipo:\n{}", lipo_out_str));
         }
 
         if (g_emit_dsym) {
             int dsym_rc = 0;
             (void)bridge::run_command_capture(
-                std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+                std::format("dsymutil {} 2>&1", bridge::shell_quote(lipo_out.string())),
                 dsym_rc
             );
         }
@@ -1278,7 +1464,9 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
             combined.macos_app_bundle = app_bundle.string();
         }
-        package_apple_app_bundles(cf_file, out_bin, combined);
+        if (auto pk = package_apple_app_bundles(cf_file, out_bin, combined); !pk) {
+            return std::unexpected(pk.error());
+        }
         return combined;
 #endif
     };
@@ -1328,9 +1516,15 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     const bool want_universal = !in_universal_slice && (g_universal_mode || (plan.universal && target_triple.empty()));
     if (want_universal) {
         if (plan.is_ios || is_wasm_triple(plan.target_triple)) {
-            return std::unexpected("--universal is only supported for macOS desktop targets");
+            return std::unexpected("--universal is only supported for macOS desktop targets, not iOS or WebAssembly");
         }
         return run_universal_build(plan.macos_min);
+    }
+    if (!g_ios_min_version.empty() && !plan.is_ios) {
+        return std::unexpected("--ios-min is only supported for iOS targets (--target=ios or --target=ios-sim)");
+    }
+    if ((plan.emit_ipa || out_bin.extension() == ".ipa") && !plan.is_ios) {
+        return std::unexpected("--ipa is only supported for iOS targets (--target=ios or --target=ios-sim)");
     }
     for (const auto& w : plan.warnings) {
         std::println(stderr, "{}", w);
@@ -1362,7 +1556,13 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     if (!plan.icon_path.empty()) {
         std::filesystem::path icon_resolved = resolve_icon_candidate(plan.icon_path);
         plan.icon_path = icon_resolved.string();
-        plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\\\"{}\\\"", icon_resolved.string()));
+        std::string c_lit;
+        c_lit.reserve(plan.icon_path.size() + 4);
+        for (char c : plan.icon_path) {
+            if (c == '\\' || c == '"') c_lit.push_back('\\');
+            c_lit.push_back(c);
+        }
+        plan.cflags.push_back(std::format("-DCFIRE_APP_ICON_PATH=\"{}\"", c_lit));
     }
 
     if (g_profile_mode) {
@@ -1424,15 +1624,21 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         }
     } else if (plan.is_ios) {
         if (!test_mode) {
-            std::string bin_stem = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
+            std::string bin_stem = (out_bin.extension() == ".app" || out_bin.extension() == ".ipa")
+                ? out_bin.stem().string()
+                : out_bin.filename().string();
             auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
             plan.ios_app_bundle = app_bundle.string();
         }
     } else {
         bool gui_subsystem = (plan.subsystem == "gui") || (plan.subsystem == "auto" && plan.is_gui);
         bool is_windows = is_windows_target(target_triple);
-        if (is_windows && !test_mode && !plan.icon_path.empty()) {
-            auto res_obj = compile_windows_icon(plan.icon_path, out_bin, target_triple);
+        if (is_windows && !test_mode &&
+            (!plan.icon_path.empty() || !plan.version.empty() || !plan.build_number.empty() || !plan.app_name.empty())) {
+            std::string rc_app_name = !plan.app_name.empty() ? plan.app_name : out_bin.stem().string();
+            auto res_obj = compile_windows_icon(
+                plan.icon_path, out_bin, target_triple,
+                plan.version, plan.build_number, rc_app_name);
             if (!res_obj.empty()) {
                 plan.ldflags.push_back("\"" + res_obj + "\"");
             }
@@ -1446,10 +1652,34 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                     std::string bin_stem = out_bin.extension() == ".app" ? out_bin.stem().string() : out_bin.filename().string();
                     auto app_bundle = out_bin.extension() == ".app" ? out_bin : (out_bin.parent_path() / (bin_stem + ".app"));
                     plan.macos_app_bundle = app_bundle.string();
+                    if (plan.macos_min.empty()) {
+                        plan.macos_min = resolve_effective_macos_min(plan.target_triple, plan.is_ios, is_wasm, "", true);
+                        sync_macos_min_flags(plan);
+                    }
                 }
 #endif
             }
         }
+    }
+
+    std::filesystem::path compile_out_bin = out_bin;
+    if (!test_mode) {
+        if (out_bin.extension() == ".ipa" && !plan.ios_app_bundle.empty()) {
+            std::filesystem::path ab(plan.ios_app_bundle);
+            compile_out_bin = ab / ab.stem().string();
+        } else if (out_bin.extension() == ".app") {
+            if (!plan.ios_app_bundle.empty()) {
+                std::filesystem::path ab(plan.ios_app_bundle);
+                compile_out_bin = ab / ab.stem().string();
+            } else if (!plan.macos_app_bundle.empty()) {
+                std::filesystem::path ab(plan.macos_app_bundle);
+                compile_out_bin = ab / "Contents" / "MacOS" / ab.stem().string();
+            }
+        }
+    }
+    if (compile_out_bin.has_parent_path()) {
+        std::error_code out_ec;
+        std::filesystem::create_directories(compile_out_bin.parent_path(), out_ec);
     }
 
     for (const auto& lib : extra_link_libs) {
@@ -1691,11 +1921,11 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         return {};
     };
 
-    const bool allow_bin_cache = !g_no_binary_cache && !is_wasm && !(plan.is_ios && plan.is_gui);
+    const bool allow_bin_cache = !g_no_binary_cache && !is_wasm && !(plan.is_ios && plan.is_gui) && (compile_out_bin == out_bin);
     std::string bin_cache_key;
     if (allow_bin_cache) {
         std::string extra_fp = std::format(
-            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}|sharded={}|portable={}|static={}|universal={}|mmin={}|vsq={}|vsj={}",
+            "objc={}|ios={}|sanitize={}|test={}|dsym={}|dev={}|sharded={}|portable={}|static={}|universal={}|mmin={}|vsq={}|vsj={}|pkg={}",
             plan.uses_objc ? 1 : 0,
             plan.is_ios ? 1 : 0,
             sanitize ? 1 : 0,
@@ -1708,7 +1938,8 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             plan.universal ? 1 : 0,
             plan.macos_min,
             plan.use_vendored_sqlite3 ? 1 : 0,
-            plan.use_vendored_simdjson ? 1 : 0
+            plan.use_vendored_simdjson ? 1 : 0,
+            compute_packaging_cache_fingerprint(plan)
         );
         if (will_shard && dev_debug) {
             for (const auto& uo : unit_obj_paths) {
@@ -1760,25 +1991,27 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
 #endif
         if (can_restore) {
             BinaryCacheMeta cached_meta;
-            if (BinaryCache::try_restore(bin_cache_key, out_bin, &cached_meta)) {
+            if (BinaryCache::try_restore(bin_cache_key, compile_out_bin, &cached_meta)) {
                 plan.used_pch = cached_meta.used_pch;
                 if (will_shard) {
                     plan.sharded_recompiled_units = 0;
                 }
 #if defined(__APPLE__)
                 if (g_emit_dsym && ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) && !plan.is_ios) {
-                    auto dsym_path = std::filesystem::path(out_bin.string() + ".dSYM");
+                    auto dsym_path = std::filesystem::path(compile_out_bin.string() + ".dSYM");
                     std::error_code dec;
                     if (!std::filesystem::exists(dsym_path, dec)) {
                         int dsym_rc = 0;
                         (void)bridge::run_command_capture(
-                            std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+                            std::format("dsymutil {} 2>&1", bridge::shell_quote(compile_out_bin.string())),
                             dsym_rc
                         );
                     }
                 }
 #endif
-                package_apple_app_bundles(cf_file, out_bin, plan);
+                if (auto pk = package_apple_app_bundles(cf_file, out_bin, plan); !pk) {
+                    return std::unexpected(pk.error());
+                }
                 return plan;
             }
         }
@@ -1795,12 +2028,20 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
             out_cmd += " -fobjc-arc";
         }
+        bool has_cf_parent_inc = false;
+        const std::string cf_parent_inc = "-I" + cf_parent.string();
         for (const auto& f : plan.cflags) {
+            if (f == cf_parent_inc) has_cf_parent_inc = true;
             if (f.starts_with("-I") && f.size() > 2 && f[2] != '"' && f[2] != ' ') {
                 out_cmd += " -I" + bridge::shell_quote(f.substr(2));
+            } else if (f.starts_with("-DCFIRE_APP_ICON_PATH=")) {
+                out_cmd += " " + bridge::shell_quote(f);
             } else {
                 out_cmd += " " + f;
             }
+        }
+        if (!plan.cpp_headers.empty() && !cf_parent.empty() && !has_cf_parent_inc) {
+            out_cmd += " -I" + bridge::shell_quote(cf_parent.string());
         }
     };
 
@@ -2008,7 +2249,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             for (const auto& u_obj : unit_obj_paths) {
                 link_cmd += std::format(" \"{}\"", u_obj.string());
             }
-            link_cmd += std::format(" -o \"{}\"", out_bin.string());
+            link_cmd += std::format(" -o \"{}\"", compile_out_bin.string());
             build_link_ldflags(link_cmd);
             int link_rc = 0;
             std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
@@ -2044,7 +2285,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     } else {
         auto compile_single_obj = [&](bool with_pch) {
             static std::atomic<uint64_t> s_single_obj_seq{0};
-            std::filesystem::path single_compile_target = out_bin;
+            std::filesystem::path single_compile_target = compile_out_bin;
             std::filesystem::path tmp_single_obj;
             if (use_persistent_obj) {
                 tmp_single_obj = std::filesystem::path(std::format(
@@ -2061,7 +2302,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
                 if (use_persistent_obj) {
                     c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), single_compile_target.string());
                 } else {
-                    c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), out_bin.string());
+                    c += std::format(" {} \"{}\" -o \"{}\"", opt_flags, cpp_path.string(), compile_out_bin.string());
                     build_link_ldflags(c);
                 }
                 return c;
@@ -2115,7 +2356,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
             if (sanitize) {
                 link_cmd += " " + sanitizer_opt_flags();
             }
-            link_cmd += std::format(" \"{}\" -o \"{}\"", obj_path.string(), out_bin.string());
+            link_cmd += std::format(" \"{}\" -o \"{}\"", obj_path.string(), compile_out_bin.string());
             build_link_ldflags(link_cmd);
             int link_rc = 0;
             std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
@@ -2147,7 +2388,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     }
 
     if (exit_code != 0) {
-        std::string clean_out = cfire::diag::humanize_cpp_compiler_output(output);
+        std::string clean_out = cfire::diag::format_backend_failure(output, plan.has_cpp_interop, is_verbose_build());
         if (is_verbose_build()) {
             return std::unexpected(std::format("{} compilation failed:\n{}\nCommand: {}", compiler, clean_out, cmd));
         }
@@ -2158,7 +2399,7 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
     if (g_emit_dsym && ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) && !plan.is_ios) {
         int dsym_rc = 0;
         (void)bridge::run_command_capture(
-            std::format("dsymutil {} 2>&1", bridge::shell_quote(out_bin.string())),
+            std::format("dsymutil {} 2>&1", bridge::shell_quote(compile_out_bin.string())),
             dsym_rc
         );
     }
@@ -2170,10 +2411,12 @@ inline void sync_macos_min_flags(BuildPlan& plan) {
         if ((will_shard && dev_debug) || (!will_shard && use_persistent_obj)) {
             store_meta.obj_fp = compute_active_obj_fp();
         }
-        BinaryCache::store(bin_cache_key, out_bin, store_meta);
+        BinaryCache::store(bin_cache_key, compile_out_bin, store_meta);
     }
 
-    package_apple_app_bundles(cf_file, out_bin, plan);
+    if (auto pk = package_apple_app_bundles(cf_file, out_bin, plan); !pk) {
+        return std::unexpected(pk.error());
+    }
 
     return plan;
 }

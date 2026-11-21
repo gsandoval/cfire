@@ -3,6 +3,61 @@
 
 namespace cfire::frontend {
 
+CFIRE_CG_INLINE auto Emitter::lower_var_decl_cpp_type(const VarDeclStmt& st) const -> std::string {
+    if (st.type) return lower_return_type(*st.type);
+    if (cf_.owned_text_decls.contains(&st)) return "std::string";
+    if (cf_.int64_decls.contains(&st)) return "std::int64_t";
+    if (st.init && std::holds_alternative<ClosureExpr>(st.init->node)) return "auto";
+    if (st.init) {
+        if (const auto* un = std::get_if<UnaryExpr>(&st.init->node); un && (un->op == "&" || un->op == "&mut")) {
+            return "auto";
+        }
+        if (!st.is_mut && !cf_.owned_slice_decls.contains(&st) && st.resolved_type_id != 0) {
+            const TypeDesc& vd = cf_.type_table.get(TypeId{st.resolved_type_id});
+            if (vd.kind == TypeKind::Slice) {
+                bool is_slice_view_init = std::holds_alternative<SliceExpr>(st.init->node);
+                if (!is_slice_view_init) {
+                    if (const auto* c = std::get_if<CallExpr>(&st.init->node)) {
+                        if (const auto* m = c->callee ? std::get_if<MemberExpr>(&c->callee->node) : nullptr;
+                            m && m->field == "bytes" && c->args.empty()) {
+                            is_slice_view_init = true;
+                        }
+                    } else if (const auto* id = std::get_if<IdentExpr>(&st.init->node)) {
+                        for (const auto& [vn, _] : view_params_) {
+                            if (vn == id->name) {
+                                is_slice_view_init = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (is_slice_view_init) {
+                    if (auto elem = lower_type_id(vd.elem_type, LowerContext::Return); elem && *elem != "bool") {
+                        return std::format("cfire::slice_ref<{}>", *elem);
+                    }
+                }
+            }
+        }
+    }
+    if (auto t = lower_type_id(TypeId{st.resolved_type_id}, LowerContext::Value)) {
+        return *t;
+    }
+    if (st.init) {
+        if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node);
+            lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
+            return "std::string";
+        }
+        if (is_int_const_expr(st.init)) {
+            return "std::int64_t";
+        }
+        if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
+            std::string inferred = infer_array_lit_cpp_type(*arr_lit);
+            if (!inferred.empty()) return inferred;
+        }
+    }
+    return "auto";
+}
+
 CFIRE_CG_INLINE void Emitter::emit_or_handler_body(const OrExpr& or_ex, std::string_view tmp, bool in_main) {
     bool added_err = false;
     if (!or_ex.err_var.empty()) {
@@ -67,25 +122,29 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     if (in_main || in_test_) {
                         int id = ++try_count_;
                         std::string tmp = std::format("_try_{}", id);
-                        writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                        std::string tmp_t = lower_type_id(try_ex->inner ? TypeId{try_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                        writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(try_ex->inner)));
                         emit_try_unwrap_check(tmp, s->line, in_main);
-                        writeln(std::format("auto {} = std::move(*{});", vname, tmp));
+                        std::string cpp_type = lower_var_decl_cpp_type(st);
+                        writeln(std::format("{} {} = std::move(*{});", cpp_type, vname, tmp));
                         return;
                     }
-                    std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
+                    std::string cpp_type = lower_var_decl_cpp_type(st);
                     writeln(std::format("CFIRE_TRY_ASSIGN({} {}, {});", cpp_type, vname, emit_expr(try_ex->inner)));
                     return;
                 }
                 if (const auto* or_ex = std::get_if<OrExpr>(&st.init->node); or_ex && !or_ex->handler_body.empty()) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_res_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
+                    std::string tmp_t = lower_type_id(or_ex->inner ? TypeId{or_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                    writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(or_ex->inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
                     emit_or_handler_body(*or_ex, tmp, in_main);
                     --indent_;
                     writeln("}");
-                    writeln(std::format("auto {} = std::move(*{});", vname, tmp));
+                    std::string cpp_type = lower_var_decl_cpp_type(st);
+                    writeln(std::format("{} {} = std::move(*{});", cpp_type, vname, tmp));
                     return;
                 }
 
@@ -110,19 +169,7 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     }
                 }
             }
-            std::string cpp_type = st.type ? lower_return_type(*st.type) : "auto";
-            if (cf_.owned_text_decls.contains(&st)) cpp_type = "std::string";
-            if (cf_.int64_decls.contains(&st)) cpp_type = "std::int64_t";
-            if (!st.type && st.init) {
-                if (const auto* lit = std::get_if<LiteralExpr>(&st.init->node); lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
-                    cpp_type = "std::string";
-                } else if (is_int_const_expr(st.init)) {
-                    cpp_type = "std::int64_t";  // `x := 0` is `i64`; `auto` made it a 32-bit `int`
-                } else if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&st.init->node); arr_lit && !arr_lit->elements.empty()) {
-                    std::string inferred = infer_array_lit_cpp_type(*arr_lit);
-                    cpp_type = !inferred.empty() ? std::move(inferred) : "std::vector";
-                }
-            }
+            std::string cpp_type = lower_var_decl_cpp_type(st);
             auto tuple_has_array_lit = [](const TupleExpr& tup) -> bool {
                 for (const auto& el : tup.elements) {
                     if (el && std::holds_alternative<ArrayLitExpr>(el->node)) return true;
@@ -176,7 +223,8 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 if (const auto* or_ex = std::get_if<OrExpr>(&st.value->node); or_ex && !or_ex->handler_body.empty()) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_res_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
+                    std::string tmp_t = lower_type_id(or_ex->inner ? TypeId{or_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                    writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(or_ex->inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
                     emit_or_handler_body(*or_ex, tmp, in_main);
@@ -276,17 +324,21 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 hoist_subexpr_tries(st.unwrap_init, in_main, s->line, false);
                 std::string init_s = emit_expr(st.unwrap_init);
                 local_vars_.insert(st.unwrap_var);
-                std::string mut_kw = st.unwrap_mut ? "auto" : "const auto";
+                std::string opt_cpp = lower_type_id(st.unwrap_init ? TypeId{st.unwrap_init->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                auto unwrap_cpp = lower_type_id(TypeId{st.resolved_unwrap_type_id}, LowerContext::Value);
+                std::string bind_t = unwrap_cpp
+                    ? (st.unwrap_mut ? *unwrap_cpp : ("const " + *unwrap_cpp))
+                    : (st.unwrap_mut ? std::string("auto") : std::string("const auto"));
                 if (st.cond) {
                     hoist_subexpr_tries(st.cond, in_main, s->line, false);
                     std::string cond_s = emit_expr(st.cond);
                     writeln("{");
                     ++indent_;
-                    writeln(std::format("auto _opt = {};", init_s));
+                    writeln(std::format("{} _opt = {};", opt_cpp, init_s));
                     writeln("bool _taken = false;");
                     writeln("if (_opt.has_value()) {");
                     ++indent_;
-                    writeln(std::format("{}& {} = *_opt;", mut_kw, st.unwrap_var));
+                    writeln(std::format("{}& {} = *_opt;", bind_t, st.unwrap_var));
                     writeln(std::format("if ({}) {{", cond_s));
                     ++indent_;
                     writeln("_taken = true;");
@@ -305,9 +357,9 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     --indent_;
                     writeln("}");
                 } else {
-                    writeln(std::format("if (auto _opt = {}; _opt.has_value()) {{", init_s));
+                    writeln(std::format("if ({} _opt = {}; _opt.has_value()) {{", opt_cpp, init_s));
                     ++indent_;
-                    writeln(std::format("{}& {} = *_opt;", mut_kw, st.unwrap_var));
+                    writeln(std::format("{}& {} = *_opt;", bind_t, st.unwrap_var));
                     for (const auto& b : st.then_body) emit_stmt(b, in_main);
                     --indent_;
                     if (!st.else_body.empty()) {
@@ -342,12 +394,16 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 hoist_subexpr_tries(st.iter_expr, in_main, s->line, false);
                 std::string iter_s = emit_expr(st.iter_expr);
                 local_vars_.insert(st.item_var);
-                std::string mut_kw = st.unwrap_mut ? "auto" : "const auto";
+                std::string opt_cpp = lower_type_id(st.iter_expr ? TypeId{st.iter_expr->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                auto unwrap_cpp = lower_type_id(TypeId{st.resolved_unwrap_type_id}, LowerContext::Value);
+                std::string bind_t = unwrap_cpp
+                    ? (st.unwrap_mut ? *unwrap_cpp : ("const " + *unwrap_cpp))
+                    : (st.unwrap_mut ? std::string("auto") : std::string("const auto"));
                 writeln("while (true) {");
                 ++indent_;
-                writeln(std::format("auto _opt = {};", iter_s));
+                writeln(std::format("{} _opt = {};", opt_cpp, iter_s));
                 writeln("if (!_opt.has_value()) break;");
-                writeln(std::format("{}& {} = *_opt;", mut_kw, st.item_var));
+                writeln(std::format("{}& {} = *_opt;", bind_t, st.item_var));
                 for (const auto& b : st.body) emit_stmt(b, in_main);
                 --indent_;
                 writeln("}");
@@ -361,21 +417,9 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     std::string start_s = emit_expr(st.iter_expr);
                     std::string end_s = emit_expr(st.range_end);
                     std::string cmp_op = st.range_inclusive ? "<=" : "<";
-                    // the typed end decides the index type (`0..xs.len` is `usize`, `0..n` is `n`'s type);
-                    // a range of two literals is `i64`, as Sema types it.
-                    auto is_int_lit = [](const ExprPtr& e) {
-                        if (const auto* un = e ? std::get_if<UnaryExpr>(&e->node) : nullptr; un && un->op == "-") return un->operand && std::holds_alternative<LiteralExpr>(un->operand->node);
-                        const auto* lit = e ? std::get_if<LiteralExpr>(&e->node) : nullptr;
-                        return lit && lit->kind == TokenKind::Int;
-                    };
-                    const bool lit_start = is_int_lit(st.iter_expr);
-                    const bool lit_end = is_int_lit(st.range_end);
-                    std::string idx_t = lit_start && lit_end ? std::string("std::int64_t")
-                                      : lit_start ? std::format("std::decay_t<decltype({})>", end_s)
-                                      : lit_end ? std::format("std::decay_t<decltype({})>", start_s)
-                                      : std::format("std::common_type_t<decltype({}), decltype({})>", start_s, end_s);
+                    std::string idx_t = lower_type_id(TypeId{st.resolved_index_type_id}, LowerContext::RangeIndex).value_or("std::int64_t");
                     writeln(std::format(
-                        "for (auto {0} = static_cast<{4}>({1}), _range_end_{0} = static_cast<{4}>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
+                        "for ({4} {0} = static_cast<{4}>({1}), _range_end_{0} = static_cast<{4}>({2}); {0} {3} _range_end_{0}; ++{0}) {{",
                         st.item_var, start_s, end_s, cmp_op, idx_t));
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
@@ -395,11 +439,31 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     loop_index_to_col_.erase(st.index_var);
                 } else {
                     // `iter_items` yields a `str`'s elements as `byte`s and keeps a temporary alive. An
-                    // array literal lowers to a braced list, which range-for iterates directly.
+                    // array literal lowers to a braced list, which range-for iterates via `std::initializer_list`.
                     const bool braced = std::holds_alternative<ArrayLitExpr>(st.iter_expr->node);
                     const std::string range = emit_expr(st.iter_expr);
-                    writeln(braced ? std::format("for (const auto& {} : {}) {{", st.item_var, range)
-                                   : std::format("for (const auto& {} : cfire::detail::iter_items({})) {{", st.item_var, range));
+                    std::optional<std::string> item_cpp;
+                    if (st.iter_expr && st.iter_expr->resolved_type_id != 0) {
+                        const TypeDesc& ctd = cf_.type_table.get(TypeId{st.iter_expr->resolved_type_id});
+                        if (ctd.kind == TypeKind::Map) {
+                            auto k = lower_type_id(ctd.key_type, LowerContext::Return);
+                            auto v = lower_type_id(ctd.elem_type, LowerContext::Return);
+                            if (k && v) item_cpp = std::format("std::pair<const {}, {}>", *k, *v);
+                        }
+                    }
+                    if (!item_cpp) {
+                        item_cpp = lower_type_id(TypeId{st.resolved_item_type_id}, LowerContext::Value);
+                    }
+                    std::string item_bind = item_cpp ? std::format("const {}&", *item_cpp) : std::string("const auto&");
+                    if (braced) {
+                        if (item_cpp) {
+                            writeln(std::format("for ({} {} : std::initializer_list<{}>{}) {{", item_bind, st.item_var, *item_cpp, range));
+                        } else {
+                            writeln(std::format("for (const auto& {} : {}) {{", st.item_var, range));
+                        }
+                    } else {
+                        writeln(std::format("for ({} {} : cfire::detail::iter_items({})) {{", item_bind, st.item_var, range));
+                    }
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
                     --indent_;
@@ -422,10 +486,11 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             emit_match_stmt(st, in_main);
         } else if constexpr (std::is_same_v<T, AsyncScopeStmt>) {
             // a value-producing scope collects each spawned task and yields their values in spawn order.
-            const bool yields = !st.result_elem_type.empty() && (!st.result_var.empty() || st.result_return);
+            const bool yields = (st.resolved_result_elem_type_id != 0 || !st.result_elem_type.empty()) &&
+                                (!st.result_var.empty() || st.result_return);
             std::string elem_cpp;
             if (yields) {
-                elem_cpp = lower_type_text(st.result_elem_type);
+                elem_cpp = lower_type_id(TypeId{st.resolved_result_elem_type_id}, LowerContext::Value).value_or("auto");
                 if (!st.result_var.empty()) {
                     local_vars_.insert(st.result_var);
                     writeln(std::format("std::vector<{}> {};", elem_cpp, st.result_var));
@@ -487,7 +552,8 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                 if (in_main || in_test_) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_try_v_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                    std::string tmp_t = lower_type_id(try_ex->inner ? TypeId{try_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                    writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(try_ex->inner)));
                     emit_try_unwrap_check(tmp, s->line, in_main);
                     return;
                 }
@@ -497,7 +563,8 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             if (const auto* or_ex = std::get_if<OrExpr>(&st.expr->node); or_ex && !or_ex->handler_body.empty()) {
                 int id = ++try_count_;
                 std::string tmp = std::format("_res_v_{}", id);
-                writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
+                std::string tmp_t = lower_type_id(or_ex->inner ? TypeId{or_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(or_ex->inner)));
                 writeln(std::format("if (!{}.has_value()) {{", tmp));
                 ++indent_;
                 emit_or_handler_body(*or_ex, tmp, in_main);
@@ -523,7 +590,8 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             if (const auto* try_ex = std::get_if<TryExpr>(&st.init->node)) {
                 int id = ++try_count_;
                 std::string tmp = std::format("_try_{}", id);
-                writeln(std::format("auto {} = {};", tmp, emit_expr(try_ex->inner)));
+                std::string tmp_t = lower_type_id(try_ex->inner ? TypeId{try_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(try_ex->inner)));
                 emit_try_unwrap_check(tmp, s->line, in_main);
                 writeln(std::format("auto [{}] = std::move(*{});", names, tmp));
                 return;
@@ -531,7 +599,8 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
             if (const auto* or_ex = std::get_if<OrExpr>(&st.init->node); or_ex && !or_ex->handler_body.empty()) {
                 int id = ++try_count_;
                 std::string tmp = std::format("_res_{}", id);
-                writeln(std::format("auto {} = {};", tmp, emit_expr(or_ex->inner)));
+                std::string tmp_t = lower_type_id(or_ex->inner ? TypeId{or_ex->inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(or_ex->inner)));
                 writeln(std::format("if (!{}.has_value()) {{", tmp));
                 ++indent_;
                 emit_or_handler_body(*or_ex, tmp, in_main);
@@ -560,12 +629,17 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
     }, s->node);
 }
 
-// explicit lambda return type for match expressions whose arms share a primitive type.
+// explicit lambda return type for match expressions whose arms resolve cleanly.
 CFIRE_CG_INLINE auto Emitter::match_lambda_header() const -> std::string {
-    if (match_expr_result_type_.empty()) return "([&]() -> auto {";
-    TypeRef tr;
-    tr.name = match_expr_result_type_;
-    return std::format("([&]() -> {} {{", lower_owning_type(tr));
+    if (auto ret = lower_type_id(match_expr_result_tid_, LowerContext::Return)) {
+        return std::format("([&]() -> {} {{", *ret);
+    }
+    if (!match_expr_result_type_.empty()) {
+        TypeRef tr;
+        tr.name = match_expr_result_type_;
+        return std::format("([&]() -> {} {{", lower_owning_type(tr));
+    }
+    return "([&]() -> auto {";
 }
 
 CFIRE_CG_INLINE void Emitter::emit_match_common(
@@ -613,6 +687,18 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
 
     if (is_slice_match) {
         std::string target_expr = emit_expr(target);
+        std::optional<std::string> slice_elem_cpp;
+        bool is_str_slice = false;
+        if (target && target->resolved_type_id != 0) {
+            TypeId tid{target->resolved_type_id};
+            const TypeDesc& td = cf_.type_table.get(tid);
+            if (tid == TypeId::Str() || (td.kind == TypeKind::Borrow && td.elem_type == TypeId::Str())) {
+                is_str_slice = true;
+                slice_elem_cpp = "std::uint8_t";
+            } else if (td.kind == TypeKind::Slice || td.kind == TypeKind::Array) {
+                slice_elem_cpp = lower_type_id(td.elem_type, LowerContext::Value);
+            }
+        }
         write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
         write_ln(std::format("const auto& _target = {};", target_expr));
@@ -634,11 +720,12 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
                 write_ln(std::format("if (!_matched && {}) {{", cond));
                 ++indent_;
 
+                std::string elem_bind = slice_elem_cpp ? std::format("const {}&", *slice_elem_cpp) : std::string("const auto&");
                 for (std::size_t i = 0; i < head_count; ++i) {
                     if (arm.slice_head[i] != "_" &&
                         (stmts_reference_ident(arm.body, arm.slice_head[i]) || expr_references_ident(arm.guard, arm.slice_head[i]))) {
                         local_vars_.insert(arm.slice_head[i]);
-                        write_ln(std::format("const auto& {} = _target[{}];", arm.slice_head[i], i));
+                        write_ln(std::format("{} {} = _target[{}];", elem_bind, arm.slice_head[i], i));
                     }
                 }
                 if (arm.slice_has_rest && !arm.slice_rest.empty() && arm.slice_rest != "_" &&
@@ -646,14 +733,20 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
                     local_vars_.insert(arm.slice_rest);
                     std::string rest_start = std::to_string(head_count);
                     std::string rest_end = tail_count == 0 ? "_target.size()" : std::format("(_target.size() - {})", tail_count);
-                    write_ln(std::format("auto {} = cfire::slice(_target, {}, {});", arm.slice_rest, rest_start, rest_end));
+                    std::string rest_type = "auto";
+                    if (is_str_slice) {
+                        rest_type = "cfire::str_ref";
+                    } else if (slice_elem_cpp && *slice_elem_cpp != "bool") {
+                        rest_type = std::format("cfire::slice_ref<{}>", *slice_elem_cpp);
+                    }
+                    write_ln(std::format("{} {} = cfire::slice(_target, {}, {});", rest_type, arm.slice_rest, rest_start, rest_end));
                 }
                 for (std::size_t i = 0; i < tail_count; ++i) {
                     if (arm.slice_tail[i] != "_" &&
                         (stmts_reference_ident(arm.body, arm.slice_tail[i]) || expr_references_ident(arm.guard, arm.slice_tail[i]))) {
                         local_vars_.insert(arm.slice_tail[i]);
                         std::size_t offset_from_end = tail_count - i;
-                        write_ln(std::format("const auto& {} = _target[_target.size() - {}];", arm.slice_tail[i], offset_from_end));
+                        write_ln(std::format("{} {} = _target[_target.size() - {}];", elem_bind, arm.slice_tail[i], offset_from_end));
                     }
                 }
 
@@ -702,9 +795,12 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
 
     if (is_opt_match) {
         std::string target_expr = emit_expr(target);
+        TypeId opt_tid = target ? TypeId{target->resolved_type_id} : TypeId::Unknown();
+        auto opt_cpp = lower_type_id(opt_tid, LowerContext::Value);
+        auto some_cpp = lower_type_id(cf_.type_table.unwrap_optional(opt_tid), LowerContext::Value);
         write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
-        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln(std::format("const {}& _target = {};", opt_cpp.value_or("auto"), target_expr));
         write_ln("bool _matched = false;");
         for (const auto& arm : arms) {
             bool is_none_arm = arm.is_none || arm.variant_name == "none";
@@ -714,7 +810,7 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
             ++indent_;
             if (is_some_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
                 local_vars_.insert(arm.bindings[0]);
-                write_ln(std::format("const auto& {} = *_target;", arm.bindings[0]));
+                write_ln(std::format("const {}& {} = *_target;", some_cpp.value_or("auto"), arm.bindings[0]));
             }
             if (arm.guard) {
                 write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
@@ -744,9 +840,12 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
 
     if (is_res_match) {
         std::string target_expr = emit_expr(target);
+        TypeId res_tid = target ? TypeId{target->resolved_type_id} : TypeId::Unknown();
+        auto res_cpp = lower_type_id(res_tid, LowerContext::Value);
+        auto ok_cpp = lower_type_id(cf_.type_table.unwrap_fallible(res_tid), LowerContext::Value);
         write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
-        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln(std::format("const {}& _target = {};", res_cpp.value_or("auto"), target_expr));
         write_ln("bool _matched = false;");
         for (const auto& arm : arms) {
             bool is_err_arm = arm.is_err || arm.variant_name == "Err";
@@ -758,12 +857,12 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
             std::string err_binding_name;
             if (is_ok_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
                 local_vars_.insert(arm.bindings[0]);
-                write_ln(std::format("const auto& {} = _target.value();", arm.bindings[0]));
+                write_ln(std::format("const {}& {} = _target.value();", ok_cpp.value_or("auto"), arm.bindings[0]));
             } else if (is_err_arm && !arm.bindings.empty() && arm.bindings[0] != "_") {
                 err_binding_name = arm.bindings[0];
                 local_vars_.insert(err_binding_name);
                 added_err_binding = error_vars_.insert(err_binding_name).second;
-                write_ln(std::format("const auto& {} = _target.error();", err_binding_name));
+                write_ln(std::format("const cfire::Error& {} = _target.error();", err_binding_name));
             }
             if (arm.guard) {
                 write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
@@ -818,9 +917,28 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
 
     if (is_primitive_match || enum_name.empty()) {
         std::string target_expr = emit_expr(target);
+        TypeId prim_tid = target ? TypeId{target->resolved_type_id} : TypeId::Unknown();
+        const TypeDesc& prim_td = cf_.type_table.get(prim_tid);
+        std::string target_decl = "const auto&";
+        std::string catchall_decl = "const auto&";
+        if (prim_td.kind == TypeKind::Borrow && prim_td.elem_type == TypeId::Str()) {
+            target_decl = "cfire::str_ref";
+            catchall_decl = "cfire::str_ref";
+        } else if (prim_tid == TypeId::Str()) {
+            if (target && std::holds_alternative<IdentExpr>(target->node)) {
+                target_decl = "cfire::str_ref";
+                catchall_decl = "cfire::str_ref";
+            } else {
+                target_decl = "const std::string&";
+                catchall_decl = "const std::string&";
+            }
+        } else if (auto t_cpp = lower_type_id(prim_tid, LowerContext::Value)) {
+            target_decl = std::format("const {}&", *t_cpp);
+            catchall_decl = target_decl;
+        }
         write_ln(is_expr ? match_lambda_header() : std::string("{"));
         ++indent_;
-        write_ln(std::format("const auto& _target = {};", target_expr));
+        write_ln(std::format("{} _target = {};", target_decl, target_expr));
         write_ln("bool _matched = false;");
         auto lower_match_lit = [](std::string_view v) -> std::string {
             if (v.size() >= 2 && v.front() == '"' && v.back() == '"') {
@@ -838,7 +956,7 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
                 ++indent_;
                 if (is_catchall_bind) {
                     local_vars_.insert(arm.variant_name);
-                    write_ln(std::format("const auto& {} = _target;", sanitize_cpp_ident(arm.variant_name)));
+                    write_ln(std::format("{} {} = _target;", catchall_decl, sanitize_cpp_ident(arm.variant_name)));
                 }
                 if (arm.guard) {
                     write_ln(std::format("if ({}) {{", emit_expr(arm.guard)));
@@ -896,12 +1014,21 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
     }
 
     bool is_rvalue = is_move || (target && std::holds_alternative<CallExpr>(target->node));
+    const EnumDecl* matched_enum = nullptr;
+    if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
+        matched_enum = &eit->second;
+    }
     write_ln(is_expr ? match_lambda_header() : std::string("{"));
     ++indent_;
     if (is_rvalue) {
         write_ln(std::format("auto&& _target = {};", emit_expr(target)));
     } else {
-        write_ln(std::format("const auto& _target = {};", emit_expr(target)));
+        std::optional<std::string> enum_cpp;
+        if (target && target->resolved_type_id != 0) {
+            enum_cpp = lower_type_id(TypeId{target->resolved_type_id}, LowerContext::Value);
+        }
+        std::string bind_t = enum_cpp.value_or(enum_name);
+        write_ln(std::format("const {}& _target = {};", bind_t.empty() ? std::string("auto") : bind_t, emit_expr(target)));
     }
     write_ln("bool _matched = false;");
 
@@ -931,11 +1058,20 @@ CFIRE_CG_INLINE void Emitter::emit_match_common(
                 ++indent_;
                 write_ln(std::format("if (auto* _p = std::get_if<{}::_{}>(&_target._v)) {{", enum_name, pat.variant_name));
                 ++indent_;
+                const EnumVariant* matched_var = nullptr;
+                if (matched_enum && matched_enum->type_params.empty()) {
+                    for (const auto& v : matched_enum->variants) {
+                        if (v.name == pat.variant_name) { matched_var = &v; break; }
+                    }
+                }
                 for (std::size_t i = 0; i < pat.bindings.size(); ++i) {
                     if (pat.bindings[i] == "_") continue;
                     local_vars_.insert(pat.bindings[i]);
                     if (is_rvalue) {
                         write_ln(std::format("auto&& {} = std::move(_p->_{});", pat.bindings[i], i));
+                    } else if (matched_var && i < matched_var->payload_types.size()) {
+                        std::string p_cpp = lower_owning_type(matched_var->payload_types[i]);
+                        write_ln(std::format("const {}& {} = _p->_{};", p_cpp, pat.bindings[i], i));
                     } else {
                         write_ln(std::format("const auto& {} = _p->_{};", pat.bindings[i], i));
                     }
@@ -1016,8 +1152,10 @@ CFIRE_CG_INLINE void Emitter::emit_match_arm_body(std::ostringstream& sb, const 
 [[nodiscard]] CFIRE_CG_INLINE auto Emitter::emit_match_expr(const MatchExpr& me) -> std::string {
     std::ostringstream sb;
     std::string saved = std::exchange(match_expr_result_type_, me.result_type);
+    TypeId saved_tid = std::exchange(match_expr_result_tid_, TypeId{me.resolved_type_id});
     emit_match_common(me.target, me.is_move, me.arms, true, false, sb);
     match_expr_result_type_ = saved;
+    match_expr_result_tid_ = saved_tid;
     last_source_line_ = -1;
     return sb.str();
 }

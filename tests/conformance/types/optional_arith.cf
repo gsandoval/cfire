@@ -9,5 +9,5 @@ fn find(xs: []i32, v: i32) -> i32? {
 }
 fn main() {
     xs: []i32 = [1, 2, 3]
-    println("{}", find(xs, 9) + 1) //~ error cfire/TYPE-MISMATCH
+    println("{}", find(xs, 9) + 1) //~ error cfire/UNWRAPPED-OPTIONAL
 }

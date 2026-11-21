@@ -93,28 +93,62 @@
                 break;
             }
         }
-        for (const auto& tp : fn.type_params) {
-            fn_type_params_.insert(tp.name);
-            if (!tp.constraints.empty()) {
-                fn_type_param_bounds_[tp.name] = tp.constraints;
+        auto register_tp = [&](const std::string& name, const std::vector<std::string>& constraints) {
+            if (name.empty()) return;
+            fn_type_params_.insert(name);
+            if (!constraints.empty()) {
+                fn_type_param_bounds_[name] = constraints;
             }
+            if (!fn_type_param_ids_.contains(name)) {
+                fn_type_param_ids_[name] = cf_.type_table.make_type_param(name, constraints);
+            }
+        };
+        for (const auto& tp : fn.type_params) {
+            register_tp(tp.name, tp.constraints);
         }
         if (fn.receiver) {
             for (const auto& st : cf_.ast.structs) {
                 if (st.name == fn.receiver->type.name) {
                     for (std::size_t idx = 0; idx < st.type_params.size(); ++idx) {
                         const auto& tp = st.type_params[idx];
-                        fn_type_params_.insert(tp.name);
-                        if (!tp.constraints.empty()) fn_type_param_bounds_[tp.name] = tp.constraints;
+                        register_tp(tp.name, tp.constraints);
                         if (idx < fn.receiver->type.type_args.size() && !fn.receiver->type.type_args[idx].name.empty()) {
-                            const auto& arg_name = fn.receiver->type.type_args[idx].name;
-                            fn_type_params_.insert(arg_name);
-                            if (!tp.constraints.empty()) fn_type_param_bounds_[arg_name] = tp.constraints;
+                            register_tp(fn.receiver->type.type_args[idx].name, tp.constraints);
                         }
                     }
                 }
             }
-            for (const auto& ta : fn.receiver->type.type_args) fn_type_params_.insert(ta.name);  // `fn (b: Box[T])`
+            for (const auto& ta : fn.receiver->type.type_args) register_tp(ta.name, {});  // `fn (b: Box[T])`
+        }
+        if (fn.return_type.name.empty() && !fn.return_type.is_slice && !fn.return_type.is_array &&
+            !fn.return_type.is_map && !fn.return_type.is_tuple && !fn.return_type.is_fn &&
+            fn.return_type.smart_wrap.empty()) {
+            TypeId base = TypeId::Void();
+            if (fn.return_type.is_optional) base = cf_.type_table.make_optional(base);
+            if (fn.return_type.is_fallible) base = cf_.type_table.make_fallible(base);
+            fn_ret_tid_ = base;
+        } else {
+            fn_ret_tid_ = resolve_typeref(fn.return_type);
+        }
+        // Seed in-scope module/file global variables into Sema type tables.
+        for (const auto& gv : cf_.ast.global_vars) {
+            TypeId gt = TypeId::Unknown();
+            if (gv.type) {
+                gt = resolve_typeref(*gv.type);
+            } else if (gv.value && gv.value->resolved_type_id != 0) {
+                gt = TypeId{gv.value->resolved_type_id};
+            }
+            if (gt.is_valid() && !gt.is_unknown()) {
+                std::string tstr = cf_.type_table.to_string(gt);
+                if (gv.package_name.empty() || gv.package_name == pkg_name_) {
+                    var_type_ids_[gv.name] = gt;
+                    var_types_[gv.name] = tstr;
+                }
+                if (!gv.package_name.empty()) {
+                    var_type_ids_[gv.package_name + "." + gv.name] = gt;
+                    var_types_[gv.package_name + "." + gv.name] = tstr;
+                }
+            }
         }
         if (fn.receiver) {
             (void)check_type_ref_separators(fn.receiver->type, fn.receiver->line, fn.receiver->col);  // recorded by emit_error
@@ -123,6 +157,8 @@
             if (!fn.receiver->type.name.empty()) {
                 var_types_[fn.receiver->name] = format_type_ref_sema(fn.receiver->type);
             }
+            TypeId recv_tid = resolve_typeref(fn.receiver->type);
+            if (recv_tid.is_valid()) var_type_ids_[fn.receiver->name] = recv_tid;
             if (fn.receiver->has_explicit_in) {
                 (void)emit_error(diag_at(fn.receiver->line, fn.receiver->col, "cfire/DEPRECATED-IN-PARAM", std::format("explicit 'in' receiver intent is deprecated; omit 'in'")));
             }
@@ -147,9 +183,11 @@
             (void)check_type_ref_separators(p.type, p.line, p.col);  // recorded by emit_error
             param_names_.insert(p.name);
             var_scope_depth_[p.name] = 0;
+            TypeId ptid = resolve_typeref(p.type);
+            if (ptid.is_valid()) var_type_ids_[p.name] = ptid;
             if (!p.type.smart_wrap.empty() && p.type.elem_type && !p.type.elem_type->name.empty()) {
                 var_types_[p.name] = p.type.elem_type->name;
-            } else if (!p.type.name.empty()) {
+            } else if (!p.type.name.empty() || p.type.is_slice || p.type.is_array || p.type.is_map || p.type.is_tuple || p.type.is_fn) {
                 var_types_[p.name] = format_type_ref_sema(p.type);
             }
             if (p.type.is_optional) {
@@ -602,6 +640,28 @@
     }
 
 
+    CFIRE_SEMA_INLINE auto SemaFnChecker::is_unresolved_local_pkg_alias_sema(std::string_view name) const -> bool {
+        if (name.empty()) return false;
+        for (const auto& imp : cf_.ast.imports) {
+            if (!imp.path.starts_with("./") && !imp.path.starts_with("../")) continue;
+            auto slash = imp.path.rfind('/');
+            std::string_view tail = (slash == std::string_view::npos)
+                ? std::string_view(imp.path)
+                : std::string_view(imp.path).substr(slash + 1);
+            std::string_view eff_alias = imp.alias.empty() ? tail : std::string_view(imp.alias);
+            if (eff_alias != name) continue;
+            bool has_any_decl = false;
+            for (const auto& fn : cf_.ast.functions) if (fn.package_name == tail) { has_any_decl = true; break; }
+            if (!has_any_decl) for (const auto& st : cf_.ast.structs) if (st.package_name == tail) { has_any_decl = true; break; }
+            if (!has_any_decl) for (const auto& en : cf_.ast.enums) if (en.package_name == tail) { has_any_decl = true; break; }
+            if (!has_any_decl) for (const auto& iface : cf_.ast.interfaces) if (iface.package_name == tail) { has_any_decl = true; break; }
+            if (!has_any_decl) for (const auto& gv : cf_.ast.global_vars) if (gv.package_name == tail) { has_any_decl = true; break; }
+            if (!has_any_decl) return true;
+        }
+        return false;
+    }
+
+
     CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_stdlib_ns_sema(std::string_view qualifier) const -> std::string {
         if (cf_.shadowed_default_qualifiers.contains(std::string(qualifier))) return "";
         if (auto it = cf_.core_aliases.find(std::string(qualifier)); it != cf_.core_aliases.end()) {
@@ -658,9 +718,7 @@
                name == "recv_timeout" || name == "bind" || name == "step" || name == "exec" ||
                name == "query" || name == "prepare" || name == "begin" || name == "commit" ||
                name == "rollback" || name == "join" || name == "detach" || name == "lock" ||
-               name == "unlock" || name == "reset" || name == "has_value" || name == "value_or" ||
-               name == "value" || name == "parse_i64" || name == "parse_i32" || name == "parse_u64" ||
-               name == "parse_f64" || name == "parse_bool";
+               name == "unlock" || name == "reset" || name == "or_error" || name == "ignore_error";
     }
 
 
@@ -672,9 +730,40 @@
             }
             return nullptr;
         }
+        if (mem.object) {
+            TypeId recv_t = unwrap_receiver_type(infer_expr_type_id_sema(mem.object), /*unwrap_opt=*/true);
+            if (recv_t.is_valid() && !recv_t.is_unknown() && !recv_t.is_error()) {
+                const auto& rd = cf_.type_table.get(recv_t);
+                std::string owner = (rd.kind == TypeKind::GenericInst) ? rd.base_name : rd.name;
+                if (auto lb = owner.find('['); lb != std::string::npos) owner = owner.substr(0, lb);
+                auto try_owner = [&](const std::string& o) -> const FnDecl* {
+                    if (o.empty()) return nullptr;
+                    if (auto mit = cf_.methods.find(o + "::" + mem.field); mit != cf_.methods.end()) {
+                        return &mit->second;
+                    }
+                    if (auto dot = o.find('.'); dot != std::string::npos) {
+                        std::string mangled = std::format("cfire_pkg_{}__{}", o.substr(0, dot), o.substr(dot + 1));
+                        if (auto mit = cf_.methods.find(mangled + "::" + mem.field); mit != cf_.methods.end()) {
+                            return &mit->second;
+                        }
+                        if (auto mit = cf_.methods.find(o.substr(dot + 1) + "::" + mem.field); mit != cf_.methods.end()) {
+                            return &mit->second;
+                        }
+                    }
+                    return nullptr;
+                };
+                if (const auto* sig = try_owner(owner)) return sig;
+                std::string canon = canonical_nominal_path_sema(owner);
+                if (canon != owner) {
+                    if (const auto* sig = try_owner(canon)) return sig;
+                }
+            }
+        }
         if (obj_id) {
             if (auto vt = var_types_.find(obj_id->name); vt != var_types_.end()) {
-                if (auto mit = cf_.methods.find(vt->second + "::" + mem.field); mit != cf_.methods.end()) {
+                std::string o = vt->second;
+                if (auto lb = o.find('['); lb != std::string::npos) o = o.substr(0, lb);
+                if (auto mit = cf_.methods.find(o + "::" + mem.field); mit != cf_.methods.end()) {
                     return &mit->second;
                 }
             }
@@ -755,7 +844,6 @@
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (const BuiltinMethod* bm = lookup_builtin_method(*mem); bm && !bm->ret.empty()) return bm->ret.ends_with('?');  // builtin method table
-                if (mem->field == "parse" && primitive_type_prefix(mem->object).is_valid()) return true;  // T.parse(s) -> T?
                 if (mem->field == "try_as" && call->type_args.size() == 1) return true;  // x.try_as[T]() -> T?
                 if (mem->field == "checked_shl" || mem->field == "checked_shr") return true;
                 if (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string") {
@@ -774,17 +862,14 @@
                         if (const auto* sfn = idx.find_ns_fn(recv_id->name, mem->field)) {
                             if (sfn->is_optional) return true;
                         }
-                        if (recv_id->name == "os" && mem->field == "getenv_opt") {
+                        if (recv_id->name == "os" && mem->field == "getenv" && call->args.size() <= 1) {
                             return true;
                         }
-                        if (recv_id->name == "str" && (
-                            mem->field == "find" ||
-                            mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
-                            mem->field == "parse_f64" || mem->field == "parse_bool")) {
+                        if (recv_id->name == "str" && mem->field == "find") {
                             return true;
                         }
                         if (recv_id->name == "cli" &&
-                            (mem->field == "try_parse" || mem->field == "prompt" || mem->field == "prompt_password")) {
+                            (mem->field == "prompt" || mem->field == "prompt_password")) {
                             return true;
                         }
                         if (const auto* sig = resolve_member_call_sig(*mem)) {
@@ -793,10 +878,9 @@
                         return false;
                     }
                 }
-                if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
-                    mem->field == "parse_f64" || mem->field == "parse_bool" ||
-                    mem->field == "try_recv" || mem->field == "recv_timeout" ||
-                    mem->field == "getenv_opt" || mem->field == "read_line") {
+                if (mem->field == "try_recv" || mem->field == "recv_timeout" ||
+                    mem->field == "read_line" ||
+                    (mem->field == "ignore_error" && call->args.empty())) {
                     return true;
                 }
                 if (mem->field == "get" && call->args.size() == 1 && !call->block_arg) {
@@ -821,17 +905,52 @@
     // of infer_expr_type_id_sema; names for messages come from type_name_of().
     CFIRE_SEMA_INLINE auto SemaFnChecker::infer_named_type_id_(const ExprPtr& e) const -> TypeId {
         if (!e) return TypeId::Unknown();
+        if (e->resolved_type_id != 0) return TypeId{e->resolved_type_id};
+        auto resolve_fn_ret = [&](const TypeRef& rt) -> TypeId {
+            if (rt.name.empty() && !rt.is_slice && !rt.is_array && !rt.is_map &&
+                !rt.is_tuple && !rt.is_fn && rt.smart_wrap.empty() &&
+                !rt.is_borrow && !rt.is_mut_borrow && !rt.is_ptr && !rt.is_mut_ptr) {
+                TypeId v = TypeId::Void();
+                if (rt.is_optional) v = cf_.type_table.make_optional(v);
+                if (rt.is_fallible) v = cf_.type_table.make_fallible(v);
+                return v;
+            }
+            return resolve_typeref(rt);
+        };
+        auto lookup_struct_def = [&](std::string_view name) -> const StructDecl* {
+            if (auto it = cf_.struct_defs.find(std::string(name)); it != cf_.struct_defs.end()) return &it->second;
+            std::string canon = canonical_nominal_path_sema(name);
+            if (auto it = cf_.struct_defs.find(canon); it != cf_.struct_defs.end()) return &it->second;
+            if (auto dot = canon.find('.'); dot != std::string::npos) {
+                std::string mangled = std::format("cfire_pkg_{}__{}", canon.substr(0, dot), canon.substr(dot + 1));
+                if (auto it = cf_.struct_defs.find(mangled); it != cf_.struct_defs.end()) return &it->second;
+                if (auto it = cf_.struct_defs.find(canon.substr(dot + 1)); it != cf_.struct_defs.end()) return &it->second;
+            }
+            return nullptr;
+        };
+        auto wrap_stdlib_ret = [&](const StdFnSigInfo& sig, TypeId base) -> TypeId {
+            if (base.is_unknown() && (sig.unwrapped_return_type.empty() || sig.unwrapped_return_type == "void")) {
+                base = TypeId::Void();
+            }
+            if (sig.is_optional && !cf_.type_table.is_optional(base)) base = cf_.type_table.make_optional(base);
+            if (sig.is_fallible && !cf_.type_table.is_fallible(base)) base = cf_.type_table.make_fallible(base);
+            return base;
+        };
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
-            if (lit->kind == TokenKind::String) return type_id_of("str");
-            if (lit->kind == TokenKind::Int) return type_id_of("i64");
-            if (lit->kind == TokenKind::Float) return type_id_of("f64");
+            if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return TypeId::Str();
+            if (lit->kind == TokenKind::Int) return TypeId::Int64();
+            if (lit->kind == TokenKind::Float) return TypeId::Float64();
             if (lit->kind == TokenKind::Char) return TypeId::Byte();
-            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return type_id_of("bool");
+            if (lit->kind == TokenKind::KwTrue || lit->kind == TokenKind::KwFalse) return TypeId::Bool();
         }
         if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
-            // a generic stdlib queue keeps its element type, so `pop` can be typed `T?`.
-            if (st->type_args.size() == 1 && (st->type_name.ends_with("PriorityQueue") || st->type_name.ends_with("MinQueue"))) {
-                return type_id_of(st->type_name + "[" + cf_.type_table.to_string(type_id_of(st->type_args[0])) + "]");
+            if (!st->type_args.empty()) {
+                std::vector<TypeId> targs;
+                targs.reserve(st->type_args.size());
+                for (const auto& ta : st->type_args) {
+                    targs.push_back(resolve_typeref(ta));
+                }
+                return cf_.type_table.make_generic_inst(canonical_nominal_path_sema(st->type_name), std::move(targs));
             }
             return type_id_of(st->type_name);
         }
@@ -843,7 +962,15 @@
             return inner_t;
         }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->resolved_type_id != 0) return TypeId{or_ex->resolved_type_id};
             TypeId inner_t = infer_expr_type_id_sema(or_ex->inner);
+            if (or_ex->fallback_val) {
+                TypeId fb_t = infer_expr_type_id_sema(or_ex->fallback_val);
+                if ((cf_.type_table.is_fallible(inner_t) && cf_.type_table.is_fallible(fb_t)) ||
+                    (cf_.type_table.is_optional(inner_t) && cf_.type_table.is_optional(fb_t))) {
+                    return fb_t;
+                }
+            }
             inner_t = cf_.type_table.unwrap_fallible(inner_t);
             return cf_.type_table.unwrap_optional(inner_t);
         }
@@ -856,8 +983,14 @@
             return cf_.type_table.make_tuple(std::move(elem_ids));
         }
         if (const auto* id = std::get_if<IdentExpr>(&e->node)) {
+            if (auto it = var_type_ids_.find(id->name); it != var_type_ids_.end() && it->second.is_valid()) {
+                return it->second;
+            }
             if (auto it = var_types_.find(id->name); it != var_types_.end()) {
                 return type_id_of(it->second);
+            }
+            if (foreign_vars_.contains(id->name) || is_cpp_qualifier_sema(id->name)) {
+                return TypeId::Foreign();
             }
             if (auto vit = cf_.variant_to_enum.find(id->name); vit != cf_.variant_to_enum.end()) {
                 return type_id_of(vit->second);
@@ -870,164 +1003,307 @@
                 std::string prefix = id->name.substr(0, pos);
                 if (cf_.enums.contains(prefix)) return type_id_of(prefix);
             }
+            if (!is_namespace_ident_sema(id->name) && !is_builtin_ident_sema(id->name)) {
+                const FnDecl* fdecl = nullptr;
+                if (!pkg_name_.empty()) {
+                    if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + id->name); pit != cf_.fn_sigs.end()) {
+                        fdecl = &pit->second;
+                    }
+                }
+                if (!fdecl) {
+                    if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) fdecl = &it->second;
+                }
+                if (fdecl && fdecl->type_params.empty()) {
+                    std::vector<TypeId> ptypes;
+                    ptypes.reserve(fdecl->params.size());
+                    for (const auto& p : fdecl->params) ptypes.push_back(resolve_typeref(p.type));
+                    return cf_.type_table.make_function(std::move(ptypes), resolve_fn_ret(fdecl->return_type));
+                }
+            }
         }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
             if (mem->object) {
                 if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
                     if (cf_.enums.contains(id->name)) return type_id_of(id->name);
+                    if (is_cpp_qualifier_sema(id->name) || foreign_vars_.contains(id->name)) {
+                        return TypeId::Foreign();
+                    }
                 } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
                     if (const auto* sid = sub_mem->object ? std::get_if<IdentExpr>(&sub_mem->object->node) : nullptr) {
                         if (const auto* en = resolve_enum_by_prefix_sema(sid->name + "." + sub_mem->field)) {
-                            return type_id_of(en->name);
+                            std::string ename = en->package_name.empty() ? en->name : (en->package_name + "." + en->name);
+                            return type_id_of(ename);
                         }
+                        if (is_cpp_qualifier_sema(sid->name)) return TypeId::Foreign();
                     }
                     if (cf_.enums.contains(sub_mem->field)) return type_id_of(sub_mem->field);
                 }
             }
             if (!mem->is_namespace && mem->object) {
-                std::string owner_t = type_name_of(mem->object);
-                if (!owner_t.empty()) {
-                    if (auto sit = cf_.struct_tags.find(owner_t); sit != cf_.struct_tags.end()) {
+                TypeId raw_obj_t = infer_expr_type_id_sema(mem->object);
+                if (raw_obj_t.is_foreign() || cf_.type_table.contains_foreign(raw_obj_t)) return TypeId::Foreign();
+                TypeId obj_t = unwrap_receiver_type(raw_obj_t, /*unwrap_opt=*/true);
+                const auto& od = cf_.type_table.get(obj_t);
+                if (od.kind == TypeKind::GenericInst) {
+                    if (const StructDecl* sdef = lookup_struct_def(od.base_name)) {
+                        std::unordered_map<std::string, TypeId> env;
+                        for (std::size_t i = 0; i < sdef->type_params.size() && i < od.type_args.size(); ++i) {
+                            env[sdef->type_params[i].name] = od.type_args[i];
+                        }
+                        for (const auto& f : sdef->fields) {
+                            if (f.name == mem->field) {
+                                TypeRef ftr = canonical_typeref_sema(f.type);
+                                return cf_.type_table.from_typeref(ftr, &env);
+                            }
+                        }
+                    }
+                } else if (od.kind == TypeKind::NominalStruct && !od.name.empty()) {
+                    if (auto sit = cf_.struct_tags.find(od.name); sit != cf_.struct_tags.end()) {
                         for (const auto& f : sit->second) {
                             if (f.field_name == mem->field) {
-                                return type_id_of(f.field_type.name);
+                                return resolve_typeref(f.field_type);
                             }
+                        }
+                    }
+                    if (const StructDecl* sdef = lookup_struct_def(od.name)) {
+                        for (const auto& f : sdef->fields) {
+                            if (f.name == mem->field) return resolve_typeref(f.type);
                         }
                     }
                 }
             }
         }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
+            auto infer_fn_decl_ret = [&](const FnDecl& decl) -> TypeId {
+                if (!decl.type_params.empty()) {
+                    std::unordered_map<std::string, TypeId> pat_env;
+                    std::unordered_map<std::string, TypeId> inst_env;
+                    for (std::size_t idx = 0; idx < decl.type_params.size(); ++idx) {
+                        const auto& tp = decl.type_params[idx];
+                        pat_env[tp.name] = cf_.type_table.make_type_param(tp.name, tp.constraints);
+                        if (idx < call->type_args.size()) {
+                            TypeId ta = resolve_typeref(call->type_args[idx]);
+                            if (ta.is_valid()) inst_env[tp.name] = ta;
+                        }
+                    }
+                    for (std::size_t idx = 0; idx < call->args.size() && idx < decl.params.size(); ++idx) {
+                        const ParamDecl* param = &decl.params[idx];
+                        if (!call->args[idx].label.empty()) {
+                            auto lit = std::find_if(decl.params.begin(), decl.params.end(), [&](const ParamDecl& pd) { return pd.name == call->args[idx].label; });
+                            if (lit != decl.params.end()) param = &*lit;
+                        }
+                        TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+                        TypeId got = infer_expr_type_id_sema(call->args[idx].value);
+                        (void)cf_.type_table.unify(pat, got, inst_env);
+                    }
+                    TypeRef ret_tr = canonical_typeref_sema(decl.return_type);
+                    if (ret_tr.name.empty() && !ret_tr.is_slice && !ret_tr.is_array && !ret_tr.is_map &&
+                        !ret_tr.is_tuple && !ret_tr.is_fn && ret_tr.smart_wrap.empty()) {
+                        return resolve_fn_ret(decl.return_type);
+                    }
+                    return cf_.type_table.from_typeref(ret_tr, &inst_env);
+                }
+                return resolve_fn_ret(decl.return_type);
+            };
             if (const auto* cm = std::get_if<MemberExpr>(&call->callee->node);
                 cm && call->type_args.size() == 1 &&
                 (cm->field == "wrapping_as" || cm->field == "saturating_as" || cm->field == "try_as")) {
-                return type_id_of(call->type_args[0].name);  // optional-ness of try_as is tracked by expr_returns_optional_sema
+                TypeId target = resolve_typeref(call->type_args[0]);
+                return cm->field == "try_as" ? cf_.type_table.make_optional(target) : target;
             }
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                if (cid->name == "some" && call->args.size() == 1 && call->args[0].value) {
+                    return cf_.type_table.make_optional(infer_expr_type_id_sema(call->args[0].value));
+                }
+                if (cid->name == "readln" || cid->name == "input") {
+                    return cf_.type_table.make_optional(TypeId::Str());
+                }
+                if (cid->name == "println" || cid->name == "print" || cid->name == "eprintln" ||
+                    cid->name == "assert" || cid->name == "assert_eq" || cid->name == "assert_ne" ||
+                    cid->name == "assert_true" || cid->name == "assert_false" ||
+                    cid->name == "assert_ok" || cid->name == "assert_err" ||
+                    cid->name == "delete" || cid->name == "close") {
+                    return TypeId::Void();
+                }
+                if (cid->name == "panic" || cid->name == "exit") {
+                    return TypeId::Never();
+                }
+                if (cid->name == "format") {
+                    return TypeId::Str();
+                }
+                if (cid->name == "error") {
+                    return type_id_of("Error");
+                }
+                if (cid->name == "len" || cid->name == "cap") {
+                    return TypeId::Usize();
+                }
                 if (auto pos = cid->name.find("::"); pos != std::string::npos) {
                     std::string prefix = cid->name.substr(0, pos);
-                    if (cf_.enums.contains(prefix)) return type_id_of(prefix);
+                    std::string tail = cid->name.substr(pos + 2);
+                    if (cf_.enums.contains(prefix)) {
+                        TypeId et = type_id_of(prefix);
+                        if (tail == "from_i32" || tail == "from_i64" || tail == "from_string") {
+                            return cf_.type_table.make_optional(et);
+                        }
+                        return et;
+                    }
                 }
                 if (auto pos = cid->name.find('.'); pos != std::string::npos) {
                     std::string prefix = cid->name.substr(0, pos);
-                    if (cf_.enums.contains(prefix)) return type_id_of(prefix);
+                    std::string tail = cid->name.substr(pos + 1);
+                    if (cf_.enums.contains(prefix)) {
+                        TypeId et = type_id_of(prefix);
+                        if (tail == "from_i32" || tail == "from_i64" || tail == "from_string") {
+                            return cf_.type_table.make_optional(et);
+                        }
+                        return et;
+                    }
                 }
                 if (auto vit = cf_.variant_to_enum.find(cid->name); vit != cf_.variant_to_enum.end()) {
                     return type_id_of(vit->second);
                 }
                 if (cid->name == "make" && call->type_args.size() == 1) {
-                    // `make(http.Server, ...)` has the constructor's declared type (`http.HttpServer`).
                     if (const auto* sc = find_stdlib_ctor(call->type_args[0].name); sc && !sc->generic) {
                         if (const auto* sig = StdlibCatalogIndex::instance().find_ns_fn(sc->ns, std::string(sc->type) + ".make")) {
-                            if (!sig->unwrapped_return_type.empty()) return type_id_of(qualify_stdlib_type_sema(*sig, std::string(sc->ns)));
+                            TypeId base = (!sig->unwrapped_return_type.empty() && sig->unwrapped_return_type != "void")
+                                ? type_id_of(qualify_stdlib_type_sema(*sig, std::string(sc->ns)))
+                                : TypeId::Void();
+                            return wrap_stdlib_ret(*sig, base);
                         }
                     }
-                    if (!call->type_args[0].smart_wrap.empty() && call->type_args[0].elem_type) {
-                        return type_id_of(call->type_args[0].elem_type->name);
-                    }
-                    if (!call->type_args[0].name.empty()) {
-                        return type_id_of(call->type_args[0].name);
-                    }
+                    TypeId targ_tid = resolve_typeref(call->type_args[0]);
+                    if (targ_tid.is_valid()) return targ_tid;
                 }
                 if (cid->name == "sync.Mutex" || cid->name == "sync.make_mutex") {
-                    if (!call->type_args.empty()) return type_id_of("sync.Mutex[" + call->type_args[0].name + "]");
-                    if (!call->args.empty() && call->args[0].value) return type_id_of("sync.Mutex[" + type_name_of(call->args[0].value) + "]");
+                    if (!call->type_args.empty()) return cf_.type_table.make_generic_inst("sync.Mutex", {resolve_typeref(call->type_args[0])});
+                    if (!call->args.empty() && call->args[0].value) return cf_.type_table.make_generic_inst("sync.Mutex", {infer_expr_type_id_sema(call->args[0].value)});
                     return type_id_of("sync.Mutex[void]");
                 }
                 if (cid->name == "sync.Atomic" || cid->name == "sync.make_atomic") {
-                    if (!call->type_args.empty()) return type_id_of("sync.Atomic[" + call->type_args[0].name + "]");
-                    if (!call->args.empty() && call->args[0].value) return type_id_of("sync.Atomic[" + type_name_of(call->args[0].value) + "]");
+                    if (!call->type_args.empty()) return cf_.type_table.make_generic_inst("sync.Atomic", {resolve_typeref(call->type_args[0])});
+                    if (!call->args.empty() && call->args[0].value) return cf_.type_table.make_generic_inst("sync.Atomic", {infer_expr_type_id_sema(call->args[0].value)});
                     return type_id_of("sync.Atomic[i64]");
                 }
                 if (cid->name == "[]byte" || cid->name == "[]u8" || cid->name == "str" ||
-                    cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" ||
+                    cid->name == "i8" || cid->name == "i16" || cid->name == "i32" || cid->name == "i64" || cid->name == "int" ||
                     cid->name == "u8" || cid->name == "byte" || cid->name == "u16" || cid->name == "u32" ||
-                    cid->name == "u64" || cid->name == "usize" || cid->name == "isize" ||
-                    cid->name == "f32" || cid->name == "f64" || cid->name == "bool") {
+                    cid->name == "u64" || cid->name == "usize" || cid->name == "isize" || cid->name == "uint" ||
+                    cid->name == "f32" || cid->name == "f64" || cid->name == "bool" || cid->name == "char") {
+                    if (cid->name == "char") return TypeId::Byte();
                     return type_id_of(cid->name);
                 }
+                if (auto rtit = cf_.cpp_fn_returns.find(cid->name); rtit != cf_.cpp_fn_returns.end()) {
+                    return map_cpp_qualtype_to_type_id(rtit->second);
+                }
+                if (cf_.cpp_fn_params.contains(cid->name) || is_cpp_qualifier_sema(cid->name) || foreign_vars_.contains(cid->name)) {
+                    return TypeId::Foreign();
+                }
+                if (auto vit = var_type_ids_.find(cid->name); vit != var_type_ids_.end()) {
+                    const auto& vd = cf_.type_table.get(vit->second);
+                    if (vd.kind == TypeKind::Function) return vd.ret_type;
+                }
+                const FnDecl* fdecl = nullptr;
                 if (!pkg_name_.empty()) {
                     if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end()) {
-                        if (!pit->second.return_type.smart_wrap.empty() && pit->second.return_type.elem_type) {
-                            return type_id_of(pit->second.return_type.elem_type->name);
-                        }
-                        TypeRef ret_tr = pit->second.return_type;
-                        ret_tr.is_fallible = false;
-                        ret_tr.is_optional = false;
-                        if (ret_tr.name == "void") return TypeId::Void();
-                        TypeId tid = type_id_of(format_type_ref_sema(ret_tr));
-                        return tid.is_valid() ? tid : type_id_of(pit->second.return_type.name);
+                        fdecl = &pit->second;
                     }
                 }
-                if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) {
-                    if (!it->second.return_type.smart_wrap.empty() && it->second.return_type.elem_type) {
-                        return type_id_of(it->second.return_type.elem_type->name);
-                    }
-                    TypeRef ret_tr = it->second.return_type;
-                    ret_tr.is_fallible = false;
-                    ret_tr.is_optional = false;
-                    if (ret_tr.name == "void") return TypeId::Void();
-                    TypeId tid = type_id_of(format_type_ref_sema(ret_tr));
-                    return tid.is_valid() ? tid : type_id_of(it->second.return_type.name);
+                if (!fdecl) {
+                    if (auto it = cf_.fn_sigs.find(cid->name); it != cf_.fn_sigs.end()) fdecl = &it->second;
+                }
+                if (fdecl) {
+                    return infer_fn_decl_ret(*fdecl);
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (mem->object) {
                     if (const auto* id = std::get_if<IdentExpr>(&mem->object->node)) {
-                        if (cf_.enums.contains(id->name)) return type_id_of(id->name);
+                        if (cf_.enums.contains(id->name)) {
+                            TypeId et = type_id_of(id->name);
+                            if (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string") {
+                                return cf_.type_table.make_optional(et);
+                            }
+                            return et;
+                        }
                     } else if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
                         if (const auto* sid = sub_mem->object ? std::get_if<IdentExpr>(&sub_mem->object->node) : nullptr) {
                             if (const auto* en = resolve_enum_by_prefix_sema(sid->name + "." + sub_mem->field)) {
-                                return type_id_of(en->name);
+                                std::string ename = en->package_name.empty() ? en->name : (en->package_name + "." + en->name);
+                                TypeId et = type_id_of(ename);
+                                if (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string") {
+                                    return cf_.type_table.make_optional(et);
+                                }
+                                return et;
                             }
                         }
-                        if (cf_.enums.contains(sub_mem->field)) return type_id_of(sub_mem->field);
+                        if (cf_.enums.contains(sub_mem->field)) {
+                            TypeId et = type_id_of(sub_mem->field);
+                            if (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string") {
+                                return cf_.type_table.make_optional(et);
+                            }
+                            return et;
+                        }
                     }
                 }
                 if (const auto* recv_id = std::get_if<IdentExpr>(&mem->object->node)) {
-                    if (recv_id->name == "os" && (mem->field == "getenv" || mem->field == "getenv_opt" || mem->field == "cwd" || mem->field == "temp_dir")) {
-                        return type_id_of("str");
+                    if (is_cpp_qualifier_sema(recv_id->name) && !is_ident_in_scope_sema(recv_id->name)) {
+                        if (auto rtit = cf_.cpp_fn_returns.find(recv_id->name + "." + mem->field); rtit != cf_.cpp_fn_returns.end()) {
+                            return map_cpp_qualtype_to_type_id(rtit->second);
+                        }
+                        if (auto rtit = cf_.cpp_fn_returns.find(mem->field); rtit != cf_.cpp_fn_returns.end()) {
+                            return map_cpp_qualtype_to_type_id(rtit->second);
+                        }
+                        return TypeId::Foreign();
                     }
-                    if (recv_id->name == "fs" && mem->field == "read_text") {
-                        return type_id_of("str");
-                    }
-                    if ((recv_id->name == "fs" && mem->field == "read_bytes") ||
-                        (recv_id->name == "hex" && mem->field == "decode") ||
-                        (recv_id->name == "base64" && mem->field == "decode") ||
-                        (recv_id->name == "rand" && mem->field == "bytes") ||
-                        (recv_id->name == "sodium" && (mem->field == "random_bytes" || mem->field == "argon2id" || mem->field == "blake2b" || mem->field == "derive_subkey" || mem->field == "xchacha20poly1305_encrypt" || mem->field == "xchacha20poly1305_decrypt"))) {
-                        return type_id_of("[]byte");
-                    }
-                    if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(recv_id->name, mem->field)) {
-                        if (std_sig->unwrapped_return_type == "[]byte") return type_id_of("[]byte");
-                        if (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void" &&
-                            !std_sig->unwrapped_return_type.starts_with('[') && !std_sig->unwrapped_return_type.starts_with('&') &&
-                            !std_sig->unwrapped_return_type.starts_with("map[") && !std_sig->unwrapped_return_type.starts_with("own[") &&
-                            !std_sig->unwrapped_return_type.starts_with("shared[") && !std_sig->unwrapped_return_type.starts_with("tuple[") &&
-                            !std_sig->unwrapped_return_type.starts_with('(') &&
-                            std_sig->unwrapped_return_type != "T") {
-                            std::string ret_type = qualify_stdlib_type_sema(*std_sig, recv_id->name);
-                            if (!call->type_args.empty()) {
-                                std::string targ = call->type_args[0].name;
-                                if (auto p = ret_type.find("[T]"); p != std::string::npos && !targ.empty()) {
-                                    ret_type.replace(p, 3, "[" + targ + "]");
-                                }
+                    std::string ns_name = resolve_stdlib_ns_sema(recv_id->name);
+                    if (ns_name.empty()) ns_name = recv_id->name;
+                    if (!is_ident_in_scope_sema(recv_id->name)) {
+                        if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(ns_name, mem->field)) {
+                            const std::string& ur = std_sig->unwrapped_return_type;
+                            if (!call->type_args.empty() && (ur == "T" || ur == "[]T" || ur == "T?")) {
+                                TypeId ta = resolve_typeref(call->type_args[0]);
+                                TypeId base = (ur == "[]T") ? cf_.type_table.make_slice(ta)
+                                    : (ur == "T?") ? cf_.type_table.make_optional(ta) : ta;
+                                return wrap_stdlib_ret(*std_sig, base);
                             }
-                            return type_id_of(ret_type);
+                            if (ur.empty() || ur == "void") {
+                                return wrap_stdlib_ret(*std_sig, TypeId::Void());
+                            }
+                            if (ur != "T") {
+                                std::string ret_type = qualify_stdlib_type_sema(*std_sig, recv_id->name);
+                                if (!call->type_args.empty()) {
+                                    std::string targ = cf_.type_table.to_string(resolve_typeref(call->type_args[0]));
+                                    if (auto p = ret_type.find("[T]"); p != std::string::npos && !targ.empty()) {
+                                        ret_type.replace(p, 3, "[" + targ + "]");
+                                    }
+                                }
+                                return wrap_stdlib_ret(*std_sig, type_id_of(ret_type));
+                            }
                         }
                     }
+                    if (!is_ident_in_scope_sema(recv_id->name) && is_unresolved_local_pkg_alias_sema(recv_id->name)) {
+                        return TypeId::Error();
+                    }
                     if (!is_ident_in_scope_sema(recv_id->name)) {
-                        if (auto fit = cf_.fn_sigs.find(mem->field); fit != cf_.fn_sigs.end()) {
-                            return type_id_of(fit->second.return_type.name);
+                        const FnDecl* fdecl = nullptr;
+                        if (auto pit = cf_.fn_sigs.find(recv_id->name + "." + mem->field); pit != cf_.fn_sigs.end()) {
+                            fdecl = &pit->second;
+                        } else if (auto fit = cf_.fn_sigs.find(mem->field); fit != cf_.fn_sigs.end()) {
+                            fdecl = &fit->second;
+                        }
+                        if (fdecl) {
+                            return infer_fn_decl_ret(*fdecl);
                         }
                     }
                 } else if (mem->object) {
                     if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
                         if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
-                            if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
-                                if (std_sig->unwrapped_return_type == "[]byte") return type_id_of("[]byte");
-                                if (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void") {
-                                    return type_id_of(qualify_stdlib_type_sema(*std_sig, sub_id->name));
-                                }
+                            std::string ns_name = resolve_stdlib_ns_sema(sub_id->name);
+                            if (ns_name.empty()) ns_name = sub_id->name;
+                            if (const auto* std_sig = StdlibCatalogIndex::instance().find_ns_fn(ns_name, sub_mem->field + "." + mem->field)) {
+                                TypeId base = (!std_sig->unwrapped_return_type.empty() && std_sig->unwrapped_return_type != "void")
+                                    ? type_id_of(qualify_stdlib_type_sema(*std_sig, sub_id->name))
+                                    : TypeId::Void();
+                                return wrap_stdlib_ret(*std_sig, base);
                             }
                         }
                     }
@@ -1035,35 +1311,80 @@
                 if (mem->field == "bytes" && call->args.empty()) {
                     return type_id_of("[]byte");
                 }
-                if (mem->field == "ocr" || mem->field == "detect_language") {
-                    return type_id_of("str");
-                }
-                if ((mem->field == "parse" || mem->field == "generate_struct" ||
-                     mem->field == "generate_struct_from_file" || mem->field == "run_struct" ||
-                     mem->field == "run_struct_validated") && call->type_args.size() == 1 &&
-                    !call->type_args[0].name.empty()) {
-                    return type_id_of(call->type_args[0].name);
-                }
                 if (const auto* sig = resolve_member_call_sig(*mem)) {
-                    if (sig->return_type.is_slice && sig->return_type.name == "byte") return type_id_of("[]byte");
-                    TypeRef ret_tr = sig->return_type;
-                    ret_tr.is_fallible = false;
-                    ret_tr.is_optional = false;
-                    if (ret_tr.name == "void") return TypeId::Void();
-                    TypeId tid = type_id_of(format_type_ref_sema(ret_tr));
-                    return tid.is_valid() ? tid : type_id_of(sig->return_type.name);
+                    std::unordered_map<std::string, TypeId> env;
+                    if (mem->object) {
+                        TypeId raw_rt = infer_expr_type_id_sema(mem->object);
+                        TypeId unwrapped_rt = unwrap_receiver_type(raw_rt, /*unwrap_opt=*/true);
+                        const auto& rd = cf_.type_table.get(unwrapped_rt);
+                        if (rd.kind == TypeKind::GenericInst) {
+                            if (sig->receiver) {
+                                for (std::size_t i = 0; i < sig->receiver->type.type_args.size() && i < rd.type_args.size(); ++i) {
+                                    if (!sig->receiver->type.type_args[i].name.empty()) {
+                                        env[sig->receiver->type.type_args[i].name] = rd.type_args[i];
+                                    }
+                                }
+                            }
+                            if (const StructDecl* sdef = lookup_struct_def(rd.base_name)) {
+                                for (std::size_t i = 0; i < sdef->type_params.size() && i < rd.type_args.size(); ++i) {
+                                    env[sdef->type_params[i].name] = rd.type_args[i];
+                                }
+                            }
+                        }
+                    }
+                    if (!sig->type_params.empty()) {
+                        std::unordered_map<std::string, TypeId> pat_env = env;
+                        for (std::size_t idx = 0; idx < sig->type_params.size(); ++idx) {
+                            const auto& tp = sig->type_params[idx];
+                            pat_env[tp.name] = cf_.type_table.make_type_param(tp.name, tp.constraints);
+                            if (idx < call->type_args.size()) {
+                                TypeId ta = resolve_typeref(call->type_args[idx]);
+                                if (ta.is_valid()) env[tp.name] = ta;
+                            }
+                        }
+                        for (std::size_t idx = 0; idx < call->args.size() && idx < sig->params.size(); ++idx) {
+                            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(sig->params[idx].type), &pat_env);
+                            TypeId got = infer_expr_type_id_sema(call->args[idx].value);
+                            (void)cf_.type_table.unify(pat, got, env);
+                        }
+                    }
+                    TypeRef ret_tr = canonical_typeref_sema(sig->return_type);
+                    if (ret_tr.name.empty() && !ret_tr.is_slice && !ret_tr.is_array && !ret_tr.is_map &&
+                        !ret_tr.is_tuple && !ret_tr.is_fn && ret_tr.smart_wrap.empty()) {
+                        return resolve_fn_ret(sig->return_type);
+                    }
+                    if (!env.empty()) {
+                        return cf_.type_table.from_typeref(ret_tr, &env);
+                    }
+                    return resolve_typeref(ret_tr);
                 }
                 if (const auto* im = resolve_interface_method_sig_sema(*mem)) {
-                    if (im->return_type.is_slice && im->return_type.name == "byte") return type_id_of("[]byte");
-                    TypeRef ret_tr = im->return_type;
-                    ret_tr.is_fallible = false;
-                    ret_tr.is_optional = false;
-                    if (ret_tr.name == "void") return TypeId::Void();
-                    TypeId tid = type_id_of(format_type_ref_sema(ret_tr));
-                    return tid.is_valid() ? tid : type_id_of(im->return_type.name);
+                    return resolve_fn_ret(im->return_type);
                 }
                 if (mem->object) {
-                    std::string recv_t = type_name_of(mem->object);
+                    TypeId raw_recv = infer_expr_type_id_sema(mem->object);
+                    if (raw_recv.is_foreign() || cf_.type_table.contains_foreign(raw_recv)) {
+                        return TypeId::Foreign();
+                    }
+                    TypeId un_recv = unwrap_receiver_type(raw_recv, /*unwrap_opt=*/true);
+                    if (mem->field == "spawn" &&
+                        (call->block_arg || (!call->args.empty() && call->args[0].value && std::holds_alternative<ClosureExpr>(call->args[0].value->node))) &&
+                        !resolve_member_call_sig(*mem)) {
+                        std::string base_check = un_recv.is_valid() && !un_recv.is_unknown() ? cf_.type_table.to_string(un_recv) : "";
+                        if (base_check.empty() || base_check == "async.Scope" || base_check.ends_with(".Scope") || base_check == "Scope") {
+                            std::string ret_t = "void";
+                            if (!call->args.empty() && call->args[0].value) {
+                                if (const auto* cl = std::get_if<ClosureExpr>(&call->args[0].value->node); cl && cl->return_type) {
+                                    ret_t = cf_.type_table.to_string(resolve_typeref(*cl->return_type));
+                                }
+                            }
+                            if (call->block_arg && call->block_arg->return_type) {
+                                ret_t = cf_.type_table.to_string(resolve_typeref(*call->block_arg->return_type));
+                            }
+                            return type_id_of("async.Task[" + ret_t + "]");
+                        }
+                    }
+                    std::string recv_t = un_recv.is_valid() && !un_recv.is_unknown() ? cf_.type_table.to_string(un_recv) : "";
                     if (!recv_t.empty()) {
                         const auto& idx = StdlibCatalogIndex::instance();
                         std::string base_recv = recv_t;
@@ -1080,86 +1401,97 @@
                             unqual_recv = unqual_recv.substr(dcol + 2);
                         }
 
-                        auto find_ret = [&](const std::string& key) -> std::string {
+                        auto find_ret_id = [&](const std::string& key) -> TypeId {
                             if (auto mit = idx.receiver_methods.find(key); mit != idx.receiver_methods.end()) {
-                                std::string uret = mit->second.unwrapped_return_type;
+                                const std::string& uret = mit->second.unwrapped_return_type;
                                 if (!generic_arg.empty() && uret == "T") {
-                                    return generic_arg;
+                                    return wrap_stdlib_ret(mit->second, type_id_of(generic_arg));
                                 }
-                                if (uret.empty() || uret == "void") return "";
+                                if (!generic_arg.empty() && uret == "[]T") {
+                                    return wrap_stdlib_ret(mit->second, type_id_of("[]" + generic_arg));
+                                }
+                                if (uret.empty() || uret == "void") {
+                                    return wrap_stdlib_ret(mit->second, TypeId::Void());
+                                }
                                 const auto dotq = recv_t.rfind('.');
                                 std::string qual = (dotq == std::string::npos)
                                     ? local_qualifier_for_module_sema(mit->second.module_import, mit->second.ns_alias)
                                     : recv_t.substr(0, dotq);
-                                return qualify_stdlib_type_sema(mit->second, qual);
+                                std::string qtype = qualify_stdlib_type_sema(mit->second, qual);
+                                return wrap_stdlib_ret(mit->second, type_id_of(qtype));
                             }
-                            return "";
+                            return TypeId::Unknown();
                         };
 
-                        if (base_recv == "Error" || base_recv == "&Error") {
+                        if (base_recv == "Error") {
                             if (mem->field == "code") return TypeId::Int32();
                             if (mem->field == "message") return TypeId::Str();
                         }
 
                         if (base_recv == "async.Task" && mem->field == "join") {
-                            return type_id_of(generic_arg.empty() ? "void" : generic_arg);
+                            return generic_arg.empty() ? TypeId::Void() : type_id_of(generic_arg);
                         }
                         if (base_recv == "sync.Mutex") {
                             if (mem->field == "lock") return type_id_of("sync.MutexGuard[" + generic_arg + "]");
                             if (mem->field == "get") return type_id_of(generic_arg);
                             if (mem->field == "with_lock") {
-                                if (call->block_arg && call->block_arg->return_type) return type_id_of(call->block_arg->return_type->name);
+                                if (call->block_arg && call->block_arg->return_type) return resolve_typeref(*call->block_arg->return_type);
                                 if (!call->args.empty() && call->args[0].value) {
                                     if (const auto* cl = std::get_if<ClosureExpr>(&call->args[0].value->node); cl && cl->return_type) {
-                                        return type_id_of(cl->return_type->name);
+                                        return resolve_typeref(*cl->return_type);
                                     }
                                 }
-                                return type_id_of(generic_arg);
+                                return generic_arg.empty() ? TypeId::Unknown() : type_id_of(generic_arg);
                             }
                         }
                         if (base_recv == "sync.MutexGuard" && mem->field == "get") {
                             return type_id_of(generic_arg);
                         }
-                        // priority queues hand out `T?` like `[]T.pop`.
                         if ((unqual_recv == "PriorityQueue" || unqual_recv == "MinQueue") && !generic_arg.empty()) {
                             if (mem->field == "pop" || mem->field == "peek") return type_id_of(generic_arg + "?");
                             if (mem->field == "top") return type_id_of(generic_arg);
-                            if (mem->field == "empty") return type_id_of("bool");
+                            if (mem->field == "empty") return TypeId::Bool();
                         }
                         if (base_recv == "sync.Atomic") {
                             if (mem->field == "load" || mem->field == "add" || mem->field == "sub" ||
                                 mem->field == "fetch_add" || mem->field == "fetch_sub") {
                                 return type_id_of(generic_arg.empty() ? "i64" : generic_arg);
                             }
-                            if (mem->field == "cas") return type_id_of("bool");
+                            if (mem->field == "cas") return TypeId::Bool();
                         }
                         if (mem->field == "spawn") {
                             std::string ret_t = "void";
                             if (!call->args.empty() && call->args[0].value) {
                                 if (const auto* cl = std::get_if<ClosureExpr>(&call->args[0].value->node); cl && cl->return_type) {
-                                    ret_t = cl->return_type->name;
+                                    ret_t = cf_.type_table.to_string(resolve_typeref(*cl->return_type));
                                 }
                             }
-                            if (call->block_arg && call->block_arg->return_type) ret_t = call->block_arg->return_type->name;
+                            if (call->block_arg && call->block_arg->return_type) ret_t = cf_.type_table.to_string(resolve_typeref(*call->block_arg->return_type));
                             return type_id_of("async.Task[" + ret_t + "]");
                         }
                         if (mem->field == "len") {
                             if (unqual_recv == "Set" || unqual_recv == "Deque" || unqual_recv == "PriorityQueue" ||
                                 unqual_recv == "MinQueue" || unqual_recv == "BTreeMap" || unqual_recv == "BitSet") {
-                                return type_id_of("i64");
+                                return TypeId::Int64();
                             }
                         }
 
-                        if (std::string r = find_ret(recv_t + "." + mem->field); !r.empty()) return type_id_of(r);
-                        if (std::string r = find_ret(base_recv + "." + mem->field); !r.empty()) return type_id_of(r);
+                        if (TypeId r = find_ret_id(recv_t + "." + mem->field); r.is_valid()) return r;
+                        if (TypeId r = find_ret_id(base_recv + "." + mem->field); r.is_valid()) return r;
                         if (auto dot = base_recv.find('.'); dot != std::string::npos) {
                             if (std::string cns = resolve_stdlib_ns_sema(base_recv.substr(0, dot)); !cns.empty()) {
-                                if (std::string r = find_ret(cns + base_recv.substr(dot) + "." + mem->field); !r.empty()) return type_id_of(r);
+                                if (TypeId r = find_ret_id(cns + base_recv.substr(dot) + "." + mem->field); r.is_valid()) return r;
                             }
                         }
-                        if (std::string r = find_ret(unqual_recv + "." + mem->field); !r.empty()) return type_id_of(r);
+                        if (TypeId r = find_ret_id(unqual_recv + "." + mem->field); r.is_valid()) return r;
                     }
                 }
+            }
+            if (call->callee) {
+                TypeId ct = infer_expr_type_id_sema(call->callee);
+                const auto& cd = cf_.type_table.get(ct);
+                if (cd.kind == TypeKind::Function) return cd.ret_type;
+                if (ct.is_foreign()) return TypeId::Foreign();
             }
         }
         // Receiver of unknown type (e.g. an untyped closure parameter `|req|`): if exactly one stdlib
@@ -1167,17 +1499,18 @@
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node); mem && mem->object && !mem->is_namespace) {
                 if (infer_expr_type_id_sema(mem->object).is_unknown()) {
-                    std::string unique_ret;
+                    TypeId unique_ret = TypeId::Unknown();
                     bool ambiguous = false;
                     const std::string suffix = "." + mem->field;
                     for (const auto& [key, sig] : StdlibCatalogIndex::instance().receiver_methods) {
                         if (!key.ends_with(suffix) || key.find('.') != key.size() - suffix.size()) continue;
                         const std::string& r = sig.unwrapped_return_type;
                         if (r.empty() || r == "void" || r == "T" || r.find("T]") != std::string::npos) { ambiguous = true; break; }
-                        if (unique_ret.empty()) unique_ret = r;
-                        else if (unique_ret != r) { ambiguous = true; break; }
+                        TypeId cand = wrap_stdlib_ret(sig, type_id_of(r));
+                        if (unique_ret.is_unknown()) unique_ret = cand;
+                        else if (unique_ret != cand) { ambiguous = true; break; }
                     }
-                    if (!ambiguous && !unique_ret.empty()) return type_id_of(unique_ret);
+                    if (!ambiguous && !unique_ret.is_unknown()) return unique_ret;
                 }
             }
         }
@@ -1187,6 +1520,7 @@
 
     CFIRE_SEMA_INLINE auto SemaFnChecker::infer_expr_type_id_sema(const ExprPtr& e) const -> TypeId {
         if (!e) return TypeId::Unknown();
+        if (e->resolved_type_id != 0) return TypeId{e->resolved_type_id};
         if (const auto* lit = std::get_if<LiteralExpr>(&e->node)) {
             if (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString) return TypeId::Str();
             if (lit->kind == TokenKind::Char) return TypeId::Byte();
@@ -1201,10 +1535,7 @@
             if (un->op == "&") return cf_.type_table.make_borrow(op_t);
             if (un->op == "&mut") return cf_.type_table.make_mut_borrow(op_t);
             if (un->op == "*") {
-                TypeId ptr_t = op_t;
-                if (cf_.type_table.get(ptr_t).kind == TypeKind::Optional) {
-                    ptr_t = cf_.type_table.unwrap_optional(ptr_t);
-                }
+                TypeId ptr_t = cf_.type_table.unwrap_optional(op_t);
                 const auto& d = cf_.type_table.get(ptr_t);
                 if (d.elem_type.is_valid()) return d.elem_type;
             }
@@ -1217,32 +1548,48 @@
             }
             TypeId lt = infer_expr_type_id_sema(bin->left);
             TypeId rt = infer_expr_type_id_sema(bin->right);
+            if (lt.is_foreign() || rt.is_foreign()) return TypeId::Foreign();
             if (bin->op == "+" && (lt == TypeId::Str() || rt == TypeId::Str())) {
                 return TypeId::Str();
             }
-            // String concatenation always yields an owned `str`, even when both operands are `&str` views.
             if (bin->op == "+") {
                 const TypeId str_borrow = type_id_of("&str");
                 if (lt == str_borrow || rt == str_borrow) return TypeId::Str();
             }
-            // an integer literal takes the other operand's type (`100 + f` is `f`'s type, as in C++);
+            if (cf_.type_table.is_type_param(lt) && is_numeric_literal_expr(bin->right)) return lt;
+            if (cf_.type_table.is_type_param(rt) && is_numeric_literal_expr(bin->left)) return rt;
+            // an integer literal takes the other operand's type (`100 + f` and `f + 100` keep `f`'s type, as in C++);
             // an expression of literals only is `i64`. A shift has its left operand's type.
-            if (bin->op != "<<" && bin->op != ">>" && cf_.type_table.is_integer(rt) && const_int_value(bin->left) && !const_int_value(bin->right)) return rt;
+            if (bin->op != "<<" && bin->op != ">>") {
+                if (cf_.type_table.is_integer(rt) && const_int_value(bin->left) && !const_int_value(bin->right)) return rt;
+                if (cf_.type_table.is_integer(lt) && !const_int_value(bin->left) && const_int_value(bin->right)) return lt;
+            }
+            if (cf_.type_table.is_float(rt) && is_numeric_literal_expr(bin->left) && !is_numeric_literal_expr(bin->right)) return rt;
+            if (cf_.type_table.is_float(lt) && !is_numeric_literal_expr(bin->left) && is_numeric_literal_expr(bin->right)) return lt;
+            if (cf_.type_table.is_integer(lt) && cf_.type_table.is_integer(rt)) {
+                return cf_.type_table.int_widens(lt, rt) ? lt : (cf_.type_table.int_widens(rt, lt) ? rt : lt);
+            }
             if (lt.is_valid() && !lt.is_unknown()) return lt;
             if (rt.is_valid() && !rt.is_unknown()) return rt;
             return TypeId::Unknown();
         }
         if (const auto* arr = std::get_if<ArrayLitExpr>(&e->node)) {
-            // `[18, 26, 22]` is a slice of its first element's type (no UNKNOWN-TYPE for literals).
-            if (!arr->elements.empty()) {
-                TypeId elem = infer_expr_type_id_sema(arr->elements.front());
-                if (!elem.is_unknown()) return cf_.type_table.make_slice(elem);
+            if (arr->resolved_elem_type_id != 0) {
+                return cf_.type_table.make_slice(TypeId{arr->resolved_elem_type_id});
+            }
+            // `[18, 26, 22]` is a slice of its first non-never element's type (no UNKNOWN-TYPE for literals).
+            for (const auto& el : arr->elements) {
+                TypeId elem = infer_expr_type_id_sema(el);
+                if (elem.is_valid() && !elem.is_unknown() && !elem.is_never()) {
+                    return cf_.type_table.make_slice(elem);
+                }
             }
             return TypeId::Unknown();
         }
         if (const auto* sl = std::get_if<SliceExpr>(&e->node)) {
-            TypeId obj_t = infer_expr_type_id_sema(sl->object);
+            TypeId obj_t = unwrap_receiver_type(infer_expr_type_id_sema(sl->object), /*unwrap_opt=*/false);
             if (obj_t == TypeId::Str()) return type_id_of("&str");
+            if (obj_t.is_foreign()) return TypeId::Foreign();
             const auto& d = cf_.type_table.get(obj_t);
             if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array) {
                 return cf_.type_table.make_slice(d.elem_type);
@@ -1251,14 +1598,89 @@
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
             TypeId obj_t = infer_expr_type_id_sema(idx->object);
-            if (obj_t == TypeId::Str()) return TypeId::Byte();
-            const auto& d = cf_.type_table.get(obj_t);
-            if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array) return d.elem_type;
-            if (d.kind == TypeKind::Map) return d.elem_type;
+            const auto& raw_d = cf_.type_table.get(obj_t);
+            if (raw_d.kind == TypeKind::RawPtr || raw_d.kind == TypeKind::MutPtr) return raw_d.elem_type;
+            TypeId un_t = unwrap_receiver_type(obj_t, /*unwrap_opt=*/false);
+            if (un_t.is_foreign()) return TypeId::Foreign();
+            if (un_t == TypeId::Str()) return TypeId::Byte();
+            const auto& d = cf_.type_table.get(un_t);
+            if (d.kind == TypeKind::Slice || d.kind == TypeKind::Array || d.kind == TypeKind::Map) {
+                return d.elem_type;
+            }
+            if (d.kind == TypeKind::GenericInst) {
+                if (d.base_name.ends_with("BTreeMap") && d.type_args.size() == 2) return d.type_args[1];
+                if ((d.base_name.ends_with("Deque") || d.base_name.ends_with("Vector")) && !d.type_args.empty()) return d.type_args[0];
+                if (d.base_name.ends_with("BitSet")) return TypeId::Bool();
+            }
+            if (d.kind == TypeKind::NominalStruct) {
+                if (d.name == "json.Value") return un_t;
+                if (auto dot = d.name.find('.'); dot != std::string::npos) {
+                    if (resolve_stdlib_ns_sema(std::string_view(d.name.data(), dot)) == "json" &&
+                        std::string_view(d.name).substr(dot + 1) == "Value") {
+                        return un_t;
+                    }
+                }
+            }
             return TypeId::Unknown();
         }
+        if (const auto* cl = std::get_if<ClosureExpr>(&e->node)) {
+            std::vector<TypeId> ptypes;
+            ptypes.reserve(cl->params.size());
+            for (std::size_t i = 0; i < cl->params.size(); ++i) {
+                if (i < cl->resolved_param_types.size() && cl->resolved_param_types[i] != 0) {
+                    ptypes.push_back(TypeId{cl->resolved_param_types[i]});
+                } else if (i < cl->param_types.size() && cl->param_types[i].has_value()) {
+                    ptypes.push_back(resolve_typeref(*cl->param_types[i]));
+                } else if (auto h = closure_param_hints_.find(cl); h != closure_param_hints_.end() && i < h->second.size() && !h->second[i].empty()) {
+                    ptypes.push_back(type_id_of(h->second[i]));
+                } else {
+                    ptypes.push_back(TypeId::Unknown());
+                }
+            }
+            TypeId ret = TypeId::Unknown();
+            if (cl->resolved_return_type_id != 0) {
+                ret = TypeId{cl->resolved_return_type_id};
+            } else if (cl->return_type.has_value()) {
+                if (cl->return_type->name == "void" || cl->return_type->name.empty()) {
+                    ret = cl->return_type->is_fallible ? cf_.type_table.make_fallible(TypeId::Void())
+                        : cl->return_type->is_optional ? cf_.type_table.make_optional(TypeId::Void())
+                        : TypeId::Void();
+                } else {
+                    ret = resolve_typeref(*cl->return_type);
+                }
+            } else if (auto it = closure_ret_types_.find(cl); it != closure_ret_types_.end() && !it->second.empty()) {
+                ret = type_id_of(it->second);
+            } else {
+                ret = TypeId::Void();
+                for (const auto& s : cl->body) {
+                    if (!s) continue;
+                    if (const auto* rs = std::get_if<ReturnStmt>(&s->node); rs && rs->value) {
+                        TypeId rt = infer_expr_type_id_sema(rs->value);
+                        if (rt.is_valid() && !rt.is_unknown() && !rt.is_never()) {
+                            ret = rt;
+                            break;
+                        }
+                    }
+                }
+                if (ret.is_void() && !cl->body.empty() && cl->body.back()) {
+                    if (const auto* es = std::get_if<ExprStmt>(&cl->body.back()->node); es && es->expr) {
+                        TypeId rt = infer_expr_type_id_sema(es->expr);
+                        if (rt.is_valid() && !rt.is_unknown() && !rt.is_never()) ret = rt;
+                    }
+                }
+            }
+            return cf_.type_table.make_function(std::move(ptypes), ret);
+        }
         if (const auto* or_ex = std::get_if<OrExpr>(&e->node)) {
+            if (or_ex->resolved_type_id != 0) return TypeId{or_ex->resolved_type_id};
             TypeId inner_t = infer_expr_type_id_sema(or_ex->inner);
+            if (or_ex->fallback_val) {
+                TypeId fb_t = infer_expr_type_id_sema(or_ex->fallback_val);
+                if ((cf_.type_table.is_fallible(inner_t) && cf_.type_table.is_fallible(fb_t)) ||
+                    (cf_.type_table.is_optional(inner_t) && cf_.type_table.is_optional(fb_t))) {
+                    return fb_t;
+                }
+            }
             if (inner_t.is_valid() && !inner_t.is_unknown()) {
                 const auto& d = cf_.type_table.get(inner_t);
                 if (d.kind == TypeKind::Fallible) return cf_.type_table.unwrap_fallible(inner_t);
@@ -1275,20 +1697,34 @@
             if (inner_t.is_valid() && !inner_t.is_unknown()) {
                 const auto& d = cf_.type_table.get(inner_t);
                 if (d.kind == TypeKind::Fallible) return cf_.type_table.unwrap_fallible(inner_t);
-                // `try` on `T?` is already TRY-ON-OPTIONAL; type the result as `T` so it does not cascade.
                 if (d.kind == TypeKind::Optional) return cf_.type_table.unwrap_optional(inner_t);
                 return inner_t;
             }
         }
         if (const auto* me = std::get_if<MatchExpr>(&e->node)) {
+            if (me->resolved_type_id != 0) return TypeId{me->resolved_type_id};
+            TypeId acc = TypeId::Unknown();
             for (const auto& arm : me->arms) {
-                if (!arm.body.empty()) {
-                    if (const auto* expr_st = std::get_if<ExprStmt>(&arm.body.back()->node)) {
-                        TypeId t = infer_expr_type_id_sema(expr_st->expr);
-                        if (t.is_valid() && !t.is_unknown()) return t;
+                if (arm.body.empty() || !arm.body.back()) continue;
+                if (const auto* expr_st = std::get_if<ExprStmt>(&arm.body.back()->node)) {
+                    TypeId t = infer_expr_type_id_sema(expr_st->expr);
+                    if (t.is_unknown() || t.is_never()) continue;
+                    if (acc.is_unknown()) acc = t;
+                    else if (cf_.type_table.is_integer(acc) && cf_.type_table.is_integer(t) &&
+                             cf_.type_table.int_widens(t, acc)) {
+                        acc = t;
+                    } else if (cf_.type_table.get(t).kind == TypeKind::Optional &&
+                               cf_.type_table.unwrap_optional(t) == acc) {
+                        acc = t;
                     }
                 }
             }
+            if (!acc.is_unknown()) return acc;
+            bool all_diverge = !me->arms.empty();
+            for (const auto& arm : me->arms) {
+                if (!block_diverges(arm.body, &cf_)) { all_diverge = false; break; }
+            }
+            if (all_diverge) return TypeId::Never();
         }
         if (const auto* mem = std::get_if<MemberExpr>(&e->node)) {
             if (TypeId prim = primitive_type_prefix(mem->object); prim.is_valid()) {
@@ -1300,6 +1736,8 @@
                 if (oid->name == "math" && is_math_constant(mem->field)) {
                     return TypeId::Float64();
                 }
+                if (is_cpp_qualifier_sema(oid->name)) return TypeId::Foreign();
+                if (is_unresolved_local_pkg_alias_sema(oid->name)) return TypeId::Error();
                 std::string canon = resolve_stdlib_ns_sema(oid->name);
                 if (!canon.empty()) {
                     if (auto cty = StdlibCatalogIndex::instance().find_ns_const_type(canon, mem->field); !cty.empty()) {
@@ -1309,27 +1747,33 @@
             }
             // fields of stdlib structs (`req.body: str`, `res.exit_code: i32`), from the catalog's type docs.
             if (mem->object) {
-                std::string ot = type_name_of(mem->object);
-                if (mem->field == "value") {  // the value a `sync.MutexGuard[T]` holds locked
-                    std::string g = ot.starts_with("mut ") ? ot.substr(4) : ot;
+                TypeId raw_ot = infer_expr_type_id_sema(mem->object);
+                if (raw_ot.is_foreign() || cf_.type_table.contains_foreign(raw_ot)) return TypeId::Foreign();
+                TypeId un_ot = unwrap_receiver_type(raw_ot, /*unwrap_opt=*/true);
+                const auto& uod = cf_.type_table.get(un_ot);
+                std::string ot = cf_.type_table.to_string(un_ot);
+                if (mem->field == "value") {
+                    if (uod.kind == TypeKind::GenericInst &&
+                        (uod.base_name == "sync.MutexGuard" || uod.base_name == "MutexGuard") &&
+                        uod.type_args.size() == 1) {
+                        return uod.type_args[0];
+                    }
                     for (std::string_view pre : {"sync.MutexGuard[", "MutexGuard["}) {
-                        if (g.starts_with(pre) && g.ends_with(']')) return type_id_of(g.substr(pre.size(), g.size() - pre.size() - 1));
+                        if (ot.starts_with(pre) && ot.ends_with(']')) return type_id_of(ot.substr(pre.size(), ot.size() - pre.size() - 1));
                     }
                 }
-                if (ot.starts_with("mut ")) ot.erase(0, 4);
-                while (!ot.empty() && ot.front() == '&') ot.erase(ot.begin());
                 if (auto dot = ot.find('.'); dot != std::string::npos && ot.find('.', dot + 1) == std::string::npos) {
                     const std::string raw_ns = ot.substr(0, dot);
                     std::string ns = resolve_stdlib_ns_sema(raw_ns);
                     if (ns.empty()) ns = raw_ns;
-                    const std::string tname = ot.substr(dot + 1);
+                    std::string tname = ot.substr(dot + 1);
+                    if (auto lb = tname.find('['); lb != std::string::npos) tname = tname.substr(0, lb);
                     for (const auto& mod : cfire::doc::stdlib_catalog()) {
                         if (mod.ns_alias != ns) continue;
                         for (const auto& td : mod.type_docs) {
                             if (td.bare_name() != tname) continue;
                             for (const auto& f : td.fields) {
                                 if (f.name != mem->field) continue;
-                                // Element types of the module's own (`[]ToolCall` in `ext:ai`) are written bare.
                                 std::string ft = f.type;
                                 for (const auto& own : mod.types) {
                                     if (ft == "[]" + own) ft = "[]" + raw_ns + "." + own;
@@ -1351,93 +1795,35 @@
                 if (std::string own_t = own_type_prefix(mem->object); !own_t.empty()) return type_id_of(own_t);
             }
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node); mem && mem->field == "parse") {
-                if (TypeId prim = primitive_type_prefix(mem->object); prim.is_valid()) return cf_.type_table.make_optional(prim);
+                if (TypeId prim = primitive_type_prefix(mem->object); prim.is_valid()) return cf_.type_table.make_fallible(prim);
             }
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
-                if ((mem->field == "wrapping_as" || mem->field == "saturating_as" || mem->field == "try_as") && call->type_args.size() == 1) {
-                    return type_id_of(call->type_args[0].name);
-                }
                 if (const BuiltinMethod* bm = lookup_builtin_method(*mem); bm && !bm->ret.empty()) {
-                    TypeId rt = resolve_builtin_type(bm->ret, builtin_self_type(mem->object));
+                    TypeId self_tid = builtin_self_type(mem->object);
+                    if (bm->name == "ignore_error" && self_tid.is_valid() &&
+                        cf_.type_table.get(self_tid).kind == TypeKind::Fallible &&
+                        cf_.type_table.get(self_tid).elem_type == TypeId::Void()) {
+                        return TypeId::Unknown();
+                    }
+                    TypeId rt = resolve_builtin_type(bm->ret, self_tid);
                     if (rt.is_valid()) return rt;
                 }
                 if (mem->field == "len") return TypeId::Usize();
                 if (mem->field == "bytes" && call->args.empty()) return type_id_of("[]byte");
-                // Zero-copy pointers: `s.byte_ptr` / `s.byte_ptr_at(i)` -> *c_char, `xs.data_ptr` -> *T.
-                if ((mem->field == "byte_ptr" || mem->field == "byte_ptr_at") && mem->object) return type_id_of("*c_char");
-                if ((mem->field == "data_ptr" || mem->field == "data") && call->args.empty() && mem->object) {
-                    TypeId recv = infer_expr_type_id_sema(mem->object);
-                    if (recv == TypeId::Str()) return type_id_of("*c_char");
+                if ((mem->field == "byte_ptr" || mem->field == "byte_ptr_at") && mem->object) {
+                    TypeId recv = unwrap_receiver_type(infer_expr_type_id_sema(mem->object), /*unwrap_opt=*/true);
                     const auto& rd = cf_.type_table.get(recv);
                     if ((rd.kind == TypeKind::Slice || rd.kind == TypeKind::Array) && !rd.elem_type.is_unknown()) {
                         return cf_.type_table.make_raw_ptr(rd.elem_type);
                     }
+                    return type_id_of("*c_char");
                 }
-                if (const auto* obj_id = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
-                    // Aliased imports (`import "core:tako" as tk`) resolve to their canonical namespace.
-                    std::string ns_name = obj_id->name;
-                    if (!StdlibCatalogIndex::instance().has_namespace(ns_name) && !is_ident_in_scope_sema(ns_name)) {
-                        if (std::string canon = resolve_stdlib_ns_sema(ns_name); !canon.empty()) ns_name = canon;
-                    }
-                    if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(ns_name, mem->field)) {
-                        if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
-                            // Generic stdlib functions (`json.parse[T]`, `db.query[T]`) return their type argument.
-                            const std::string& ur = sfn->unwrapped_return_type;
-                            if (!call->type_args.empty() && (ur == "T" || ur == "[]T" || ur == "T?")) {
-                                const std::string& targ = call->type_args[0].name;
-                                if (!targ.empty()) return type_id_of(ur == "[]T" ? "[]" + targ : targ);
-                            }
-                            if (ur == "T" || ur == "[]T") return infer_named_type_id_(e);
-                            return type_id_of(qualify_stdlib_type_sema(*sfn, obj_id->name));
-                        }
-                    }
-                    if (auto it = var_types_.find(obj_id->name); it != var_types_.end()) {
-                        std::string recv_t = it->second;
-                        const std::string recv_full = canonical_type_name_sema(it->second);
-                        std::string base_recv = recv_t;
-                        std::string generic_arg;
-                        if (auto br = base_recv.find('['); br != std::string::npos && base_recv.ends_with(']')) {
-                            generic_arg = base_recv.substr(br + 1, base_recv.size() - br - 2);
-                            base_recv = base_recv.substr(0, br);
-                        }
-                        std::string unqual_recv = base_recv;
-                        if (auto dot = unqual_recv.rfind('.'); dot != std::string::npos) unqual_recv = unqual_recv.substr(dot + 1);
-                        if (auto dcol = unqual_recv.rfind("::"); dcol != std::string::npos) unqual_recv = unqual_recv.substr(dcol + 2);
-
-                        auto check_mit = [&](const std::string& key) -> TypeId {
-                            if (auto mit = StdlibCatalogIndex::instance().receiver_methods.find(key);
-                                mit != StdlibCatalogIndex::instance().receiver_methods.end()) {
-                                if (!mit->second.unwrapped_return_type.empty() && mit->second.unwrapped_return_type != "void") {
-                                    if (!generic_arg.empty() && mit->second.unwrapped_return_type == "T") {
-                                        return type_id_of(generic_arg);
-                                    }
-                                    const auto dotq = recv_full.rfind('.');
-                                    return type_id_of(qualify_stdlib_type_sema(mit->second, dotq == std::string::npos
-                                        ? local_qualifier_for_module_sema(mit->second.module_import, mit->second.ns_alias)
-                                        : recv_full.substr(0, dotq)));
-                                }
-                            }
-                            return TypeId::Unknown();
-                        };
-
-                        if (TypeId tid = check_mit(recv_t + "." + mem->field); !tid.is_unknown()) return tid;
-                        if (TypeId tid = check_mit(base_recv + "." + mem->field); !tid.is_unknown()) return tid;
-                        if (auto dot = base_recv.find('.'); dot != std::string::npos) {
-                            if (std::string cns = resolve_stdlib_ns_sema(base_recv.substr(0, dot)); !cns.empty()) {
-                                if (TypeId tid = check_mit(cns + base_recv.substr(dot) + "." + mem->field); !tid.is_unknown()) return tid;
-                            }
-                        }
-                        if (TypeId tid = check_mit(unqual_recv + "." + mem->field); !tid.is_unknown()) return tid;
-                    }
-                } else if (mem->object) {
-                    if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
-                        if (const auto* sub_id = std::get_if<IdentExpr>(&sub_mem->object->node)) {
-                            if (const auto* sfn = StdlibCatalogIndex::instance().find_ns_fn(sub_id->name, sub_mem->field + "." + mem->field)) {
-                                if (!sfn->unwrapped_return_type.empty() && sfn->unwrapped_return_type != "void") {
-                                    return type_id_of(qualify_stdlib_type_sema(*sfn, sub_id->name));
-                                }
-                            }
-                        }
+                if ((mem->field == "data_ptr" || mem->field == "data") && call->args.empty() && mem->object) {
+                    TypeId recv = unwrap_receiver_type(infer_expr_type_id_sema(mem->object), /*unwrap_opt=*/true);
+                    if (recv == TypeId::Str()) return type_id_of("*c_char");
+                    const auto& rd = cf_.type_table.get(recv);
+                    if ((rd.kind == TypeKind::Slice || rd.kind == TypeKind::Array) && !rd.elem_type.is_unknown()) {
+                        return cf_.type_table.make_raw_ptr(rd.elem_type);
                     }
                 }
             }
@@ -1451,6 +1837,434 @@
         TypeId id = infer_expr_type_id_sema(e);
         if (id.is_unknown()) return "";
         return cf_.type_table.to_string(id);
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_typeref(const TypeRef& tr) const -> TypeId {
+        if (tr.is_fallible) {
+            TypeRef inner = tr;
+            inner.is_fallible = false;
+            return cf_.type_table.make_fallible(resolve_typeref(inner));
+        }
+        if (tr.is_optional) {
+            TypeRef inner = tr;
+            inner.is_optional = false;
+            return cf_.type_table.make_optional(resolve_typeref(inner));
+        }
+        if (tr.is_fn) {
+            std::vector<TypeId> params;
+            params.reserve(tr.fn_params.size());
+            for (const auto& pt : tr.fn_params) params.push_back(resolve_typeref(pt));
+            TypeId ret = TypeId::Void();
+            if (tr.fn_ret) {
+                if (tr.fn_ret->name.empty() && !tr.fn_ret->is_slice && !tr.fn_ret->is_array && !tr.fn_ret->is_map &&
+                    !tr.fn_ret->is_tuple && !tr.fn_ret->is_fn && tr.fn_ret->smart_wrap.empty()) {
+                    ret = TypeId::Void();
+                    if (tr.fn_ret->is_optional) ret = cf_.type_table.make_optional(ret);
+                    if (tr.fn_ret->is_fallible) ret = cf_.type_table.make_fallible(ret);
+                } else {
+                    ret = resolve_typeref(*tr.fn_ret);
+                }
+            }
+            return cf_.type_table.make_function(std::move(params), ret);
+        }
+        if (tr.is_tuple) {
+            std::vector<TypeId> elems;
+            elems.reserve(tr.tuple_types.size());
+            for (const auto& tt : tr.tuple_types) elems.push_back(resolve_typeref(tt));
+            return cf_.type_table.make_tuple(std::move(elems));
+        }
+        if (tr.is_slice) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name.starts_with("[]") ? std::string_view(tr.name).substr(2) : std::string_view(tr.name), &fn_type_param_ids_);
+            return cf_.type_table.make_slice(elem);
+        }
+        if (tr.is_array) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            std::size_t len = 0;
+            if (!tr.array_len.empty()) {
+                len = parse_int_literal<std::size_t>(tr.array_len).value_or(0);
+            }
+            return cf_.type_table.make_array(elem, len);
+        }
+        if (tr.is_map) {
+            TypeId k = tr.key_type ? resolve_typeref(*tr.key_type) : TypeId::Str();
+            TypeId v = tr.elem_type ? resolve_typeref(*tr.elem_type) : TypeId::Unknown();
+            return cf_.type_table.make_map(k, v);
+        }
+        if (!tr.smart_wrap.empty()) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            if (tr.smart_wrap == "own") return cf_.type_table.make_own(elem);
+            if (tr.smart_wrap == "shared") return cf_.type_table.make_shared(elem);
+        }
+        if (tr.is_borrow) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            return cf_.type_table.make_borrow(elem);
+        }
+        if (tr.is_mut_borrow) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            return cf_.type_table.make_mut_borrow(elem);
+        }
+        if (tr.is_ptr) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            return cf_.type_table.make_raw_ptr(elem);
+        }
+        if (tr.is_mut_ptr) {
+            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
+                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            return cf_.type_table.make_mut_ptr(elem);
+        }
+        if (!tr.type_args.empty()) {
+            std::string canon_base = canonical_nominal_path_sema(tr.name);
+            if (canon_base == "cpp" || canon_base.starts_with("cpp.") || canon_base.starts_with("cpp::")) {
+                return TypeId::Foreign();
+            }
+            if (auto dot = canon_base.find('.'); dot != std::string::npos) {
+                if (is_cpp_qualifier_sema(std::string_view(canon_base.data(), dot))) {
+                    return TypeId::Foreign();
+                }
+            } else if (auto dcol = canon_base.find("::"); dcol != std::string::npos) {
+                if (is_cpp_qualifier_sema(std::string_view(canon_base.data(), dcol))) {
+                    return TypeId::Foreign();
+                }
+            }
+            std::vector<TypeId> args;
+            args.reserve(tr.type_args.size());
+            for (const auto& ta : tr.type_args) args.push_back(resolve_typeref(ta));
+            return cf_.type_table.make_generic_inst(canon_base, std::move(args));
+        }
+        if (tr.name.empty()) return TypeId::Unknown();
+        if (tr.name == "void") return TypeId::Void();
+        if (auto tpit = fn_type_param_ids_.find(tr.name); tpit != fn_type_param_ids_.end()) {
+            return tpit->second;
+        }
+        std::string canon_name = canonical_type_name_sema(tr.name);
+        if (cf_.cpp_qualifiers.contains(canon_name) || canon_name.starts_with("cpp.")) {
+            return TypeId::Foreign();
+        }
+        if (auto dot = canon_name.find('.'); dot != std::string::npos) {
+            if (is_cpp_qualifier_sema(std::string_view(canon_name.data(), dot))) {
+                return TypeId::Foreign();
+            }
+        }
+        return cf_.type_table.from_name(canon_name, fn_type_param_ids_.empty() ? nullptr : &fn_type_param_ids_);
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::unwrap_receiver_type(TypeId t, bool unwrap_opt) const -> TypeId {
+        for (int depth = 0; depth < 8 && t.is_valid(); ++depth) {
+            const auto& d = cf_.type_table.get(t);
+            if (d.kind == TypeKind::Own || d.kind == TypeKind::Shared ||
+                d.kind == TypeKind::Borrow || d.kind == TypeKind::MutBorrow ||
+                d.kind == TypeKind::RawPtr || d.kind == TypeKind::MutPtr) {
+                t = d.elem_type;
+                continue;
+            }
+            if (unwrap_opt && d.kind == TypeKind::Optional) {
+                t = d.elem_type;
+                continue;
+            }
+            break;
+        }
+        return t;
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::map_cpp_qualtype_to_type_id(std::string_view qtype) const -> TypeId {
+        auto trim = [](std::string_view sv) -> std::string_view {
+            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) sv.remove_prefix(1);
+            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.back()))) sv.remove_suffix(1);
+            return sv;
+        };
+        std::string_view s = trim(qtype);
+        if (s.empty()) return TypeId::Foreign();
+        while (s.ends_with('&')) s = trim(s.substr(0, s.size() - 1));
+        if (s.ends_with('*')) {
+            std::string_view pointee = trim(s.substr(0, s.size() - 1));
+            bool is_const = false;
+            if (pointee.starts_with("const ")) {
+                is_const = true;
+                pointee = trim(pointee.substr(6));
+            } else if (pointee.ends_with(" const")) {
+                is_const = true;
+                pointee = trim(pointee.substr(0, pointee.size() - 6));
+            }
+            TypeId pe = TypeId::Unknown();
+            if (pointee == "char") pe = cf_.type_table.from_name("c_char");
+            else if (pointee == "void") pe = cf_.type_table.from_name("c_void");
+            else pe = map_cpp_qualtype_to_type_id(pointee);
+            return is_const ? cf_.type_table.make_raw_ptr(pe) : cf_.type_table.make_mut_ptr(pe);
+        }
+        if (s.starts_with("const ")) s = trim(s.substr(6));
+        if (s.starts_with("volatile ")) s = trim(s.substr(9));
+        if (s.ends_with(" const")) s = trim(s.substr(0, s.size() - 6));
+        if (s == "void") return TypeId::Void();
+        if (s == "bool" || s == "_Bool") return TypeId::Bool();
+        if (s == "int8_t" || s == "std::int8_t" || s == "signed char" || s == "char") return TypeId::Int8();
+        if (s == "uint8_t" || s == "std::uint8_t" || s == "unsigned char") return TypeId::Uint8();
+        if (s == "int16_t" || s == "std::int16_t" || s == "short" || s == "short int" || s == "signed short") return TypeId::Int16();
+        if (s == "uint16_t" || s == "std::uint16_t" || s == "unsigned short" || s == "unsigned short int") return TypeId::Uint16();
+        if (s == "int32_t" || s == "std::int32_t" || s == "int" || s == "signed int" || s == "signed") return TypeId::Int32();
+        if (s == "uint32_t" || s == "std::uint32_t" || s == "unsigned int" || s == "unsigned") return TypeId::Uint32();
+        if (s == "int64_t" || s == "std::int64_t" || s == "long long" || s == "long long int" || s == "signed long long") return TypeId::Int64();
+        if (s == "uint64_t" || s == "std::uint64_t" || s == "unsigned long long" || s == "unsigned long long int") return TypeId::Uint64();
+        if (s == "long" || s == "long int" || s == "ssize_t" || s == "ptrdiff_t" || s == "std::ptrdiff_t" || s == "intptr_t") return TypeId::Isize();
+        if (s == "unsigned long" || s == "unsigned long int" || s == "size_t" || s == "std::size_t" || s == "uintptr_t") return TypeId::Usize();
+        if (s == "float") return TypeId::Float32();
+        if (s == "double") return TypeId::Float64();
+        if (s == "std::string" || s == "std::basic_string<char>") return TypeId::Str();
+        if (s == "std::string_view" || s == "std::basic_string_view<char>") return type_id_of("&str");
+        return TypeId::Foreign();
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::is_type_comparable_sema(TypeId t) const -> bool {
+        std::unordered_set<uint32_t> visited;
+        auto check = [&](auto& self, TypeId cur) -> bool {
+            if (cur.is_unknown() || cur.is_error() || cur.is_foreign() || cur.is_never()) return true;
+            if (cur == TypeId::Bool() || cur == TypeId::Str() || cf_.type_table.is_numeric(cur)) return true;
+            if (!visited.insert(cur.index).second) return true;
+            const auto& d = cf_.type_table.get(cur);
+            switch (d.kind) {
+                case TypeKind::NominalEnum:
+                case TypeKind::RawPtr:
+                case TypeKind::MutPtr:
+                    return true;
+                case TypeKind::Borrow:
+                case TypeKind::MutBorrow:
+                case TypeKind::Optional:
+                case TypeKind::Slice:
+                case TypeKind::Array:
+                    return self(self, d.elem_type);
+                case TypeKind::Map:
+                    return self(self, d.key_type) && self(self, d.elem_type);
+                case TypeKind::Tuple:
+                    for (TypeId p : d.param_types) {
+                        if (!self(self, p)) return false;
+                    }
+                    return true;
+                case TypeKind::NominalStruct: {
+                    auto sit = cf_.struct_defs.find(d.name);
+                    if (sit == cf_.struct_defs.end()) {
+                        std::string canon = d.name;
+                        if (auto dot = d.name.find('.'); dot != std::string::npos) {
+                            if (std::string ns = resolve_stdlib_ns_sema(std::string_view(d.name.data(), dot)); !ns.empty()) {
+                                canon = ns + d.name.substr(dot);
+                            }
+                        }
+                        return canon == "time.Time" || canon == "time.Duration" ||
+                               canon == "fs.FileInfo" || canon == "ipc.PeerCred";
+                    }
+                    for (const auto& f : sit->second.fields) {
+                        if (!self(self, resolve_typeref(f.type))) return false;
+                    }
+                    return true;
+                }
+                case TypeKind::GenericInst: {
+                    auto sit = cf_.struct_defs.find(d.base_name);
+                    if (sit == cf_.struct_defs.end()) return false;
+                    std::unordered_map<std::string, TypeId> env;
+                    for (std::size_t i = 0; i < sit->second.type_params.size() && i < d.type_args.size(); ++i) {
+                        env[sit->second.type_params[i].name] = d.type_args[i];
+                    }
+                    for (const auto& f : sit->second.fields) {
+                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_sema(f.type), &env))) return false;
+                    }
+                    return true;
+                }
+                case TypeKind::TypeParam:
+                    return cf_.type_table.has_constraint(cur, "Comparable");
+                default:
+                    return false;
+            }
+        };
+        return check(check, t);
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::is_type_ordered_sema(TypeId t) const -> bool {
+        std::unordered_set<uint32_t> visited;
+        auto check = [&](auto& self, TypeId cur) -> bool {
+            if (cur.is_unknown() || cur.is_error() || cur.is_foreign() || cur.is_never()) return true;
+            if (cur == TypeId::Str() || cf_.type_table.is_numeric(cur)) return true;
+            if (!visited.insert(cur.index).second) return true;
+            const auto& d = cf_.type_table.get(cur);
+            switch (d.kind) {
+                case TypeKind::Borrow:
+                case TypeKind::MutBorrow:
+                    return d.elem_type == TypeId::Str();
+                case TypeKind::Tuple:
+                    for (TypeId p : d.param_types) {
+                        if (!self(self, p)) return false;
+                    }
+                    return true;
+                case TypeKind::NominalStruct: {
+                    auto sit = cf_.struct_defs.find(d.name);
+                    if (sit == cf_.struct_defs.end()) {
+                        std::string canon = d.name;
+                        if (auto dot = d.name.find('.'); dot != std::string::npos) {
+                            if (std::string ns = resolve_stdlib_ns_sema(std::string_view(d.name.data(), dot)); !ns.empty()) {
+                                canon = ns + d.name.substr(dot);
+                            }
+                        }
+                        return canon == "time.Time" || canon == "time.Duration";
+                    }
+                    for (const auto& f : sit->second.fields) {
+                        if (!self(self, resolve_typeref(f.type))) return false;
+                    }
+                    return true;
+                }
+                case TypeKind::GenericInst: {
+                    auto sit = cf_.struct_defs.find(d.base_name);
+                    if (sit == cf_.struct_defs.end()) return false;
+                    std::unordered_map<std::string, TypeId> env;
+                    for (std::size_t i = 0; i < sit->second.type_params.size() && i < d.type_args.size(); ++i) {
+                        env[sit->second.type_params[i].name] = d.type_args[i];
+                    }
+                    for (const auto& f : sit->second.fields) {
+                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_sema(f.type), &env))) return false;
+                    }
+                    return true;
+                }
+                case TypeKind::TypeParam:
+                    return cf_.type_table.has_constraint(cur, "Ordered");
+                default:
+                    return false;
+            }
+        };
+        return check(check, t);
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::satisfies_constraint_sema(TypeId concrete, std::string_view constraint) const -> bool {
+        if (concrete.is_unknown() || concrete.is_error() || concrete.is_foreign() ||
+            cf_.type_table.contains_foreign(concrete) || cf_.type_table.contains_error(concrete)) {
+            return true;
+        }
+        if (cf_.type_table.is_type_param(concrete)) {
+            if (cf_.type_table.has_constraint(concrete, constraint)) return true;
+            const auto& td = cf_.type_table.get(concrete);
+            for (const auto& b : td.constraints) {
+                if (b == constraint) return true;
+            }
+            if (auto it = fn_type_param_bounds_.find(td.name); it != fn_type_param_bounds_.end()) {
+                for (const auto& b : it->second) {
+                    if (b == constraint) return true;
+                }
+            }
+            return false;
+        }
+        auto iit = cf_.interface_defs.find(std::string(constraint));
+        if (iit == cf_.interface_defs.end()) {
+            if (constraint == "Comparable" || constraint == "Equatable") return is_type_comparable_sema(concrete);
+            if (constraint == "Ordered") return is_type_ordered_sema(concrete);
+            if (constraint == "Numeric") return cf_.type_table.is_numeric_or_constrained(concrete);
+            if (constraint == "Integer") return cf_.type_table.is_integer_or_constrained(concrete);
+            return false;
+        }
+        TypeId un_t = unwrap_receiver_type(concrete, /*unwrap_opt=*/false);
+        const auto& ud = cf_.type_table.get(un_t);
+        if (ud.kind == TypeKind::Optional || ud.kind == TypeKind::Fallible) return false;
+        std::string lookup_owner = canonical_type_name_sema(ud.kind == TypeKind::GenericInst ? ud.base_name : ud.name);
+        if (auto lb = lookup_owner.find('['); lb != std::string::npos) lookup_owner = lookup_owner.substr(0, lb);
+        std::string mangled_owner = lookup_owner;
+        if (auto dot = lookup_owner.find('.'); dot != std::string::npos) {
+            mangled_owner = std::format("cfire_pkg_{}__{}", lookup_owner.substr(0, dot), lookup_owner.substr(dot + 1));
+        }
+        auto find_impl_method = [&](const std::string& mname) -> const FnDecl* {
+            if (auto mit = cf_.methods.find(mangled_owner + "::" + mname); mit != cf_.methods.end()) return &mit->second;
+            if (auto mit = cf_.methods.find(lookup_owner + "::" + mname); mit != cf_.methods.end()) return &mit->second;
+            if (auto dot = lookup_owner.find('.'); dot != std::string::npos) {
+                if (auto mit = cf_.methods.find(lookup_owner.substr(dot + 1) + "::" + mname); mit != cf_.methods.end()) return &mit->second;
+            }
+            return nullptr;
+        };
+        for (const auto& m : iit->second.methods) {
+            const FnDecl* impl = find_impl_method(m.name);
+            if (!impl) return false;
+            if (!m.is_mut_receiver && impl->receiver && impl->receiver->intent == "mut") return false;
+            if (impl->params.size() != m.param_types.size()) return false;
+            for (std::size_t k = 0; k < m.param_types.size(); ++k) {
+                std::string exp_intent = (k < m.param_intents.size() && !m.param_intents[k].empty()) ? m.param_intents[k] : std::string("in");
+                if (impl->params[k].intent != exp_intent) return false;
+                if (canonical_type_name_sema(format_type_ref_sema(impl->params[k].type)) !=
+                    canonical_type_name_sema(format_type_ref_sema(m.param_types[k]))) {
+                    return false;
+                }
+            }
+            if (canonical_type_name_sema(format_type_ref_sema(impl->return_type)) !=
+                canonical_type_name_sema(format_type_ref_sema(m.return_type))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::check_type_compatible(
+        TypeId want,
+        TypeId got,
+        const ExprPtr& expr,
+        std::string_view ctx,
+        int line,
+        int col
+    ) -> std::expected<void, std::string> {
+        if (!want.is_valid() || !got.is_valid() || want.is_unknown() || got.is_unknown()) return {};
+        if (want.is_error() || got.is_error() || want.is_never() || got.is_never() ||
+            want.is_foreign() || got.is_foreign() ||
+            cf_.type_table.contains_error(want) || cf_.type_table.contains_error(got) ||
+            cf_.type_table.contains_foreign(want) || cf_.type_table.contains_foreign(got)) {
+            return {};
+        }
+        const auto& wd = cf_.type_table.get(want);
+        const auto& gd = cf_.type_table.get(got);
+        if (expr) {
+            if (const auto* lit = std::get_if<LiteralExpr>(&expr->node); lit && lit->kind == TokenKind::KwNone) {
+                if (wd.kind == TypeKind::Optional || wd.kind == TypeKind::RawPtr || wd.kind == TypeKind::MutPtr) {
+                    return {};
+                }
+                return emit_error(diag_at(line, col, "cfire/TYPE-MISMATCH",
+                    std::format("{} expects '{}', got 'none'", ctx, cf_.type_table.to_string(want))));
+            }
+        }
+        if (gd.kind == TypeKind::Optional && wd.kind != TypeKind::Optional) {
+            if (cf_.type_table.is_assignable(want, gd.elem_type) ||
+                (wd.kind == TypeKind::Interface && satisfies_constraint_sema(gd.elem_type, wd.name))) {
+                return emit_error(diag_at(line, col, "cfire/UNWRAPPED-OPTIONAL",
+                    std::format("{} expects '{}', got optional '{}' without unwrapping; use 'or' to provide a fallback",
+                        ctx, cf_.type_table.to_string(want), cf_.type_table.to_string(got))));
+            }
+        }
+        if (gd.kind == TypeKind::Fallible && wd.kind != TypeKind::Fallible) {
+            return emit_error(diag_at(line, col, "cfire/UNHANDLED-RESULT",
+                std::format("{} expects '{}', got fallible result '{}' without unwrapping with 'try' or 'or'",
+                    ctx, cf_.type_table.to_string(want), cf_.type_table.to_string(got))));
+        }
+        if (expr) {
+            bool handled = false;
+            if (auto r = check_value_for(want, expr, handled); !r) return r;
+            if (handled) return {};
+        }
+        if (wd.kind == TypeKind::Interface) {
+            if (got == want || satisfies_constraint_sema(got, wd.name)) return {};
+        }
+        if (wd.kind == TypeKind::Borrow && cf_.type_table.get(wd.elem_type).kind == TypeKind::Interface) {
+            const auto& idesc = cf_.type_table.get(wd.elem_type);
+            if (got == want || got == wd.elem_type || satisfies_constraint_sema(got, idesc.name)) return {};
+        }
+        if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got)) return {};
+        if (!cf_.type_table.is_assignable(want, got)) {
+            return emit_error(diag_at(line, col, "cfire/TYPE-MISMATCH",
+                std::format("{} expects '{}', got '{}'{}",
+                    ctx, cf_.type_table.to_string(want), cf_.type_table.to_string(got),
+                    nominal_mismatch_hint_sema(want, got))));
+        }
+        return {};
     }
 
 
@@ -1614,6 +2428,22 @@
         else if (t.is_mut_borrow) s += "&mut ";
         else if (t.is_ptr) s += "*";
         else if (t.is_mut_ptr) s += "*mut ";
+        if (t.is_fn) {
+            s += "fn(";
+            for (std::size_t i = 0; i < t.fn_params.size(); ++i) {
+                if (i > 0) s += ", ";
+                s += format_type_ref_sema(t.fn_params[i]);
+            }
+            s += ")";
+            if (t.fn_ret && !t.fn_ret->name.empty() && t.fn_ret->name != "void") {
+                s += " -> " + format_type_ref_sema(*t.fn_ret);
+            } else if (t.fn_ret && (t.fn_ret->is_fallible || t.fn_ret->is_optional)) {
+                s += " -> " + format_type_ref_sema(*t.fn_ret);
+            }
+            if (t.is_optional) s += "?";
+            if (t.is_fallible) s += "!";
+            return s;
+        }
         if (t.is_slice) {
             s += "[]";
             if (t.elem_type) {
@@ -1691,47 +2521,162 @@
 
 
     // is `t` a type Sema fully understands (so a mismatch is certain, not a gap in inference)?
-    // Primitives, str, &str, slices/arrays of those, and nominal types declared in this program.
     CFIRE_SEMA_INLINE auto SemaFnChecker::is_concrete_checkable_type(TypeId t) const -> bool {
-        if (t.is_unknown()) return false;
+        if (t.is_unknown() || t.is_error() || t.is_foreign()) return false;
+        if (t == TypeId::Void() || t == TypeId::Never()) return true;
         if (t.index >= TypeId::Bool().index && t.index <= TypeId::Str().index) return true;
         const auto& d = cf_.type_table.get(t);
         switch (d.kind) {
+            case TypeKind::Byte:
+                return true;
             case TypeKind::Borrow:
+            case TypeKind::MutBorrow:
+            case TypeKind::RawPtr:
+            case TypeKind::MutPtr:
             case TypeKind::Slice:
             case TypeKind::Array:
+            case TypeKind::Optional:
+            case TypeKind::Fallible:
+            case TypeKind::Own:
+            case TypeKind::Shared:
                 return is_concrete_checkable_type(d.elem_type);
+            case TypeKind::Map:
+                return is_concrete_checkable_type(d.key_type) && is_concrete_checkable_type(d.elem_type);
+            case TypeKind::Tuple:
+                for (TypeId p : d.param_types) {
+                    if (!is_concrete_checkable_type(p)) return false;
+                }
+                return true;
+            case TypeKind::Function:
+                if (!is_concrete_checkable_type(d.ret_type)) return false;
+                for (TypeId p : d.param_types) {
+                    if (!is_concrete_checkable_type(p)) return false;
+                }
+                return true;
+            case TypeKind::TypeParam:
+                return true;
+            case TypeKind::GenericInst:
+                for (TypeId a : d.type_args) {
+                    if (!is_concrete_checkable_type(a)) return false;
+                }
+                return !d.base_name.empty();
             case TypeKind::NominalStruct:
             case TypeKind::NominalEnum:
-                return cf_.struct_tags.contains(d.name) || cf_.enums.contains(d.name);
+            case TypeKind::Interface:
+                if (d.name.empty() || d.name == "unknown" || d.name == "any" ||
+                    d.name.starts_with("cpp.") || d.name.starts_with("cpp::")) {
+                    return false;
+                }
+                if (auto dot = d.name.find('.'); dot != std::string::npos) {
+                    if (is_cpp_qualifier_sema(std::string_view(d.name.data(), dot))) return false;
+                }
+                return true;
             default:
                 return false;
         }
     }
 
 
-    // a type argument bound to `T: Iface` (including compound `T: A + B` and `pkg.Trait`) must
-    // implement every method of every interface bound (name, receiver/param intents, parameter types, return type).
+    // a type argument bound to `T: Constraint` (built-in Comparable/Ordered/Numeric/Integer or user interface
+    // / compound bounds) must unify consistently at call sites and satisfy every required constraint.
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_interface_constraints(const CallExpr& call, const FnDecl& sig, int line, int col)
         -> std::expected<void, std::string> {
+        if (sig.type_params.empty()) return {};
+        std::unordered_map<std::string, TypeId> pat_env;
+        std::unordered_map<std::string, TypeId> bindings;
+        std::unordered_map<std::string, std::pair<int, int>> bound_locs;
+        for (std::size_t idx = 0; idx < sig.type_params.size(); ++idx) {
+            const auto& tp = sig.type_params[idx];
+            pat_env[tp.name] = cf_.type_table.make_type_param(tp.name, tp.constraints);
+            if (idx < call.type_args.size()) {
+                TypeId ta = resolve_typeref(call.type_args[idx]);
+                if (ta.is_valid() && !ta.is_unknown()) {
+                    bindings[tp.name] = ta;
+                    bound_locs[tp.name] = {line, col};
+                }
+            }
+        }
+        // Seed receiver generic bindings if calling a generic method on GenericInst.
+        if (sig.receiver) {
+            if (const auto* mem = call.callee ? std::get_if<MemberExpr>(&call.callee->node) : nullptr; mem && mem->object) {
+                TypeId un_rt = unwrap_receiver_type(infer_expr_type_id_sema(mem->object), true);
+                const auto& rd = cf_.type_table.get(un_rt);
+                if (rd.kind == TypeKind::GenericInst) {
+                    for (std::size_t i = 0; i < sig.receiver->type.type_args.size() && i < rd.type_args.size(); ++i) {
+                        if (!sig.receiver->type.type_args[i].name.empty()) {
+                            bindings[sig.receiver->type.type_args[i].name] = rd.type_args[i];
+                        }
+                    }
+                }
+            }
+        }
+        for (std::size_t i = 0; i < call.args.size() && i < sig.params.size(); ++i) {
+            const auto& arg = call.args[i];
+            const ParamDecl* param = &sig.params[i];
+            if (!arg.label.empty()) {
+                auto it = std::find_if(sig.params.begin(), sig.params.end(), [&](const ParamDecl& pd) { return pd.name == arg.label; });
+                if (it == sig.params.end()) continue;
+                param = &*it;
+            }
+            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+            if (!cf_.type_table.contains_type_param(pat)) continue;
+            TypeId got = infer_expr_type_id_sema(arg.value);
+            if (pat.is_unknown() || got.is_unknown() || got.is_error() || got.is_never() || got.is_foreign()) continue;
+            // Allow untyped numeric literals to adapt to a previously bound numeric TypeParam.
+            if (cf_.type_table.is_type_param(pat) && is_numeric_literal_expr(arg.value)) {
+                const auto& pname = cf_.type_table.get(pat).name;
+                if (auto bit = bindings.find(pname); bit != bindings.end()) {
+                    if (cf_.type_table.is_numeric(bit->second)) {
+                        if (cf_.type_table.is_integer(bit->second)) {
+                            if (auto r = check_int_literal_fits(arg.value, cf_.type_table.to_string(bit->second), arg.line, arg.col); !r) return r;
+                        }
+                        continue;
+                    }
+                }
+            }
+            if (!cf_.type_table.unify(pat, got, bindings)) {
+                TypeId expected = cf_.type_table.substitute(pat, bindings);
+                if (cf_.type_table.is_optional(got) && !cf_.type_table.is_optional(expected) &&
+                    cf_.type_table.is_assignable(expected, cf_.type_table.unwrap_optional(got))) {
+                    if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/UNWRAPPED-OPTIONAL",
+                        std::format("argument {} of '{}' expects '{}', got optional '{}' without unwrapping; use 'or' to provide a fallback",
+                            i + 1, sig.name, cf_.type_table.to_string(expected), cf_.type_table.to_string(got)))); !r) return r;
+                } else {
+                    if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/TYPE-MISMATCH",
+                        std::format("argument {} of '{}' expects '{}', got '{}'",
+                            i + 1, sig.name, cf_.type_table.to_string(expected), cf_.type_table.to_string(got)))); !r) return r;
+                }
+                continue;
+            }
+            if (!bound_locs.contains(param->type.name)) {
+                bound_locs[param->type.name] = {arg.line, arg.col};
+            }
+        }
         for (std::size_t tp_idx = 0; tp_idx < sig.type_params.size(); ++tp_idx) {
             const auto& tp = sig.type_params[tp_idx];
             if (tp.constraints.empty()) continue;
-            // Find the argument whose parameter is exactly `T` and take its concrete type.
-            std::string concrete;
+            auto bit = bindings.find(tp.name);
+            if (bit == bindings.end()) continue;
+            TypeId concrete_tid = bit->second;
+            if (concrete_tid.is_unknown() || concrete_tid.is_error() || concrete_tid.is_foreign() ||
+                cf_.type_table.contains_foreign(concrete_tid)) {
+                continue;
+            }
+            std::string concrete = cf_.type_table.to_string(concrete_tid);
+            if (concrete == "unknown" || concrete == "any") continue;
             int arg_line = line, arg_col = col;
-            for (std::size_t i = 0; i < sig.params.size() && i < call.args.size(); ++i) {
-                if (format_type_ref_sema(sig.params[i].type) != tp.name) continue;
-                concrete = type_name_of(call.args[i].value);
-                arg_line = call.args[i].line;
-                arg_col = call.args[i].col;
-                break;
+            if (auto lit = bound_locs.find(tp.name); lit != bound_locs.end()) {
+                arg_line = lit->second.first;
+                arg_col = lit->second.second;
+            } else {
+                for (std::size_t i = 0; i < sig.params.size() && i < call.args.size(); ++i) {
+                    if (format_type_ref_sema(sig.params[i].type) == tp.name) {
+                        arg_line = call.args[i].line;
+                        arg_col = call.args[i].col;
+                        break;
+                    }
+                }
             }
-            if (concrete.empty() && tp_idx < call.type_args.size()) {
-                concrete = format_type_ref_sema(call.type_args[tp_idx]);
-            }
-            if (concrete.empty() || concrete == "unknown" || concrete == "any" || fn_type_params_.contains(concrete)) continue;
-            if (concrete.find("cpp::") != std::string::npos || concrete.find("cpp.") != std::string::npos) continue;
             std::string lookup_owner = canonical_type_name_sema(concrete);
             if (auto lb = lookup_owner.find('['); lb != std::string::npos) lookup_owner = lookup_owner.substr(0, lb);
             std::string mangled_owner = lookup_owner;
@@ -1750,7 +2695,36 @@
             for (const auto& b : tp.constraints) full_bounds += (full_bounds.empty() ? "" : " + ") + b;
             for (const auto& bound : tp.constraints) {
                 auto iit = cf_.interface_defs.find(bound);
-                if (iit == cf_.interface_defs.end()) continue;
+                if (iit == cf_.interface_defs.end()) {
+                    if (!satisfies_constraint_sema(concrete_tid, bound)) {
+                        if (cf_.type_table.is_optional(concrete_tid) &&
+                            satisfies_constraint_sema(cf_.type_table.unwrap_optional(concrete_tid), bound)) {
+                            if (auto r = emit_error(diag_at(arg_line, arg_col, "cfire/UNWRAPPED-OPTIONAL",
+                                std::format("cannot pass optional '{}' where '{}' requires '{}: {}'; unwrap first with 'or'",
+                                    concrete, sig.name, tp.name, full_bounds))); !r) return r;
+                        } else {
+                            if (auto r = emit_error(diag_at(arg_line, arg_col, "cfire/UNSATISFIED-CONSTRAINT",
+                                std::format("type '{}' does not satisfy constraint '{}' required by '{}[{}: {}]'",
+                                    concrete, bound, sig.name, tp.name, full_bounds))); !r) return r;
+                        }
+                    }
+                    continue;
+                }
+                if (cf_.type_table.is_optional(concrete_tid) &&
+                    satisfies_constraint_sema(cf_.type_table.unwrap_optional(concrete_tid), bound)) {
+                    if (auto r = emit_error(diag_at(arg_line, arg_col, "cfire/UNWRAPPED-OPTIONAL",
+                        std::format("cannot pass optional '{}' where '{}' requires '{}: {}'; unwrap first with 'or'",
+                            concrete, sig.name, tp.name, full_bounds))); !r) return r;
+                    continue;
+                }
+                if (cf_.type_table.is_type_param(concrete_tid)) {
+                    if (!satisfies_constraint_sema(concrete_tid, bound)) {
+                        if (auto r = emit_error(diag_at(arg_line, arg_col, "cfire/UNSATISFIED-CONSTRAINT",
+                            std::format("type parameter '{}' does not satisfy interface '{}' required by '{}[{}: {}]'",
+                                concrete, bound, sig.name, tp.name, full_bounds))); !r) return r;
+                    }
+                    continue;
+                }
                 std::vector<std::string> problems;
                 for (const auto& m : iit->second.methods) {
                     const FnDecl* impl_ptr = find_impl_method(m.name);
@@ -1900,12 +2874,34 @@
     // its own whole-type comparison.
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_value_for(TypeId want, const ExprPtr& e, bool& handled) -> std::expected<void, std::string> {
         handled = false;
-        if (!e || !want.is_valid() || want.is_unknown()) return {};
+        if (!e || !want.is_valid() || want.is_unknown() || want.is_error() || want.is_foreign()) return {};
         const auto& wd = cf_.type_table.get(want);
         if ((wd.kind == TypeKind::Optional || wd.kind == TypeKind::Fallible) && wd.elem_type.is_valid()) {
-            if (!std::holds_alternative<ArrayLitExpr>(e->node) && !std::holds_alternative<TupleExpr>(e->node) &&
-                !is_numeric_literal_expr(e) && expr_returns_optional_sema(e)) return {};
+            TypeId et = infer_expr_type_id_sema(e);
+            if ((wd.kind == TypeKind::Optional && cf_.type_table.is_optional(et)) ||
+                (wd.kind == TypeKind::Fallible && cf_.type_table.is_fallible(et))) {
+                return {};
+            }
+            if (const auto* lit = std::get_if<LiteralExpr>(&e->node); lit && lit->kind == TokenKind::KwNone && wd.kind == TypeKind::Optional) {
+                handled = true;
+                return {};
+            }
             return check_value_for(wd.elem_type, e, handled);
+        }
+        if (wd.kind == TypeKind::TypeParam) {
+            if (cf_.type_table.has_constraint(want, "Integer") && is_numeric_literal_expr(e)) {
+                const Expr* lit_e = e;
+                if (const auto* un = std::get_if<UnaryExpr>(&e->node); un && un->op == "-") lit_e = un->operand;
+                const auto* lit = std::get_if<LiteralExpr>(&lit_e->node);
+                if (lit && lit->kind == TokenKind::Int) {
+                    handled = true;
+                    return {};
+                }
+            } else if (cf_.type_table.has_constraint(want, "Numeric") && is_numeric_literal_expr(e)) {
+                handled = true;
+                return {};
+            }
+            return {};
         }
         if (wd.kind == TypeKind::Tuple) {
             if (const auto* tup = std::get_if<TupleExpr>(&e->node)) {
@@ -1917,15 +2913,9 @@
                 for (std::size_t i = 0; i < tup->elements.size(); ++i) {
                     const TypeId elem_want = wd.param_types[i];
                     const ExprPtr& elem_e = tup->elements[i];
-                    bool h = false;
-                    if (auto r = check_value_for(elem_want, elem_e, h); !r) return r;
-                    if (h || !elem_e) continue;
+                    if (!elem_e) continue;
                     TypeId got = infer_expr_type_id_sema(elem_e);
-                    if (!is_concrete_checkable_type(elem_want) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(elem_e)) continue;
-                    if (!cf_.type_table.is_assignable(elem_want, got)) {
-                        if (auto r = emit_error(diag_at(elem_e->line, leftmost_col(elem_e), "cfire/TYPE-MISMATCH",
-                            std::format("tuple element {} expects '{}', got '{}'{}", i, cf_.type_table.to_string(elem_want), cf_.type_table.to_string(got), nominal_mismatch_hint_sema(elem_want, got)))); !r) return r;
-                    }
+                    if (auto r = check_type_compatible(elem_want, got, elem_e, std::format("tuple element {}", i), elem_e->line, leftmost_col(elem_e)); !r) return r;
                 }
                 return {};
             }
@@ -1935,14 +2925,9 @@
             handled = true;
             const TypeId elem = wd.elem_type;
             for (const auto& el : arr->elements) {
-                bool h = false;
-                if (auto r = check_value_for(elem, el, h); !r) return r;
-                if (h || !el) continue;
+                if (!el) continue;
                 TypeId got = infer_expr_type_id_sema(el);
-                if (!is_concrete_checkable_type(elem) || !is_concrete_checkable_type(got) || expr_returns_optional_sema(el)) continue;
-                if (!cf_.type_table.is_assignable(elem, got)) {
-                    if (auto r = emit_error(diag_at(el->line, leftmost_col(el), "cfire/TYPE-MISMATCH", std::format("array element expects '{}', got '{}'{}", cf_.type_table.to_string(elem), cf_.type_table.to_string(got), nominal_mismatch_hint_sema(elem, got)))); !r) return r;
-                }
+                if (auto r = check_type_compatible(elem, got, el, "array element", el->line, leftmost_col(el)); !r) return r;
             }
             return {};
         }
@@ -1963,12 +2948,15 @@
             bool all = !me->arms.empty();
             for (const auto& arm : me->arms) {
                 const ExprStmt* es = arm.body.empty() || !arm.body.back() ? nullptr : std::get_if<ExprStmt>(&arm.body.back()->node);
-                if (!es || !es->expr) { all = false; continue; }
+                if (!es || !es->expr) {
+                    if (!block_diverges(arm.body, &cf_)) all = false;
+                    continue;
+                }
                 bool h = false;
                 if (auto r = check_value_for(want, es->expr, h); !r) return r;
                 if (!h) {
                     TypeId got = infer_expr_type_id_sema(es->expr);
-                    if (!is_concrete_checkable_type(got) || !cf_.type_table.is_assignable(want, got)) all = false;
+                    if (!got.is_never() && (!is_concrete_checkable_type(got) || !cf_.type_table.is_assignable(want, got))) all = false;
                 }
             }
             handled = all;  // otherwise the caller compares the match's own type
@@ -1990,7 +2978,7 @@
                 }
             }
             TypeId got = int_value_type(e);
-            if (cf_.type_table.is_integer(got) && !cf_.type_table.int_widens(want, got) && !expr_returns_optional_sema(e)) {
+            if (cf_.type_table.is_integer(got) && !cf_.type_table.int_widens(want, got)) {
                 handled = true;
                 const std::string to = cf_.type_table.to_string(want);
                 return emit_error(diag_at(e->line, leftmost_col(e), "cfire/TYPE-MISMATCH",
@@ -2005,15 +2993,58 @@
 
     // argument types of calls to functions declared in this program (clang used to report these).
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_call_argument_types(const CallExpr& call, const FnDecl& sig) -> std::expected<void, std::string> {
-        std::unordered_set<std::string> type_params;
-        for (const auto& tp : sig.type_params) type_params.insert(tp.name);
-        auto mentions_type_param = [&](const TypeRef& tr) {
-            std::string n = format_type_ref_sema(tr);
-            for (const auto& tp : type_params) {
-                if (n == tp || n.find("[" + tp + "]") != std::string::npos || n.ends_with(tp)) return true;
+        std::unordered_map<std::string, TypeId> pat_env;
+        std::unordered_map<std::string, TypeId> bindings;
+        if (!sig.type_params.empty()) {
+            for (std::size_t idx = 0; idx < sig.type_params.size(); ++idx) {
+                const auto& tp = sig.type_params[idx];
+                pat_env[tp.name] = cf_.type_table.make_type_param(tp.name, tp.constraints);
+                if (idx < call.type_args.size()) {
+                    TypeId ta = resolve_typeref(call.type_args[idx]);
+                    if (ta.is_valid() && !ta.is_unknown()) bindings[tp.name] = ta;
+                }
             }
-            return false;
-        };
+        }
+        if (sig.receiver) {
+            for (const auto& rta : sig.receiver->type.type_args) {
+                if (!rta.name.empty() && !pat_env.contains(rta.name)) {
+                    pat_env[rta.name] = cf_.type_table.make_type_param(rta.name, {});
+                }
+            }
+            if (const auto* mem = call.callee ? std::get_if<MemberExpr>(&call.callee->node) : nullptr; mem && mem->object) {
+                TypeId un_rt = unwrap_receiver_type(infer_expr_type_id_sema(mem->object), true);
+                const auto& rd = cf_.type_table.get(un_rt);
+                if (rd.kind == TypeKind::GenericInst) {
+                    for (std::size_t i = 0; i < sig.receiver->type.type_args.size() && i < rd.type_args.size(); ++i) {
+                        if (!sig.receiver->type.type_args[i].name.empty()) {
+                            pat_env.try_emplace(sig.receiver->type.type_args[i].name,
+                                cf_.type_table.make_type_param(sig.receiver->type.type_args[i].name, {}));
+                            bindings[sig.receiver->type.type_args[i].name] = rd.type_args[i];
+                        }
+                    }
+                    if (auto sit = cf_.struct_defs.find(rd.base_name); sit != cf_.struct_defs.end()) {
+                        for (std::size_t i = 0; i < sit->second.type_params.size() && i < rd.type_args.size(); ++i) {
+                            pat_env.try_emplace(sit->second.type_params[i].name,
+                                cf_.type_table.make_type_param(sit->second.type_params[i].name, sit->second.type_params[i].constraints));
+                            bindings[sit->second.type_params[i].name] = rd.type_args[i];
+                        }
+                    }
+                }
+            }
+        }
+        if (!pat_env.empty()) {
+            for (std::size_t i = 0; i < call.args.size() && i < sig.params.size(); ++i) {
+                const ParamDecl* param = &sig.params[i];
+                if (!call.args[i].label.empty()) {
+                    auto it = std::find_if(sig.params.begin(), sig.params.end(), [&](const ParamDecl& pd) { return pd.name == call.args[i].label; });
+                    if (it == sig.params.end()) continue;
+                    param = &*it;
+                }
+                TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+                TypeId got = infer_expr_type_id_sema(call.args[i].value);
+                (void)cf_.type_table.unify(pat, got, bindings);
+            }
+        }
         for (std::size_t i = 0; i < call.args.size() && i < sig.params.size(); ++i) {
             const auto& arg = call.args[i];
             const ParamDecl* param = &sig.params[i];
@@ -2022,16 +3053,20 @@
                 if (it == sig.params.end()) continue;
                 param = &*it;
             }
-            if (mentions_type_param(param->type) || param->type.name.starts_with("fn")) continue;
-            TypeId want = cf_.type_table.from_typeref(param->type);
-            bool handled = false;
-            if (auto r = check_value_for(want, arg.value, handled); !r) return r;
-            if (handled) continue;
+            TypeId want = !bindings.empty() || !pat_env.empty()
+                ? cf_.type_table.substitute(cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env), bindings)
+                : resolve_typeref(param->type);
+            if (cf_.type_table.contains_type_param(want)) {
+                // Unsubstituted generic param inside a generic body or handled by check_interface_constraints
+                bool still_unsubstituted = false;
+                for (const auto& tp : sig.type_params) {
+                    if (!bindings.contains(tp.name)) still_unsubstituted = true;
+                }
+                if (still_unsubstituted) continue;
+            }
             TypeId got = infer_expr_type_id_sema(arg.value);
-            if (!is_concrete_checkable_type(want) || !is_concrete_checkable_type(got)) continue;
-            if (expr_returns_optional_sema(arg.value)) continue;  // handled by the optional checks
-            if (!cf_.type_table.is_assignable(want, got)) {
-                if (auto r = emit_error(diag_at(arg.line, arg.col, "cfire/TYPE-MISMATCH", std::format("argument {} of '{}' expects '{}', got '{}'{}", i + 1, sig.name, cf_.type_table.to_string(want), cf_.type_table.to_string(got), nominal_mismatch_hint_sema(want, got)))); !r) return r;
+            if (auto r = check_type_compatible(want, got, arg.value, std::format("argument {} of '{}'", i + 1, sig.name), arg.line, arg.col); !r) {
+                return r;
             }
         }
         return {};

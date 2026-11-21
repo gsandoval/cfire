@@ -182,19 +182,23 @@ template <typename T>
 
 // --- Safe Numeric & Boolean Parsing ---
 [[nodiscard]] inline auto parse_i64(std::string_view sv) noexcept -> std::optional<std::int64_t> {
-    return cfire::detail::parse_int<std::int64_t>(trim(sv));
+    auto r = cfire::detail::parse_int<std::int64_t>(trim(sv));
+    return r ? std::optional<std::int64_t>(*r) : std::nullopt;
 }
 
 [[nodiscard]] inline auto parse_i32(std::string_view sv) noexcept -> std::optional<std::int32_t> {
-    return cfire::detail::parse_int<std::int32_t>(trim(sv));
+    auto r = cfire::detail::parse_int<std::int32_t>(trim(sv));
+    return r ? std::optional<std::int32_t>(*r) : std::nullopt;
 }
 
 [[nodiscard]] inline auto parse_u64(std::string_view sv) noexcept -> std::optional<std::uint64_t> {
-    return cfire::detail::parse_int<std::uint64_t>(trim(sv));
+    auto r = cfire::detail::parse_int<std::uint64_t>(trim(sv));
+    return r ? std::optional<std::uint64_t>(*r) : std::nullopt;
 }
 
 [[nodiscard]] inline auto parse_f64(std::string_view sv) noexcept -> std::optional<double> {
-    return cfire::detail::parse_float<double>(trim(sv));
+    auto r = cfire::detail::parse_float<double>(trim(sv));
+    return r ? std::optional<double>(*r) : std::nullopt;
 }
 
 [[nodiscard]] inline auto parse_bool(std::string_view sv) noexcept -> std::optional<bool> {

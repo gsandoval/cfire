@@ -1134,7 +1134,7 @@ syncCfireThemeBtn();
         </div>
         <h3>Explicit <code>core:*</code> &amp; <code>ext:*</code> Tiers</h3>
         <p>
-          <strong><code>core:*</code> (Foundational Core)</strong> provides 30 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>, <code>core:tako</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 6 opt-in native C library, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
+          <strong><code>core:*</code> (Foundational Core)</strong> provides 28 zero-setup C++23 &amp; baseline OS primitives (<code>core:fs</code>, <code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:keychain</code>). <strong><code>ext:*</code> (Domain Extensions)</strong> provides 8 opt-in native C library, audio, cloud, WebUI, and AI engine packages (<code>ext:ai</code>, <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:tako</code>, <code>ext:webui</code>). Any other C or C++ library comes in through <code>import cpp</code>.
         </p>
       </div>
       <div class="bento-footer">
@@ -1250,7 +1250,7 @@ $ cd standalone_pkg && cmake -B build && cmake --build build
           <td>Broad stdlib + Nimble (Nim); SerenityOS runtime (Jakt).</td>
           <td>Minimal <code>std</code>; relies on Cargo ecosystem.</td>
           <td>Batteries-included <code>core:</code> / <code>vendor:</code> (Odin) and <code>net/http</code> (Go).</td>
-          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 30 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:audio</code>, <code>core:keychain</code>) + 6 opt-in native extensions (<code>ext:ai</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:webui</code>).</td>
+          <td><strong>Explicit <code>core:*</code> &amp; <code>ext:*</code></strong>: 28 zero-setup core modules (<code>core:json</code>, <code>core:net/http</code>, <code>core:net/ipc</code>, <code>core:keychain</code>) + 8 opt-in native extensions (<code>ext:ai</code>, <code>ext:audio</code>, <code>ext:compress/zstd</code>, <code>ext:crypto/sodium</code>, <code>ext:db/sqlite</code>, <code>ext:net/ssh</code>, <code>ext:tako</code>, <code>ext:webui</code>).</td>
         </tr>
         <tr>
           <td><strong>Exit Strategy / Lock-In</strong></td>
@@ -1384,7 +1384,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-16">
       <div class="roadmap-num">Chapter 16</div>
       <h4>Audio Synthesis &amp; Real-Time DSP</h4>
-      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>core:audio</code>).</p>
+      <p>Procedural SFX, ADSR tone envelopes, RIFF/WAV codec, 64-voice polyphonic mixer, and real-time audio streams (<code>ext:audio</code>).</p>
     </a>
     <a class="roadmap-card" href="guide.html#chapter-17">
       <div class="roadmap-num">Chapter 17</div>
@@ -1399,7 +1399,7 @@ fn main() {
     <a class="roadmap-card" href="guide.html#chapter-19">
       <div class="roadmap-num">Chapter 19</div>
       <h4>Production Patterns &amp; Examples</h4>
-      <p>End-to-end architectures, cloud services (<code>core:tako</code>), canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
+      <p>End-to-end architectures, cloud services (<code>ext:tako</code>), canonical projects index (01-hello-core through 17-webui-studio), and best practices.</p>
     </a>
   </div>
 

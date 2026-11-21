@@ -2,7 +2,7 @@
 
 This document tracks the interactively triaged and architecturally audited backlog for `cfire` (`CF-001` – `CF-197`; architectural decisions `Q1` – `Q54`).
 
-> **Topic Backlogs**: Compiler/build performance, progressive `.o` compilation, caching, cross-platform binary distribution, and Wave B5 consistency are tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (`CF-198` – `CF-210`; decisions `Q55` – `Q61`). Downstream security, compiler, stdlib, IPC, and desktop refinements from Flint are tracked in [`flint.md`](./flint.md) (`CF-211` – `CF-239`; decisions `Q62` – `Q69`). Start any new backlog items at **`CF-240`** and new ADRs at **`Q70`**.
+> **Topic Backlogs**: Compiler/build performance, progressive `.o` compilation, caching, cross-platform binary distribution, and Wave B5 consistency are tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (`CF-198` – `CF-210`, `CF-240` – `CF-246`; decisions `Q55` – `Q61`, `Q70` – `Q74`). Downstream security, compiler, stdlib, IPC, and desktop refinements from Flint are tracked in [`flint.md`](./flint.md) (`CF-211` – `CF-239`; decisions `Q62` – `Q69`). iOS ship-readiness, 4-OS desktop WebUI parity, and stdlib taxonomy (`28 core:* + 8 ext:*`) are tracked in [`backlog-ios-desktop-webui.md`](./backlog-ios-desktop-webui.md) (`CF-247` – `CF-254`; decisions `Q75` – `Q80`). Tooling/LSP items below own `CF-255` – `CF-256` (`Q81`–`Q85`), Closed Type Checker & Typed Codegen waves own `CF-257` – `CF-258` (`Q86`–`Q91`), and Unified Stdlib Failure/Absence & Wrapper Bridge owns `CF-259` – `CF-260` (`Q92`–`Q93`); start any new backlog items at **`CF-261`** and new ADRs at **`Q94`**.
 
 ---
 
@@ -1856,3 +1856,119 @@ To prevent re-introducing previously rejected designs or violating language orth
 - **`CF-231` (`net.wait_readable` multi-socket readiness wait)**: Excluded (`Q66`). `net::detail::Poller` remains internal to `http.Server`; `TcpConn` is move-only, TLS streams buffer decrypted bytes in `SSL_pending`, and `async.scope` structured concurrency handles multi-stream relays.
 - **`CF-233` (`cfire test` FD-leak canary warm-up hook for `import cpp`)**: Excluded (`Q67`). Reaffirms `CF-018` / `CF-080`: `import cpp` test suites remain automatically exempt from per-test FD-leak checks without adding test lifecycle syntax or extra CLI flags.
 - **`CF-238` (Downstream-coupled Flint CI canary, `legacy-flint-pin` tag & Flint impact in `feat!` commits)**: Excluded (`Q69`). `cfire` remains downstream-agnostic: SemVer release tags (`vX.Y.Z`) are the sole pin contract, regressions are captured as hermetic `tests/conformance/` and `CF-214` `ext_smoke` tests, and commit messages follow `AGENTS.md` §3.
+
+---
+
+## B. Tooling, Testing Infrastructure & LSP Reliability (`CF-255` – `CF-256`, `Q81`–`Q85`)
+
+| ID | Priority | Component | Summary | Status |
+| :--- | :---: | :--- | :--- | :---: |
+| `CF-255` | **P2** | `tests/conformance_runner.hpp`, `docs/`, `Makefile` | **Conformance Optional-Library Skips (`libsodium` / `libssh`, `Q81`)**: Explain why macOS skips `ext_smoke/sodium.cf` & `ext_smoke/ssh.cf`, add explicit remediation hints + optional `--strict` CI mode, and resolve whether to install/vendor on macOS host | `[TODO]` |
+| `CF-256` | **P0** | `src/lsp/`, `src/sema/`, `src/docgen/`, `.vscode/`, `tests/unit/` | **LSP Brace/Enter Sync, Method Discoverability & Valid Token Completion (`Q82`–`Q85`)**: Fix multi-edit `didChange` sync and remove conflicting `onTypeFormatting`, fix method/type resolution & `core:collections` catalog, emit explicit UTF-16 `textEdit` ranges / empty-parens call snippets / `sortText` tiers / strict context gating | `[DONE]` |
+
+### `CF-255` — Investigate & Resolve Conformance Optional-Library Skips (`libsodium` / `libssh`) on macOS (`Q81`) `[TODO]`
+- **Observed Test Log**:
+  ```text
+  === Running the Conformance Corpus with Generated Programs under ASan/UBSan ===
+  ./.cfire_test_runner conformance --jobs 16 --run-flags=--sanitize
+  SKIP   ext_smoke/sodium.cf
+           - missing optional library: libsodium
+  SKIP   ext_smoke/ssh.cf
+           - missing optional library: libssh
+  Conformance: 213 passed, 2 skipped, 0 xfail (tracked holes), 0 xpass, 0 failed (total 215)
+  ```
+- **Verified Root Cause**:
+  - `tests/conformance_runner.hpp:183-212` (`host_has_optional_lib`) checks `pkg-config`, `~/.local/include`, `$MINGW_PREFIX/include`, `/opt/homebrew/include`, `/usr/local/include`, `/usr/include`, `/clang64/include`, and `C:/msys64/clang64/include` for `sodium.h` and `libssh/libssh.h` before compiling `// requires-lib: libsodium` (`tests/conformance/ext_smoke/sodium.cf`) and `// requires-lib: libssh` (`tests/conformance/ext_smoke/ssh.cf`).
+  - Both `/opt/homebrew/include/sodium.h` and `/opt/homebrew/include/libssh/libssh.h` are absent on the local macOS development host, whereas both libraries are installed on the Linux and Windows UTM VMs (where `make check-platforms` runs `215/215` conformance tests with `0 skipped`).
+  - Note: in this setup, `sodium.cf` and `ssh.cf` were not disabled — the runner skips optional native-library smoke tests only on hosts lacking those C dev headers so offline builds work without Homebrew extras, while still exercising them on Linux and Windows VMs (`check-platforms`).
+- **Open Architectural Question (`Q81`)**:
+  1. Should we install `libsodium` and `libssh` on the macOS host (`brew install libsodium libssh` / `cfire setup --yes`) — or vendor them alongside `sqlite3`/`simdjson` — so macOS Tier 1 `make check` and Tier 2 ASan/UBSan `make check-deep` execute `215/215` conformance tests locally instead of deferring `sodium.cf` / `ssh.cf` solely to the Linux/Windows VMs?
+  2. Should `tests/conformance_runner.hpp` print an explicit remediation hint on skips (e.g., `cfire setup --yes` / `brew install libsodium libssh`) and support a `--strict` flag (enabled in CI release checks) that turns unexpected skips into failures?
+
+### `CF-256` — Deep LSP Autocomplete Architecture Overhaul (`str`, Slice `[]T` & Tab-Acceptance Reliability) `[DONE]`
+- **Problem Statement**: Editor autocomplete continues to suffer recurring regressions on two core workflows that cannot keep failing:
+  1. Methods failing to appear on `str` values and slice `[]T` values after typing `.` (or partial member prefixes).
+  2. Pressing `Tab` to accept completions failing to insert/replace cleanly (bad replacement span, broken snippet placeholders, or synthetic/missing argument tabstops).
+- **Root Causes Identified Across `src/lsp/` & `src/sema/`**:
+  1. **Duplicate ad-hoc type inference disconnected from Sema (`Q23`)**: `src/lsp/type_query.hpp` (`resolve_qualifier_type`, `infer_expr_cf_type`, `strip_wrappers`) re-implements expression/binding type resolution separately from `src/sema/type_inference_impl.hpp`. Several common forms drop or mangle types into `"auto"` / `""` (causing `builtin_recv_bits_for_type_name(rtype)` in `src/sema/builtin_methods.hpp:553` to return `0` and emit zero `str`/`[]T` methods):
+     - `strip_wrappers` does not strip leading `"mut "` or slice/map qualifiers consistently before lookup.
+     - `extract_qualifier_before_sep` (`src/lsp/json_rpc.hpp:689`) halts at `"` and doesn't recognize string literals (`"hello".`), slice literals (`[1, 2].`), `make([]i32, 4).`, indexing (`xs[i].`), slicing (`s[0..3].` / `xs[1..].`), or `for item in xs` loop-element bindings inside live partial edits.
+     - Incomplete mid-edit lines (`s.sp<Tab>` or `xs.`) cause `parse_source` to fail and fall back to stale `last_good_ast`, losing newly added local `s := ...` / `xs := ...` declarations or inside-block bindings (closures, `for`, `if val :=`, `match` arms).
+     - Chained calls (`s.trim().split(",").`, `try fs.read_text("x").`) and `TypeQuery` return-type qualification sometimes return C++ types or `"auto"` instead of `.cf` `str` / `[]str` / `[]T`.
+  2. **Tab-acceptance & LSP edit contract gaps (`src/lsp/completion.hpp:59-198`, `src/lsp/server.hpp:304,458`)**:
+     - `append_item` emits legacy `"insertText"` without an explicit UTF-16 `"textEdit": {"range": ..., "newText": ...}` covering `[sym.start_col, character]`, leaving editors (Zed, VS Code, Neovim, Antigravity) to guess word boundaries after `.` or partial identifiers — frequently duplicating prefixes or failing on Tab.
+     - `builtin_method_signature` (`src/sema/builtin_methods.hpp:568-588`) invents fake placeholder parameter names (`a`, `b`, `c`) instead of semantic parameter names (`sep`, `prefix`, `val`, `idx`), and `make_sig_snippet` skips parameters with `=` defaults (`= default`) or produces empty/inconsistent tabstops (`$1`, `$0`) depending on client snippet capability and lookahead `(`.
+     - Missing `sortText` priority tiers (`0_` locals/methods on receiver, `1_` fields/functions, `2_` auto-imported stdlib modules, `3_` keywords) causes `Tab` in partial prefix contexts to select unrelated workspace symbols ahead of `str` / `[]T` methods.
+  3. **Insufficient Regression Net**: Current tests do not simulate incremental LSP `didOpen` -> `didChange` (cursor right after `.` and after partial prefixes like `.sp`, `.pu`, `.le`) -> `textDocument/completion` -> applying returned `textEdit` / snippet tabstops on **every** `str` and `[]T` construction/binding form.
+- **Required Deep Improvements & Acceptance Criteria**:
+  1. **Single Sema-Backed Expression/Scope Recovery (`Q23`)**: Extract or reuse Sema `TypeId` inference on cursor-line truncated/recovered ASTs (including synthesizing a dummy identifier after `.` on the edited line + tolerating unclosed functions/blocks up to cursor) so every `str` and `[]T` expression (literals, `str` params, `mut []T`, `make([]T, ...)`, indexing, slicing, `for` vars, closures, `if x :=`, `match` bindings, chained calls like `s.trim().split(",").`, and stdlib returns) resolves accurately to `BmStr` / `BmSlice` even mid-edit.
+  2. **Clean Tab-Acceptance Contract (`textEdit` + Snippets + `sortText`)**:
+     - Compute accurate UTF-16 `textEdit.range` from identifier start to cursor column on every `CompletionItem`.
+     - Replace synthetic `a`/`b` parameter names in `builtin_methods.hpp` with semantic names and produce clean snippet/plain insertions with accurate `has_following_paren` detection and `client_snippet_support_` honoring.
+     - Add deterministic `sortText` ranking tiers so exact-receiver methods (`str`, `[]T`, struct fields/methods) always outrank auto-import modules/keywords on `Tab`.
+  3. **Permanent LSP Autocomplete Regression Matrix (`tests/unit/`)**: Add dedicated tests wired into `make check-fast` & `make check-all` asserting `didChange` -> `completion` + `textEdit` application across all `str` and `[]T` forms, chains, string interpolations, partial prefixes, and Tab acceptance with and without snippet support.
+- **Decisions (accepted 2026-11-20)**:
+  - `Q82` (*Brace Tabbing*): Fix multi-edit `textDocument/didChange` incremental sync and CRLF-safe UTF-16 offset math; remove `documentOnTypeFormattingProvider` from `cfire lsp`; rely on editor-native rules (`onEnterRules` + updated `decreaseIndentPattern` in `.vscode/extensions/cfire.cfire-lang/language-configuration.json`, without `editor.formatOnType`) plus `cfire fmt` on save.
+  - `Q83` (*Method Discoverability*): Fix type inference (`[]T` array literals, `MatchExpr`/`IfExpr`, balanced `IndexExpr`, `IfStmt`/`ForStmt` bindings, `core:collections` `Set`/`Deque`/`PriorityQueue`/`MinQueue` catalog & `find_ret`, stdlib fields & handle disambiguation, aliased modules) and cursor-line AST recovery; show all methods on known receiver types (annotating `requires mut` and `unwrap ? first`/`unwrap ! first` with `sortText` ranking); emit a low-ranked (`9_*`, `type unresolved`) builtin fallback only when the receiver type is genuinely unresolved.
+  - `Q84` (*Call Insertion*): Emit empty-parens cursor snippets — `name()$0` (0-arg), `name($0)` (>=1-arg), `name[$1]($0)` / `name[$1]()$0` (required explicit generics), bare `name` when `(`/`[` follows or `snippetSupport: false` — backed by explicit UTF-16 `textEdit` on every item and builtin `signatureHelp`.
+  - `Q85` (*Unqualified Stdlib & Auto-Imports*): Preserve full stdlib auto-import discoverability with strict `sortText` tiers (`0_` locals, `1_` file/sibling decls skipping `fn.receiver`, `2_` builtins/keywords/stmt-start snippets, `3_` imported aliases, `4_` imported stdlib fns/consts, `5_` unimported aliases not shadowed by locals, `7_` unimported auto-import fns/consts; gate `core:build` to `build.cf`), LSP 3.17 `labelDetails`, and full context gating.
+- **Delivered (2026-11-20)**: Implemented `Q82`–`Q85` across `src/lsp/` (`json_rpc.hpp`, `type_query.hpp`, `completion.hpp`, `hover.hpp`, `server.hpp`, `ide_setup.hpp`), `src/sema/` (`builtin_methods.hpp`, `type_inference_impl.hpp`, `expression_checker_impl.hpp`), `src/docgen/stdlib_catalog_entries.hpp`, `.vscode/`, and regenerated `docs/`; added `tests/unit/test_lsp_completion_and_sync.hpp` and updated `tests/unit/test_lsp_docgen.hpp`. See `active.md` for full 3-tier verification results.
+
+---
+
+## C. Closed Type Checker & Typed C++23 Codegen (`CF-257` – `CF-258`, `Q86`–`Q91`)
+
+| ID | Priority | Component | Summary | Status |
+| :--- | :---: | :--- | :--- | :---: |
+| `CF-257` | **P0** | `src/ast.hpp`, `src/sema/`, `src/buildsys.hpp`, `src/diagnostics*`, `runtime/cfire_prelude.hpp` | **Closed Type Checker, Typed AST, Built-In Generic Constraints & Pure-`.cf` ICE Boundary (`Q86`–`Q91`)**: Eliminate pure-`.cf` C++ error leaks (e.g., `std::common_type_t<decltype(...)>` in AoC `day2_01.cf`) by splitting `Unknown`/`Error`/`Foreign`, unifying `T?`/`T!`, closing Sema validation holes, adding `Comparable`/`Ordered`/`Numeric`/`Integer` constraints, and enforcing a pure-`.cf` `cfire/INTERNAL-BACKEND-ERROR` ICE boundary | `[DONE]` |
+| `CF-258` | **P0** | `src/codegen*`, `src/lsp/`, `tests/golden/` | **Fully Typed C++23 Codegen, Golden Snapshots & LSP Typed-AST Integration (`Q86`, `Q89`)**: Emit concrete C++23 types from Sema's Typed AST via `Emitter::lower_type_id(TypeId)`, eliminate `std::common_type_t<decltype(...)>`/`decltype(auto)`/unnecessary `auto`s, update golden snapshots, and consume Sema `resolved_type_id` in LSP hover and inlay hints | `[DONE]` |
+
+### Architectural Decision Record (`Q86`–`Q91`, resolved 2026-11-20)
+
+- **`Q86` (Full Closed Type Checker + Typed Codegen)**: Replace Sema's opt-in denylist checks and `auto`/`decltype` lowering with a closed pure-`.cf` type checker attaching resolved `TypeId`s onto AST nodes, followed by typed C++23 emission.
+- **`Q87` (Definition-Site Bounded Generics + Built-In Constraints)**: Represent generic parameters (`TypeParam`) and parameterized instantiations (`GenericInst`) first-class in `TypeTable`. Check generic declarations at definition time against declared interfaces plus four built-in prelude constraints (`Comparable`, `Ordered`, `Numeric`, `Integer` -> `cfire::constraints::*` C++23 concepts); solve and substitute type arguments bidirectionally at call/literal sites; keep C++23 `template <...>` lowering for generic declarations (preserving per-package `.o` sharding and C++ interop).
+- **`Q88` (Explicit `Foreign` / `Error` Separation + `ClangBridge` Return Types)**: Split `TypeKind::Unknown` into `Unknown` (forbidden to survive pure-`.cf` checking, triggering a hard `cfire/UNKNOWN-TYPE` error), `Error` (poison type after a reported Sema error), and `Foreign` (explicit `import cpp` / `cpp {}` interop boundary). Forward `ClangBridge` `return_type` into Sema and map unambiguous C/C++ primitives/pointers/strings to native `TypeId`s.
+- **`Q89` (Fully Typed C++23 Emission — Wave 2)**: Lower resolved `TypeId`s to explicit C++23 types via `Emitter::lower_type_id(TypeId)` across variables, range loops, `for-in`/unwrap bindings, `match`/`if`/`or` lambdas, and closure params/returns; retain `auto` strictly for closure locals, `defer` `scope_exit` guards, `Foreign` values, and template-dependent expressions in generic bodies.
+- **`Q90` (Pure-`.cf` Backend ICE Boundary & Real `.cf` Source Snippets)**: When a pure-`.cf` program passes Sema with 0 errors and still fails in Clang, report `cfire/INTERNAL-BACKEND-ERROR` displaying the actual `.cf` source line (never Clang's generated `.cpp` lines or bogus `.cpp` columns such as `:13:198`) and gate raw Clang/C++ details behind `--verbose`. For `import cpp` / `cpp {}` failures, also replace `.cf`-attributed `.cpp` snippets with real `.cf` source lines while preserving real C++ header locations.
+- **`Q91` (Consistent `cfire/UNWRAPPED-OPTIONAL` & Two-Wave Rollout)**: Emit `cfire/UNWRAPPED-OPTIONAL` (with contextual `or` / `if v :=` hints) whenever `T?` is used where `T` (or a non-optional operation) is required and unwrapping would make it valid; reserve `cfire/TYPE-MISMATCH` for genuine incompatibilities. Execute in two independently `make check-all`-verified waves: `CF-257` then `CF-258`.
+
+### `CF-257` — Closed Type Checker, Typed AST, Built-In Generic Constraints & Pure-`.cf` ICE Boundary `[DONE]`
+- **Delivered (2026-11-20)**: Implemented closed pure-`.cf` type checking, Typed AST (`resolved_type_id`), `Comparable`/`Ordered`/`Numeric`/`Integer` generic constraints, `ClangBridge` return-type mapping, consistent `cfire/UNWRAPPED-OPTIONAL` (`Q91`), and pure-`.cf` `cfire/INTERNAL-BACKEND-ERROR` + `.cf` source-snippet rendering (`Q90`). Verified on AoC `day2_01.cf` (`cfire check` and `cfire build` both fail at line 13 with `cfire/UNWRAPPED-OPTIONAL` and zero C++ output) and all 3 `make check-all` tiers (Darwin, Linux, Windows). See `active.md` for full gate metrics.
+- **Motivation & Live Reproducer (`/Users/memo/Programming/adventofcode/2025/day2_01.cf`)**: `start := i32.parse(tokens[0])` and `end := i32.parse(tokens[1])` infer to `i32?`, yet `for i in start..end` passed `cfire check` cleanly and leaked `cannot increment value of type 'std::common_type_t<decltype(start), decltype(end)>'` at `:13:198` during `cfire build` due to missing positive validation in `check_for_stmt`, `is_optional` stripping in `infer_named_type_id_`, explicit `expr_returns_optional_sema` skips, and `buildsys.hpp` dumping generated `.cpp` lines verbatim.
+- **In Scope**: `TypeTable` (`Error`, `Foreign`, `TypeParam`, `GenericInst`, `Function`, `substitute`, `unify`), `ast.hpp` resolved-type fields, `cfire::constraints::{Comparable,Ordered,Numeric,Integer}`, unified `T?`/`T!` inference without stripping, closed bidirectional Sema validation (ranges, `for-in`, unwraps, `SliceExpr`/`IndexExpr`, unary/binary/compound ops, stdlib catalog call args, generic calls/structs, `match`/`or`/array literals/closures/interpolations), `ClangBridge` `return_type` forwarding, pure-`.cf` `cfire/INTERNAL-BACKEND-ERROR` + `.cf` source-snippet rendering, conformance ICE gate extension, and full unit/conformance coverage.
+- **Deferred to `CF-258`**: Fully typed C++23 codegen (`Emitter::lower_type_id`), golden snapshot updates, and LSP hover/inlay integration.
+
+### `CF-258` — Fully Typed C++23 Codegen, Golden Snapshots & LSP Typed-AST Integration `[DONE]`
+- **Scope**: Add `Emitter::lower_type_id(TypeId, LowerContext)` in `src/codegen*`, delete `lower_type_text()`, replace `std::common_type_t<decltype(...)>`/`decltype(auto)`/unnecessary `auto`s across `stmt.hpp`/`expr.hpp`, update all 5 `tests/golden/*.expected.cpp` snapshots, and integrate Sema `CheckedFile` / `resolved_type_id` into LSP hover and inlay hints.
+- **Delivered (2026-11-20)**: Added `Emitter::lower_type_id` (while selectively retaining `auto` for CTAD on uninstantiated generic struct/enum literals) and deleted `lower_type_text()` across `src/codegen*`; regenerated all 5 `tests/golden/*.expected.cpp` snapshots and updated `tests/unit/test_stdlib.cpp`; integrated `CheckedDocResult` / `get_or_check_doc` and Sema `TypeId` formatting into `src/lsp/{server,type_query,json_rpc,hover,inlay_hints}.hpp`; added Wave 2 tests in `tests/unit/test_closed_type_checker.hpp` and `tests/unit/test_lsp_completion_and_sync.hpp`; and fixed 4 Sema/catalog mismatches exposed by typed locals (`pa.make_rec` qualified lookup and `ai.ocr` catalog dispatch in `src/sema/type_inference_impl.hpp`, `http.post_sse -> Response!` and `Channel.recv -> T?` in `src/docgen/stdlib_catalog_entries.hpp`, `docs/GUIDE.md`, and `src/lsp/type_query.hpp`).
+
+---
+
+## D. Unified Stdlib Failure (`T!`) vs Absence (`T?`) Contract & Wrapper Bridge (`CF-259` – `CF-260`, `Q92`–`Q93`)
+
+| ID | Priority | Component | Summary | Status |
+| :--- | :---: | :--- | :--- | :---: |
+| `CF-259` | **P1** | `runtime/`, `src/sema/`, `src/codegen/`, `src/docgen/`, `src/lsp/`, `docs/` | **Unified Stdlib Failure (`T!`) vs Absence (`T?`) Contract & Wrapper Bridge (`Q92`–`Q93`)**: Unify `T.parse(s) -> T!`, `cli.parse[T] -> T!`, `csv.parse -> [][]str!`, and `os.getenv(key) -> str?`; retire `cli.try_parse`, `os.getenv_opt`, and 2-arg `os.getenv` via `cfire/RETIRED-API` + `cfire fix`; add `.or_error(msg, code = 0)` / `.ignore_error()`; close raw C++ wrapper surface on `T?`/`T!` (`Q14`) | `[DONE]` |
+| `CF-260` | **P2** | `runtime/core/{fs,net,net/ipc}.hpp`, `runtime/cfire_prelude.hpp`, `src/sema/`, `src/codegen/` | **Fallible Line Streaming (`File`/`TcpConn`/`ipc.Conn.read_line() -> str?!`)**: Separate I/O read errors from EOF `none` across stream `.read_line()`, align with `read_lines() -> []str!` and `regex.find -> str?!`, and design ergonomic `for line := try f.read_line()` iteration | `[DEFERRED]` |
+
+### Architectural Decision Record (`Q92`–`Q93`, resolved 2026-11-20)
+
+- **`Q92` (Unified Stdlib Failure `T!` vs Absence `T?` Contract, No Twin APIs — amends `Q10`, extends `Q8`/`Q14`/`Q16`)**:
+  - **Invalid input / runtime failure -> `T!`**: Every `parse*`, `decode*`, `compile`, and I/O operation exposes **one** canonical API returning `T!` (`std::expected<T, cfire::Error>`). No duplicate `try_parse` twins.
+  - **Valid absence -> `T?`**: Lookups, searches, empty containers, and environment queries expose **one** canonical API returning `T?` (`std::optional<T>`). No `*_opt` or sentinel-fallback twins.
+  - **`try_*` prefix rule**: Reserved strictly for **non-blocking** (`ch.try_recv()`, `mu.try_lock()`) and **non-panicking checked** (`x.try_as[T]()`) counterparts to blocking/panicking operations.
+  - **Breaking migrations (`Q16`)**: `T.parse(s) -> T!`, `cli.parse[T](args = []) -> T!` (fixing its current runtime/codegen bug that returned plain `T` and silently dropped flag parse errors), `csv.parse(s) -> [][]str!`, and `os.getenv(key) -> str?`; `cli.try_parse`, `os.getenv_opt`, and 2-arg `os.getenv(key, fallback)` become `cfire/RETIRED-API` hard errors with `cfire fix` rewrites.
+- **`Q93` (Explicit `T?` ↔ `T!` Bridge Methods & Closed Wrapper Surface — extends `Q14`)**:
+  - Add two closed, plain-English builtin methods on wrapper receivers:
+    - `fn (opt: T?) or_error(msg: str, code: i32 = 0) -> T!` — lowers lazily in codegen so the happy path performs zero message formatting or heap allocation.
+    - `fn (res: T!) ignore_error() -> T?` — explicitly swallows `cfire::Error` into `none` (valid only when `T != void`; Sema rejects `void!.ignore_error()` with `cfire/TYPE-MISMATCH`).
+  - Enforce `Q14` (*Closed Builtin Method Surface*) on `T?` and `T!`: remove undocumented C++ `std::optional`/`std::expected` member exemptions (`.has_value()`, `.value()`, `.value_or()`, `.error()`) in pure `.cf` (still usable inside `cpp {}`), emitting `cfire/UNKNOWN-METHOD` with actionable `cfire` hints.
+
+### `CF-259` — Unified Stdlib Failure (`T!`) vs Absence (`T?`) Contract & Wrapper Bridge `[DONE]`
+- **Motivation**: Eliminates boilerplate `i64.parse(...) or return error(...)` repetition (observed in `/Users/memo/Programming/adventofcode/2025/day3_01.cf`) by fixing the inconsistency where `T.parse` returned `T?` while all module parsers (`json.parse`, `url.parse`, `http.parse_request`, `time.parse_rfc3339`, `ai.parse_document`) returned `T!`, while also closing twin-API drift (`cli.try_parse`, `os.getenv_opt`) and the silent flag-error drop in `cli.parse`.
+- **In Scope**: `runtime/` (`cfire_prelude.hpp`, `core/{builtin_methods,cli,encoding,os,str}.hpp`, `core/ai/{client,vision}.hpp`), `src/sema/`, `src/diagnostics_registry_impl.hpp`, `src/codegen/`, `src/docgen/`, `src/lsp/`, `docs/`, `examples/`, `tests/golden/`, and unit + conformance suites.
+- **Delivered (2026-11-21)**: Implemented `Q92` & `Q93` end-to-end (including Win32 `os::getenv`/`os::setenv` empty-value parity in `runtime/core/os.hpp`, call-argument transfer into `T!` params, closed wrapper surface diagnostics, `cfire fix --only cfire/RETIRED-API` rewrites, LSP completions/hover/signatureHelp, regenerated docs/`GUIDE.md`, 6 new conformance tests, unit tests, and AoC `day3_01.cf` cleanup); verified across Darwin, Linux, and Windows (`make check-all`).
+- **Deferred**: `CF-260` (stream `read_line() -> str?!`).
+
+### `CF-260` — Fallible Line Streaming (`read_line() -> str?!`) `[DEFERRED]`
+- **Revisit Criteria**: When stream I/O lines distinguish EOF `none` from `read()`/`recv()` `Error` (`File.read_line`, `TcpConn.read_line`, `ipc.Conn.read_line`) and `for line := try f.read_line()` / `cli.prompt` composition ergonomics are designed.

@@ -50,19 +50,27 @@ namespace cfire::doc {
         cache_dir = doc_fallback.path();
     }
     std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns;
     for (const auto& imp : ast->imports) {
         if (!imp.is_cpp) continue;
         if (auto idx = cfire::bridge::inspect_header(imp.path, cflags, cache_dir)) {
+            std::string qual = imp.alias.empty() ? "cpp" : imp.alias;
             for (const auto& [sym_name, sym] : idx->symbols) {
                 if (sym.kind == "FunctionDecl") {
                     pre_cpp_fn_params[sym_name] = sym.param_types;
+                    pre_cpp_fn_params[qual + "." + sym_name] = sym.param_types;
+                    if (!sym.return_type.empty()) {
+                        pre_cpp_fn_returns[sym_name] = sym.return_type;
+                        pre_cpp_fn_returns[qual + "." + sym_name] = sym.return_type;
+                    }
                 }
             }
         }
     }
-    auto checked = cfire::frontend::analyze(std::move(*ast), pre_cpp_fn_params);
+    auto checked = cfire::frontend::analyze(std::move(*ast), pre_cpp_fn_params, pre_cpp_fn_returns);
     if (!checked) return std::format("// Sema error: {}\n", checked.error());
     checked->cpp_fn_params = std::move(pre_cpp_fn_params);
+    checked->cpp_fn_returns = std::move(pre_cpp_fn_returns);
     return cfire::frontend::emit_cpp(*checked);
 }
 
@@ -193,7 +201,7 @@ fn main() {
     // 6. Multi-Target Audio DSP & Trailing Closures Snippet
     std::string_view snip6_cf = R"(package main
 
-import "core:audio"
+import "ext:audio"
 
 fn main() {
     try audio.init(48000, 2)
@@ -301,7 +309,7 @@ fn main() {
     <button class="tab-btn" onclick="showTab('tab-net', this)">3. WebSockets &amp; Cancellation</button>
     <button class="tab-btn" onclick="showTab('tab-json', this)">4. SIMD JSON Reflection</button>
     <button class="tab-btn" onclick="showTab('tab-interop', this)">5. Clang C/C++ Interop</button>
-    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>core:audio</code>)</button>
+    <button class="tab-btn" onclick="showTab('tab-audio', this)">6. Audio DSP (<code>ext:audio</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-ai', this)">7. AI, Vector SQLite &amp; MCP (<code>ext:ai</code>)</button>
     <button class="tab-btn" onclick="showTab('tab-webui', this)">8. Hybrid WebUI (<code>ext:webui</code>)</button>
   </div>
@@ -748,9 +756,9 @@ fn main() {
     const std::vector<CategoryGroup> categories = {
         {"core:* — Text, Containers, Math & Data Formats", {"str", "unicode", "regex", "collections", "sort", "math", "rand", "json", "base64", "csv", "hex"}},
         {"core:* — OS, Filesystem, Concurrency, CLI & Build", {"fs", "os", "time", "sync", "context", "cli", "log", "keychain", "build"}},
-        {"core:* — Networking, Web Protocols & Audio", {"net", "url", "tls", "http", "ipc", "websocket", "audio"}},
+        {"core:* — Networking & Web Protocols", {"net", "url", "tls", "http", "ipc", "websocket"}},
         {"core:* — Cryptography & Hashing", {"aes", "blake3", "hmac", "sha256"}},
-        {"ext:* — Native C Libraries, WebUI & AI Engines", {"ai", "zstd", "sodium", "sqlite", "ssh", "webui"}},
+        {"ext:* — Native C Libraries, Audio, Cloud, WebUI & AI Engines", {"ai", "audio", "zstd", "sodium", "sqlite", "ssh", "tako", "webui"}},
     };
 
     for (const auto& cat : categories) {

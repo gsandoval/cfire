@@ -14,13 +14,20 @@
 namespace cfire::cli {
 
 template <typename T>
-auto parse(int argc, char** argv) -> T;
+auto parse(int argc, char** argv) -> std::expected<T, cfire::Error>;
+
+[[nodiscard]] inline auto join_errors(const std::vector<std::string>& errs) -> std::string {
+    if (errs.empty()) return "invalid CLI arguments";
+    std::string out;
+    for (std::size_t i = 0; i < errs.size(); ++i) {
+        if (i > 0) out += "; ";
+        out += errs[i];
+    }
+    return out;
+}
 
 template <typename T>
-auto try_parse(int argc, char** argv) -> std::optional<T>;
-
-template <typename T>
-[[nodiscard]] inline auto parse() -> T {
+[[nodiscard]] inline auto parse() -> std::expected<T, cfire::Error> {
     auto& stored = cfire::detail::process_args_storage();
     std::vector<char*> ptrs;
     std::vector<std::string> copy = stored;
@@ -30,50 +37,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] inline auto try_parse() -> std::optional<T> {
-    auto& stored = cfire::detail::process_args_storage();
-    std::vector<char*> ptrs;
-    std::vector<std::string> copy = stored;
-    if (copy.empty()) copy.push_back("cfire_app");
-    for (auto& s : copy) ptrs.push_back(s.data());
-    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
-}
-
-template <typename T>
-[[nodiscard]] inline auto try_parse(std::span<const std::string> args) -> std::optional<T> {
-    std::vector<char*> ptrs;
-    std::vector<std::string> copy;
-    copy.reserve(args.size() + 1);
-    copy.push_back("cfire_app");
-    for (const auto& s : args) copy.push_back(s);
-    for (auto& s : copy) ptrs.push_back(s.data());
-    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
-}
-
-template <typename T>
-[[nodiscard]] inline auto try_parse(std::initializer_list<const char*> args) -> std::optional<T> {
-    std::vector<char*> ptrs;
-    std::vector<std::string> copy;
-    copy.reserve(args.size() + 1);
-    copy.push_back("cfire_app");
-    for (const char* s : args) copy.emplace_back(s);
-    for (auto& s : copy) ptrs.push_back(s.data());
-    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
-}
-
-template <typename T>
-[[nodiscard]] inline auto try_parse(std::initializer_list<std::string_view> args) -> std::optional<T> {
-    std::vector<char*> ptrs;
-    std::vector<std::string> copy;
-    copy.reserve(args.size() + 1);
-    copy.push_back("cfire_app");
-    for (std::string_view s : args) copy.emplace_back(s);
-    for (auto& s : copy) ptrs.push_back(s.data());
-    return try_parse<T>(static_cast<int>(ptrs.size()), ptrs.data());
-}
-
-template <typename T>
-[[nodiscard]] inline auto parse(std::span<const std::string> args) -> T {
+[[nodiscard]] inline auto parse(std::span<const std::string> args) -> std::expected<T, cfire::Error> {
     std::vector<char*> ptrs;
     std::vector<std::string> copy;
     copy.reserve(args.size() + 1);
@@ -84,7 +48,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] inline auto parse(std::initializer_list<const char*> args) -> T {
+[[nodiscard]] inline auto parse(std::initializer_list<const char*> args) -> std::expected<T, cfire::Error> {
     std::vector<char*> ptrs;
     std::vector<std::string> copy;
     copy.reserve(args.size() + 1);
@@ -95,7 +59,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] inline auto parse(std::initializer_list<std::string_view> args) -> T {
+[[nodiscard]] inline auto parse(std::initializer_list<std::string_view> args) -> std::expected<T, cfire::Error> {
     std::vector<char*> ptrs;
     std::vector<std::string> copy;
     copy.reserve(args.size() + 1);

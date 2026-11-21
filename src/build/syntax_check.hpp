@@ -118,7 +118,7 @@ namespace cfire::build {
     }
 
     if (rc != 0) {
-        return std::unexpected(cfire::diag::humanize_cpp_compiler_output(output));
+        return std::unexpected(cfire::diag::format_backend_failure(output, plan.has_cpp_interop, false));
     }
     return {};
 }

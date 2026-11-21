@@ -113,6 +113,79 @@ inline void verify_shared_bridge_helpers(const std::filesystem::path& rt_dir) {
             "build_preload_script injects initial config flags");
     require(preload.contains("__cfire_set_autofill") && preload.contains("postMessageWithAdditionalObjects"),
             "preload script contains autofill enforcement and WebView2 drop helper");
+    require(preload.contains("\"ready\"") && !preload.contains("\"ipcToken\":"),
+            "preload script omits ipcToken by default and signals DOM ready");
+
+    std::string tok_preload = cfire::webui::detail::build_preload_script(*state, true);
+    require(!state->ipc_session_token.empty() &&
+                tok_preload.contains(std::format("\"ipcToken\":\"{}\"", state->ipc_session_token)),
+            "build_preload_script(..., true) injects per-session ipcToken");
+
+    // Origin validation & navigation allowlist checks
+    require(cfire::webui::detail::is_app_origin("app://localhost"), "accepts app://localhost");
+    require(cfire::webui::detail::is_app_origin("app://localhost/"), "accepts app://localhost/");
+    require(cfire::webui::detail::is_app_origin("app://localhost/index.html?x=1#y"), "accepts app://localhost path/query");
+    require(cfire::webui::detail::is_app_origin("https://app.localhost"), "accepts Windows https://app.localhost");
+    require(cfire::webui::detail::is_app_origin("https://app.localhost/assets/app.js"), "accepts https://app.localhost subpath");
+    require(!cfire::webui::detail::is_app_origin("app://localhost.evil.com/index.html"), "rejects app://localhost.evil.com");
+    require(!cfire::webui::detail::is_app_origin("https://app.localhost.evil.com/"), "rejects https://app.localhost.evil.com");
+    require(!cfire::webui::detail::is_app_origin("https://app://localhost/"), "rejects scheme confusion prefix");
+    require(!cfire::webui::detail::is_app_origin("http://app.localhost/"), "rejects insecure http://app.localhost");
+    require(!cfire::webui::detail::is_app_origin("app://localhost@evil.com/"), "rejects userinfo authority");
+    require(!cfire::webui::detail::is_app_origin(""), "rejects empty origin");
+
+    state->add_allowed_navigation_origin("https://Auth.Example.com:8443/callback");
+    require(state->should_allow_in_webview("app://localhost/main.js"), "VFS app:// allowed in webview");
+    require(state->should_allow_in_webview("https://app.localhost/index.html"), "VFS https://app.localhost allowed in webview");
+    require(state->should_allow_in_webview("about:blank"), "about:blank allowed");
+    require(state->should_allow_in_webview("data:text/plain,ok"), "data: URL allowed");
+    require(state->should_allow_in_webview("blob:https://app.localhost/uuid"), "blob: URL allowed");
+    require(state->should_allow_in_webview("https://auth.example.com:8443/done"), "explicitly allowlisted origin+port allowed");
+    require(!state->should_allow_in_webview("https://auth.example.com:9443/done"), "different port rejected");
+    require(!state->should_allow_in_webview("https://auth.example.com.evil.com/done"), "lookalike allowlist domain rejected");
+    require(!state->should_allow_in_webview("https://evil.example/"), "external origin blocked from in-webview nav");
+
+    // Cold-start URL/notification buffering + flush on __sys:ready
+    std::vector<std::string> open_url_events;
+    std::vector<std::string> notif_events;
+    state->event_listeners["app:open_url"].push_back([&](const std::string& p) { open_url_events.push_back(p); });
+    state->event_listeners["app:notification_opened"].push_back([&](const std::string& p) { notif_events.push_back(p); });
+    state->notify_open_url("flint://host/prod");
+    state->notify_notification_opened("notif-42", "{\"tab\":\"logs\"}");
+    require(state->initial_url.has_value() && *state->initial_url == "flint://host/prod",
+            "cold-start notify_open_url captures initial_url");
+    require(state->pending_cold_start_events.size() == 2 && open_url_events.empty() && notif_events.empty(),
+            "cold-start events buffer before JS reports ready");
+    state->handle_ipc_message(R"({"__sys":"ready"})");
+    require(state->js_ready && state->pending_cold_start_events.empty(),
+            "__sys:ready flips js_ready and drains pending cold-start queue");
+    require(open_url_events.size() == 1 && open_url_events[0].contains("flint://host/prod"),
+            "buffered app:open_url delivered on __sys:ready");
+    require(notif_events.size() == 1 && notif_events[0].contains("notif-42"),
+            "buffered app:notification_opened delivered on __sys:ready");
+
+    // Verify IPC gate enforces token when required and rejects non-app origins
+    int verified_calls = 0;
+    state->rpc_handlers["ping"] = [&](std::string_view) -> std::expected<std::string, cfire::Error> {
+        ++verified_calls;
+        return "\"ok\"";
+    };
+    state->handle_ipc_message_verified("https://evil.example/", R"({"jsonrpc":"2.0","id":1,"method":"ping","params":{}})", false);
+    require(verified_calls == 0, "handle_ipc_message_verified drops non-app origin");
+    state->handle_ipc_message_verified("app://localhost/index.html", R"({"jsonrpc":"2.0","id":2,"method":"ping","params":{}})", true);
+    require(verified_calls == 0, "handle_ipc_message_verified drops missing __tok when token required");
+    state->handle_ipc_message_verified("app://localhost/index.html",
+        std::format(R"({{"jsonrpc":"2.0","id":3,"method":"ping","params":{{}},"__tok":"{}"}})", state->ipc_session_token),
+        true);
+    require(verified_calls == 1, "handle_ipc_message_verified accepts app origin with valid __tok");
+
+    // Headless native handle escape hatch null-safety
+    auto h_app = cfire::webui::new_app("HandleTest", 640, 480);
+    require(!h_app.initial_url().has_value(), "initial_url() starts empty");
+    require(h_app.native_window_handle() == nullptr &&
+            h_app.native_webview_handle() == nullptr &&
+            h_app.native_view_controller_handle() == nullptr,
+            "native handles start nullptr before platform loop mounts");
 
     // Verify Release build plan flag & eject_cmake generator expression
     const auto prev_profile = cfire::build::current_build_profile();
@@ -185,6 +258,7 @@ constexpr int G_PRIORITY_DEFAULT = 0;
 constexpr int GTK_WINDOW_TOPLEVEL = 0;
 constexpr int GTK_WIN_POS_CENTER = 1;
 constexpr int WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES = 0;
+constexpr int WEBKIT_USER_CONTENT_INJECT_TOP_FRAME = 1;
 constexpr int WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START = 0;
 constexpr guint GDK_WINDOW_STATE_FULLSCREEN = 1U << 4;
 
@@ -201,11 +275,22 @@ struct WebKitSettings { gboolean dev_extras{FALSE}; };
 struct WebKitContextMenu {};
 struct WebKitHitTestResult {};
 struct GdkEvent {};
+struct GdkEventFocus { int in{1}; };
 struct GdkEventWindowState { guint changed_mask{0}; guint new_window_state{0}; };
 struct GdkDragContext {};
 struct GtkSelectionData { std::vector<std::string> uris; };
+struct WebKitURIRequest { std::string uri; };
+struct WebKitNavigationAction { WebKitURIRequest req; };
+struct WebKitPolicyDecision { std::string action_uri; bool ignored{false}; bool used{false}; };
+using WebKitNavigationPolicyDecision = WebKitPolicyDecision;
+enum WebKitPolicyDecisionType {
+    WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION = 0,
+    WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION = 1,
+    WEBKIT_POLICY_DECISION_TYPE_RESPONSE = 2
+};
 struct WebKitWebView {
     std::vector<std::string> eval_scripts;
+    std::string current_uri{"app://localhost/index.html"};
     WebKitSettings settings;
 };
 struct JSCValue { std::string str; };
@@ -214,13 +299,26 @@ using WebKitURISchemeRequestCallback = void(*)(WebKitURISchemeRequest*, gpointer
 
 static WebKitWebView g_wv{};
 static GtkWidget g_win{};
+static WebKitNavigationAction g_mock_nav_act{};
 static std::string g_last_preload;
+static int g_injected_frames = -1;
+static std::string g_allow_list_first;
 static gboolean (*g_ctx_menu_cb)(WebKitWebView*, WebKitContextMenu*, GdkEvent*, WebKitHitTestResult*, gpointer) = nullptr;
 static gpointer g_ctx_menu_ud = nullptr;
 static gboolean (*g_win_state_cb)(GtkWidget*, GdkEventWindowState*, gpointer) = nullptr;
 static gpointer g_win_state_ud = nullptr;
 static void (*g_drag_cb)(GtkWidget*, GdkDragContext*, gint, gint, GtkSelectionData*, guint, guint, gpointer) = nullptr;
 static gpointer g_drag_ud = nullptr;
+static void (*g_script_msg_cb)(WebKitUserContentManager*, WebKitJavascriptResult*, gpointer) = nullptr;
+static gpointer g_script_msg_ud = nullptr;
+static gboolean (*g_decide_policy_cb)(WebKitWebView*, WebKitPolicyDecision*, WebKitPolicyDecisionType, gpointer) = nullptr;
+static gpointer g_decide_policy_ud = nullptr;
+static GtkWidget* (*g_create_cb)(WebKitWebView*, WebKitNavigationAction*, gpointer) = nullptr;
+static gpointer g_create_ud = nullptr;
+static gboolean (*g_focus_in_cb)(GtkWidget*, GdkEventFocus*, gpointer) = nullptr;
+static gpointer g_focus_in_ud = nullptr;
+static gboolean (*g_focus_out_cb)(GtkWidget*, GdkEventFocus*, gpointer) = nullptr;
+static gpointer g_focus_out_ud = nullptr;
 static bool g_uri_targets_added = false;
 static bool g_drag_finished = false;
 static bool g_drag_signal_stopped = false;
@@ -230,6 +328,7 @@ static gboolean g_dev_extras_after_launch = FALSE;
 #define GTK_WINDOW(w) reinterpret_cast<GtkWindow*>(w)
 #define GTK_CONTAINER(w) reinterpret_cast<GtkContainer*>(w)
 #define WEBKIT_WEB_VIEW(w) (&g_wv)
+#define WEBKIT_NAVIGATION_POLICY_DECISION(d) reinterpret_cast<WebKitNavigationPolicyDecision*>(d)
 #define G_CALLBACK(fn) reinterpret_cast<GCallback>(fn)
 
 inline gpointer g_malloc(std::size_t n) { return std::malloc(n); }
@@ -324,13 +423,30 @@ inline void g_signal_connect(gpointer, const char* sig, GCallback cb, gpointer u
     } else if (sv == "drag-data-received") {
         g_drag_cb = reinterpret_cast<decltype(g_drag_cb)>(cb);
         g_drag_ud = ud;
+    } else if (sv == "script-message-received::external") {
+        g_script_msg_cb = reinterpret_cast<decltype(g_script_msg_cb)>(cb);
+        g_script_msg_ud = ud;
+    } else if (sv == "decide-policy") {
+        g_decide_policy_cb = reinterpret_cast<decltype(g_decide_policy_cb)>(cb);
+        g_decide_policy_ud = ud;
+    } else if (sv == "create") {
+        g_create_cb = reinterpret_cast<decltype(g_create_cb)>(cb);
+        g_create_ud = ud;
+    } else if (sv == "focus-in-event") {
+        g_focus_in_cb = reinterpret_cast<decltype(g_focus_in_cb)>(cb);
+        g_focus_in_ud = ud;
+    } else if (sv == "focus-out-event") {
+        g_focus_out_cb = reinterpret_cast<decltype(g_focus_out_cb)>(cb);
+        g_focus_out_ud = ud;
     }
 }
 inline WebKitWebContext* webkit_web_context_get_default() { return nullptr; }
 inline void webkit_web_context_register_uri_scheme(WebKitWebContext*, const char*, WebKitURISchemeRequestCallback, gpointer, GDestroyNotify) {}
 inline WebKitUserContentManager* webkit_user_content_manager_new() { return nullptr; }
-inline WebKitUserScript* webkit_user_script_new(const char* src, int, int, const char* const*, const char* const*) {
+inline WebKitUserScript* webkit_user_script_new(const char* src, int frames, int, const char* const* allow_list, const char* const*) {
     if (src) g_last_preload = src;
+    g_injected_frames = frames;
+    if (allow_list && allow_list[0]) g_allow_list_first = allow_list[0];
     return nullptr;
 }
 inline void webkit_user_content_manager_add_script(WebKitUserContentManager*, WebKitUserScript*) {}
@@ -338,7 +454,17 @@ inline void webkit_user_script_unref(WebKitUserScript*) {}
 inline void webkit_user_content_manager_register_script_message_handler(WebKitUserContentManager*, const char*) {}
 inline GtkWidget* webkit_web_view_new_with_user_content_manager(WebKitUserContentManager*) { return reinterpret_cast<GtkWidget*>(&g_wv); }
 inline void gtk_container_add(GtkContainer*, GtkWidget*) {}
-inline void webkit_web_view_load_uri(WebKitWebView*, const char*) {
+inline const char* webkit_web_view_get_uri(WebKitWebView* wv) { return wv ? wv->current_uri.c_str() : ""; }
+inline WebKitNavigationAction* webkit_navigation_policy_decision_get_navigation_action(WebKitNavigationPolicyDecision* d) {
+    g_mock_nav_act.req.uri = d ? d->action_uri : "";
+    return &g_mock_nav_act;
+}
+inline WebKitURIRequest* webkit_navigation_action_get_request(WebKitNavigationAction* a) { return a ? &a->req : nullptr; }
+inline const char* webkit_uri_request_get_uri(WebKitURIRequest* r) { return r ? r->uri.c_str() : ""; }
+inline void webkit_policy_decision_ignore(WebKitPolicyDecision* d) { if (d) d->ignored = true; }
+inline void webkit_policy_decision_use(WebKitPolicyDecision* d) { if (d) d->used = true; }
+inline void webkit_web_view_load_uri(WebKitWebView* wv, const char* uri) {
+    if (wv && uri) wv->current_uri = uri;
     g_dev_extras_after_launch = g_wv.settings.dev_extras;
 }
 inline void gtk_widget_show_all(GtkWidget*) {}
@@ -381,6 +507,42 @@ inline void gtk_main() {
     GtkSelectionData sd{{"file:///var/vault/alpha.key", "file:///var/vault/beta%20file.txt"}};
     g_drag_cb(reinterpret_cast<GtkWidget*>(&g_wv), nullptr, 0, 0, &sd, 0, 123, g_drag_ud);
     if (!g_drag_finished || !g_drag_signal_stopped) std::exit(17);
+
+    // Check TOP_FRAME + allow_list + native handles
+    if (g_injected_frames != WEBKIT_USER_CONTENT_INJECT_TOP_FRAME) std::exit(23);
+    if (g_allow_list_first != "app://localhost/*") std::exit(24);
+    if (!g_app_ptr->native_window_handle() || !g_app_ptr->native_webview_handle()) std::exit(25);
+
+    // Check __tok + top-frame app:// URI verification
+    if (!g_script_msg_cb || !g_decide_policy_cb || !g_create_cb || !g_focus_in_cb || !g_focus_out_cb) std::exit(26);
+    auto tok_pos = g_last_preload.find("\"ipcToken\":\"");
+    if (tok_pos == std::string::npos) std::exit(27);
+    tok_pos += 12;
+    auto tok_end = g_last_preload.find('"', tok_pos);
+    std::string tok = g_last_preload.substr(tok_pos, tok_end - tok_pos);
+
+    WebKitJavascriptResult no_tok{JSCValue{R"({"event":"linux:ping","data":{}})"}};
+    g_script_msg_cb(nullptr, &no_tok, g_script_msg_ud);
+
+    g_wv.current_uri = "https://evil.example/frame";
+    WebKitJavascriptResult evil_uri{JSCValue{"{\"event\":\"linux:ping\",\"__tok\":\"" + tok + "\"}"}};
+    g_script_msg_cb(nullptr, &evil_uri, g_script_msg_ud);
+
+    g_wv.current_uri = "app://localhost/index.html";
+    WebKitJavascriptResult good_msg{JSCValue{"{\"event\":\"linux:ping\",\"__tok\":\"" + tok + "\"}"}};
+    g_script_msg_cb(nullptr, &good_msg, g_script_msg_ud);
+
+    // External navigation interception + focus events
+    WebKitPolicyDecision dec{"https://external.example/docs", false, false};
+    if (!g_decide_policy_cb(&g_wv, &dec, WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION, g_decide_policy_ud) || !dec.ignored) {
+        std::exit(28);
+    }
+    WebKitNavigationAction create_act{WebKitURIRequest{"https://external.example/popup"}};
+    if (g_create_cb(&g_wv, &create_act, g_create_ud) != nullptr) std::exit(29);
+    GdkEventFocus fin{1};
+    GdkEventFocus fout{0};
+    g_focus_in_cb(&g_win, &fin, g_focus_in_ud);
+    g_focus_out_cb(&g_win, &fout, g_focus_out_ud);
 }
 
 int main() {
@@ -388,12 +550,22 @@ int main() {
     g_app_ptr = &app;
     std::vector<std::string> fs_events;
     std::string drop_payload;
+    int ping_ok = 0;
+    int ext_nav_count = 0;
+    int active_count = 0;
+    int inactive_count = 0;
     app.on("window:fullscreen", [&](const std::string& p) { fs_events.push_back(p); });
     app.on("window:file_drop", [&](const std::string& p) { drop_payload = p; });
+    app.on("linux:ping", [&](const std::string&) { ++ping_ok; });
+    app.on("app:external_navigation", [&](const std::string&) { ++ext_nav_count; });
+    app.on("app:active", [&](const std::string&) { ++active_count; });
+    app.on("app:inactive", [&](const std::string&) { ++inactive_count; });
     app.run_linux_webkitgtk();
+    if (app.native_window_handle() != nullptr || app.native_webview_handle() != nullptr) return 30;
     if (fs_events.size() != 2 || fs_events[0] != "{\"fullscreen\":true}" || fs_events[1] != "{\"fullscreen\":false}") return 21;
     if (drop_payload.find("/var/vault/alpha.key") == std::string::npos ||
         drop_payload.find("/var/vault/beta file.txt") == std::string::npos) return 22;
+    if (ping_ok != 1 || ext_nav_count != 2 || active_count != 1 || inactive_count != 1) return 31;
     return 0;
 }
 )CPP";
@@ -718,7 +890,12 @@ inline BOOL PeekMessageW(MSG* msg, HWND, UINT, UINT, UINT) {
         g_wndproc(&g_dummy_obj, 0x0233, reinterpret_cast<WPARAM>(&g_dummy_obj), 0); // WM_DROPFILES
         return FALSE;
     }
-    if (g_win_step == 3) {
+    if (g_win_step == 3 && g_wndproc) {
+        g_wndproc(&g_dummy_obj, 0x0006, 1, 0); // WM_ACTIVATE (WA_ACTIVE)
+        g_wndproc(&g_dummy_obj, 0x0006, 0, 0); // WM_ACTIVATE (WA_INACTIVE)
+        return FALSE;
+    }
+    if (g_win_step == 4) {
         msg->hwnd = &g_dummy_obj;
         msg->message = WM_QUIT;
         return TRUE;
@@ -731,7 +908,10 @@ inline BOOL PeekMessageW(MSG* msg, HWND, UINT, UINT, UINT) {
 using cfire::webui::detail::ICoreWebView2Settings4;
 using cfire::webui::detail::ICoreWebView2File;
 using cfire::webui::detail::ICoreWebView2ObjectCollectionView;
+using cfire::webui::detail::ICoreWebView2WebMessageReceivedEventArgs;
 using cfire::webui::detail::ICoreWebView2WebMessageReceivedEventArgs2;
+using cfire::webui::detail::ICoreWebView2NavigationStartingEventArgs;
+using cfire::webui::detail::ICoreWebView2NewWindowRequestedEventArgs;
 
 struct MockSettings4 final : ICoreWebView2Settings4 {
     std::atomic<ULONG> refs{1};
@@ -858,20 +1038,127 @@ struct MockMsgArgs2 final : ICoreWebView2WebMessageReceivedEventArgs2 {
     }
 };
 
+inline wchar_t* mock_co_alloc_wstr(const std::wstring& s) {
+    std::size_t bytes = (s.size() + 1) * sizeof(wchar_t);
+    auto* mem = static_cast<wchar_t*>(std::malloc(bytes));
+    std::memcpy(mem, s.c_str(), bytes);
+    return mem;
+}
+
+struct MockWebMsgArgs final : ICoreWebView2WebMessageReceivedEventArgs {
+    std::atomic<ULONG> refs{1};
+    std::wstring src;
+    std::wstring msg;
+    MockWebMsgArgs(std::wstring s, std::wstring m) : src(std::move(s)), msg(std::move(m)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+        if (!out) return E_POINTER;
+        if (IsEqualIID(r, IID_IUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+    HRESULT STDMETHODCALLTYPE get_Source(LPWSTR* out) override { if (!out) return E_POINTER; *out = mock_co_alloc_wstr(src); return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_WebMessageAsJson(LPWSTR* out) override { if (!out) return E_POINTER; *out = mock_co_alloc_wstr(msg); return S_OK; }
+    HRESULT STDMETHODCALLTYPE TryGetWebMessageAsString(LPWSTR* out) override { if (!out) return E_POINTER; *out = mock_co_alloc_wstr(msg); return S_OK; }
+};
+
+struct MockNavStartingArgs final : ICoreWebView2NavigationStartingEventArgs {
+    std::atomic<ULONG> refs{1};
+    std::wstring uri;
+    BOOL cancel{FALSE};
+    explicit MockNavStartingArgs(std::wstring u) : uri(std::move(u)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+        if (!out) return E_POINTER;
+        if (IsEqualIID(r, IID_IUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+    HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* out) override { if (!out) return E_POINTER; *out = mock_co_alloc_wstr(uri); return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* v) override { if (v) *v = TRUE; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_IsRedirected(BOOL* v) override { if (v) *v = FALSE; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_RequestHeaders(cfire::webui::detail::ICoreWebView2HttpRequestHeaders**) override { return E_NOINTERFACE; }
+    HRESULT STDMETHODCALLTYPE get_Cancel(BOOL* v) override { if (v) *v = cancel; return S_OK; }
+    HRESULT STDMETHODCALLTYPE put_Cancel(BOOL v) override { cancel = v; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_NavigationId(unsigned long long* v) override { if (v) *v = 1; return S_OK; }
+};
+
+struct MockNewWindowArgs final : ICoreWebView2NewWindowRequestedEventArgs {
+    std::atomic<ULONG> refs{1};
+    std::wstring uri;
+    BOOL handled{FALSE};
+    explicit MockNewWindowArgs(std::wstring u) : uri(std::move(u)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+        if (!out) return E_POINTER;
+        if (IsEqualIID(r, IID_IUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+    HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* out) override { if (!out) return E_POINTER; *out = mock_co_alloc_wstr(uri); return S_OK; }
+    HRESULT STDMETHODCALLTYPE put_NewWindow(cfire::webui::detail::ICoreWebView2*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_NewWindow(cfire::webui::detail::ICoreWebView2**) override { return E_NOINTERFACE; }
+    HRESULT STDMETHODCALLTYPE put_Handled(BOOL v) override { handled = v; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Handled(BOOL* v) override { if (v) *v = handled; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* v) override { if (v) *v = TRUE; return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetDeferral(cfire::webui::detail::ICoreWebView2Deferral**) override { return E_NOINTERFACE; }
+    HRESULT STDMETHODCALLTYPE get_WindowFeatures(cfire::webui::detail::ICoreWebView2WindowFeatures**) override { return E_NOINTERFACE; }
+};
+
 int main() {
     auto app = cfire::webui::new_app("Win32Security", 960, 640);
     if (g_dpi_ctx_calls == 0 || g_dpi_ctx_arg != reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4))) return 2;
 
     std::string drop_payload;
     std::vector<std::string> fs_events;
+    int active_count = 0;
+    int inactive_count = 0;
     app.on("window:file_drop", [&](const std::string& p) { drop_payload = p; });
     app.on("window:fullscreen", [&](const std::string& p) { fs_events.push_back(p); });
+    app.on("app:active", [&](const std::string&) { ++active_count; });
+    app.on("app:inactive", [&](const std::string&) { ++inactive_count; });
 
     app.run_win32_webview2(true, 100);
     if (g_create_w != 1920 || g_create_h != 1280) return 3;
     if (!g_drag_accepted || !g_drag_finished) return 4;
     if (g_last_pos.left != 40 || g_last_pos.top != 50 || (g_last_pos.right - g_last_pos.left) != 1200) return 5;
     if (drop_payload.find("id_ed25519") == std::string::npos || drop_payload.find("my notes.txt") == std::string::npos) return 6;
+    if (app.native_window_handle() != nullptr) return 12;
+    if (active_count != 1 || inactive_count != 1) return 13;
+
+    // WebView2 source origin gate + navigation interception COM helpers
+    cfire::webui::detail::AppState sec_st;
+    int sec_events = 0;
+    int ext_navs = 0;
+    sec_st.event_listeners["win:ping"].push_back([&](const std::string&) { ++sec_events; });
+    sec_st.event_listeners["app:external_navigation"].push_back([&](const std::string&) { ++ext_navs; });
+    auto* m_evil = new MockWebMsgArgs(L"https://evil.example/", L"{\"event\":\"win:ping\",\"data\":{}}");
+    auto* m_look = new MockWebMsgArgs(L"https://app.localhost.evil.com/", L"{\"event\":\"win:ping\",\"data\":{}}");
+    auto* m_good = new MockWebMsgArgs(L"https://app.localhost/index.html", L"{\"event\":\"win:ping\",\"data\":{}}");
+    cfire::webui::detail::handle_webview2_web_message(sec_st, m_evil);
+    cfire::webui::detail::handle_webview2_web_message(sec_st, m_look);
+    cfire::webui::detail::handle_webview2_web_message(sec_st, m_good);
+    m_evil->Release(); m_look->Release(); m_good->Release();
+    if (sec_events != 1) return 14;
+
+    auto* ns_allow = new MockNavStartingArgs(L"https://app.localhost/app.js");
+    auto* ns_block = new MockNavStartingArgs(L"https://external.example/docs");
+    cfire::webui::detail::handle_webview2_navigation_starting(sec_st, ns_allow);
+    cfire::webui::detail::handle_webview2_navigation_starting(sec_st, ns_block);
+    if (ns_allow->cancel != FALSE || ns_block->cancel != TRUE || ext_navs != 1) return 15;
+    ns_allow->Release(); ns_block->Release();
+
+    std::wstring navigated_internal;
+    auto* nw_allow = new MockNewWindowArgs(L"https://app.localhost/panel");
+    auto* nw_block = new MockNewWindowArgs(L"https://external.example/popup");
+    cfire::webui::detail::handle_webview2_new_window_requested(sec_st, nw_allow, [&](const std::wstring& u) { navigated_internal = u; });
+    cfire::webui::detail::handle_webview2_new_window_requested(sec_st, nw_block);
+    if (nw_allow->handled != TRUE || navigated_internal != L"https://app.localhost/panel" ||
+        nw_block->handled != TRUE || ext_navs != 2) return 16;
+    nw_allow->Release(); nw_block->Release();
 
     auto* s4 = new MockSettings4();
 #if defined(CFIRE_RELEASE_BUILD)
@@ -963,8 +1250,47 @@ inline void verify_macos_cocoa_and_webkit(const std::filesystem::path& rt_dir) {
 - (void)resetSpringLoading {}
 @end
 
+@interface CfireTestURLSchemeTask : NSObject <WKURLSchemeTask>
+@property (nonatomic, copy) NSURLRequest* request;
+@property (nonatomic, strong) NSHTTPURLResponse* capturedResponse;
+@property (nonatomic, assign) BOOL finished;
+@end
+
+@implementation CfireTestURLSchemeTask
+- (void)didReceiveResponse:(NSURLResponse*)response {
+    if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+        self.capturedResponse = (NSHTTPURLResponse*)response;
+    }
+}
+- (void)didReceiveData:(NSData*)data { (void)data; }
+- (void)didFinish { self.finished = YES; }
+- (void)didFailWithError:(NSError*)error { (void)error; }
+@end
+
+@interface CfireTestFrameInfo : NSObject
+@property (nonatomic, assign, getter=isMainFrame) BOOL mainFrame;
+@property (nonatomic, copy) NSURLRequest* request;
+@end
+@implementation CfireTestFrameInfo
+@end
+
+@interface CfireTestScriptMessage : NSObject
+@property (nonatomic, strong) id body;
+@property (nonatomic, strong) id frameInfo;
+@end
+@implementation CfireTestScriptMessage
+@end
+
+@interface CfireTestNavAction : NSObject
+@property (nonatomic, copy) NSURLRequest* request;
+@property (nonatomic, strong) id targetFrame;
+@end
+@implementation CfireTestNavAction
+@end
+
 int main(int argc, char** argv) {
     @autoreleasepool {
+        setenv("CFIRE_HEADLESS_TEST", "1", 1);
         [NSApplication sharedApplication];
         auto state = std::make_shared<cfire::webui::detail::AppState>();
         if (state->devtools_enabled || state->context_menu_enabled || !state->autofill_enabled) {
@@ -1098,6 +1424,94 @@ int main(int argc, char** argv) {
             auto_result.find("\"textarea\":\"off\"") == std::string::npos) {
             return 16;
         }
+
+        // 4. Verify SchemeHandler omits wildcard CORS, MessageHandler enforces top-frame app://,
+        //    NavigationDelegate blocks external URLs & handles WebContent termination, openURLs + app:active
+        CfireWebUISchemeHandler* sh = [[CfireWebUISchemeHandler alloc] init];
+        sh->state = state;
+        CfireTestURLSchemeTask* task = [[CfireTestURLSchemeTask alloc] init];
+        task.request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"app://localhost/index.html"]];
+        [sh webView:wv startURLSchemeTask:task];
+        if (!task.finished || !task.capturedResponse ||
+            task.capturedResponse.allHeaderFields[@"Access-Control-Allow-Origin"] != nil) {
+            return 17;
+        }
+
+        int ipc_ok = 0;
+        state->event_listeners["mac:ping"].push_back([&](const std::string&) { ++ipc_ok; });
+        CfireWebUIMessageHandler* mh = [[CfireWebUIMessageHandler alloc] init];
+        mh->state = state;
+        WKUserContentController* dummyUcm = [[WKUserContentController alloc] init];
+
+        CfireTestFrameInfo* subFi = [[CfireTestFrameInfo alloc] init];
+        subFi.mainFrame = NO;
+        subFi.request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"app://localhost/sub.html"]];
+        CfireTestScriptMessage* subMsg = [[CfireTestScriptMessage alloc] init];
+        subMsg.body = @"{\"event\":\"mac:ping\",\"data\":{}}";
+        subMsg.frameInfo = subFi;
+        [mh userContentController:dummyUcm didReceiveScriptMessage:(WKScriptMessage*)subMsg];
+
+        CfireTestFrameInfo* evilFi = [[CfireTestFrameInfo alloc] init];
+        evilFi.mainFrame = YES;
+        evilFi.request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://evil.example/"]];
+        CfireTestScriptMessage* evilMsg = [[CfireTestScriptMessage alloc] init];
+        evilMsg.body = @"{\"event\":\"mac:ping\",\"data\":{}}";
+        evilMsg.frameInfo = evilFi;
+        [mh userContentController:dummyUcm didReceiveScriptMessage:(WKScriptMessage*)evilMsg];
+
+        CfireTestFrameInfo* mainFi = [[CfireTestFrameInfo alloc] init];
+        mainFi.mainFrame = YES;
+        mainFi.request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"app://localhost/index.html"]];
+        CfireTestScriptMessage* mainMsg = [[CfireTestScriptMessage alloc] init];
+        mainMsg.body = @"{\"event\":\"mac:ping\",\"data\":{}}";
+        mainMsg.frameInfo = mainFi;
+        [mh userContentController:dummyUcm didReceiveScriptMessage:(WKScriptMessage*)mainMsg];
+        if (ipc_ok != 1) return 18;
+
+        int mac_ext_nav = 0;
+        int mac_reloaded = 0;
+        int mac_active = 0;
+        int mac_inactive = 0;
+        state->event_listeners["app:external_navigation"].push_back([&](const std::string&) { ++mac_ext_nav; });
+        state->event_listeners["app:webview_reloaded"].push_back([&](const std::string&) { ++mac_reloaded; });
+        state->event_listeners["app:active"].push_back([&](const std::string&) { ++mac_active; });
+        state->event_listeners["app:inactive"].push_back([&](const std::string&) { ++mac_inactive; });
+
+        CfireWebUINavigationDelegate* navDel = [[CfireWebUINavigationDelegate alloc] init];
+        navDel->state = state;
+        CfireTestNavAction* extAct = [[CfireTestNavAction alloc] init];
+        extAct.targetFrame = mainFi;
+        extAct.request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://external.example/docs"]];
+        __block WKNavigationActionPolicy gotPolicy = WKNavigationActionPolicyAllow;
+        [navDel webView:wv decidePolicyForNavigationAction:(WKNavigationAction*)extAct
+                                            decisionHandler:^(WKNavigationActionPolicy pol) { gotPolicy = pol; }];
+        if (gotPolicy != WKNavigationActionPolicyCancel || mac_ext_nav != 1) return 19;
+
+        [navDel webViewWebContentProcessDidTerminate:wv];
+        if (mac_reloaded != 1) return 20;
+
+        [appDel application:NSApp openURLs:@[[NSURL URLWithString:@"flint://prod/session"]]];
+        if (!state->initial_url.has_value() || *state->initial_url != "flint://prod/session") return 21;
+        [appDel applicationDidBecomeActive:[NSNotification notificationWithName:NSApplicationDidBecomeActiveNotification object:NSApp]];
+        [appDel applicationDidResignActive:[NSNotification notificationWithName:NSApplicationDidResignActiveNotification object:NSApp]];
+        if (mac_active != 1 || mac_inactive != 1) return 22;
+
+        // 5. Verify live WKWebView __sys:ready flushes cold-start openURLs events after EventsOn registers
+        auto state2 = std::make_shared<cfire::webui::detail::AppState>();
+        state2->notify_open_url("flint://cold/host");
+        std::string cold_url_seen;
+        state2->rpc_handlers["report_cold"] = [&](std::string_view p) -> std::expected<std::string, cfire::Error> {
+            cold_url_seen = std::string(p);
+            return "\"ok\"";
+        };
+        state2->fallback_index_html = R"HTML(<!doctype html><html><body><script>
+            window.runtime.EventsOn("app:open_url", async (ev) => {
+                await window.invoke("report_cold", ev);
+                window.runtime.Quit();
+            });
+        </script></body></html>)HTML";
+        auto wt2 = cfire::webui::detail::run_macos_webview_test(state2, 4000);
+        if (!wt2 || !*wt2 || cold_url_seen.find("flint://cold/host") == std::string::npos) return 23;
     }
     return 0;
 }
@@ -1147,7 +1561,10 @@ inline void verify_native_win32_and_com() {
     using cfire::webui::detail::ICoreWebView2Settings4;
     using cfire::webui::detail::ICoreWebView2File;
     using cfire::webui::detail::ICoreWebView2ObjectCollectionView;
+    using cfire::webui::detail::ICoreWebView2WebMessageReceivedEventArgs;
     using cfire::webui::detail::ICoreWebView2WebMessageReceivedEventArgs2;
+    using cfire::webui::detail::ICoreWebView2NavigationStartingEventArgs;
+    using cfire::webui::detail::ICoreWebView2NewWindowRequestedEventArgs;
     static constexpr IID kIidUnknown = cfire::webui::detail::wv2_iid("00000000-0000-0000-c000-000000000046");
 
     struct NativeSettings4 final : ICoreWebView2Settings4 {
@@ -1299,6 +1716,140 @@ inline void verify_native_win32_and_com() {
     nf->Release();
     require(got.size() == 1 && got[0] == "C:\\Users\\memo\\native_drop.pem",
             "native Windows extract_webview2_dropped_files recovers real OS path");
+
+    // 3. Test WM_ACTIVATE active/inactive transitions on real Win32 HWND
+    int win_active = 0;
+    int win_inactive = 0;
+    state->event_listeners["app:active"].push_back([&](const std::string&) { ++win_active; });
+    state->event_listeners["app:inactive"].push_back([&](const std::string&) { ++win_inactive; });
+    HWND act_hwnd = ::CreateWindowExW(
+        0, L"STATIC", L"ActivateTest", WS_POPUP, 10, 10, 200, 150, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+    require(act_hwnd != nullptr, "native Win32 WM_ACTIVATE window created");
+    ::SetWindowLongPtrW(act_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&ctx));
+    cfire::webui::detail::cfire_win32_wndproc(act_hwnd, 0x0006 /* WM_ACTIVATE */, 1, 0);
+    cfire::webui::detail::cfire_win32_wndproc(act_hwnd, 0x0006 /* WM_ACTIVATE */, 0, 0);
+    ::DestroyWindow(act_hwnd);
+    require(win_active == 1 && win_inactive == 1,
+            "WM_ACTIVATE emits app:active and app:inactive on real Win32 HWND");
+
+    // 4. Test WebView2 COM origin gate + navigation & new-window interception with CoTaskMemAlloc
+    struct NativeWebMsgArgs final : ICoreWebView2WebMessageReceivedEventArgs {
+        std::atomic<ULONG> refs{1};
+        AllocFn alloc_fn;
+        std::wstring src;
+        std::wstring msg;
+        NativeWebMsgArgs(AllocFn a, std::wstring s, std::wstring m)
+            : alloc_fn(a), src(std::move(s)), msg(std::move(m)) {}
+        LPWSTR alloc_w(const std::wstring& s) const {
+            std::size_t bytes = (s.size() + 1) * sizeof(wchar_t);
+            auto* mem = static_cast<LPWSTR>(alloc_fn(bytes));
+            std::memcpy(mem, s.c_str(), bytes);
+            return mem;
+        }
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+            if (!out) return E_POINTER;
+            if (IsEqualIID(r, kIidUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+            *out = nullptr;
+            return E_NOINTERFACE;
+        }
+        ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+        ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+        HRESULT STDMETHODCALLTYPE get_Source(LPWSTR* out) override { *out = alloc_w(src); return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_WebMessageAsJson(LPWSTR* out) override { *out = alloc_w(msg); return S_OK; }
+        HRESULT STDMETHODCALLTYPE TryGetWebMessageAsString(LPWSTR* out) override { *out = alloc_w(msg); return S_OK; }
+    };
+    struct NativeNavStartingArgs final : ICoreWebView2NavigationStartingEventArgs {
+        std::atomic<ULONG> refs{1};
+        AllocFn alloc_fn;
+        std::wstring uri;
+        BOOL cancel{FALSE};
+        NativeNavStartingArgs(AllocFn a, std::wstring u) : alloc_fn(a), uri(std::move(u)) {}
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+            if (!out) return E_POINTER;
+            if (IsEqualIID(r, kIidUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+            *out = nullptr;
+            return E_NOINTERFACE;
+        }
+        ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+        ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+        HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* out) override {
+            std::size_t bytes = (uri.size() + 1) * sizeof(wchar_t);
+            auto* mem = static_cast<LPWSTR>(alloc_fn(bytes));
+            std::memcpy(mem, uri.c_str(), bytes);
+            *out = mem;
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* v) override { if (v) *v = TRUE; return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_IsRedirected(BOOL* v) override { if (v) *v = FALSE; return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_RequestHeaders(cfire::webui::detail::ICoreWebView2HttpRequestHeaders**) override { return E_NOINTERFACE; }
+        HRESULT STDMETHODCALLTYPE get_Cancel(BOOL* v) override { if (v) *v = cancel; return S_OK; }
+        HRESULT STDMETHODCALLTYPE put_Cancel(BOOL v) override { cancel = v; return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_NavigationId(unsigned long long* v) override { if (v) *v = 1; return S_OK; }
+    };
+    struct NativeNewWinArgs final : ICoreWebView2NewWindowRequestedEventArgs {
+        std::atomic<ULONG> refs{1};
+        AllocFn alloc_fn;
+        std::wstring uri;
+        BOOL handled{FALSE};
+        NativeNewWinArgs(AllocFn a, std::wstring u) : alloc_fn(a), uri(std::move(u)) {}
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
+            if (!out) return E_POINTER;
+            if (IsEqualIID(r, kIidUnknown)) { *out = static_cast<IUnknown*>(this); AddRef(); return S_OK; }
+            *out = nullptr;
+            return E_NOINTERFACE;
+        }
+        ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+        ULONG STDMETHODCALLTYPE Release() override { ULONG n = --refs; if (n == 0) delete this; return n; }
+        HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* out) override {
+            std::size_t bytes = (uri.size() + 1) * sizeof(wchar_t);
+            auto* mem = static_cast<LPWSTR>(alloc_fn(bytes));
+            std::memcpy(mem, uri.c_str(), bytes);
+            *out = mem;
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE put_NewWindow(cfire::webui::detail::ICoreWebView2*) override { return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_NewWindow(cfire::webui::detail::ICoreWebView2**) override { return E_NOINTERFACE; }
+        HRESULT STDMETHODCALLTYPE put_Handled(BOOL v) override { handled = v; return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_Handled(BOOL* v) override { if (v) *v = handled; return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* v) override { if (v) *v = TRUE; return S_OK; }
+        HRESULT STDMETHODCALLTYPE GetDeferral(cfire::webui::detail::ICoreWebView2Deferral**) override { return E_NOINTERFACE; }
+        HRESULT STDMETHODCALLTYPE get_WindowFeatures(cfire::webui::detail::ICoreWebView2WindowFeatures**) override { return E_NOINTERFACE; }
+    };
+
+    struct WinHeadlessGuard {
+        std::optional<std::string> prev;
+        WinHeadlessGuard() {
+            if (const char* p = std::getenv("CFIRE_HEADLESS_TEST")) prev = std::string(p);
+            ::_putenv_s("CFIRE_HEADLESS_TEST", "1");
+        }
+        ~WinHeadlessGuard() {
+            if (prev) ::_putenv_s("CFIRE_HEADLESS_TEST", prev->c_str());
+            else ::_putenv_s("CFIRE_HEADLESS_TEST", "");
+        }
+    } headless_win;
+    cfire::webui::detail::AppState com_sec;
+    int com_ping = 0;
+    int com_ext = 0;
+    com_sec.event_listeners["wincom:ping"].push_back([&](const std::string&) { ++com_ping; });
+    com_sec.event_listeners["app:external_navigation"].push_back([&](const std::string&) { ++com_ext; });
+    auto* m1 = new NativeWebMsgArgs(co_alloc, L"https://app.localhost.evil.com/", L"{\"event\":\"wincom:ping\",\"data\":{}}");
+    auto* m2 = new NativeWebMsgArgs(co_alloc, L"https://app.localhost/index.html", L"{\"event\":\"wincom:ping\",\"data\":{}}");
+    cfire::webui::detail::handle_webview2_web_message(com_sec, m1);
+    cfire::webui::detail::handle_webview2_web_message(com_sec, m2);
+    m1->Release(); m2->Release();
+    require(com_ping == 1, "native Windows handle_webview2_web_message enforces https://app.localhost origin");
+
+    auto* ns1 = new NativeNavStartingArgs(co_alloc, L"https://external.example/auth");
+    cfire::webui::detail::handle_webview2_navigation_starting(com_sec, ns1);
+    require(ns1->cancel == TRUE && com_ext == 1,
+            "native Windows handle_webview2_navigation_starting cancels external navigation and emits event");
+    ns1->Release();
+
+    auto* nw1 = new NativeNewWinArgs(co_alloc, L"https://external.example/popup");
+    cfire::webui::detail::handle_webview2_new_window_requested(com_sec, nw1);
+    require(nw1->handled == TRUE && com_ext == 2,
+            "native Windows handle_webview2_new_window_requested intercepts popup and emits event");
+    nw1->Release();
 }
 #endif // defined(_WIN32)
 

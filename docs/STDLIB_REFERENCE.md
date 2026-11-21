@@ -7,53 +7,53 @@
 ### `builtin` (`builtin`) — Builtin Types: Methods, Associated Items & make
 
 - **Auto-Link Flags:** `(always available)`
-- **Overview:** Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32?`. `make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
+- **Overview:** Operations on values of builtin types are methods on the value: `s.trim()`, `xs.sort()`, `m.keys()`, `x.abs()`, `f.sqrt()`. Searches return `T?`, never `-1`. Limits and parsing belong to the type: `i32.MAX`, `f64.NAN`, `i32.parse(s) -> i32!`. Bridge wrappers explicitly via `opt.or_error(msg[, code]) -> T!` and `res.ignore_error() -> T?`. `make` is the one construction builtin, and the type decides where memory lives: `make(T, args)` is a value, `make(own[T], args)` / `make(shared[T], args)` are heap-owned, and `make([]T, len[, cap])` is a slice. In the table, `Self` is the receiver type, `T` the element type and `K`/`V` the map key/value types.
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `fn (x: i64) abs() -> Self` | `cfire::bm::abs(x, ...)` | Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`. | `d := (a - b).abs()` |
-| `fn (x: i64) min(a: Self) -> Self` | `cfire::bm::min(x, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
-| `fn (x: i64) max(a: Self) -> Self` | `cfire::bm::max(x, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
-| `fn (x: i64) clamp(a: Self, b: Self) -> Self` | `cfire::bm::clamp(x, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
+| `fn (x: i64) min(other: Self) -> Self` | `cfire::bm::min(x, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
+| `fn (x: i64) max(other: Self) -> Self` | `cfire::bm::max(x, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
+| `fn (x: i64) clamp(lo: Self, hi: Self) -> Self` | `cfire::bm::clamp(x, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
 | `fn (x: i64) signum() -> Self` | `cfire::bm::signum(x, ...)` | `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN). | `s := delta.signum()` |
-| `fn (x: i64) pow(a: Self) -> Self` | `cfire::bm::pow(x, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
+| `fn (x: i64) pow(exp: Self) -> Self` | `cfire::bm::pow(x, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
 | `fn (x: i64) count_ones() -> u32` | `cfire::bm::count_ones(x, ...)` | Number of set bits. | `bits := mask.count_ones()` |
 | `fn (x: i64) leading_zeros() -> u32` | `cfire::bm::leading_zeros(x, ...)` | Number of leading zero bits. | `lz := x.leading_zeros()` |
 | `fn (x: i64) trailing_zeros() -> u32` | `cfire::bm::trailing_zeros(x, ...)` | Number of trailing zero bits. | `tz := x.trailing_zeros()` |
 | `fn (x: i64) is_power_of_two() -> bool` | `cfire::bm::is_power_of_two(x, ...)` | `true` for 1, 2, 4, …; `false` for zero and negatives. | `ok := n.is_power_of_two()` |
-| `fn (x: i64) div_euclid(a: Self) -> Self` | `cfire::bm::div_euclid(x, ...)` | Euclidean division (the remainder is never negative); panics on division by zero or overflow. | `q := a.div_euclid(b)` |
-| `fn (x: i64) rem_euclid(a: Self) -> Self` | `cfire::bm::rem_euclid(x, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
-| `fn (x: i64) checked_add(a: Self) -> Self?` | `cfire::bm::checked_add(x, ...)` | `none` on overflow. | `s := a.checked_add(b) or 0` |
-| `fn (x: i64) checked_sub(a: Self) -> Self?` | `cfire::bm::checked_sub(x, ...)` | `none` on overflow. | `s := a.checked_sub(b) or 0` |
-| `fn (x: i64) checked_mul(a: Self) -> Self?` | `cfire::bm::checked_mul(x, ...)` | `none` on overflow. | `p := a.checked_mul(b) or 0` |
-| `fn (x: i64) checked_div(a: Self) -> Self?` | `cfire::bm::checked_div(x, ...)` | `none` on division by zero or overflow (`MIN / -1`). | `q := a.checked_div(b) or 0` |
+| `fn (x: i64) div_euclid(rhs: Self) -> Self` | `cfire::bm::div_euclid(x, ...)` | Euclidean division (the remainder is never negative); panics on division by zero or overflow. | `q := a.div_euclid(b)` |
+| `fn (x: i64) rem_euclid(rhs: Self) -> Self` | `cfire::bm::rem_euclid(x, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
+| `fn (x: i64) checked_add(rhs: Self) -> Self?` | `cfire::bm::checked_add(x, ...)` | `none` on overflow. | `s := a.checked_add(b) or 0` |
+| `fn (x: i64) checked_sub(rhs: Self) -> Self?` | `cfire::bm::checked_sub(x, ...)` | `none` on overflow. | `s := a.checked_sub(b) or 0` |
+| `fn (x: i64) checked_mul(rhs: Self) -> Self?` | `cfire::bm::checked_mul(x, ...)` | `none` on overflow. | `p := a.checked_mul(b) or 0` |
+| `fn (x: i64) checked_div(rhs: Self) -> Self?` | `cfire::bm::checked_div(x, ...)` | `none` on division by zero or overflow (`MIN / -1`). | `q := a.checked_div(b) or 0` |
 | `fn (x: i64) checked_neg() -> Self?` | `cfire::bm::checked_neg(x, ...)` | `none` on overflow (`MIN`, or any non-zero unsigned value). | `n := a.checked_neg() or 0` |
 | `fn (x: i64) checked_abs() -> Self?` | `cfire::bm::checked_abs(x, ...)` | `none` for `MIN`. | `d := a.checked_abs() or 0` |
-| `fn (x: i64) wrapping_add(a: Self) -> Self` | `cfire::bm::wrapping_add(x, ...)` | Two's-complement wrapping addition. | `h := h.wrapping_add(c)` |
-| `fn (x: i64) wrapping_sub(a: Self) -> Self` | `cfire::bm::wrapping_sub(x, ...)` | Two's-complement wrapping subtraction. | `d := a.wrapping_sub(b)` |
-| `fn (x: i64) wrapping_mul(a: Self) -> Self` | `cfire::bm::wrapping_mul(x, ...)` | Two's-complement wrapping multiplication. | `h := h.wrapping_mul(16777619)` |
-| `fn (x: i64) wrapping_div(a: Self) -> Self` | `cfire::bm::wrapping_div(x, ...)` | Wrapping division (`MIN / -1 == MIN`); division by zero panics. | `q := a.wrapping_div(b)` |
+| `fn (x: i64) wrapping_add(rhs: Self) -> Self` | `cfire::bm::wrapping_add(x, ...)` | Two's-complement wrapping addition. | `h := h.wrapping_add(c)` |
+| `fn (x: i64) wrapping_sub(rhs: Self) -> Self` | `cfire::bm::wrapping_sub(x, ...)` | Two's-complement wrapping subtraction. | `d := a.wrapping_sub(b)` |
+| `fn (x: i64) wrapping_mul(rhs: Self) -> Self` | `cfire::bm::wrapping_mul(x, ...)` | Two's-complement wrapping multiplication. | `h := h.wrapping_mul(16777619)` |
+| `fn (x: i64) wrapping_div(rhs: Self) -> Self` | `cfire::bm::wrapping_div(x, ...)` | Wrapping division (`MIN / -1 == MIN`); division by zero panics. | `q := a.wrapping_div(b)` |
 | `fn (x: i64) wrapping_neg() -> Self` | `cfire::bm::wrapping_neg(x, ...)` | Two's-complement wrapping negation. | `n := a.wrapping_neg()` |
 | `fn (x: i64) wrapping_abs() -> Self` | `cfire::bm::wrapping_abs(x, ...)` | Absolute value, wrapping for `MIN`. | `d := a.wrapping_abs()` |
-| `fn (x: i64) saturating_add(a: Self) -> Self` | `cfire::bm::saturating_add(x, ...)` | Addition clamped to `MIN..=MAX`. | `s := a.saturating_add(b)` |
-| `fn (x: i64) saturating_sub(a: Self) -> Self` | `cfire::bm::saturating_sub(x, ...)` | Subtraction clamped to `MIN..=MAX`. | `s := a.saturating_sub(b)` |
-| `fn (x: i64) saturating_mul(a: Self) -> Self` | `cfire::bm::saturating_mul(x, ...)` | Multiplication clamped to `MIN..=MAX`. | `p := a.saturating_mul(b)` |
-| `fn (x: i64) saturating_div(a: Self) -> Self` | `cfire::bm::saturating_div(x, ...)` | Division clamped to `MIN..=MAX` (`MIN / -1 == MAX`); division by zero panics. | `q := a.saturating_div(b)` |
+| `fn (x: i64) saturating_add(rhs: Self) -> Self` | `cfire::bm::saturating_add(x, ...)` | Addition clamped to `MIN..=MAX`. | `s := a.saturating_add(b)` |
+| `fn (x: i64) saturating_sub(rhs: Self) -> Self` | `cfire::bm::saturating_sub(x, ...)` | Subtraction clamped to `MIN..=MAX`. | `s := a.saturating_sub(b)` |
+| `fn (x: i64) saturating_mul(rhs: Self) -> Self` | `cfire::bm::saturating_mul(x, ...)` | Multiplication clamped to `MIN..=MAX`. | `p := a.saturating_mul(b)` |
+| `fn (x: i64) saturating_div(rhs: Self) -> Self` | `cfire::bm::saturating_div(x, ...)` | Division clamped to `MIN..=MAX` (`MIN / -1 == MAX`); division by zero panics. | `q := a.saturating_div(b)` |
 | `fn (x: i64) saturating_neg() -> Self` | `cfire::bm::saturating_neg(x, ...)` | Negation clamped to `MIN..=MAX`. | `n := a.saturating_neg()` |
-| `fn (x: i64) wrapping_shl(a: u32) -> Self` | `(dedicated lowering)` | Left shift with the count taken modulo the bit width. | `x := x.wrapping_shl(n)` |
-| `fn (x: i64) wrapping_shr(a: u32) -> Self` | `(dedicated lowering)` | Right shift with the count taken modulo the bit width. | `x := x.wrapping_shr(n)` |
-| `fn (x: i64) checked_shl(a: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shl(n) or 0` |
-| `fn (x: i64) checked_shr(a: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shr(n) or 0` |
+| `fn (x: i64) wrapping_shl(bits: u32) -> Self` | `(dedicated lowering)` | Left shift with the count taken modulo the bit width. | `x := x.wrapping_shl(n)` |
+| `fn (x: i64) wrapping_shr(bits: u32) -> Self` | `(dedicated lowering)` | Right shift with the count taken modulo the bit width. | `x := x.wrapping_shr(n)` |
+| `fn (x: i64) checked_shl(bits: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shl(n) or 0` |
+| `fn (x: i64) checked_shr(bits: u32) -> Self?` | `(dedicated lowering)` | `none` when the count is `>=` the bit width. | `x := v.checked_shr(n) or 0` |
 | `fn (x: i64) wrapping_as()` | `(dedicated lowering)` | Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`. | `b := x.wrapping_as[u8]()` |
 | `fn (x: i64) saturating_as()` | `(dedicated lowering)` | Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`. | `b := x.saturating_as[u8]()` |
 | `fn (x: i64) try_as()` | `(dedicated lowering)` | Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`. | `b := x.try_as[u8]() or 0` |
 | `fn (f: f64) abs() -> Self` | `cfire::bm::abs(f, ...)` | Absolute value. Integer `MIN.abs()` panics; use `checked_abs` or `wrapping_abs`. | `d := (a - b).abs()` |
-| `fn (f: f64) min(a: Self) -> Self` | `cfire::bm::min(f, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
-| `fn (f: f64) max(a: Self) -> Self` | `cfire::bm::max(f, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
-| `fn (f: f64) clamp(a: Self, b: Self) -> Self` | `cfire::bm::clamp(f, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
+| `fn (f: f64) min(other: Self) -> Self` | `cfire::bm::min(f, ...)` | Smaller of the two values (for floats, a NaN operand yields the other operand). | `lo := a.min(b)` |
+| `fn (f: f64) max(other: Self) -> Self` | `cfire::bm::max(f, ...)` | Larger of the two values (for floats, a NaN operand yields the other operand). | `hi := a.max(b)` |
+| `fn (f: f64) clamp(lo: Self, hi: Self) -> Self` | `cfire::bm::clamp(f, ...)` | Restricts the value to `lo..=hi`; panics when `lo > hi` (or either bound is NaN). | `v := x.clamp(0, 255)` |
 | `fn (f: f64) signum() -> Self` | `cfire::bm::signum(f, ...)` | `-1`, `0` or `1` (floats: `-1.0`, `±0.0`, `1.0`, NaN for NaN). | `s := delta.signum()` |
-| `fn (f: f64) pow(a: Self) -> Self` | `cfire::bm::pow(f, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
-| `fn (f: f64) rem_euclid(a: Self) -> Self` | `cfire::bm::rem_euclid(f, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
+| `fn (f: f64) pow(exp: Self) -> Self` | `cfire::bm::pow(f, ...)` | Integer power (a negative exponent or overflow panics) or float power. | `kb := base.pow(10)` |
+| `fn (f: f64) rem_euclid(rhs: Self) -> Self` | `cfire::bm::rem_euclid(f, ...)` | Euclidean remainder, always `>= 0`; integer division by zero panics. | `i := idx.rem_euclid(len)` |
 | `fn (f: f64) wrapping_as()` | `(dedicated lowering)` | Conversion to `T` that wraps on overflow: `x.wrapping_as[u8]()`. | `b := x.wrapping_as[u8]()` |
 | `fn (f: f64) saturating_as()` | `(dedicated lowering)` | Conversion to `T` that clamps on overflow: `x.saturating_as[u8]()`. | `b := x.saturating_as[u8]()` |
 | `fn (f: f64) try_as()` | `(dedicated lowering)` | Conversion to `T?`, `none` when the value does not fit: `x.try_as[u8]()`. | `b := x.try_as[u8]() or 0` |
@@ -64,7 +64,7 @@
 | `fn (f: f64) fract() -> Self` | `cfire::bm::fract(f, ...)` | Fractional part, `x - x.trunc()`. | `f := x.fract()` |
 | `fn (f: f64) sqrt() -> Self` | `cfire::bm::sqrt(f, ...)` | Square root (NaN for negative input). | `d := (dx * dx + dy * dy).sqrt()` |
 | `fn (f: f64) cbrt() -> Self` | `cfire::bm::cbrt(f, ...)` | Cube root. | `c := v.cbrt()` |
-| `fn (f: f64) powi(a: i32) -> Self` | `cfire::bm::powi(f, ...)` | Raises to an integer power. | `a := r.powi(2)` |
+| `fn (f: f64) powi(exp: i32) -> Self` | `cfire::bm::powi(f, ...)` | Raises to an integer power. | `a := r.powi(2)` |
 | `fn (f: f64) exp() -> Self` | `cfire::bm::exp(f, ...)` | `e` raised to x. | `y := x.exp()` |
 | `fn (f: f64) ln() -> Self` | `cfire::bm::ln(f, ...)` | Natural logarithm. | `y := x.ln()` |
 | `fn (f: f64) log2() -> Self` | `cfire::bm::log2(f, ...)` | Base-2 logarithm. | `bits := n.log2()` |
@@ -85,71 +85,73 @@
 | `fn (f: f64) is_finite() -> bool` | `cfire::bm::is_finite(f, ...)` | `true` unless NaN or infinite. | `ok := x.is_finite()` |
 | `fn (s: str) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (s: str) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
-| `fn (s: str) contains(a: str) -> bool` | `cfire::bm::contains(s, ...)` | `true` if the substring occurs. | `if path.contains("..") { return }` |
-| `fn (s: str) starts_with(a: str) -> bool` | `cfire::bm::starts_with(s, ...)` | `true` if `s` begins with `prefix`. | `if line.starts_with("#") { continue }` |
-| `fn (s: str) ends_with(a: str) -> bool` | `cfire::bm::ends_with(s, ...)` | `true` if `s` ends with `suffix`. | `if name.ends_with(".cf") { ... }` |
-| `fn (s: str) index_of(a: str, b: usize = default) -> usize?` | `cfire::bm::index_of(s, ...)` | Byte position of the first occurrence at or after `start` (default 0), or `none`. | `dot := path.index_of(".") or { return }` |
-| `fn (s: str) last_index_of(a: str) -> usize?` | `cfire::bm::last_index_of(s, ...)` | Byte position of the last occurrence, or `none`. | `slash := path.last_index_of("/") or 0` |
-| `fn (s: str) split(a: str) -> []str` | `cfire::bm::split(s, ...)` | Splits on every occurrence of `sep` (an empty `s` gives one empty part). | `parts := line.split(",")` |
-| `fn (s: str) split_n(a: str, b: usize) -> []str` | `cfire::bm::split_n(s, ...)` | Splits into at most `n` parts; the last part holds the rest. | `kv := line.split_n("=", 2)` |
+| `fn (s: str) contains(sub: str) -> bool` | `cfire::bm::contains(s, ...)` | `true` if the substring occurs. | `if path.contains("..") { return }` |
+| `fn (s: str) starts_with(prefix: str) -> bool` | `cfire::bm::starts_with(s, ...)` | `true` if `s` begins with `prefix`. | `if line.starts_with("#") { continue }` |
+| `fn (s: str) ends_with(suffix: str) -> bool` | `cfire::bm::ends_with(s, ...)` | `true` if `s` ends with `suffix`. | `if name.ends_with(".cf") { ... }` |
+| `fn (s: str) index_of(needle: str, start: usize = default) -> usize?` | `cfire::bm::index_of(s, ...)` | Byte position of the first occurrence at or after `start` (default 0), or `none`. | `dot := path.index_of(".") or { return }` |
+| `fn (s: str) last_index_of(needle: str) -> usize?` | `cfire::bm::last_index_of(s, ...)` | Byte position of the last occurrence, or `none`. | `slash := path.last_index_of("/") or 0` |
+| `fn (s: str) split(sep: str) -> []str` | `cfire::bm::split(s, ...)` | Splits on every occurrence of `sep` (an empty `s` gives one empty part). | `parts := line.split(",")` |
+| `fn (s: str) split_n(sep: str, n: usize) -> []str` | `cfire::bm::split_n(s, ...)` | Splits into at most `n` parts; the last part holds the rest. | `kv := line.split_n("=", 2)` |
 | `fn (s: str) lines() -> []str` | `cfire::bm::lines(s, ...)` | Splits on `\n`, dropping a trailing `\r` from each line and a final empty line. | `for line in text.lines() { ... }` |
 | `fn (s: str) trim() -> str` | `cfire::bm::trim(s, ...)` | View without leading and trailing ASCII whitespace. | `name := raw.trim()` |
 | `fn (s: str) trim_start() -> str` | `cfire::bm::trim_start(s, ...)` | View without leading ASCII whitespace. | `body := text.trim_start()` |
 | `fn (s: str) trim_end() -> str` | `cfire::bm::trim_end(s, ...)` | View without trailing ASCII whitespace. | `line := raw.trim_end()` |
-| `fn (s: str) strip_prefix(a: str) -> str?` | `cfire::bm::strip_prefix(s, ...)` | View after `prefix`, or `none` if `s` does not start with it. | `rest := arg.strip_prefix("--") or { continue }` |
-| `fn (s: str) strip_suffix(a: str) -> str?` | `cfire::bm::strip_suffix(s, ...)` | View before `suffix`, or `none` if `s` does not end with it. | `stem := file.strip_suffix(".cf") or file` |
-| `fn (s: str) replace(a: str, b: str) -> str` | `cfire::bm::replace(s, ...)` | Copy with the first occurrence of `from` replaced. | `s2 := s.replace("a", "b")` |
-| `fn (s: str) replace_all(a: str, b: str) -> str` | `cfire::bm::replace_all(s, ...)` | Copy with every occurrence of `from` replaced. | `s2 := s.replace_all("\t", "    ")` |
-| `fn (s: str) repeat(a: usize) -> str` | `cfire::bm::repeat(s, ...)` | `s` concatenated `n` times. | `rule := "-".repeat(40)` |
+| `fn (s: str) strip_prefix(prefix: str) -> str?` | `cfire::bm::strip_prefix(s, ...)` | View after `prefix`, or `none` if `s` does not start with it. | `rest := arg.strip_prefix("--") or { continue }` |
+| `fn (s: str) strip_suffix(suffix: str) -> str?` | `cfire::bm::strip_suffix(s, ...)` | View before `suffix`, or `none` if `s` does not end with it. | `stem := file.strip_suffix(".cf") or file` |
+| `fn (s: str) replace(from: str, to: str) -> str` | `cfire::bm::replace(s, ...)` | Copy with the first occurrence of `from` replaced. | `s2 := s.replace("a", "b")` |
+| `fn (s: str) replace_all(from: str, to: str) -> str` | `cfire::bm::replace_all(s, ...)` | Copy with every occurrence of `from` replaced. | `s2 := s.replace_all("\t", "    ")` |
+| `fn (s: str) repeat(n: usize) -> str` | `cfire::bm::repeat(s, ...)` | `s` concatenated `n` times. | `rule := "-".repeat(40)` |
 | `fn (s: str) to_upper() -> str` | `cfire::bm::to_upper(s, ...)` | ASCII upper-case copy. | `tag := name.to_upper()` |
 | `fn (s: str) to_lower() -> str` | `cfire::bm::to_lower(s, ...)` | ASCII lower-case copy. | `key := header.to_lower()` |
 | `fn (s: str) runes() -> []u32` | `cfire::bm::runes(s, ...)` | Unicode code points (invalid UTF-8 bytes decode as U+FFFD). | `for r in s.runes() { ... }` |
 | `fn (s: str) rune_count() -> usize` | `cfire::bm::rune_count(s, ...)` | Number of Unicode code points. | `n := s.rune_count()` |
 | `fn (s: str) bytes() -> []byte` | `(dedicated lowering)` | The UTF-8 bytes of `s`. | `raw := s.bytes()` |
 | `fn (s: str) pop() -> T?` | `cfire::bm::pop(s, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
-| `fn (s: str) with_ext(a: str) -> str` | `(dedicated lowering)` | Path with its extension replaced. | `out := path.with_ext(".o")` |
+| `fn (s: str) with_ext(ext: str) -> str` | `(dedicated lowering)` | Path with its extension replaced. | `out := path.with_ext(".o")` |
 | `fn (xs: []T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (xs: []T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
 | `fn (xs: []T) pop() -> T?` | `cfire::bm::pop(xs, ...)` | Removes and returns the last element (last byte for `str`), or `none` when empty. | `last := stack.pop() or { break }` |
-| `fn (xs: []T) contains(a: T) -> bool` | `cfire::bm::contains(xs, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
-| `fn (xs: []T) index_of(a: T) -> usize?` | `cfire::bm::index_of(xs, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
+| `fn (xs: []T) contains(val: T) -> bool` | `cfire::bm::contains(xs, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
+| `fn (xs: []T) index_of(val: T) -> usize?` | `cfire::bm::index_of(xs, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
 | `fn (xs: []T) first() -> T?` | `cfire::bm::first(xs, ...)` | Copy of the first element, or `none` when empty. | `head := xs.first() or 0` |
 | `fn (xs: []T) last() -> T?` | `cfire::bm::last(xs, ...)` | Copy of the last element, or `none` when empty. | `tail := xs.last() or 0` |
 | `fn (xs: []T) reverse()` | `cfire::bm::reverse(xs, ...)` | Reverses the elements in place. | `xs.reverse()` |
 | `fn (xs: []T) sort()` | `cfire::bm::sort(xs, ...)` | Sorts in place, ascending. | `xs.sort()` |
-| `fn (xs: []T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(xs, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
+| `fn (xs: []T) sort_by(cmp: fn(T, T) -> bool)` | `cfire::bm::sort_by(xs, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
 | `fn (xs: []T) is_sorted() -> bool` | `cfire::bm::is_sorted(xs, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
-| `fn (xs: []T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(xs, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
-| `fn (xs: []T) join(a: str) -> str` | `cfire::bm::join(xs, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
-| `fn (xs: []T) push(a: T)` | `(dedicated lowering)` | Appends `v`. | `xs.push(4)` |
-| `fn (xs: []T) insert(a: usize, b: T)` | `cfire::bm::insert(xs, ...)` | Inserts `v` at `i`, shifting later elements; panics when `i > len()`. | `xs.insert(0, head)` |
-| `fn (xs: []T) remove(a: usize) -> T` | `cfire::bm::remove(xs, ...)` | Removes and returns the element at `i`, shifting later elements; panics when out of range. | `x := xs.remove(0)` |
-| `fn (xs: []T) swap_remove(a: usize) -> T` | `cfire::bm::swap_remove(xs, ...)` | Removes the element at `i` by moving the last one into its place (O(1)); panics when out of range. | `x := xs.swap_remove(i)` |
-| `fn (xs: []T) truncate(a: usize)` | `cfire::bm::truncate(xs, ...)` | Keeps the first `n` elements (no effect when `n >= len()`). | `xs.truncate(10)` |
-| `fn (xs: []T) extend(a: []T)` | `cfire::bm::extend(xs, ...)` | Appends a copy of every element of `other`. | `xs.extend(more)` |
+| `fn (xs: []T) binary_search(val: T) -> usize?` | `cfire::bm::binary_search(xs, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
+| `fn (xs: []T) join(sep: str) -> str` | `cfire::bm::join(xs, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
+| `fn (xs: []T) push(val: T)` | `(dedicated lowering)` | Appends `v`. | `xs.push(4)` |
+| `fn (xs: []T) insert(idx: usize, val: T)` | `cfire::bm::insert(xs, ...)` | Inserts `v` at `i`, shifting later elements; panics when `i > len()`. | `xs.insert(0, head)` |
+| `fn (xs: []T) remove(idx: usize) -> T` | `cfire::bm::remove(xs, ...)` | Removes and returns the element at `i`, shifting later elements; panics when out of range. | `x := xs.remove(0)` |
+| `fn (xs: []T) swap_remove(idx: usize) -> T` | `cfire::bm::swap_remove(xs, ...)` | Removes the element at `i` by moving the last one into its place (O(1)); panics when out of range. | `x := xs.swap_remove(i)` |
+| `fn (xs: []T) truncate(n: usize)` | `cfire::bm::truncate(xs, ...)` | Keeps the first `n` elements (no effect when `n >= len()`). | `xs.truncate(10)` |
+| `fn (xs: []T) extend(other: []T)` | `cfire::bm::extend(xs, ...)` | Appends a copy of every element of `other`. | `xs.extend(more)` |
 | `fn (xs: []T) clear()` | `cfire::bm::clear(xs, ...)` | Removes every element. | `xs.clear()` |
 | `fn (xs: []T) bytes() -> []byte` | `(dedicated lowering)` | Byte view of the slice's storage. | `raw := xs.bytes()` |
 | `fn (arr: [N]T) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (arr: [N]T) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
-| `fn (arr: [N]T) contains(a: T) -> bool` | `cfire::bm::contains(arr, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
-| `fn (arr: [N]T) index_of(a: T) -> usize?` | `cfire::bm::index_of(arr, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
+| `fn (arr: [N]T) contains(val: T) -> bool` | `cfire::bm::contains(arr, ...)` | `true` if an element equals `v`. | `if xs.contains(3) { ... }` |
+| `fn (arr: [N]T) index_of(val: T) -> usize?` | `cfire::bm::index_of(arr, ...)` | Position of the first element equal to `v`, or `none`. | `i := xs.index_of(v) or { return }` |
 | `fn (arr: [N]T) first() -> T?` | `cfire::bm::first(arr, ...)` | Copy of the first element, or `none` when empty. | `head := xs.first() or 0` |
 | `fn (arr: [N]T) last() -> T?` | `cfire::bm::last(arr, ...)` | Copy of the last element, or `none` when empty. | `tail := xs.last() or 0` |
 | `fn (arr: [N]T) reverse()` | `cfire::bm::reverse(arr, ...)` | Reverses the elements in place. | `xs.reverse()` |
 | `fn (arr: [N]T) sort()` | `cfire::bm::sort(arr, ...)` | Sorts in place, ascending. | `xs.sort()` |
-| `fn (arr: [N]T) sort_by(a: fn(T, T) -> bool)` | `cfire::bm::sort_by(arr, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
+| `fn (arr: [N]T) sort_by(cmp: fn(T, T) -> bool)` | `cfire::bm::sort_by(arr, ...)` | Sorts in place with a strict `less(a, b)` comparator. | `xs.sort_by(|a, b| a.score > b.score)` |
 | `fn (arr: [N]T) is_sorted() -> bool` | `cfire::bm::is_sorted(arr, ...)` | `true` if the elements are in ascending order. | `assert(xs.is_sorted())` |
-| `fn (arr: [N]T) binary_search(a: T) -> usize?` | `cfire::bm::binary_search(arr, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
-| `fn (arr: [N]T) join(a: str) -> str` | `cfire::bm::join(arr, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
+| `fn (arr: [N]T) binary_search(val: T) -> usize?` | `cfire::bm::binary_search(arr, ...)` | Position of `v` in an ascending sequence, or `none`. | `i := xs.binary_search(42) or { return }` |
+| `fn (arr: [N]T) join(sep: str) -> str` | `cfire::bm::join(arr, ...)` | Concatenates a `[]str` with `sep` between elements. | `csv := fields.join(",")` |
 | `fn (m: map[K]V) len() -> usize` | `(dedicated lowering)` | Number of elements (bytes for `str`). | `n := xs.len()` |
 | `fn (m: map[K]V) is_empty() -> bool` | `(dedicated lowering)` | `true` when `len() == 0`. | `if s.is_empty() { return }` |
 | `fn (m: map[K]V) clear()` | `cfire::bm::clear(m, ...)` | Removes every element. | `xs.clear()` |
-| `fn (m: map[K]V) contains(a: K) -> bool` | `cfire::bm::contains(m, ...)` | `true` if the key is present. | `if m.contains("id") { ... }` |
-| `fn (m: map[K]V) get(a: K) -> V?` | `cfire::bm::get(m, ...)` | Copy of the value for `k`, or `none`. | `port := cfg.get("port") or 8080` |
-| `fn (m: map[K]V) insert(a: K, b: V) -> V?` | `cfire::bm::insert(m, ...)` | Sets `k` to `v`; returns the previous value, or `none`. | `old := m.insert(k, v)` |
-| `fn (m: map[K]V) remove(a: K) -> V?` | `cfire::bm::remove(m, ...)` | Removes `k`; returns its value, or `none` if absent. | `gone := m.remove(k)` |
+| `fn (m: map[K]V) contains(key: K) -> bool` | `cfire::bm::contains(m, ...)` | `true` if the key is present. | `if m.contains("id") { ... }` |
+| `fn (m: map[K]V) get(key: K) -> V?` | `cfire::bm::get(m, ...)` | Copy of the value for `k`, or `none`. | `port := cfg.get("port") or 8080` |
+| `fn (m: map[K]V) insert(key: K, val: V) -> V?` | `cfire::bm::insert(m, ...)` | Sets `k` to `v`; returns the previous value, or `none`. | `old := m.insert(k, v)` |
+| `fn (m: map[K]V) remove(key: K) -> V?` | `cfire::bm::remove(m, ...)` | Removes `k`; returns its value, or `none` if absent. | `gone := m.remove(k)` |
 | `fn (m: map[K]V) keys() -> []K` | `cfire::bm::keys(m, ...)` | Copy of the keys, in unspecified order. | `for k in m.keys() { ... }` |
 | `fn (m: map[K]V) values() -> []V` | `cfire::bm::values(m, ...)` | Copy of the values, in unspecified order. | `total := m.values().len()` |
+| `fn (opt: T?) or_error(msg: str, code: i32 = default) -> T!` | `cfire::bm::or_error(opt, ...)` | Promote `none` into an error value lazily, unwrapping `some`. | `user := find_user(id).or_error("not found")` |
+| `fn (res: T!) ignore_error() -> T?` | `cfire::bm::ignore_error(res)` | Discard the error of a non-void fallible value, yielding `T?`. | `age := i32.parse(raw).ignore_error()` |
 | `const <int>.MAX: Self` | `std::numeric_limits<std::int64_t>::max()` | Largest value of the type. | `v := i32.MAX` |
 | `const <int>.MIN: Self` | `std::numeric_limits<std::int64_t>::min()` | Smallest value of the type. | `v := i32.MIN` |
 | `const <int>.BITS: u32` | `static_cast<std::uint32_t>(std::numeric_limits<std::make_unsigned_t<std::int64_t>>::digits)` | Width in bits (`u32`). | `v := i32.BITS` |
@@ -160,84 +162,13 @@
 | `const <float>.INF: Self` | `std::numeric_limits<double>::infinity()` | Positive infinity. | `v := f64.INF` |
 | `const <float>.NEG_INF: Self` | `(-std::numeric_limits<double>::infinity())` | Negative infinity. | `v := f64.NEG_INF` |
 | `const <float>.NAN: Self` | `std::numeric_limits<double>::quiet_NaN()` | Not a number. | `v := f64.NAN` |
-| `fn T.parse(s: str) -> T?` | `cfire::bm::parse<T>(s)` | Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`); `none` on invalid or out-of-range input. | `port := u16.parse(arg) or 8080` |
+| `fn T.parse(s: str) -> T!` | `cfire::bm::parse<T>(s, "T")` | Parses a complete literal of any numeric type or `bool` (surrounding whitespace ignored; `bool` accepts `true`/`false`/`1`/`0`), returning an `Error` on empty, invalid, or out-of-range input. | `port := try u16.parse(arg)` |
 | `make(T) / make(T, args...)` | `T{} / cfire_ctor_T(args...)` | A value of `T`: default field values, or the type's constructor `fn (T) make(...) -> T` (one per type). | `p := make(Point, 3, 4)` |
 | `make(own[T], args...) / make(shared[T], args...)` | `cfire::make_own<T>(...) / cfire::make_shared_ptr<T>(...)` | A heap-owned `T` (`unique_ptr` / `shared_ptr`), built from one `T` value or the constructor's arguments. | `node := make(own[Node], Node{v: 1})` |
 | `make([]T, len) / make([]T, len, cap)` | `cfire::make_slice<T>(len[, cap])` | `len` zero-filled elements, optionally with `cap` reserved; a negative size or `cap < len` panics. | `buf := make([]byte, 0, 4096)` |
 | `make(map[K]V)` | `cfire::Map<K, V>{}` | An empty map (iteration order is unspecified). | `counts := make(map[str]i32)` |
 | `fn (o: own[T]) release() -> *mut T` | `o.release()` | Gives up ownership for C interop: returns the raw pointer and moves `o`, so any later use is `cfire/USE-AFTER-MOVE`. Not available on `shared[T]`. | `c_api_take(buf.release())` |
 | `fn own[T].from_raw(p: *mut T) -> own[T]` | `std::unique_ptr<T>(p)` | Takes ownership of a pointer produced by `release`. Adopting any other pointer is undefined behavior. | `buf := own[Buffer].from_raw(c_api_give())` |
-
-### `core:audio` (`audio`) — Audio Engine, Polyphonic Mixer, Synth & WAV
-
-- **Auto-Link Flags:** `(AudioToolbox / WebAudio / ALSA)`
-- **Overview:** Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.
-
-**Practical Example:**
-```cf
-package main
-
-import "core:audio"
-
-fn main() {
-    try audio.init(48000, 2)
-    defer audio.close()
-    audio.set_master_volume(0.8)
-
-    // 1. Zero-asset procedural sound effect playback
-    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
-    coin_sfx := audio.load_sound_from_wave(coin_wave)
-    coin_sfx.play()
-
-    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
-    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
-    try audio.save_wav(tone, "a440.wav")
-
-    stream := try audio.open_stream(48000, 2)
-    if stream.needs_data(2048) {
-        stream.push_samples(tone.samples)
-    }
-    println("Audio RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
-}
-```
-
-**Types:**
-
-| Type | Kind | Description |
-|---|---|---|
-| `audio.Waveform` | enum | Oscillator shape for `audio.gen_tone` and `audio.gen_chirp`. Variants: `Sine`, `Square`, `Saw`, `Triangle`, `Noise`. |
-| `audio.SfxPreset` | enum | A procedural sound effect for `audio.gen_sfx`. Variants: `Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`. |
-| `audio.Wave` | struct | An in-memory waveform: interleaved `f32` samples in `-1.0`..`1.0`. Fields: `samples: []f32`, `sample_rate: i32`, `channels: i32`. |
-| `audio.Sound` | handle | A wave registered with the mixer, playable many times at once (polyphonic). |
-| `audio.Stream` | handle | A real-time output stream you push samples into, for custom synthesis. |
-
-| `.cf` Signature | Lowered C++23 | Description | Example |
-|---|---|---|---|
-| `fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` | `cfire::audio::init(sample_rate, channels)` | Initializes the hardware audio output queue (or headless software mixer in CI). | `try audio.init(48000, 2)` |
-| `fn close()` | `cfire::audio::close()` | Stops all active sounds and streams and releases audio hardware resources. | `defer audio.close()` |
-| `fn is_ready() -> bool` | `cfire::audio::is_ready()` | Returns `true` if the audio subsystem is initialized. | `if audio.is_ready() { ... }` |
-| `fn set_master_volume(vol: f32)` | `cfire::audio::set_master_volume(vol)` | Sets the master output volume multiplier (`0.0` to `1.0`). | `audio.set_master_volume(0.8)` |
-| `fn master_volume() -> f32` | `cfire::audio::master_volume()` | Returns the current master output volume multiplier. | `v := audio.master_volume()` |
-| `fn rms_level() -> f32` | `cfire::audio::rms_level()` | Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters. | `rms := audio.rms_level()` |
-| `fn peak_level() -> f32` | `cfire::audio::peak_level()` | Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers. | `pk := audio.peak_level()` |
-| `fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)` | Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope. | `w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)` |
-| `fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)` | Synthesizes a frequency-swept tone from `start_hz` to `end_hz`. | `sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)` |
-| `fn gen_sfx(preset: SfxPreset) -> Wave` | `cfire::audio::gen_sfx(preset)` | Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`). | `coin := audio.gen_sfx(audio.SfxPreset::Coin)` |
-| `fn encode_wav(wave: Wave) -> []byte` | `cfire::audio::encode_wav(wave)` | Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice. | `wav_bytes := audio.encode_wav(w)` |
-| `fn decode_wav(data: []byte) -> Wave!` | `cfire::audio::decode_wav(data)` | Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`. | `w := try audio.decode_wav(wav_bytes)` |
-| `fn save_wav(wave: Wave, path: str) -> void!` | `cfire::audio::save_wav(wave, path)` | Writes a `Wave` to disk as a standard `.wav` file. | `try audio.save_wav(w, "tone.wav")` |
-| `fn load_wav(path: str) -> Wave!` | `cfire::audio::load_wav(path)` | Loads and decodes a `.wav` file from disk or app bundle. | `w := try audio.load_wav("tone.wav")` |
-| `fn load_sound_from_wave(wave: Wave) -> Sound` | `cfire::audio::load_sound_from_wave(wave)` | Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle. | `sfx := audio.load_sound_from_wave(coin)` |
-| `fn load_sound(path: str) -> Sound!` | `cfire::audio::load_sound(path)` | Loads a `.wav` file from disk into a playable polyphonic `Sound` handle. | `sfx := try audio.load_sound("click.wav")` |
-| `fn (s: Sound) play()` | `s.play()` | Triggers polyphonic playback of the sound. | `sfx.play()` |
-| `fn (s: Sound) stop()` | `s.stop()` | Stops active voices playing this sound. | `sfx.stop()` |
-| `fn (s: Sound) set_volume(vol: f32)` | `s.set_volume(vol)` | Sets playback gain (`0.0` to `2.0`) for this sound. | `sfx.set_volume(0.75)` |
-| `fn (s: Sound) set_pitch(pitch: f32)` | `s.set_pitch(pitch)` | Sets playback pitch/rate multiplier (`1.0` = original pitch). | `sfx.set_pitch(1.25)` |
-| `fn (s: Sound) set_pan(pan: f32)` | `s.set_pan(pan)` | Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right). | `sfx.set_pan(-0.5)` |
-| `fn (s: Sound) set_looping(loop: bool)` | `s.set_looping(loop)` | Enables or disables seamless loop playback. | `sfx.set_looping(true)` |
-| `fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` | `cfire::audio::open_stream(sample_rate, channels)` | Opens a real-time push `Stream` for custom DSP synthesis. | `stream := try audio.open_stream(48000, 2)` |
-| `fn (st: Stream) push_samples(samples: []f32)` | `st.push_samples(samples)` | Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer. | `stream.push_samples(pcm_chunk)` |
-| `fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool` | `st.needs_data(target_frames)` | Returns `true` when buffered frames fall below `target_frames`. | `if stream.needs_data(1024) { ... }` |
 
 ### `core:build` (`build`) — Declarative Project & Cross-Platform Build System (`build.cf`)
 
@@ -347,8 +278,7 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn parse[T](args: []str = []) -> T!` | `cfire::cli::parse<T>(argc, argv)` | Parses CLI flags (`str`, `i64`, `i32`, `f64`, `bool`) into a tagged struct `T`. | `args := try cli.parse[Args]()` |
-| `fn try_parse[T](args: []str = []) -> T?` | `cfire::cli::try_parse<T>(argc, argv)` | Parses and validates CLI flags into a tagged struct `T`, returning `none` if any numeric flag argument is invalid. | `args := cli.try_parse[Args]() or { return }` |
+| `fn parse[T](args: []str = []) -> T!` | `cfire::cli::parse<T>(argc, argv)` | Parses and validates CLI flags (`str`, `i64`, `i32`, `u16`, `f64`, `bool`) into a tagged struct `T`, returning an `Error` if any numeric or boolean flag argument is invalid. | `args := try cli.parse[Args]()` |
 | `fn args() -> []str` | `cfire::cli::args()` | Returns the raw command-line arguments passed to the process (excluding `argv[0]`). | `raw := cli.args()` |
 | `fn subcommand() -> str` | `cfire::cli::subcommand()` | Returns the first non-flag positional argument (subcommand name) or `""` if none. | `cmd := cli.subcommand()` |
 | `fn positional() -> []str` | `cfire::cli::positional()` | Returns all non-flag positional arguments passed on the command line. | `files := cli.positional()` |
@@ -400,9 +330,36 @@ fn main() {
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
 | `type Set[T] struct` | `cfire::collections::Set<T>` | Generic hash set container. | `mut s := collections.Set[str]{}` |
+| `fn (mut s: Set[T]) insert(val: T) -> bool` | `s.insert(val)` | Inserts `val` into the set; returns `true` if `val` was newly inserted. | `added := s.insert("alpha")` |
+| `fn (s: Set[T]) contains(val: T) -> bool` | `s.contains(val)` | Returns `true` if `val` is present in the set. | `if s.contains("alpha") { ... }` |
+| `fn (mut s: Set[T]) remove(val: T) -> bool` | `s.remove(val)` | Removes `val` from the set; returns `true` if it was present. | `removed := s.remove("alpha")` |
+| `fn (s: Set[T]) len() -> usize` | `s.len()` | Returns the number of elements in the set. | `n := s.len()` |
+| `fn (s: Set[T]) empty() -> bool` | `s.empty()` | Returns `true` when the set has no elements. | `if s.empty() { return }` |
+| `fn (mut s: Set[T]) clear()` | `s.clear()` | Removes every element from the set. | `s.clear()` |
+| `fn (s: Set[T]) to_slice() -> []T` | `s.to_slice()` | Returns a newly allocated slice containing a copy of every element in unspecified order. | `items := s.to_slice()` |
 | `type PriorityQueue[T] struct` | `cfire::collections::PriorityQueue<T>` | Max-first priority queue: `push(v)`, `pop() -> T?`, `peek() -> T?`, `len()`, `empty()`. | `mut pq := collections.PriorityQueue[i32]{}` |
+| `fn (mut pq: PriorityQueue[T]) push(val: T)` | `pq.push(val)` | Pushes `val` into the max-first priority queue. | `pq.push(42)` |
+| `fn (pq: PriorityQueue[T]) peek() -> T?` | `pq.peek()` | Returns a copy of the largest element without removing it, or `none` when empty. | `top := pq.peek() or 0` |
+| `fn (pq: PriorityQueue[T]) top() -> T` | `pq.top()` | Returns the largest element (panics when empty). | `best := pq.top()` |
+| `fn (mut pq: PriorityQueue[T]) pop() -> T?` | `pq.pop()` | Removes and returns the largest element, or `none` when empty. | `next := pq.pop() or { break }` |
+| `fn (pq: PriorityQueue[T]) len() -> usize` | `pq.len()` | Returns the number of queued elements. | `n := pq.len()` |
+| `fn (pq: PriorityQueue[T]) empty() -> bool` | `pq.empty()` | Returns `true` when the priority queue is empty. | `if pq.empty() { break }` |
 | `type MinQueue[T] struct` | `cfire::collections::MinQueue<T>` | Min-first priority queue (smallest element pops first), with the same methods as `PriorityQueue[T]`. Tuples order element by element, so `MinQueue[(i64, i64)]` pops the lowest cost first. | `mut open := collections.MinQueue[i64]{}` |
+| `fn (mut q: MinQueue[T]) push(val: T)` | `q.push(val)` | Pushes `val` into the min-first priority queue. | `q.push(10)` |
+| `fn (q: MinQueue[T]) peek() -> T?` | `q.peek()` | Returns a copy of the smallest element without removing it, or `none` when empty. | `lo := q.peek() or 0` |
+| `fn (q: MinQueue[T]) top() -> T` | `q.top()` | Returns the smallest element (panics when empty). | `best := q.top()` |
+| `fn (mut q: MinQueue[T]) pop() -> T?` | `q.pop()` | Removes and returns the smallest element, or `none` when empty. | `next := q.pop() or { break }` |
+| `fn (q: MinQueue[T]) len() -> usize` | `q.len()` | Returns the number of queued elements. | `n := q.len()` |
+| `fn (q: MinQueue[T]) empty() -> bool` | `q.empty()` | Returns `true` when the min-queue is empty. | `if q.empty() { break }` |
 | `type Deque[T] struct` | `cfire::collections::Deque<T>` | Generic double-ended queue. | `mut dq := collections.Deque[i32]{}` |
+| `fn (mut d: Deque[T]) push_back(val: T)` | `d.push_back(val)` | Appends `val` to the back of the deque. | `dq.push_back(1)` |
+| `fn (mut d: Deque[T]) push_front(val: T)` | `d.push_front(val)` | Prepends `val` to the front of the deque. | `dq.push_front(0)` |
+| `fn (mut d: Deque[T]) pop_back() -> T` | `d.pop_back()` | Removes and returns the back element. | `back := dq.pop_back()` |
+| `fn (mut d: Deque[T]) pop_front() -> T` | `d.pop_front()` | Removes and returns the front element. | `front := dq.pop_front()` |
+| `fn (d: Deque[T]) at(idx: usize) -> T?` | `d.at(idx)` | Returns the element at `idx`, or `none` when `idx >= len()`. | `v := dq.at(0) or 0` |
+| `fn (d: Deque[T]) len() -> usize` | `d.len()` | Returns the number of elements in the deque. | `n := dq.len()` |
+| `fn (d: Deque[T]) empty() -> bool` | `d.empty()` | Returns `true` when the deque is empty. | `if dq.empty() { return }` |
+| `fn (mut d: Deque[T]) clear()` | `d.clear()` | Removes every element from the deque. | `dq.clear()` |
 
 ### `core:crypto/aes` (`aes`) — NIST FIPS 197 AES-256 Symmetric Encryption & GCM AEAD
 
@@ -572,7 +529,7 @@ import "core:encoding/csv"
 
 fn main() {
     csv_data := "service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n"
-    table := csv.parse(csv_data)
+    table := try csv.parse(csv_data)
     for row in table {
         println("Service: {}, Region: {}, QPS: {}", row[0], row[1], row[2])
     }
@@ -585,7 +542,7 @@ fn main() {
 
 | `.cf` Signature | Lowered C++23 | Description | Example |
 |---|---|---|---|
-| `fn parse(s: str) -> [][]str` | `cfire::csv::parse(s)` | Parses a CSV string into a 2D table of rows and columns. | `rows := csv.parse(content)` |
+| `fn parse(s: str) -> [][]str!` | `cfire::csv::parse(s)` | Parses an RFC 4180 CSV string into a 2D table of rows and columns, returning an `Error` on malformed or unclosed quotes. | `rows := try csv.parse(content)` |
 | `fn stringify(rows: [][]str) -> str` | `cfire::csv::stringify(rows)` | Serializes a 2D table of strings into an RFC 4180 formatted CSV string. | `out := csv.stringify(rows)` |
 | `fn read_all(path: str) -> [][]str!` | `cfire::csv::read_all(path)` | Reads an entire CSV file from disk and parses it into rows. | `table := try csv.read_all("data.csv")` |
 | `fn write_all(path: str, rows: [][]str) -> void!` | `cfire::csv::write_all(path, rows)` | Serializes rows to CSV and writes to disk. | `try csv.write_all("report.csv", table)` |
@@ -750,10 +707,10 @@ fn main() {
 | `fn parse_dynamic(payload: str) -> Value!` | `cfire::json::parse_dynamic(payload)` | Parses arbitrary JSON into a recursive dynamic DOM `Value`. | `v := try json.parse_dynamic(raw)` |
 | `fn stringify_dynamic(val: Value, indent: i32 = 0) -> str` | `cfire::json::stringify_dynamic(val, indent)` | Serializes a dynamic DOM `Value` into compact or indented JSON. | `s := json.stringify_dynamic(v, 2)` |
 
-### `core:keychain` (`keychain`) — Native OS Credential Keychain & Secret Service
+### `core:keychain` (`keychain`) — Native OS Credential Keychain & Apple Biometric Auth
 
-- **Auto-Link Flags:** `-framework Security (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)`
-- **Overview:** Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteA` / `CredReadA`) on Windows.
+- **Auto-Link Flags:** `-framework Security -lobjc (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)`
+- **Overview:** Cross-platform OS credential storage backed by `Security.framework` (`SecItemAdd` / `SecItemCopyMatching` / `SecItemDelete`) on macOS & iOS, `libsecret` (`secret-tool`) on Linux, and Windows Credential Manager (`CredWriteW` / `CredReadW`) on Windows, plus Face ID / Touch ID and device passcode user-presence verification via Apple `LocalAuthentication`.
 
 **Practical Example:**
 ```cf
@@ -774,6 +731,7 @@ fn main() {
 | `fn set(service: str, account: str, secret: str) -> void!` | `cfire::keychain::set(service, account, secret)` | Stores or updates a generic password for `(service, account)` in the OS keychain. | `try keychain.set("dev.flint.vault", "master", token)` |
 | `fn get(service: str, account: str) -> str!` | `cfire::keychain::get(service, account)` | Retrieves the secret stored for `(service, account)` from the OS keychain. | `sec := try keychain.get("dev.flint.vault", "master")` |
 | `fn delete_password(service: str, account: str) -> void!` | `cfire::keychain::delete_password(service, account)` | Removes the credential entry for `(service, account)` from the OS keychain. | `try keychain.delete_password("dev.flint.vault", "master")` |
+| `fn authenticate_biometric(reason: str, allow_passcode: bool = true) -> bool!` | `cfire::keychain::authenticate_biometric(reason, allow_passcode)` | Prompts for Face ID / Touch ID (with optional device passcode fallback when `allow_passcode` is `true`) via Apple `LocalAuthentication`; returns `Err` on unsupported platforms or when invoked on a GUI main thread. | `ok := try keychain.authenticate_biometric("Unlock vault", allow_passcode: true)` |
 
 ### `core:log` (`log`) — Structured Leveled Logging
 
@@ -963,7 +921,7 @@ fn main() {
 | `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` | `cfire::http::get(url, headers, verify_peer, timeout_ms)` | Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables). | `resp := try http.get("https://127.0.0.1:8443/health", {}, false, timeout_ms: 5000)` |
 | `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` | `cfire::http::post(url, body, content_type, headers, verify_peer, timeout_ms)` | Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables). | `resp := try http.post("http://127.0.0.1:8080/items", "{\"id\": 1}")` |
 | `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> Response!` | `cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file, timeout_ms)` | Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables). | `resp := try http.request("DELETE", "http://127.0.0.1:8080/items/1")` |
-| `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> void!` | `cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)` | Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event. | `try http.post_sse(url, payload, headers, |ev| { print("{}", ev.data); return true })` |
+| `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> Response!` | `cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)` | Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event. | `try http.post_sse(url, payload, headers, |ev| { print("{}", ev.data); return true })` |
 | `fn serve_in_background(port: u16, handler: fn(Request) -> Response | Router, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!` | `cfire::http::serve_in_background(port, handler, tls, host)` | Binds a server on `host:port`, starts its background event loop, and returns the live `HttpServer` handle. | `mut srv := try http.serve_in_background(0, router, host: "127.0.0.1")` |
 | `fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!` | `cfire::http::make_server(port, tls, host)` | `make(http.Server, port)` creates an HTTP server listening on `host:port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` serves HTTPS, and `host: "127.0.0.1"` restricts binding to loopback. | `mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: "cert.pem", key_file: "key.pem"}, host: "127.0.0.1")` |
 | `fn make() -> Router` | `cfire::http::make_router()` | `make(http.Router)` creates an independent HTTP & WebSocket request router supporting path parameters (`:id`) and wildcards (`*path`). | `mut router := make(http.Router)` |
@@ -1190,10 +1148,10 @@ fn main() {
 | `fn (mut s: Server) serve_in_background(handler: fn(mut Conn) -> void) -> void` | `s.serve_in_background(handler)` | Starts the accept loop on a background thread; like `listen_and_serve`, each connection gets its own session thread and `handler` runs concurrently. | `srv.serve_in_background(|mut ws| { ... })` |
 | `fn (mut s: Server) stop() -> void` | `s.stop()` | Stops the accept loop, shuts the open sessions down and waits for their handlers to return. | `srv.stop()` |
 
-### `core:os` (`os`) — Environment, Standard Streams, Terminal, Pipes & Subprocesses
+### `core:os` (`os`) — Environment, App Directories, Terminal, Pipes, URLs & Subprocesses
 
-- **Auto-Link Flags:** `(header-only)`
-- **Overview:** Process environment inspection, working directory queries, standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).
+- **Auto-Link Flags:** `(header-only; -lshell32 -lole32 on Windows, -lobjc UIKit on iOS)`
+- **Overview:** Process environment inspection, working directory and persistent OS app directory queries (`data_dir`, `cache_dir`, `documents_dir`), safe external URL launching (`open_url`), standard stream handles (`os.stdin()`, `os.stdout()`, `os.stderr()`), RAII pipes (`os.pipe()`), raw terminal control (`is_tty`, `term_size`, `make(os.RawTerminal)`, `on_signal`), and subprocess execution (`command`, `exec_output`).
 
 **Practical Example:**
 ```cf
@@ -1202,7 +1160,7 @@ package main
 import "core:os"
 
 fn main() {
-    home := os.getenv_opt("HOME") or "/tmp"
+    home := os.getenv("HOME") or "/tmp"
     println("Environment $HOME: {}", home)
 
     // Execute external process without shell interpretation and capture stdout/exit code
@@ -1223,10 +1181,13 @@ fn main() {
 |---|---|---|---|
 | `fn args() -> []str` | `cfire::os::args()` | Returns the command-line arguments passed to the current process. | `argv := os.args()` |
 | `fn exit(code: i32)` | `cfire::os::exit(code)` | Terminates the current process immediately with status `code`. | `os.exit(1)` |
-| `fn getenv(key: str, fallback: str = "") -> str` | `cfire::os::getenv(key, fallback)` | Reads environment variable `key`, returning `fallback` if unset. | `mode := os.getenv("ENV", "dev")` |
-| `fn getenv_opt(key: str) -> str?` | `cfire::os::getenv_opt(key)` | Reads environment variable `key`, returning `none` if unset. | `val := os.getenv_opt("API_KEY") or { return }` |
+| `fn getenv(key: str) -> str?` | `cfire::os::getenv(key)` | Reads environment variable `key`, returning `none` if unset. | `mode := os.getenv("ENV") or "dev"` |
 | `fn setenv(key: str, value: str)` | `cfire::os::setenv(key, value)` | Sets environment variable `key` to `value` in the current process. | `os.setenv("MODE", "prod")` |
 | `fn cwd() -> str` | `cfire::os::cwd()` | Returns the current working directory path. | `dir := os.cwd()` |
+| `fn data_dir(app: str = "") -> str!` | `cfire::os::data_dir(app)` | Returns (and creates with `0700` permissions if missing) the OS-standard persistent application data directory (`Application Support` on Apple, `XDG_DATA_HOME` on Linux, `FOLDERID_RoamingAppData` on Windows). | `dir := try os.data_dir("myapp")` |
+| `fn cache_dir(app: str = "") -> str!` | `cfire::os::cache_dir(app)` | Returns (and creates with `0700` permissions if missing) the OS-standard cache directory (`Library/Caches` on Apple, `XDG_CACHE_HOME` on Linux, `FOLDERID_LocalAppData\\Cache` on Windows). | `dir := try os.cache_dir("myapp")` |
+| `fn documents_dir() -> str!` | `cfire::os::documents_dir()` | Returns (and creates with `0700` permissions if missing) the user's OS-standard Documents directory (`~/Documents` on Apple, `XDG_DOCUMENTS_DIR` on Linux, `FOLDERID_Documents` on Windows). | `docs := try os.documents_dir()` |
+| `fn open_url(url: str) -> void!` | `cfire::os::open_url(url)` | Opens a validated external URL (`http://`, `https://`, `mailto:`, `tel:`, or custom schemes; rejects `file:` / `javascript:` schemes and control characters) via the OS handler without shell interpretation. | `try os.open_url("https://cfire.memo.engineer")` |
 | `fn getpid() -> i64` | `cfire::os::getpid()` | Returns the process ID (PID) of the current process. | `pid := os.getpid()` |
 | `fn stdin() -> File` | `cfire::os::stdin_file()` | Returns a non-owning `fs.File` stream handle wrapping standard input (FD 0). | `line := os.stdin().read_line() or { return }` |
 | `fn stdout() -> File` | `cfire::os::stdout_file()` | Returns a non-owning `fs.File` stream handle wrapping standard output (FD 1). | `_ = try os.stdout().write_text("ok\n")` |
@@ -1362,7 +1323,7 @@ fn main() {
 | `fn make[T](initial: T) -> Mutex[T]` | `cfire::sync::make_mutex<T>(initial)` | `make(sync.Mutex[T], initial)` creates a mutex protecting a value of type `T`; `make(sync.Mutex[void])` is a pure lock. | `mu := make(sync.Mutex[i64], 0)` |
 | `fn make[T](initial: T) -> Atomic[T]` | `cfire::sync::make_atomic<T>(initial)` | `make(sync.Atomic[T], initial)` creates an atomic variable holding `initial`. | `hits := make(sync.Atomic[i64], 0)` |
 | `fn (ch: Channel[T]) send(val: T)` | `ch.send(val)` | Sends a value into the channel and wakes one waiting receiver. | `ch.send(42)` |
-| `fn (ch: Channel[T]) recv() -> T!` | `ch.recv()` | Blocks until a value is available or returns an error if the channel is closed and empty. | `v := ch.recv() or 0` |
+| `fn (ch: Channel[T]) recv() -> T?` | `ch.recv()` | Blocks until a value is available or returns `none` if the channel is closed and empty. | `v := ch.recv() or 0` |
 | `fn (ch: Channel[T]) try_recv() -> T?` | `ch.try_recv()` | Attempts a non-blocking receive from the channel, returning `none` immediately if the queue is empty. | `v := ch.try_recv() or { return }` |
 | `fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -> T?` | `ch.recv_timeout(timeout_ms)` | Waits up to `timeout_ms` milliseconds for a value from the channel, returning `none` on timeout or closed empty channel. | `v := ch.recv_timeout(50) or { return }` |
 | `fn (ch: Channel[T]) recv_ctx(ctx: Context) -> T!` | `ch.recv_ctx(ctx)` | Receives from the channel or aborts immediately with an error if `ctx` is cancelled. | `v := try ch.recv_ctx(ctx)` |
@@ -1421,37 +1382,6 @@ fn main() {
 | `fn (ctx: Context) reason() -> str` | `ctx.reason()` | Returns the cancellation reason string. | `msg := ctx.reason()` |
 | `fn (ctx: Context) wait()` | `ctx.wait()` | Blocks until the Context is cancelled or its deadline expires. | `ctx.wait()` |
 | `fn (ctx: Context) wait_for(ms: i64) -> bool` | `ctx.wait_for(ms)` | Blocks up to `ms` milliseconds or until the Context is cancelled; returns true if cancelled. | `cancelled := ctx.wait_for(100)` |
-
-### `core:tako` (`tako`) — Tako Cloud SDK Primitives (S3, SQS)
-
-- **Auto-Link Flags:** `(header-only)`
-- **Overview:** Cloud primitives and storage compatibility services (`core:tako`).
-
-**Practical Example:**
-```cf
-package main
-
-import "core:tako" as tk
-
-fn main() -> void! {
-    mut s3 := tk.NewS3Service()
-    try s3.CreateBucket("data")
-    _ = try s3.PutObject("data", "item.json", "{\"status\":\"ok\"}", "application/json")
-    obj := try s3.GetObject("data", "item.json")
-    println("Stored payload: {}", obj.Body)
-}
-```
-
-| `.cf` Signature | Lowered C++23 | Description | Example |
-|---|---|---|---|
-| `fn NewS3Service() -> S3Service` | `cfire::tako::NewS3Service()` | Creates an S3 compatible storage service client. | `s3 := tako.NewS3Service()` |
-| `fn NewSQSService() -> SQSService` | `cfire::tako::NewSQSService()` | Creates an SQS compatible message queue service client. | `sqs := tako.NewSQSService()` |
-| `fn (mut s: S3Service) CreateBucket(name: str) -> void!` | `s.CreateBucket(name)` | Creates a storage bucket. | `try s3.CreateBucket("b")` |
-| `fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!` | `s.PutObject(bucket, key, data, content_type)` | Uploads an object and returns its ETag. | `etag := try s3.PutObject("b", "k", "d", "text/plain")` |
-| `fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!` | `s.GetObject(bucket, key)` | Downloads an object from storage. | `obj := try s3.GetObject("b", "k")` |
-| `fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!` | `s.CreateQueue(name, fifo)` | Creates a message queue and returns its URL. | `q := try sqs.CreateQueue("q", true)` |
-| `fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = "", dedup: str = "") -> str!` | `s.SendMessage(queue_url, body, group, dedup)` | Publishes a message to the queue. | `id := try sqs.SendMessage(q, "body")` |
-| `fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!` | `s.ReceiveMessages(queue_url, max_messages)` | Receives available messages from the queue. | `msgs := try sqs.ReceiveMessages(q, 1)` |
 
 ### `core:time` (`time`) — Time, Calendar Dates, Durations & RFC 3339 Formatting
 
@@ -1682,6 +1612,77 @@ fn main() {
 | `fn (mut s: McpServer) serve_stdio() -> i32` | `s.serve_stdio()` | Runs the MCP JSON-RPC 2.0 server loop over `stdin`/`stdout`. | `mcp.serve_stdio()` |
 | `fn create_zip(entries: []ZipEntry) -> []byte` | `cfire::ai::create_zip(entries)` | Constructs an in-memory zip archive from `ZipEntry{name, content}` entries. | `z := ai.create_zip([ai.ZipEntry{name: "a.txt", content: "hello"}])` |
 
+### `ext:audio` (`audio`) — Audio Engine, Polyphonic Mixer, Synth & WAV
+
+- **Auto-Link Flags:** `(AudioToolbox / WebAudio / ALSA)`
+- **Overview:** Multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic `Sound` playback with pitch/pan/looping, and real-time float32 `Stream` DSP across macOS, iOS, WebAssembly, and Linux.
+
+**Practical Example:**
+```cf
+package main
+
+import "ext:audio"
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, "a440.wav")
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println("Audio RMS: {}, Peak: {}", audio.rms_level(), audio.peak_level())
+}
+```
+
+**Types:**
+
+| Type | Kind | Description |
+|---|---|---|
+| `audio.Waveform` | enum | Oscillator shape for `audio.gen_tone` and `audio.gen_chirp`. Variants: `Sine`, `Square`, `Saw`, `Triangle`, `Noise`. |
+| `audio.SfxPreset` | enum | A procedural sound effect for `audio.gen_sfx`. Variants: `Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`. |
+| `audio.Wave` | struct | An in-memory waveform: interleaved `f32` samples in `-1.0`..`1.0`. Fields: `samples: []f32`, `sample_rate: i32`, `channels: i32`. |
+| `audio.Sound` | handle | A wave registered with the mixer, playable many times at once (polyphonic). |
+| `audio.Stream` | handle | A real-time output stream you push samples into, for custom synthesis. |
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn init(sample_rate: i32 = 48000, channels: i32 = 2) -> void!` | `cfire::audio::init(sample_rate, channels)` | Initializes the hardware audio output queue (or headless software mixer in CI). | `try audio.init(48000, 2)` |
+| `fn close()` | `cfire::audio::close()` | Stops all active sounds and streams and releases audio hardware resources. | `defer audio.close()` |
+| `fn is_ready() -> bool` | `cfire::audio::is_ready()` | Returns `true` if the audio subsystem is initialized. | `if audio.is_ready() { ... }` |
+| `fn set_master_volume(vol: f32)` | `cfire::audio::set_master_volume(vol)` | Sets the master output volume multiplier (`0.0` to `1.0`). | `audio.set_master_volume(0.8)` |
+| `fn master_volume() -> f32` | `cfire::audio::master_volume()` | Returns the current master output volume multiplier. | `v := audio.master_volume()` |
+| `fn rms_level() -> f32` | `cfire::audio::rms_level()` | Returns the live master RMS amplitude (`0.0` to `1.0`) for UI audio meters. | `rms := audio.rms_level()` |
+| `fn peak_level() -> f32` | `cfire::audio::peak_level()` | Returns the live master peak amplitude (`0.0` to `1.0`) for UI visualizers. | `pk := audio.peak_level()` |
+| `fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)` | Synthesizes a stereo waveform (`Sine`, `Square`, `Saw`, `Triangle`, `Noise`) with smooth ADSR envelope. | `w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)` |
+| `fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -> Wave` | `cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)` | Synthesizes a frequency-swept tone from `start_hz` to `end_hz`. | `sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)` |
+| `fn gen_sfx(preset: SfxPreset) -> Wave` | `cfire::audio::gen_sfx(preset)` | Generates a zero-asset procedural sound effect (`Tap`, `Coin`, `Laser`, `Explosion`, `PowerUp`, `Jump`, `Alert`). | `coin := audio.gen_sfx(audio.SfxPreset::Coin)` |
+| `fn encode_wav(wave: Wave) -> []byte` | `cfire::audio::encode_wav(wave)` | Encodes an in-memory `Wave` into a 16-bit PCM RIFF/WAV byte slice. | `wav_bytes := audio.encode_wav(w)` |
+| `fn decode_wav(data: []byte) -> Wave!` | `cfire::audio::decode_wav(data)` | Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a `Wave`. | `w := try audio.decode_wav(wav_bytes)` |
+| `fn save_wav(wave: Wave, path: str) -> void!` | `cfire::audio::save_wav(wave, path)` | Writes a `Wave` to disk as a standard `.wav` file. | `try audio.save_wav(w, "tone.wav")` |
+| `fn load_wav(path: str) -> Wave!` | `cfire::audio::load_wav(path)` | Loads and decodes a `.wav` file from disk or app bundle. | `w := try audio.load_wav("tone.wav")` |
+| `fn load_sound_from_wave(wave: Wave) -> Sound` | `cfire::audio::load_sound_from_wave(wave)` | Registers an in-memory `Wave` with the polyphonic mixer and returns a playable `Sound` handle. | `sfx := audio.load_sound_from_wave(coin)` |
+| `fn load_sound(path: str) -> Sound!` | `cfire::audio::load_sound(path)` | Loads a `.wav` file from disk into a playable polyphonic `Sound` handle. | `sfx := try audio.load_sound("click.wav")` |
+| `fn (s: Sound) play()` | `s.play()` | Triggers polyphonic playback of the sound. | `sfx.play()` |
+| `fn (s: Sound) stop()` | `s.stop()` | Stops active voices playing this sound. | `sfx.stop()` |
+| `fn (s: Sound) set_volume(vol: f32)` | `s.set_volume(vol)` | Sets playback gain (`0.0` to `2.0`) for this sound. | `sfx.set_volume(0.75)` |
+| `fn (s: Sound) set_pitch(pitch: f32)` | `s.set_pitch(pitch)` | Sets playback pitch/rate multiplier (`1.0` = original pitch). | `sfx.set_pitch(1.25)` |
+| `fn (s: Sound) set_pan(pan: f32)` | `s.set_pan(pan)` | Sets constant-power stereo pan (`-1.0` left, `0.0` center, `+1.0` right). | `sfx.set_pan(-0.5)` |
+| `fn (s: Sound) set_looping(loop: bool)` | `s.set_looping(loop)` | Enables or disables seamless loop playback. | `sfx.set_looping(true)` |
+| `fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -> Stream!` | `cfire::audio::open_stream(sample_rate, channels)` | Opens a real-time push `Stream` for custom DSP synthesis. | `stream := try audio.open_stream(48000, 2)` |
+| `fn (st: Stream) push_samples(samples: []f32)` | `st.push_samples(samples)` | Pushes interleaved `f32` PCM samples into the stream's lock-free ring buffer. | `stream.push_samples(pcm_chunk)` |
+| `fn (st: Stream) needs_data(target_frames: i32 = 2048) -> bool` | `st.needs_data(target_frames)` | Returns `true` when buffered frames fall below `target_frames`. | `if stream.needs_data(1024) { ... }` |
+
 ### `ext:compress/zstd` (`zstd`) — Native Zstandard Frame Compression
 
 - **Auto-Link Flags:** `-lzstd`
@@ -1874,6 +1875,37 @@ fn main() {
 | `fn (ch: Channel) is_eof() -> bool` | `ch.is_eof()` | Returns `true` if the remote channel has reached EOF. | `if ch.is_eof() { break }` |
 | `fn (mut ch: Channel) close()` | `ch.close()` | Sends EOF and closes the SSH channel. | `defer ch.close()` |
 
+### `ext:tako` (`tako`) — Tako Cloud SDK Primitives (S3, SQS)
+
+- **Auto-Link Flags:** `(header-only)`
+- **Overview:** Cloud primitives and storage compatibility services (`ext:tako`).
+
+**Practical Example:**
+```cf
+package main
+
+import "ext:tako" as tk
+
+fn main() -> void! {
+    mut s3 := tk.NewS3Service()
+    try s3.CreateBucket("data")
+    _ = try s3.PutObject("data", "item.json", "{\"status\":\"ok\"}", "application/json")
+    obj := try s3.GetObject("data", "item.json")
+    println("Stored payload: {}", obj.Body)
+}
+```
+
+| `.cf` Signature | Lowered C++23 | Description | Example |
+|---|---|---|---|
+| `fn NewS3Service() -> S3Service` | `cfire::tako::NewS3Service()` | Creates an S3 compatible storage service client. | `s3 := tako.NewS3Service()` |
+| `fn NewSQSService() -> SQSService` | `cfire::tako::NewSQSService()` | Creates an SQS compatible message queue service client. | `sqs := tako.NewSQSService()` |
+| `fn (mut s: S3Service) CreateBucket(name: str) -> void!` | `s.CreateBucket(name)` | Creates a storage bucket. | `try s3.CreateBucket("b")` |
+| `fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -> str!` | `s.PutObject(bucket, key, data, content_type)` | Uploads an object and returns its ETag. | `etag := try s3.PutObject("b", "k", "d", "text/plain")` |
+| `fn (mut s: S3Service) GetObject(bucket: str, key: str) -> S3Object!` | `s.GetObject(bucket, key)` | Downloads an object from storage. | `obj := try s3.GetObject("b", "k")` |
+| `fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -> str!` | `s.CreateQueue(name, fifo)` | Creates a message queue and returns its URL. | `q := try sqs.CreateQueue("q", true)` |
+| `fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = "", dedup: str = "") -> str!` | `s.SendMessage(queue_url, body, group, dedup)` | Publishes a message to the queue. | `id := try sqs.SendMessage(q, "body")` |
+| `fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -> []SQSMessage!` | `s.ReceiveMessages(queue_url, max_messages)` | Receives available messages from the queue. | `msgs := try sqs.ReceiveMessages(q, 1)` |
+
 ### `ext:webui` (`webui`) — Hybrid Native WebView & Two-Way Typed RPC Application Framework
 
 - **Auto-Link Flags:** `(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)`
@@ -1944,14 +1976,15 @@ fn main() {
 | `fn (mut app: App) bind_action(name: str, handler: fn() -> any!)` | `app.bind_action(name, handler)` | Binds a zero-argument action closure to `window.backend.<name>()`. | `app.bind_action("reset_desk") || { return "ok" }` |
 | `fn (mut app: App) bind_action_async(name: str, handler: fn() -> any!)` | `app.bind_action_async(name, handler)` | Binds a zero-argument RPC action that executes asynchronously on a background worker thread. | `app.bind_action_async("sync_now") || { return run_sync() }` |
 | `fn (mut app: App) bind_raw(name: str, handler: fn(str) -> str!)` | `app.bind_raw(name, handler)` | Binds a raw JSON string RPC handler to `window.backend.<name>(params)`. | `app.bind_raw("raw_op") |raw_json| { return raw_json }` |
-| `fn (mut app: App) on(event: str, handler: fn(str))` | `app.on(event, handler)` | Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop lifecycle events (`"window:close_requested"`, `"window:fullscreen"` with `{"fullscreen":bool}`, `"window:file_drop"` with `{"paths":[...]}`, and `"window:reopen"` on macOS Dock click). | `app.on("window:file_drop") |payload| { println("{}", payload) }` |
+| `fn (mut app: App) on(event: str, handler: fn(str))` | `app.on(event, handler)` | Subscribes a backend callback to frontend events (`window.runtime.EventsEmit`) and native desktop/mobile lifecycle events (`"app:active"`, `"app:inactive"`, `"app:foreground"`, `"app:background"`, `"app:open_url"`, `"app:notification_opened"`, `"app:external_navigation"`, `"app:webview_reloaded"`, `"keyboard:change"`, `"window:close_requested"`, `"window:fullscreen"`, `"window:file_drop"`, and `"window:reopen"`). | `app.on("app:open_url") |payload| { println("{}", payload) }` |
 | `fn (mut app: App) emit(event: str, payload: any)` | `app.emit(event, payload)` | Serializes `payload` as JSON and dispatches it to all frontend `window.runtime.EventsOn(event, fn)` listeners. | `app.emit("meter:peak", status)` |
 | `fn (mut app: App) emit_bytes(event: str, data: []byte)` | `app.emit_bytes(event, data)` | Emits a binary `[]byte` payload to frontend `window.runtime.EventsOn(event, fn)` listeners as a Base64-decoded `Uint8Array`. | `app.emit_bytes("pty:data", chunk)` |
 | `fn (mut app: App) clear_history()` | `app.clear_history()` | Clears the bounded in-memory ring buffer of recorded emitted events. | `app.clear_history()` |
 | `fn (mut app: App) set_max_history(max_events: usize)` | `app.set_max_history(max_events)` | Sets the maximum number of emitted events retained per event name for testing inspection (`0` disables history retention). | `app.set_max_history(128)` |
 | `fn (app: App) clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)` | `app.clipboard_set(text, concealed, clear_after_ms)` | Copies `text` to the native OS system clipboard (`NSPasteboard` on macOS, `GtkClipboard` on Linux, `Win32` on Windows), optionally marking it concealed (`org.nspasteboard.ConcealedType` / `ExcludeClipboardContentFromMonitorProcessing`) and auto-clearing after `clear_after_ms` if unchanged. | `app.clipboard_set(token, true, 15000)` |
 | `fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)` | `app.clipboard_set_secret(text, clear_after_ms)` | Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after `clear_after_ms` if the clipboard has not been overwritten. | `app.clipboard_set_secret(password, 30000)` |
-| `fn (app: App) clipboard_get() -> str` | `app.clipboard_get()` | Reads current plain text from the native OS system clipboard. | `clip := app.clipboard_get()` |
+| `fn (app: App) is_clipboard_concealed() -> bool` | `app.is_clipboard_concealed()` | Returns `true` if the most recent clipboard write was marked as concealed/secret. | `concealed := app.is_clipboard_concealed()` |
+| `fn (app: App) clipboard_get() -> str` | `app.clipboard_get()` | Reads current plain text from the native OS system clipboard (triggers iOS 16+ OS paste permission prompt when reading external apps' pasteboard contents). | `clip := app.clipboard_get()` |
 | `fn (app: App) monospace_fonts() -> []str` | `app.monospace_fonts()` | Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows). | `fonts := app.monospace_fonts()` |
 | `fn (mut app: App) set_icon(icon_path: str)` | `app.set_icon(icon_path)` | Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file. | `app.set_icon("assets/icon.png")` |
 | `fn (mut app: App) set_tray(icon_path: str, tooltip: str = "")` | `app.set_tray(icon_path, tooltip)` | Configures a system tray / menu-bar status item (`NSStatusItem` on macOS, `GtkStatusIcon` on Linux, `Shell_NotifyIconW` on Windows). | `app.set_tray("assets/tray.png", "Flint")` |
@@ -1986,7 +2019,8 @@ fn main() {
 | `fn (mut app: App) center()` | `app.center()` | Centers the native window on the active screen. | `app.center()` |
 | `fn (app: App) open_file_dialog(title: str = "Open File") -> str` | `app.open_file_dialog(title)` | Opens a native OS file picker dialog and returns the selected path (or `""` if cancelled). | `path := app.open_file_dialog("Select Audio Track")` |
 | `fn (app: App) save_file_dialog(title: str = "Save File", default_name: str = "") -> str` | `app.save_file_dialog(title, default_name)` | Opens a native OS save-file dialog and returns the chosen destination path. | `dest := app.save_file_dialog("Export Preset", "studio.json")` |
-| `fn (app: App) message_dialog(title: str, message: str)` | `app.message_dialog(title, message)` | Displays a modal native OS alert dialog. | `app.message_dialog("Export Complete", "Saved master preset.")` |
+| `fn (mut app: App) allow_navigation_origin(origin: str)` | `app.allow_navigation_origin(origin)` | Permits in-WebView navigation to an additional exact `scheme://host[:port]` origin (for embedded OAuth/dev flows). All other external links open safely in the OS browser (`SFSafariViewController` on iOS, default browser on desktop) and emit `"app:external_navigation"`. | `app.allow_navigation_origin("https://auth.example.com")` |
+| `fn (app: App) initial_url() -> str?` | `app.initial_url()` | Returns the cold-start Universal Link or deep-link URL that launched the app, if any (`none` on normal launch). | `if u := app.initial_url() { route(u) }` |
 | `fn (mut app: App) call_rpc(method: str, params_json: str = "{}") -> str!` | `app.call_rpc(method, params_json)` | Directly invokes a bound RPC handler in-memory without opening a window (ideal for `cfire test` and `fuzz` blocks). | `res := try app.call_rpc("set_track", "{\"channel\":1}")` |
 | `fn (mut app: App) dispatch_event(event: str, data_json: str = "{}")` | `app.dispatch_event(event, data_json)` | Dispatches a synthetic frontend event to `app.on(event)` listeners during headless testing. | `app.dispatch_event("fader:input", "{\"channel\":1}")` |
 | `fn (app: App) resolve_asset_mime(path: str) -> str` | `app.resolve_asset_mime(path)` | Returns the MIME type the embedded asset server reports for `path` (useful in headless contract tests). | `mime := app.resolve_asset_mime("/index.html")` |

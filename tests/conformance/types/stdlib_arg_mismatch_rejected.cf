@@ -1,0 +1,5 @@
+package main
+import "core:fs"
+fn main() -> void! {
+    _ = try fs.read_text(123) //~ error cfire/TYPE-MISMATCH
+}

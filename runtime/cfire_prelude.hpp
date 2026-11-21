@@ -20,6 +20,7 @@
 #include <condition_variable>
 #include <deque>
 #include <cmath>
+#include <concepts>
 #include <charconv>
 #include <cinttypes>
 #include <cstddef>
@@ -1193,11 +1194,11 @@ template <typename T, std::size_t E>
 [[nodiscard]] inline auto as_writable_u8(std::span<T, E> sp) noexcept -> std::span<std::uint8_t> {
     return {reinterpret_cast<std::uint8_t*>(sp.data()), sp.size_bytes()};
 }
-[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> std::span<const std::uint8_t> {
-    return cfire::as_u8(std::span<const char>(sv.data(), sv.size()));
+[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> slice_ref<std::uint8_t> {
+    return slice_ref<std::uint8_t>(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(sv.data()), sv.size()));
 }
-[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> std::span<const std::uint8_t> {
-    return cfire::as_u8(sp);
+[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> slice_ref<std::uint8_t> {
+    return slice_ref<std::uint8_t>(sp);
 }
 [[nodiscard]] inline auto to_u8_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> out(sp.size());
@@ -1714,31 +1715,60 @@ inline void set_process_args(int argc, char** argv) {
 }
 
 template <typename T>
-[[nodiscard]] inline auto parse_int(std::string_view sv) noexcept -> std::optional<T> {
-    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+[[nodiscard]] constexpr auto cfire_scalar_type_name() noexcept -> std::string_view {
+    if constexpr (std::same_as<T, bool>) return "bool";
+    else if constexpr (std::same_as<T, float>) return "f32";
+    else if constexpr (std::same_as<T, double> || std::same_as<T, long double>) return "f64";
+    else if constexpr (std::is_signed_v<T>) {
+        if constexpr (sizeof(T) == 1) return "i8";
+        else if constexpr (sizeof(T) == 2) return "i16";
+        else if constexpr (sizeof(T) == 4) return "i32";
+        else return "i64";
+    } else {
+        if constexpr (sizeof(T) == 1) return "u8";
+        else if constexpr (sizeof(T) == 2) return "u16";
+        else if constexpr (sizeof(T) == 4) return "u32";
+        else return "u64";
+    }
+}
+
+template <typename T>
+[[nodiscard]] inline auto parse_int(std::string_view sv, std::string_view type_name = cfire_scalar_type_name<T>()) -> std::expected<T, cfire::Error> {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' || sv.front() == '\n')) sv.remove_prefix(1);
     while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) sv.remove_suffix(1);
-    if (sv.empty()) return std::nullopt;
+    if (sv.empty()) {
+        return cfire::make_error(std::format("cannot parse empty string as {}", type_name));
+    }
     T val{};
     auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val);
     if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
         return val;
     }
-    return std::nullopt;
+    if (ec == std::errc::result_out_of_range) {
+        return cfire::make_error(std::format("{} value out of range: '{}'", type_name, sv));
+    }
+    return cfire::make_error(std::format("invalid {}: '{}'", type_name, sv));
 }
 
 template <typename T>
-[[nodiscard]] inline auto parse_float(std::string_view sv) noexcept -> std::optional<T> {
-    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+[[nodiscard]] inline auto parse_float(std::string_view sv, std::string_view type_name = cfire_scalar_type_name<T>()) -> std::expected<T, cfire::Error> {
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' || sv.front() == '\n')) sv.remove_prefix(1);
     while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) sv.remove_suffix(1);
-    if (sv.empty()) return std::nullopt;
+    if (sv.empty()) {
+        return cfire::make_error(std::format("cannot parse empty string as {}", type_name));
+    }
     std::string tmp(sv);
     char* end_ptr = nullptr;
     errno = 0;
     double d = std::strtod(tmp.c_str(), &end_ptr);
-    if (errno == 0 && end_ptr == tmp.c_str() + tmp.size()) {
-        return static_cast<T>(d);
+    if (end_ptr != tmp.c_str() + tmp.size()) {
+        return cfire::make_error(std::format("invalid {}: '{}'", type_name, sv));
     }
-    return std::nullopt;
+    T out = static_cast<T>(d);
+    if (errno == ERANGE || (std::isfinite(d) && !std::isfinite(out))) {
+        return cfire::make_error(std::format("{} value out of range: '{}'", type_name, sv));
+    }
+    return out;
 }
 
 [[nodiscard]] inline auto json_escape(std::string_view sv) -> std::string {
@@ -2733,6 +2763,28 @@ constexpr auto operator&=(E& a, I b) noexcept -> E& {
 }
 
 } // namespace enum_operators
+
+namespace constraints {
+template <typename T>
+concept Comparable = requires(const T& a, const T& b) {
+    { a == b } -> std::convertible_to<bool>;
+    { a != b } -> std::convertible_to<bool>;
+};
+
+template <typename T>
+concept Ordered = Comparable<T> && !std::is_same_v<std::remove_cvref_t<T>, bool> && requires(const T& a, const T& b) {
+    { a < b } -> std::convertible_to<bool>;
+    { a <= b } -> std::convertible_to<bool>;
+    { a > b } -> std::convertible_to<bool>;
+    { a >= b } -> std::convertible_to<bool>;
+};
+
+template <typename T>
+concept Numeric = std::is_arithmetic_v<std::remove_cvref_t<T>> && !std::is_same_v<std::remove_cvref_t<T>, bool>;
+
+template <typename T>
+concept Integer = std::is_integral_v<std::remove_cvref_t<T>> && !std::is_same_v<std::remove_cvref_t<T>, bool>;
+} // namespace constraints
 
 } // namespace cfire
 

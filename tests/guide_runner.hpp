@@ -129,7 +129,7 @@ inline auto run_guide(const std::string& cfire, const std::filesystem::path& rep
     parallel_for_each_index(tests.size(), jobs, [&](std::size_t i) {
         ScopedTempDir dir("cfire_guide");
         auto file = dir.file("main.cf", tests[i].first);
-        auto r = run_process({cfire, "run", file.string()}, repo, 120);
+        auto r = run_process({cfire, "run", "--no-cache", file.string()}, repo, 120);
         const std::string want = strip(tests[i].second);
         const std::string got = strip(r.out + (r.err.empty() ? "" : "\n" + r.err));
         if (r.timed_out) failures[i] = "TIMEOUT";

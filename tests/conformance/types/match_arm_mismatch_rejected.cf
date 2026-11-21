@@ -1,0 +1,9 @@
+package main
+fn main() {
+    n := 1
+    v := match n {
+        1 => 10
+        _ => "no" //~ error cfire/TYPE-MISMATCH
+    }
+    println("{}", v)
+}

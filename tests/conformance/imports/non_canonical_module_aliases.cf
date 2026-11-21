@@ -8,7 +8,8 @@ import "ext:sqlite" as q //~ error cfire/INVALID-IMPORT
 import "ext:zstd" as z //~ error cfire/INVALID-IMPORT
 import "ext:compress" as cmp //~ error cfire/INVALID-IMPORT
 import "ext:ai/agent" as aia //~ error cfire/INVALID-IMPORT
-import "ext:tako" as tk //~ error cfire/INVALID-IMPORT
+import "core:tako" as tk //~ error cfire/INVALID-IMPORT
+import "core:audio" as au //~ error cfire/INVALID-IMPORT
 import "core:http" as ht //~ error cfire/INVALID-IMPORT
 import "core:aes" as ae //~ error cfire/INVALID-IMPORT
 import "core:webui" as wu //~ error cfire/INVALID-IMPORT

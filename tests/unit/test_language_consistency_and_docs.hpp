@@ -425,15 +425,15 @@ fn main() {
             "multi-token compiler_binary_fingerprint distinguishes flags");
     }
 
-    // ---: cfire new --template tako uses core:tako and passes cfire test ---
+    // ---: cfire new --template tako uses ext:tako and passes cfire test ---
     {
         ScopedTempDir dir("tako_tmpl");
         test_consistency_docs_detail::run_cfire_in_dir(dir.path, "new tako_smoke --template tako")
             .assert_ok("cfire new --template tako succeeds");
         auto tako_dir = dir.path / "tako_smoke";
         auto main_cf_txt = test_consistency_docs_detail::read_file_str(tako_dir / "main.cf");
-        require(main_cf_txt.contains("core:tako") && !main_cf_txt.contains("pkg:tako"),
-            "tako template imports core:tako (no pkg:tako)");
+        require(main_cf_txt.contains("ext:tako") && !main_cf_txt.contains("pkg:tako") && !main_cf_txt.contains("core:tako"),
+            "tako template imports ext:tako (no pkg:tako or core:tako)");
         test_consistency_docs_detail::run_cfire_in_dir(tako_dir, "test")
             .assert_ok("cfire test passes inside scaffolded --template tako project");
     }
@@ -456,14 +456,15 @@ fn main() {
             require(llm_ref.contains(diag.code),
                 std::format("LLMS reference includes diagnostic {}", diag.code));
         }
-        require(llm_ref.contains("core:tako") &&
+        require(llm_ref.contains("ext:tako") &&
+                llm_ref.contains("ext:audio") &&
                 !llm_ref.contains("pkg:tako") &&
                 !llm_ref.contains("@pkg(") &&
                 !llm_ref.contains("build.Tako") &&
                 !llm_ref.contains("&str") &&
                 !llm_ref.contains("&[]") &&
                 !llm_ref.contains("cpp::"),
-            "LLMS reference contains core:tako and excludes stale tokens");
+            "LLMS reference contains ext:tako/ext:audio and excludes stale tokens");
     }
 
     std::println("--- PASS: test_language_consistency_and_docs  ---");

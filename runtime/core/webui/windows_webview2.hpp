@@ -6,9 +6,21 @@
 
 #if defined(_WIN32)
 #include <shlwapi.h>
+#if !defined(CFIRE_TEST_WIN32_BACKEND)
+#include "../os.hpp"
+#endif
 #endif
 
 namespace cfire::webui::detail {
+
+inline void win32_open_external_url(std::string_view url) {
+    if (url.empty() || is_headless_webui_env()) return;
+#if defined(_WIN32) && !defined(CFIRE_TEST_WIN32_BACKEND)
+    (void)cfire::os::open_url(url);
+#else
+    (void)url;
+#endif
+}
 
 [[nodiscard]] inline auto utf8_to_wide(std::string_view s) -> std::wstring {
     if (s.empty()) return L"";
@@ -135,12 +147,6 @@ inline constexpr DWORD kWin32DialogPathBufLen = 32768;
         return wide_to_utf8(file_buf.data());
     }
     return "";
-}
-
-inline void win32_message_dialog(std::string_view dialog_title, std::string_view message, HWND owner = nullptr) {
-    std::wstring wtitle = utf8_to_wide(dialog_title);
-    std::wstring wmsg = utf8_to_wide(message);
-    ::MessageBoxW(owner ? owner : ::GetActiveWindow(), wmsg.c_str(), wtitle.c_str(), MB_OK | MB_ICONINFORMATION);
 }
 
 [[nodiscard]] inline auto win32_clipboard_get() -> std::string {
@@ -343,6 +349,13 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
             }
             return 0;
         }
+        case 0x0006: { // WM_ACTIVATE
+            if (ctx && ctx->state) {
+                const bool active = ((wParam & 0xFFFFU) != 0U);
+                ctx->state->emit_system_event(active ? "app:active" : "app:inactive", "{}");
+            }
+            return ::DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
         case WM_CLOSE: {
             if (ctx && ctx->state) {
                 if (ctx->state->hide_on_close && !ctx->state->quit_requested.load(std::memory_order_relaxed)) {
@@ -403,6 +416,7 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
             return 0;
         }
         case WM_DESTROY: {
+            ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             if (ctx && ctx->state) {
                 ctx->state->quit_requested.store(true, std::memory_order_relaxed);
             }
@@ -445,14 +459,19 @@ enum COREWEBVIEW2_WEB_RESOURCE_CONTEXT {
 struct ICoreWebView2;
 struct ICoreWebView2Controller;
 struct ICoreWebView2Controller2;
+struct ICoreWebView2Deferral;
 struct ICoreWebView2Environment;
 struct ICoreWebView2EnvironmentOptions;
+struct ICoreWebView2HttpRequestHeaders;
 struct ICoreWebView2NavigationCompletedEventArgs;
+struct ICoreWebView2NavigationStartingEventArgs;
+struct ICoreWebView2NewWindowRequestedEventArgs;
 struct ICoreWebView2Settings;
 struct ICoreWebView2WebMessageReceivedEventArgs;
 struct ICoreWebView2WebResourceRequest;
 struct ICoreWebView2WebResourceRequestedEventArgs;
 struct ICoreWebView2WebResourceResponse;
+struct ICoreWebView2WindowFeatures;
 #endif
 
 #ifndef __ICoreWebView2WebMessageReceivedEventArgs_INTERFACE_DEFINED__
@@ -483,6 +502,47 @@ struct ICoreWebView2File : public IUnknown {
 #define __ICoreWebView2WebMessageReceivedEventArgs2_INTERFACE_DEFINED__
 struct ICoreWebView2WebMessageReceivedEventArgs2 : public ICoreWebView2WebMessageReceivedEventArgs {
     virtual HRESULT STDMETHODCALLTYPE get_AdditionalObjects(ICoreWebView2ObjectCollectionView** value) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2NavigationStartingEventArgs_INTERFACE_DEFINED__
+#define __ICoreWebView2NavigationStartingEventArgs_INTERFACE_DEFINED__
+struct ICoreWebView2NavigationStartingEventArgs : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* uri) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* isUserInitiated) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsRedirected(BOOL* isRedirected) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_RequestHeaders(ICoreWebView2HttpRequestHeaders** requestHeaders) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Cancel(BOOL* cancel) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_Cancel(BOOL cancel) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_NavigationId(unsigned long long* navigationId) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2NavigationStartingEventHandler_INTERFACE_DEFINED__
+#define __ICoreWebView2NavigationStartingEventHandler_INTERFACE_DEFINED__
+struct ICoreWebView2NavigationStartingEventHandler : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2NewWindowRequestedEventArgs_INTERFACE_DEFINED__
+#define __ICoreWebView2NewWindowRequestedEventArgs_INTERFACE_DEFINED__
+struct ICoreWebView2NewWindowRequestedEventArgs : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE get_Uri(LPWSTR* uri) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_NewWindow(ICoreWebView2* newWindow) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_NewWindow(ICoreWebView2** newWindow) = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_Handled(BOOL handled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Handled(BOOL* handled) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsUserInitiated(BOOL* isUserInitiated) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetDeferral(ICoreWebView2Deferral** deferral) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_WindowFeatures(ICoreWebView2WindowFeatures** value) = 0;
+};
+#endif
+
+#ifndef __ICoreWebView2NewWindowRequestedEventHandler_INTERFACE_DEFINED__
+#define __ICoreWebView2NewWindowRequestedEventHandler_INTERFACE_DEFINED__
+struct ICoreWebView2NewWindowRequestedEventHandler : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) = 0;
 };
 #endif
 
@@ -558,6 +618,8 @@ constexpr auto wv2_iid(const char (&u)[37]) -> IID {
 inline constexpr char kIidSettings4[] = "cb56846c-4168-4d53-b04f-03b6d6796ff2";
 inline constexpr char kIidWebMessageReceivedArgs2[] = "06fc7ab7-c90c-4297-9389-33ca01cf6d5e";
 inline constexpr char kIidFile[] = "f2c19559-6bc1-4583-a757-90021be9afec";
+inline constexpr char kIidNavigationStarting[] = "9adbe429-f36d-432b-9ddc-f8881fbd76e3";
+inline constexpr char kIidNewWindowRequested[] = "d4c185fe-c81c-4989-97af-2d3fa7ab5651";
 
 inline void wv2_co_task_mem_free(void* p) {
     if (!p) return;
@@ -630,6 +692,67 @@ inline void apply_webview2_settings(
     }
     args2->Release();
     return paths;
+}
+
+inline void handle_webview2_web_message(
+    AppState& state,
+    ICoreWebView2WebMessageReceivedEventArgs* args
+) {
+    if (!args) return;
+    LPWSTR src_w = nullptr;
+    if (FAILED(args->get_Source(&src_w)) || !src_w) return;
+    std::string src = wide_to_utf8(src_w);
+    wv2_co_task_mem_free(src_w);
+    if (!is_app_origin(src)) return;
+
+    LPWSTR raw = nullptr;
+    if (SUCCEEDED(args->TryGetWebMessageAsString(&raw)) && raw) {
+        std::string m = wide_to_utf8(raw);
+        wv2_co_task_mem_free(raw);
+        if (m.contains("\"webview2_file_drop\"")) {
+            auto files = extract_webview2_dropped_files(args);
+            if (!files.empty()) state.notify_file_drop(files);
+            return;
+        }
+        state.handle_ipc_message_verified(src, m, false);
+    }
+}
+
+inline void handle_webview2_navigation_starting(
+    AppState& state,
+    ICoreWebView2NavigationStartingEventArgs* args
+) {
+    if (!args) return;
+    LPWSTR uri_w = nullptr;
+    if (FAILED(args->get_Uri(&uri_w)) || !uri_w) return;
+    std::string uri = wide_to_utf8(uri_w);
+    wv2_co_task_mem_free(uri_w);
+    if (!state.should_allow_in_webview(uri)) {
+        (void)args->put_Cancel(TRUE);
+        state.notify_external_navigation(uri);
+        win32_open_external_url(uri);
+    }
+}
+
+inline void handle_webview2_new_window_requested(
+    AppState& state,
+    ICoreWebView2NewWindowRequestedEventArgs* args,
+    const std::function<void(const std::wstring&)>& navigate_fn = {}
+) {
+    if (!args) return;
+    LPWSTR uri_w = nullptr;
+    if (FAILED(args->get_Uri(&uri_w)) || !uri_w) return;
+    std::string uri = wide_to_utf8(uri_w);
+    wv2_co_task_mem_free(uri_w);
+    (void)args->put_Handled(TRUE);
+    if (state.should_allow_in_webview(uri)) {
+        if (navigate_fn) {
+            navigate_fn(utf8_to_wide(uri));
+        }
+    } else {
+        state.notify_external_navigation(uri);
+        win32_open_external_url(uri);
+    }
 }
 #endif // defined(_WIN32) || defined(CFIRE_TEST_WEBVIEW2_COM)
 
@@ -940,6 +1063,10 @@ struct Wv2Host {
     Wv2Host(const Wv2Host&) = delete;
     Wv2Host& operator=(const Wv2Host&) = delete;
     ~Wv2Host() {
+        if (state) {
+            std::lock_guard<std::recursive_mutex> lock(state->mtx);
+            state->native_webview_handle = nullptr;
+        }
         if (webview) webview->Release();
         if (controller) {
             controller->Close();
@@ -1022,6 +1149,10 @@ struct Wv2Host {
         controller->AddRef();
         controller->get_CoreWebView2(&webview);
         if (!webview) return S_OK;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state->mtx);
+            state->native_webview_handle = webview;
+        }
 
         if (state->transparent) {
             ICoreWebView2Controller2* c2 = nullptr;
@@ -1044,21 +1175,32 @@ struct Wv2Host {
         EventRegistrationToken tok{};
         auto* msg_h = wv2_handler<ICoreWebView2WebMessageReceivedEventHandler>(
             kIidWebMessageReceived, [this](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
-                LPWSTR raw = nullptr;
-                if (args && SUCCEEDED(args->TryGetWebMessageAsString(&raw)) && raw) {
-                    std::string m = wide_to_utf8(raw);
-                    wv2_co_task_mem_free(raw);
-                    if (m.contains("\"webview2_file_drop\"")) {
-                        auto files = extract_webview2_dropped_files(args);
-                        if (!files.empty()) state->notify_file_drop(files);
-                        return S_OK;
-                    }
-                    state->handle_ipc_message(m);
-                }
+                if (state) handle_webview2_web_message(*state, args);
                 return S_OK;
             });
         webview->add_WebMessageReceived(msg_h, &tok);
         msg_h->Release();
+
+        auto* nav_start_h = wv2_handler<ICoreWebView2NavigationStartingEventHandler>(
+            kIidNavigationStarting, [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                if (state) handle_webview2_navigation_starting(*state, args);
+                return S_OK;
+            });
+        webview->add_NavigationStarting(nav_start_h, &tok);
+        nav_start_h->Release();
+
+        auto* new_win_h = wv2_handler<ICoreWebView2NewWindowRequestedEventHandler>(
+            kIidNewWindowRequested, [this](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                if (state) {
+                    ICoreWebView2* target = sender ? sender : webview;
+                    handle_webview2_new_window_requested(*state, args, [target](const std::wstring& wurl) {
+                        if (target) target->Navigate(wurl.c_str());
+                    });
+                }
+                return S_OK;
+            });
+        webview->add_NewWindowRequested(new_win_h, &tok);
+        new_win_h->Release();
 
         std::wstring filter = std::wstring(kWv2Origin) + L"/*";
         webview->AddWebResourceRequestedFilter(filter.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
@@ -1215,6 +1357,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->win32_hwnd = hwnd;
+        state_->native_window_handle = hwnd;
         state_->platform_set_title = [hwnd](const std::string& new_title) {
             std::wstring wt = utf8_to_wide(new_title);
             ::SetWindowTextW(hwnd, wt.c_str());
@@ -1384,6 +1527,8 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->win32_hwnd = nullptr;
+        state_->native_window_handle = nullptr;
+        state_->native_webview_handle = nullptr;
         state_->platform_eval = nullptr;
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
@@ -1406,6 +1551,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     ctx.on_resize = nullptr;
     wv2.reset();
 #endif
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     ::CoUninitialize();
 }
 

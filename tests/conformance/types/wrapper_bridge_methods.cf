@@ -1,0 +1,85 @@
+// expect: stdout
+// | some=7 count=0
+// | none_code=404 none_msg=absent count=1
+// | ign_ok=99 ign_bad=none
+// | chain_code=12 chain_msg=fallback
+// | struct_box=42 struct_none=none
+// | generic_some=hi generic_err=generic none
+package main
+
+type Tracker struct {
+    count: i32
+}
+
+fn (mut t: Tracker) msg() -> str {
+    t.count += 1
+    return "absent"
+}
+
+type Box struct {
+    v: i32
+}
+
+fn find_box(present: bool) -> Box? {
+    if present {
+        return Box{v: 42}
+    }
+    return none
+}
+
+fn make_box(ok: bool) -> Box! {
+    if !ok {
+        return error("box failed")
+    }
+    return Box{v: 10}
+}
+
+fn unwrap_or_err[T](opt: T?) -> T! {
+    return try opt.or_error("generic none")
+}
+
+fn opt_label(is_none: bool) -> str {
+    if is_none {
+        return "none"
+    }
+    return "some"
+}
+
+fn main() {
+    mut tracker := Tracker{count: 0}
+    opt_some: i32? = 7
+    v_some := opt_some.or_error(tracker.msg(), 100) or -1
+    println("some={} count={}", v_some, tracker.count)
+
+    opt_none: i32? = none
+    match opt_none.or_error(tracker.msg(), 404) {
+        Ok(_) => println("unexpected")
+        Err(e) => println("none_code={} none_msg={} count={}", e.code(), e.message(), tracker.count)
+    }
+
+    ign_ok := i32.parse("99").ignore_error() or -1
+    ign_bad := i32.parse("bad").ignore_error()
+    println("ign_ok={} ign_bad={}", ign_ok, opt_label(ign_bad == none))
+
+    match i32.parse("bad").ignore_error().or_error("fallback", 12) {
+        Ok(_) => println("unexpected")
+        Err(e) => println("chain_code={} chain_msg={}", e.code(), e.message())
+    }
+
+    b1 := find_box(true).or_error("no box") or err {
+        println("unexpected: {}", err.message())
+        return
+    }
+    b2 := make_box(false).ignore_error()
+    println("struct_box={} struct_none={}", b1.v, opt_label(b2 == none))
+
+    gs: str? = "hi"
+    gn: str? = none
+    g_ok := unwrap_or_err[str](gs) or "?"
+    mut g_err := ""
+    match unwrap_or_err[str](gn) {
+        Ok(_) => {}
+        Err(e) => g_err = e.message()
+    }
+    println("generic_some={} generic_err={}", g_ok, g_err)
+}

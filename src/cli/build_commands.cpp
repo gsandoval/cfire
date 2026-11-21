@@ -213,6 +213,9 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                         std::println("✓ Built WebAssembly: {} (profile={})", out_bin_path.string(), plan->web_profile);
                     } else if (plan->is_ios) {
                         std::println("✓ Built iOS App Bundle: {} (target={})", plan->ios_app_bundle, plan->target_triple);
+                        if (!plan->ios_ipa_path.empty()) {
+                            std::println("✓ Created iOS IPA: {}", plan->ios_ipa_path);
+                        }
                     } else {
                         std::string bundle_info = plan->macos_app_bundle.empty() ? "" : std::format(" -> {}", plan->macos_app_bundle);
                         std::println("✓ Built Native {}: {}{}",
@@ -285,6 +288,9 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
         }
         if (!plan->ios_app_bundle.empty()) {
             std::println("✓ Created iOS App Bundle: {}", plan->ios_app_bundle);
+        }
+        if (!plan->ios_ipa_path.empty()) {
+            std::println("✓ Created iOS IPA: {}", plan->ios_ipa_path);
         }
         return 0;
     }
@@ -454,11 +460,23 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
             }
 
             if (is_ios_run) {
-                std::string run_triple = (args.target_triple == "ios" || args.target_triple == "ios-sim") ? "ios-sim" : args.target_triple;
-                auto ios_bin = bcf_res->base_out_dir / "ios-sim" / bcf_res->exe.name;
+                if (args.ios_device) {
+                    const std::string eff_sign = !args.sign_identity.empty() ? args.sign_identity : bcf_res->exe.sign_identity;
+                    if (eff_sign.empty() || eff_sign == "-") {
+                        std::println(stderr,
+                            "error: running on a physical iOS device (`--ios-device`) requires a non-adhoc Apple signing identity "
+                            "(`SignIdentity: \"Apple Development: ...\"` in build.cf or `--sign <identity>`)");
+                        return 1;
+                    }
+                }
+                const std::string run_triple = args.ios_device
+                    ? "ios"
+                    : ((args.target_triple == "ios" || args.target_triple == "ios-sim") ? "ios-sim" : args.target_triple);
+                const auto ios_bin = bcf_res->base_out_dir / (args.ios_device ? "ios" : "ios-sim") / bcf_res->exe.name;
                 std::error_code ec;
                 std::filesystem::create_directories(ios_bin.parent_path(), ec);
-                std::println("==> Building {} (iOS Simulator target from build.cf)...", bcf_res->exe.name);
+                std::println("==> Building {} ({} target from build.cf)...",
+                    bcf_res->exe.name, args.ios_device ? "iOS Device" : "iOS Simulator");
                 auto plan = cfire::build::build_native(
                     bcf_res->entry_file,
                     runtime_dir,
@@ -482,13 +500,16 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                     return 1;
                 }
                 std::string bid = !args.bundle_id_override.empty() ? args.bundle_id_override
-                    : (!bcf_res->exe.bundle_id.empty() ? bcf_res->exe.bundle_id : ("com.cfire." + bcf_res->exe.name));
-                auto sim_res = cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, args.ios_device_override, args.run_args);
-                if (!sim_res) {
-                    std::println(stderr, "{}", sim_res.error());
+                    : (!plan->bundle_id.empty() ? plan->bundle_id
+                    : (!bcf_res->exe.bundle_id.empty() ? bcf_res->exe.bundle_id : ("com.cfire." + bcf_res->exe.name)));
+                auto launch_res = args.ios_device
+                    ? cfire::build::launch_ios_device(plan->ios_app_bundle, bid, plan->sign_identity, args.ios_device_override, args.run_args)
+                    : cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, args.ios_device_override, args.run_args);
+                if (!launch_res) {
+                    std::println(stderr, "{}", launch_res.error());
                     return 1;
                 }
-                return *sim_res;
+                return *launch_res;
             }
 
             if (is_wasm_run) {
@@ -622,7 +643,19 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
         }
 
         if (cfire::build::is_ios_target(args.target_triple)) {
-            std::string run_triple = (args.target_triple == "ios" || args.target_triple == "ios-sim") ? "ios-sim" : args.target_triple;
+            if (args.ios_device && (args.sign_identity.empty() || args.sign_identity == "-")) {
+                std::error_code bec;
+                auto parent_dir = args.target.parent_path().empty() ? std::filesystem::path(".") : args.target.parent_path();
+                if (!std::filesystem::exists(parent_dir / "build.cf", bec)) {
+                    std::println(stderr,
+                        "error: running on a physical iOS device (`--ios-device`) requires a non-adhoc Apple signing identity "
+                        "(`SignIdentity: \"Apple Development: ...\"` in build.cf or `--sign <identity>`)");
+                    return 1;
+                }
+            }
+            const std::string run_triple = args.ios_device
+                ? "ios"
+                : ((args.target_triple == "ios" || args.target_triple == "ios-sim") ? "ios-sim" : args.target_triple);
             std::string app_stem = args.target.parent_path().filename().string();
             if (app_stem.empty() || app_stem == ".") app_stem = args.target.stem().string();
             if (app_stem == "main") app_stem = "cfire_ios_app";
@@ -651,16 +684,20 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
             );
             if (!plan) {
                 std::println(stderr, "{}", plan.error());
+                std::filesystem::remove_all(tmp_ios_dir, ec);
                 return 1;
             }
-            std::string bid = !args.bundle_id_override.empty() ? args.bundle_id_override : ("com.cfire." + app_stem);
-            auto sim_res = cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, args.ios_device_override, args.run_args);
+            std::string bid = !args.bundle_id_override.empty() ? args.bundle_id_override
+                : (!plan->bundle_id.empty() ? plan->bundle_id : ("com.cfire." + app_stem));
+            auto launch_res = args.ios_device
+                ? cfire::build::launch_ios_device(plan->ios_app_bundle, bid, plan->sign_identity, args.ios_device_override, args.run_args)
+                : cfire::build::launch_ios_simulator(plan->ios_app_bundle, bid, args.ios_device_override, args.run_args);
             std::filesystem::remove_all(tmp_ios_dir, ec);
-            if (!sim_res) {
-                std::println(stderr, "{}", sim_res.error());
+            if (!launch_res) {
+                std::println(stderr, "{}", launch_res.error());
                 return 1;
             }
-            return *sim_res;
+            return *launch_res;
         }
 
         const char* bin_ext = cfire::build::is_windows_target(args.target_triple) ? ".exe" : "";

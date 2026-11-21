@@ -245,7 +245,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         std::erase(spec.flags, std::string("--sanitize=thread"));
     }
     if (has_flag(spec.flags, "--sanitize=thread") && !is_test) {
-        auto r = run_process({opt.cfire, "run", "--sanitize=thread", name}, work, opt.timeout);
+        auto r = run_process({opt.cfire, "run", "--no-cache", "--sanitize=thread", name}, work, opt.timeout);
         if (!r.err.contains("unrecognized flag") && !r.out.contains("unrecognized flag")) return r;
         // Fallback until adds a native mode.
         auto cpp = run_process({opt.cfire, "emit-cpp", name}, work, opt.timeout);
@@ -259,7 +259,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         if (cc.exit_code != 0 || cc.timed_out) return cc;
         return run_process({(work / "prog_tsan").string()}, work, opt.timeout);
     }
-    std::vector<std::string> argv{opt.cfire, is_test ? "test" : "run"};
+    std::vector<std::string> argv{opt.cfire, is_test ? "test" : "run", "--no-cache"};
     for (const auto& f : spec.flags) {
         if (f != "--sanitize=thread") argv.push_back(f);
     }
@@ -292,7 +292,13 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     std::error_code ec;
     std::filesystem::copy_file(path, work.path / name, std::filesystem::copy_options::overwrite_existing, ec);
 
-    auto chk = run_process({opt.cfire, "check", "--verify-cpp", "--json", name}, work.path, opt.timeout);
+    const bool needs_run = static_cast<bool>(spec.stdout_lines || spec.panic || spec.exit);
+    const bool verify_cpp_in_check = !(needs_run && spec.errors.empty());
+    std::vector<std::string> chk_argv{opt.cfire, "check"};
+    if (verify_cpp_in_check) chk_argv.push_back("--verify-cpp");
+    chk_argv.push_back("--json");
+    chk_argv.push_back(name);
+    auto chk = run_process(chk_argv, work.path, opt.timeout);
     if (chk.timed_out) {
         reasons.push_back("check timed out");
         return ev;
@@ -322,16 +328,19 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         }
     }
 
-    // ICE gate: `cfire/TYPE-ERROR` means clang rejected generated C++ for a program Sema accepted. It is
-    // never an acceptable expectation; Sema must report a cfire diagnostic instead.
+    // ICE gate: `cfire/TYPE-ERROR` or `cfire/INTERNAL-BACKEND-ERROR` means clang rejected generated C++
+    // for a program Sema accepted. It is never an acceptable expectation; Sema must report a cfire diagnostic instead.
+    auto is_backend_ice = [](std::string_view code) {
+        return code == "cfire/TYPE-ERROR" || code == "cfire/INTERNAL-BACKEND-ERROR";
+    };
     for (const auto& [c, l, col] : spec.errors) {
-        if (c == "cfire/TYPE-ERROR") return std::unexpected(DirectiveError{"cfire/TYPE-ERROR (a clang backend error) can't be an expected diagnostic"});
+        if (is_backend_ice(c)) return std::unexpected(DirectiveError{std::format("{} (a clang backend error) can't be an expected diagnostic", c)});
     }
     for (const auto& [c, l, col] : got_errors) {
-        if (c == "cfire/TYPE-ERROR")
-            reasons.push_back(std::format("internal compiler error: clang rejected generated C++ at line {} for a program Sema accepted", l));
+        if (is_backend_ice(c))
+            reasons.push_back(std::format("internal compiler error: clang rejected generated C++ at line {} for a program Sema accepted ({})", l, c));
     }
-    std::erase_if(got_errors, [](const auto& e) { return std::get<0>(e) == "cfire/TYPE-ERROR"; });
+    std::erase_if(got_errors, [&](const auto& e) { return is_backend_ice(std::get<0>(e)); });
     std::set<std::pair<std::string, int>> want, have;
     for (const auto& [c, l, col] : spec.errors) want.emplace(c, l);
     for (const auto& [c, l, col] : got_errors) have.emplace(c, l);
@@ -354,7 +363,6 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         if (!got_warnings.contains(w)) reasons.push_back(std::format("missing warning ('{}', {})", w.first, w.second));
     }
 
-    const bool needs_run = spec.stdout_lines || spec.panic || spec.exit;
     if (needs_run && have.empty()) {
         auto r = run_program(opt, work.path, name, spec, is_test, ev.tsan_skipped);
         if (r.timed_out) {
@@ -516,6 +524,16 @@ inline auto run_corpus(const Options& opt, const std::filesystem::path& corpus, 
     if (files.empty()) {
         std::println(stderr, "no conformance files match '{}'", filter);
         return 1;
+    }
+    if (files.size() > 4) {
+        ScopedTempDir warm_dir("cfire_conf_warm");
+        (void)warm_dir.file("warm.cf", "package main\nfn main() {\n    println(\"ok\")\n}\n");
+        std::vector<std::string> warm_argv{opt.cfire, "run", "--no-cache"};
+        for (const auto& f : opt.run_flags) {
+            if (f != "--sanitize=thread") warm_argv.push_back(f);
+        }
+        warm_argv.push_back("warm.cf");
+        (void)run_process(warm_argv, warm_dir.path, opt.timeout);
     }
     std::vector<FileResult> results(files.size());
     parallel_for_each_index(files.size(), jobs, [&](std::size_t i) { results[i] = classify(opt, files[i]); });

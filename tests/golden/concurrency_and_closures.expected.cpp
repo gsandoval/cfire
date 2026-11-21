@@ -43,7 +43,7 @@ auto main(int argc, char** argv) -> int {
         return (x + base);
     };
     #line 25 "concurrency_and_closures.cf"
-    auto res = apply_op(5, cl);
+    std::int32_t res = apply_op(5, cl);
     #line 26 "concurrency_and_closures.cf"
     (void)run_tasks();
     #line 27 "concurrency_and_closures.cf"

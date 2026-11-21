@@ -1,0 +1,31 @@
+// expect: stdout
+// | ok host=10.0.0.1 port=9090 verbose=true
+// | err_bad=true
+// | err_oob=true
+package main
+
+import "core:cli"
+
+type Flags struct {
+    host: str = "localhost" `cli:"--host,-h"`
+    port: u16 = 8080        `cli:"--port,-p"`
+    verbose: bool = false   `cli:"--verbose,-v"`
+}
+
+fn main() -> void! {
+    good := try cli.parse[Flags](["--host", "10.0.0.1", "--port", "9090", "--verbose"])
+    println("ok host={} port={} verbose={}", good.host, good.port, good.verbose)
+
+    mut err_bad := false
+    match cli.parse[Flags](["--port", "abc"]) {
+        Ok(_) => {}
+        Err(e) => err_bad = e.message().len() > 0 && e.message().contains("--port")
+    }
+    mut err_oob := false
+    match cli.parse[Flags](["--port", "70000"]) {
+        Ok(_) => {}
+        Err(e) => err_oob = e.message().len() > 0
+    }
+    println("err_bad={}", err_bad)
+    println("err_oob={}", err_oob)
+}

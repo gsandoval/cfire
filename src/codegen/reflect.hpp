@@ -133,7 +133,7 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
         };
 
         writeln("template <>");
-        writeln(std::format("inline auto cfire::cli::try_parse<{}>(int argc, char** argv) -> std::optional<{}> {{", st.name, st.name));
+        writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
         ++indent_;
         writeln(std::format("{} out{{}};", st.name));
         emit_cli_defaults();
@@ -143,23 +143,7 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                 writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
             }
         }
-        writeln("if (reader.has_errors()) return std::nullopt;");
-        writeln("return out;");
-        --indent_;
-        writeln("}");
-
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> {} {{", st.name, st.name));
-        ++indent_;
-        writeln(std::format("{} out{{}};", st.name));
-        emit_cli_defaults();
-        writeln("cfire::cli::FlagReader reader(argc, argv);");
-        for (const auto& t : tags) {
-            if (!t.cli_long.empty()) {
-                writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
-            }
-        }
+        writeln("if (reader.has_errors()) return std::unexpected(cfire::make_error(cfire::cli::join_errors(reader.errors())));");
         writeln("return out;");
         --indent_;
         writeln("}");

@@ -99,6 +99,39 @@ fn main() {
     auto neg_txt = cfire::build::read_file_text(neg);
     require(neg_txt && neg_txt->contains("    s := fs.read_text(\"a.txt\")\n") && neg_txt->contains("t := s.trim()"),
         "--only applies just the requested codes (no 'try' inserted)");
+
+    // Wrapper & getenv/cli contract migrations (`cli.try_parse`, `os.getenv_opt`, 2-arg `os.getenv`).
+    auto wrap_file = dir.file("wrap.cf", R"(package main
+import "core:cli"
+import "core:os"
+
+type Cfg struct {
+    port: i32 = 8080 `cli:"--port,-p"`
+}
+
+fn main() {
+    cfg := cli.try_parse[Cfg](cli.args()) or Cfg{}
+    k := os.getenv_opt("CFIRE_KEY") or ""
+    mode := os.getenv("CFIRE_MODE", "dev")
+    _ = cfg
+    _ = k
+    _ = mode
+}
+)");
+    auto wfix = run_cfire(std::format("fix --only cfire/RETIRED-API \"{}\"", wrap_file.string()));
+    require(wfix.exit_code == 0, std::format("cfire fix wrapper migrations exit 0, got: {}", wfix.output));
+    auto wfixed = cfire::build::read_file_text(wrap_file);
+    require(wfixed.has_value(), "migrated wrapper file readable");
+    if (wfixed) {
+        require(wfixed->contains("cfg := cli.parse[Cfg](cli.args()).ignore_error() or Cfg{}"),
+            std::format("cli.try_parse rewritten to cli.parse(...).ignore_error(), got:\n{}", *wfixed));
+        require(wfixed->contains("k := os.getenv(\"CFIRE_KEY\") or \"\""),
+            std::format("os.getenv_opt rewritten to os.getenv, got:\n{}", *wfixed));
+        require(wfixed->contains("mode := (os.getenv(\"CFIRE_MODE\") or \"dev\")"),
+            std::format("2-arg os.getenv rewritten to (os.getenv(k) or fb), got:\n{}", *wfixed));
+        auto wchk = run_cfire(std::format("check \"{}\"", wrap_file.string()));
+        require(wchk.exit_code == 0, std::format("migrated wrapper file type-checks cleanly, got:\n{}", wchk.output));
+    }
     std::println("--- PASS: test_retired_api_migration_rewrites");
 }
 
@@ -129,8 +162,9 @@ void test_builtin_runtime_semantics([[maybe_unused]] const std::filesystem::path
     require(bm::lines("a\r\nb\n") == std::vector<std::string>{"a", "b"}, "lines drops \\r and the final empty line");
     require(bm::strip_prefix(std::string_view("--x"), "--") == std::optional<std::string_view>{"x"} && !bm::strip_suffix(std::string_view("a.c"), ".cf"), "strip_*");
     require(bm::replace("a.b.c", ".", "-") == "a-b.c" && bm::replace_all("a.b.c", ".", "-") == "a-b-c" && bm::replace_all("x", "", "y") == "x", "replace");
-    require(cfire::bm::parse<std::uint8_t>("300") == std::nullopt && cfire::bm::parse<std::int32_t>(" -4 ") == std::optional<std::int32_t>{-4} &&
-            cfire::bm::parse<bool>("TRUE") == std::optional<bool>{true}, "T.parse");
+    require(!cfire::bm::parse<std::uint8_t>("300", "u8").has_value() &&
+            cfire::bm::parse<std::int32_t>(" -4 ", "i32").value_or(0) == -4 &&
+            cfire::bm::parse<bool>("TRUE", "bool").value_or(false) == true, "T.parse");
     // Slices and maps.
     std::vector<int> xs{3, 1, 2};
     bm::sort(xs);

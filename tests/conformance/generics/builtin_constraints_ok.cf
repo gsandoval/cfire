@@ -1,0 +1,26 @@
+// expect: stdout
+// | true 3 10 6
+package main
+
+fn same[T: Comparable](a: T, b: T) -> bool {
+    return a == b
+}
+
+fn smaller[T: Ordered](a: T, b: T) -> T {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fn sum_two[T: Numeric](a: T, b: T) -> T {
+    return a + b
+}
+
+fn bitwise_or[T: Integer](a: T, b: T) -> T {
+    return a | b
+}
+
+fn main() {
+    println("{} {} {} {}", same("hi", "hi"), smaller(3, 9), sum_two(4, 6), bitwise_or(2, 4))
+}

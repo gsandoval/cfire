@@ -4,6 +4,7 @@
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)
 #include "../analysis.hpp"
 #include "../buildsys.hpp"
+#include "../sema.hpp"
 #endif
 #include "../diagnostics.hpp"
 #include "json_rpc.hpp"
@@ -18,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -103,10 +105,32 @@ private:
     std::mutex out_mutex_;
     std::ostream* out_stream_{nullptr};
 
+public:
+    struct CheckedDocResult {
+        std::shared_ptr<const cfire::frontend::CheckedFile> checked{};
+        detail::WorkspaceContext ws{};
+        std::size_t local_fn_count = 0;
+        std::size_t local_struct_count = 0;
+        std::size_t local_enum_count = 0;
+        std::size_t local_iface_count = 0;
+        std::size_t local_global_count = 0;
+        std::size_t local_test_count = 0;
+    };
+
+private:
+    struct CachedCheckedDoc {
+        std::size_t text_hash = 0;
+        std::size_t pkg_hash = 0;
+        bool clean = false;
+        int recovery_line = -1;
+        CheckedDocResult result{};
+    };
+
     std::mutex docs_mutex_;
     std::mutex diag_store_mutex_;
     std::mutex cpp_cache_mutex_;
     std::mutex file_ast_cache_mutex_;
+    std::mutex checked_cache_mutex_;
 
     std::unordered_map<std::string, std::string> docs_;
     std::unordered_map<std::string, std::vector<detail::DiagnosticEntry>> last_diagnostics_;
@@ -114,6 +138,8 @@ private:
     std::unordered_map<std::string, std::pair<std::size_t, cfire::frontend::FileAST>> file_ast_cache_;
     std::unordered_map<std::string, cfire::frontend::FileAST> last_good_ast_;
     std::unordered_map<std::string, detail::WorkspaceContext> last_good_ws_;
+    std::unordered_map<std::string, CachedCheckedDoc> checked_doc_cache_;
+    std::unordered_map<std::string, CheckedDocResult> last_good_checked_;
     std::string workspace_root_;
     bool client_snippet_support_{true};
 
@@ -129,6 +155,10 @@ public:
     auto get_or_parse_ast(const std::string& uri, const std::string& text, int line = -1, int col = -1)
         -> std::pair<std::optional<cfire::frontend::FileAST>, detail::WorkspaceContext>;
 
+    // Cached, resilient Sema Typed-AST resolution over the active file + local workspace declarations
+    auto get_or_check_doc(const std::string& uri, const std::string& text, int line = -1, int col = -1)
+        -> std::optional<CheckedDocResult>;
+
     auto compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback = false) -> std::vector<detail::DiagnosticEntry>;
 
     void run_and_publish_diagnostics(const std::string& uri, const std::string& text, bool allow_cpp_backend = true);
@@ -141,6 +171,11 @@ public:
     auto compute_signature_help(const std::string& uri, int line, int character) -> std::string;
     auto compute_inlay_hints(const std::string& uri) -> std::string;
     auto compute_import_edit(const std::vector<std::string>& lines, std::string_view import_path) -> std::string;
+    struct CompletionListResult {
+        std::string items_json = "[]";
+        bool is_incomplete = false;
+    };
+    auto compute_completions_list(const std::string& uri, int line, int character) -> CompletionListResult;
     auto compute_completions(const std::string& uri, int line, int character) -> std::string;
     auto compute_definition(const std::string& uri, int line, int character) -> std::string;
     auto compute_type_definition(const std::string& uri, int line, int character) -> std::string;
@@ -301,7 +336,7 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
         }
         std::string id = id_opt.value_or("1");
         std::string resp = std::format(
-            R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"positionEncoding":"utf-16","textDocumentSync":2,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentOnTypeFormattingProvider":{{"firstTriggerCharacter":"\n","moreTriggerCharacter":["}}"]}},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"foldingRangeProvider":true,"selectionRangeProvider":true,"documentHighlightProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":","@"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
+            R"({{"jsonrpc":"2.0","id":{},"result":{{"capabilities":{{"positionEncoding":"utf-16","textDocumentSync":2,"hoverProvider":true,"definitionProvider":true,"typeDefinitionProvider":true,"implementationProvider":true,"callHierarchyProvider":true,"referencesProvider":true,"renameProvider":{{"prepareProvider":true}},"codeActionProvider":true,"documentFormattingProvider":true,"documentRangeFormattingProvider":true,"documentSymbolProvider":true,"workspaceSymbolProvider":true,"foldingRangeProvider":true,"selectionRangeProvider":true,"documentHighlightProvider":true,"inlayHintProvider":true,"completionProvider":{{"triggerCharacters":[".",":"]}},"signatureHelpProvider":{{"triggerCharacters":["(",","]}},"semanticTokensProvider":{{"legend":{{"tokenTypes":["type","struct","enum","interface","parameter","variable","property","enumMember","function","method","keyword","modifier","string","number","operator","namespace"],"tokenModifiers":["declaration","definition","readonly","modification","defaultLibrary","async"]}},"full":true}}}},"serverInfo":{{"name":"cfire-lsp","version":"{}"}}}}}})",
             id, cfire::version::kVersion);
         send_rpc(out, resp);
         return true;
@@ -341,6 +376,11 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
         }
         last_good_ast_.erase(uri);
         last_good_ws_.erase(uri);
+        {
+            std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+            checked_doc_cache_.erase(uri);
+            last_good_checked_.erase(uri);
+        }
         // Clear published diagnostics in client
         send_rpc(out, std::format(
             R"({{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{}","diagnostics":[]}}}})",
@@ -361,6 +401,11 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
             std::lock_guard<std::mutex> lock(file_ast_cache_mutex_);
             file_ast_cache_.clear();
         }
+        {
+            std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+            checked_doc_cache_.clear();
+            last_good_checked_.clear();
+        }
         last_good_ast_.clear();
         last_good_ws_.clear();
         return true;
@@ -368,23 +413,24 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
 
     if (method == "textDocument/didOpen" || method == "textDocument/didChange" || method == "textDocument/didSave") {
         auto uri = detail::extract_json_string(msg, "uri").value_or("");
+        {
+            std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+            checked_doc_cache_.erase(uri);
+        }
         std::string content;
         {
             std::lock_guard<std::mutex> lock(docs_mutex_);
             if (method == "textDocument/didChange") {
-                std::size_t range_idx = detail::find_json_key(msg, "range");
-                if (range_idx != std::string_view::npos) {
-                    int s_line = detail::extract_json_int_after(msg, "line", range_idx).value_or(0);
-                    int s_char = detail::extract_json_int_after(msg, "character", range_idx).value_or(0);
-                    std::size_t end_idx = detail::find_json_key(msg, "end", range_idx);
-                    int e_line = detail::extract_json_int_after(msg, "line", end_idx != std::string_view::npos ? end_idx : range_idx).value_or(s_line);
-                    int e_char = detail::extract_json_int_after(msg, "character", end_idx != std::string_view::npos ? end_idx : range_idx).value_or(s_char);
-                    auto new_text = detail::extract_json_string(msg, "text", range_idx).value_or("");
-                    detail::apply_incremental_edit(docs_[uri], s_line, s_char, e_line, e_char, new_text);
+                auto changes = detail::extract_content_changes(msg);
+                if (!changes.empty()) {
+                    for (const auto& ch : changes) {
+                        if (ch.has_range) {
+                            detail::apply_incremental_edit(docs_[uri], ch.start_line, ch.start_char, ch.end_line, ch.end_char, ch.text);
+                        } else {
+                            docs_[uri] = ch.text;
+                        }
+                    }
                     content = docs_[uri];
-                } else if (auto text = detail::extract_json_string(msg, "text")) {
-                    docs_[uri] = *text;
-                    content = *text;
                 } else {
                     content = docs_[uri];
                 }
@@ -453,10 +499,10 @@ CFIRE_LSP_SERVER_INLINE bool Server::handle_message_impl(std::string_view msg, s
         std::size_t pos_idx = detail::find_json_key(msg, "position");
         int line = detail::extract_json_int_after(msg, "line", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
         int character = detail::extract_json_int_after(msg, "character", pos_idx != std::string_view::npos ? pos_idx : 0).value_or(0);
-        std::string items_json = compute_completions(uri, line, character);
+        auto comp = compute_completions_list(uri, line, character);
         std::string resp = std::format(
-            R"({{"jsonrpc":"2.0","id":{},"result":{{"isIncomplete":false,"items":{}}}}})",
-            id, items_json);
+            R"({{"jsonrpc":"2.0","id":{},"result":{{"isIncomplete":{},"items":{}}}}})",
+            id, comp.is_incomplete ? "true" : "false", comp.items_json);
         send_rpc(out, resp);
         return true;
     }
@@ -886,55 +932,134 @@ CFIRE_LSP_SERVER_INLINE auto Server::get_or_parse_ast(const std::string& uri, co
         return {pres.ast, ws};
     }
 
-    // Recovery 1: If file has trailing dot(s) or colons (either at cursor or end-of-line), patch them with placeholders
-    {
-        auto lines = detail::split_lines(text);
-        bool modified = false;
-        for (std::size_t li = 0; li < lines.size(); ++li) {
-            auto& ln = lines[li];
+    auto lines = detail::split_lines(text);
+    auto ast_covers_line = [&](const cfire::frontend::FileAST& ast_ref, const std::vector<std::string>& ln_vec) -> bool {
+        if (line < 0) return false;
+        int one_based = line + 1;
+        for (const auto& fn : ast_ref.functions) {
+            int fn_end = detail::get_block_end_line(fn.body, ln_vec, fn.line);
+            if (one_based >= fn.line && one_based <= fn_end) return true;
+        }
+        for (const auto& t : ast_ref.tests) {
+            int t_end = detail::get_block_end_line(t.body, ln_vec, t.line);
+            if (one_based >= t.line && one_based <= t_end) return true;
+        }
+        return false;
+    };
+    auto ast_score = [&](const cfire::frontend::FileAST& ast_ref, const std::vector<std::string>& ln_vec) -> std::size_t {
+        std::size_t sc = ast_ref.functions.size() * 10 + ast_ref.structs.size() * 5 + ast_ref.enums.size() * 5 + ast_ref.tests.size() * 10;
+        if (ast_covers_line(ast_ref, ln_vec)) sc += 1000;
+        return sc;
+    };
+
+    auto patch_trailing_seps = [&](std::vector<std::string>& ln_vec) -> bool {
+        bool mod = false;
+        for (std::size_t li = 0; li < ln_vec.size(); ++li) {
+            auto& ln = ln_vec[li];
             auto end_pos = ln.find_last_not_of(" \t\r\n");
             if (end_pos != std::string::npos) {
-                if (ln[end_pos] == '.') {
+                bool is_single_dot = ln[end_pos] == '.' && (end_pos == 0 || ln[end_pos - 1] != '.');
+                if (is_single_dot) {
                     ln.insert(end_pos + 1, "__cfire_placeholder__");
-                    modified = true;
+                    mod = true;
                     continue;
                 } else if (end_pos >= 1 && ln[end_pos] == ':' && ln[end_pos - 1] == ':') {
                     ln.insert(end_pos + 1, "__cfire_placeholder__");
-                    modified = true;
+                    mod = true;
                     continue;
                 }
             }
             if (line >= 0 && static_cast<std::size_t>(line) == li &&
                 col > 0 && static_cast<std::size_t>(col) <= ln.size()) {
-                char prev = ln[static_cast<std::size_t>(col - 1)];
-                bool next_non_ident = (static_cast<std::size_t>(col) == ln.size()) ||
-                    (!std::isalnum(static_cast<unsigned char>(ln[static_cast<std::size_t>(col)])) &&
-                     ln[static_cast<std::size_t>(col)] != '_');
-                if (prev == '.' && next_non_ident) {
-                    ln.insert(static_cast<std::size_t>(col), "__cfire_placeholder__");
-                    modified = true;
+                std::size_t c_idx = static_cast<std::size_t>(col);
+                char prev = ln[c_idx - 1];
+                bool prev_not_dot = (c_idx < 2 || ln[c_idx - 2] != '.');
+                bool next_non_ident = (c_idx == ln.size()) ||
+                    (!std::isalnum(static_cast<unsigned char>(ln[c_idx])) && ln[c_idx] != '_' && ln[c_idx] != '.');
+                if (prev == '.' && prev_not_dot && next_non_ident) {
+                    ln.insert(c_idx, "__cfire_placeholder__");
+                    mod = true;
                 }
             }
         }
-        if (modified) {
-            std::string patched_text;
-            for (std::size_t i = 0; i < lines.size(); ++i) {
-                if (i > 0) patched_text += "\n";
-                patched_text += lines[i];
+        return mod;
+    };
+
+    auto join_lines = [](const std::vector<std::string>& ln_vec) -> std::string {
+        std::string out;
+        for (std::size_t i = 0; i < ln_vec.size(); ++i) {
+            if (i > 0) out += "\n";
+            out += ln_vec[i];
+        }
+        return out;
+    };
+
+    cfire::frontend::FileAST best_ast = pres.ast;
+    std::size_t best_score = ast_score(best_ast, lines);
+
+    // Recovery 1: Patch trailing `.` / `::` with placeholder identifiers and parse resiliently
+    {
+        auto patched_lines = lines;
+        if (patch_trailing_seps(patched_lines)) {
+            auto patched_res = cfire::frontend::parse_source_resilient(path, join_lines(patched_lines));
+            std::size_t p_score = ast_score(patched_res.ast, patched_lines);
+            if (patched_res.ok() || p_score > best_score) {
+                best_ast = std::move(patched_res.ast);
+                best_score = p_score;
             }
-            auto patched_ast = cfire::frontend::parse_source(path, patched_text);
-            if (patched_ast) {
-                auto ws = resolve_workspace(uri, *patched_ast);
-                return {*patched_ast, ws};
+            if (patched_res.ok()) {
+                auto ws = resolve_workspace(uri, best_ast);
+                return {best_ast, ws};
             }
         }
     }
 
-    if (!pres.ast.functions.empty() || !pres.ast.structs.empty() || !pres.ast.enums.empty()) {
-        auto ws = resolve_workspace(uri, pres.ast);
-        last_good_ast_[uri] = pres.ast;
-        last_good_ws_[uri] = ws;
-        return {pres.ast, ws};
+    // Recovery 1b: If the function/test containing `line` was dropped by a partial statement (`if xs.`, `println("{}", xs.`, unclosed `{`),
+    // isolate the incomplete line and close unbalanced `{` braces so preceding local bindings remain visible.
+    if (line >= 0 && static_cast<std::size_t>(line) < lines.size() && !ast_covers_line(best_ast, lines)) {
+        auto masked_lines = lines;
+        masked_lines[static_cast<std::size_t>(line)] = "";
+        patch_trailing_seps(masked_lines);
+        int brace_depth = 0;
+        bool in_raw = false;
+        for (const auto& ml : masked_lines) {
+            bool in_str = false;
+            for (std::size_t k = 0; k < ml.size(); ++k) {
+                char c = ml[k];
+                if (in_raw) {
+                    if (c == '`') in_raw = false;
+                    continue;
+                }
+                if (in_str) {
+                    if (c == '\\' && k + 1 < ml.size()) ++k;
+                    else if (c == '"') in_str = false;
+                    continue;
+                }
+                if (c == '/' && k + 1 < ml.size() && ml[k + 1] == '/') break;
+                if (c == '"') in_str = true;
+                else if (c == '`') in_raw = true;
+                else if (c == '{') ++brace_depth;
+                else if (c == '}' && brace_depth > 0) --brace_depth;
+            }
+        }
+        for (int b = 0; b < brace_depth; ++b) {
+            masked_lines.emplace_back("}");
+        }
+        auto masked_res = cfire::frontend::parse_source_resilient(path, join_lines(masked_lines));
+        std::size_t m_score = ast_score(masked_res.ast, masked_lines);
+        if (m_score > best_score) {
+            best_ast = std::move(masked_res.ast);
+            best_score = m_score;
+        }
+    }
+
+    if (!best_ast.functions.empty() || !best_ast.structs.empty() || !best_ast.enums.empty() || !best_ast.tests.empty()) {
+        auto ws = resolve_workspace(uri, best_ast);
+        if (!pres.ast.functions.empty() || !pres.ast.structs.empty() || !pres.ast.enums.empty()) {
+            last_good_ast_[uri] = pres.ast;
+            last_good_ws_[uri] = ws;
+        }
+        return {best_ast, ws};
     }
 
     // Recovery 2: Fall back to last known valid AST
@@ -943,6 +1068,153 @@ CFIRE_LSP_SERVER_INLINE auto Server::get_or_parse_ast(const std::string& uri, co
     }
 
     return {std::nullopt, {}};
+}
+
+CFIRE_LSP_SERVER_INLINE auto Server::get_or_check_doc(const std::string& uri, const std::string& text, int line, int col)
+    -> std::optional<CheckedDocResult> {
+    const std::size_t text_hash = std::hash<std::string>{}(text);
+    auto compute_pkg_hash = [&](const detail::WorkspaceContext& wctx) -> std::size_t {
+        std::size_t h = 0;
+        for (const auto& pkg : wctx.local_packages) {
+            std::size_t h1 = std::hash<std::string>{}(pkg.uri);
+            std::size_t h2 = std::hash<std::string>{}(get_doc_text(pkg.uri));
+            h ^= h1 + 0x9e3779b9 + (h << 6) + (h >> 2);
+            h ^= h2 + 0x9e3779b9 + (h << 6) + (h >> 2);
+        }
+        return h;
+    };
+
+    {
+        std::optional<CachedCheckedDoc> cached;
+        {
+            std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+            if (auto it = checked_doc_cache_.find(uri); it != checked_doc_cache_.end()) {
+                if (it->second.text_hash == text_hash && (it->second.clean || it->second.recovery_line == line)) {
+                    cached = it->second;
+                }
+            }
+        }
+        if (cached && compute_pkg_hash(cached->result.ws) == cached->pkg_hash) {
+            return cached->result;
+        }
+    }
+
+    auto [ast_res, ws] = get_or_parse_ast(uri, text, line, col);
+    if (!ast_res) return std::nullopt;
+
+    if (ast_res->arena) {
+        std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+        if (auto it = last_good_checked_.find(uri); it != last_good_checked_.end()) {
+            if (it->second.checked && it->second.checked->ast.arena.get() == ast_res->arena.get()) {
+                return it->second;
+            }
+        }
+    }
+
+    cfire::frontend::FileAST merged_ast = *ast_res;
+    if (merged_ast.path.empty()) {
+        merged_ast.path = detail::uri_to_path(uri);
+    }
+    const std::size_t local_fn_count = merged_ast.functions.size();
+    const std::size_t local_struct_count = merged_ast.structs.size();
+    const std::size_t local_enum_count = merged_ast.enums.size();
+    const std::size_t local_iface_count = merged_ast.interfaces.size();
+    const std::size_t local_global_count = merged_ast.global_vars.size();
+    const std::size_t local_test_count = merged_ast.tests.size();
+
+    bool has_main = false;
+    for (auto& fn : merged_ast.functions) {
+        if (fn.source_path.empty()) fn.source_path = merged_ast.path;
+        if (!fn.receiver && fn.name == "main") has_main = true;
+    }
+    for (auto& t : merged_ast.tests) {
+        if (t.source_path.empty()) t.source_path = merged_ast.path;
+    }
+
+    for (const auto& pkg : ws.local_packages) {
+        if (pkg.ast.arena) merged_ast.child_arenas.push_back(pkg.ast.arena);
+        merged_ast.child_arenas.insert(merged_ast.child_arenas.end(),
+            pkg.ast.child_arenas.begin(), pkg.ast.child_arenas.end());
+        std::string sub_pkg_tag;
+        if (!pkg.ast.package_name.empty() && pkg.ast.package_name != merged_ast.package_name) {
+            sub_pkg_tag = !pkg.alias.empty() ? pkg.alias : pkg.ast.package_name;
+        }
+        for (const auto& st : pkg.ast.structs) {
+            auto copy = st;
+            if (copy.package_name.empty() && !sub_pkg_tag.empty()) copy.package_name = sub_pkg_tag;
+            if (copy.source_path.empty()) copy.source_path = pkg.file_path;
+            merged_ast.structs.push_back(std::move(copy));
+        }
+        for (const auto& en : pkg.ast.enums) {
+            auto copy = en;
+            if (copy.package_name.empty() && !sub_pkg_tag.empty()) copy.package_name = sub_pkg_tag;
+            if (copy.source_path.empty()) copy.source_path = pkg.file_path;
+            merged_ast.enums.push_back(std::move(copy));
+        }
+        for (const auto& ifc : pkg.ast.interfaces) {
+            auto copy = ifc;
+            if (copy.package_name.empty() && !sub_pkg_tag.empty()) copy.package_name = sub_pkg_tag;
+            if (copy.source_path.empty()) copy.source_path = pkg.file_path;
+            merged_ast.interfaces.push_back(std::move(copy));
+        }
+        for (const auto& gv : pkg.ast.global_vars) {
+            auto copy = gv;
+            if (copy.package_name.empty() && !sub_pkg_tag.empty()) copy.package_name = sub_pkg_tag;
+            if (copy.source_path.empty()) copy.source_path = pkg.file_path;
+            if (copy.type.has_value()) copy.value = nullptr;
+            merged_ast.global_vars.push_back(std::move(copy));
+        }
+        for (const auto& fn : pkg.ast.functions) {
+            if (!fn.receiver && fn.name == "main" && has_main) continue;
+            auto copy = fn;
+            if (!copy.receiver && copy.name == "main") has_main = true;
+            if (copy.package_name.empty() && !sub_pkg_tag.empty()) copy.package_name = sub_pkg_tag;
+            if (copy.source_path.empty()) copy.source_path = pkg.file_path;
+            copy.body.clear();
+            merged_ast.functions.push_back(std::move(copy));
+        }
+    }
+
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params;
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns;
+    for (const auto& [sname, sym] : ws.cpp_symbols) {
+        pre_cpp_fn_params[sname] = sym.param_types;
+        if (!sym.return_type.empty()) {
+            pre_cpp_fn_returns[sname] = sym.return_type;
+        }
+    }
+
+    auto checked = std::make_shared<cfire::frontend::CheckedFile>(
+        cfire::frontend::analyze_resilient(
+            std::move(merged_ast), std::move(pre_cpp_fn_params), std::move(pre_cpp_fn_returns)));
+
+    CheckedDocResult res{
+        std::move(checked),
+        std::move(ws),
+        local_fn_count,
+        local_struct_count,
+        local_enum_count,
+        local_iface_count,
+        local_global_count,
+        local_test_count
+    };
+
+    const bool clean = ast_res->arena != nullptr &&
+        last_good_ast_.contains(uri) &&
+        last_good_ast_[uri].arena.get() == ast_res->arena.get();
+    const std::size_t pkg_hash = compute_pkg_hash(res.ws);
+
+    {
+        std::lock_guard<std::mutex> lock(checked_cache_mutex_);
+        if (checked_doc_cache_.size() > 64) {
+            checked_doc_cache_.erase(checked_doc_cache_.begin());
+        }
+        checked_doc_cache_[uri] = CachedCheckedDoc{text_hash, pkg_hash, clean, line, res};
+        if (clean) {
+            last_good_checked_[uri] = res;
+        }
+    }
+    return res;
 }
 
 CFIRE_LSP_SERVER_INLINE auto Server::compute_diagnostics_for_doc(const std::string& uri, const std::string& text, bool allow_cpp_fallback) -> std::vector<detail::DiagnosticEntry> {
@@ -1256,57 +1528,11 @@ CFIRE_LSP_SERVER_INLINE auto Server::compute_range_formatting(const std::string&
 }
 
 CFIRE_LSP_SERVER_INLINE auto Server::compute_on_type_formatting(const std::string& uri, int line, int character, std::string_view ch) -> std::string {
+    (void)uri;
+    (void)line;
     (void)character;
-    if (line < 0) return "[]";
-    std::string text = get_doc_text(uri);
-    auto lines = detail::split_lines(text);
-    while (static_cast<std::size_t>(line) >= lines.size()) {
-        lines.emplace_back("");
-    }
-
-    int indent = 0;
-    bool in_raw_string = false;
-    for (int i = 0; i < line; ++i) {
-        const std::string& raw = lines[static_cast<std::size_t>(i)];
-        if (in_raw_string) {
-            auto close_bt = raw.find('`');
-            if (close_bt != std::string::npos) {
-                in_raw_string = false;
-                int net_delta = cfire::fmt::detail::scan_line_brace_delta(raw, close_bt + 1, in_raw_string);
-                indent = std::max(0, indent + net_delta);
-            }
-            continue;
-        }
-        std::string trimmed = cfire::fmt::detail::trim_ws(raw);
-        if (trimmed.empty()) continue;
-        int net_delta = cfire::fmt::detail::scan_line_brace_delta(trimmed, 0, in_raw_string);
-        indent = std::max(0, indent + net_delta);
-    }
-    if (in_raw_string) return "[]";
-
-    const std::string& cur_ln = lines[static_cast<std::size_t>(line)];
-    int ws_len = 0;
-    while (ws_len < static_cast<int>(cur_ln.size()) &&
-           (cur_ln[static_cast<std::size_t>(ws_len)] == ' ' || cur_ln[static_cast<std::size_t>(ws_len)] == '\t')) {
-        ++ws_len;
-    }
-    std::string trimmed = cfire::fmt::detail::trim_ws(cur_ln);
-    int leading_close = 0;
-    for (char c : trimmed) {
-        if (c == '}' || c == ')' || c == ']') ++leading_close;
-        else break;
-    }
-    if (ch == "}" && leading_close == 0) {
-        return "[]";
-    }
-    int target_indent = std::max(0, indent - leading_close);
-    std::string target_ws(static_cast<std::size_t>(target_indent * 4), ' ');
-    if (cur_ln.substr(0, static_cast<std::size_t>(ws_len)) == target_ws) {
-        return "[]";
-    }
-    return std::format(
-        R"([{{"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":{}}}}},"newText":"{}"}}])",
-        line, line, ws_len, detail::json_escape(target_ws));
+    (void)ch;
+    return "[]";
 }
 
 #endif // !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_LSP_SERVER_IMPL)

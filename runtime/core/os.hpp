@@ -15,12 +15,14 @@
 #include <format>
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <unordered_map>
 #include <csignal>
 
 #if !defined(_WIN32)
 #include <spawn.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -33,6 +35,17 @@
 #include <TargetConditionals.h>
 #if !TARGET_OS_IPHONE
 #include <crt_externs.h>
+#elif !defined(PLATFORM_WEB)
+#include <objc/runtime.h>
+#include <objc/message.h>
+#include <dispatch/dispatch.h>
+#ifndef CFIRE_OBJC_AUTORELEASE_DECLARED
+#define CFIRE_OBJC_AUTORELEASE_DECLARED 1
+extern "C" {
+void* objc_autoreleasePoolPush(void);
+void objc_autoreleasePoolPop(void*);
+}
+#endif
 #endif
 #else
 extern "C" char** environ;
@@ -42,6 +55,9 @@ extern "C" char** environ;
 #define NOMINMAX 1
 #endif
 #include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#include <objbase.h>
 #include <io.h>
 #include <fcntl.h>
 #include <process.h>
@@ -53,45 +69,6 @@ extern "C" char** environ;
 #endif
 
 namespace cfire::os {
-
-[[nodiscard]] inline auto args() -> std::vector<std::string> {
-    return cfire::detail::process_args_storage();
-}
-
-[[noreturn]] inline void exit(std::int32_t code = 0) {
-    std::exit(static_cast<int>(code));
-}
-
-[[nodiscard]] inline auto getenv(std::string_view key, std::string_view fallback = "") -> std::string {
-    std::string k(key);
-    if (const char* v = std::getenv(k.c_str())) {
-        return std::string(v);
-    }
-    return std::string(fallback);
-}
-
-inline void setenv(std::string_view key, std::string_view val) {
-    std::string k(key);
-    std::string v(val);
-#if defined(_WIN32)
-    ::_putenv_s(k.c_str(), v.c_str());
-#else
-    ::setenv(k.c_str(), v.c_str(), 1);
-#endif
-}
-
-[[nodiscard]] inline auto cwd() -> std::string {
-    auto u8 = std::filesystem::current_path().u8string();
-    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
-}
-
-[[nodiscard]] inline auto getpid() noexcept -> std::int64_t {
-#if defined(_WIN32)
-    return static_cast<std::int64_t>(::GetCurrentProcessId());
-#else
-    return static_cast<std::int64_t>(::getpid());
-#endif
-}
 
 #if defined(_WIN32)
 namespace detail {
@@ -109,6 +86,15 @@ inline Win32Utf8ConsoleInit g_win32_utf8_console_init{};
     if (len <= 0) return L"";
     std::wstring out(static_cast<std::size_t>(len), L'\0');
     ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), len);
+    return out;
+}
+
+[[nodiscard]] inline auto win32_wide_to_utf8(std::wstring_view ws) -> std::string {
+    if (ws.empty()) return "";
+    int len = ::WideCharToMultiByte(CP_UTF8, 0, ws.data(), static_cast<int>(ws.size()), nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "";
+    std::string out(static_cast<std::size_t>(len), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, ws.data(), static_cast<int>(ws.size()), out.data(), len, nullptr, nullptr);
     return out;
 }
 
@@ -140,6 +126,73 @@ inline Win32Utf8ConsoleInit g_win32_utf8_console_init{};
 }
 } // namespace detail
 #endif
+
+[[nodiscard]] inline auto args() -> std::vector<std::string> {
+    return cfire::detail::process_args_storage();
+}
+
+[[noreturn]] inline void exit(std::int32_t code = 0) {
+    std::exit(static_cast<int>(code));
+}
+
+[[nodiscard]] inline auto getenv(std::string_view key) -> std::optional<std::string> {
+#if defined(_WIN32)
+    if (key.empty()) return std::nullopt;
+    std::wstring wk = detail::win32_utf8_to_wide(key);
+    ::SetLastError(0);
+    DWORD needed = ::GetEnvironmentVariableW(wk.c_str(), nullptr, 0);
+    if (needed == 0) {
+        if (::GetLastError() == ERROR_ENVVAR_NOT_FOUND) return std::nullopt;
+        return std::string{};
+    }
+    std::wstring buf(static_cast<std::size_t>(needed), L'\0');
+    while (true) {
+        ::SetLastError(0);
+        DWORD written = ::GetEnvironmentVariableW(wk.c_str(), buf.data(), static_cast<DWORD>(buf.size()));
+        if (written == 0) {
+            if (::GetLastError() == ERROR_ENVVAR_NOT_FOUND) return std::nullopt;
+            return std::string{};
+        }
+        if (written < buf.size()) {
+            buf.resize(static_cast<std::size_t>(written));
+            return detail::win32_wide_to_utf8(buf);
+        }
+        buf.resize(static_cast<std::size_t>(written));
+    }
+#else
+    std::string k(key);
+    if (const char* v = std::getenv(k.c_str())) {
+        return std::string(v);
+    }
+    return std::nullopt;
+#endif
+}
+
+inline void setenv(std::string_view key, std::string_view val) {
+#if defined(_WIN32)
+    std::wstring wk = detail::win32_utf8_to_wide(key);
+    std::wstring wv = detail::win32_utf8_to_wide(val);
+    ::_wputenv_s(wk.c_str(), wv.c_str());
+    ::SetEnvironmentVariableW(wk.c_str(), wv.c_str());
+#else
+    std::string k(key);
+    std::string v(val);
+    ::setenv(k.c_str(), v.c_str(), 1);
+#endif
+}
+
+[[nodiscard]] inline auto cwd() -> std::string {
+    auto u8 = std::filesystem::current_path().u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+[[nodiscard]] inline auto getpid() noexcept -> std::int64_t {
+#if defined(_WIN32)
+    return static_cast<std::int64_t>(::GetCurrentProcessId());
+#else
+    return static_cast<std::int64_t>(::getpid());
+#endif
+}
 
 [[nodiscard]] inline auto exec(std::string_view cmd) -> std::expected<std::string, cfire::Error> {
     std::string c(cmd);
@@ -593,6 +646,330 @@ inline void on_signal(std::int32_t sig, std::function<void(std::int32_t)> handle
         detail::signal_handlers()[static_cast<std::size_t>(sig)] = std::move(handler);
         std::signal(static_cast<int>(sig), detail::signal_trampoline);
     }
+}
+
+namespace detail {
+
+#if defined(_WIN32)
+[[nodiscard]] inline auto win32_wide_to_utf8(const wchar_t* ws) -> std::string {
+    if (!ws || !*ws) return {};
+    int len = ::WideCharToMultiByte(CP_UTF8, 0, ws, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 1) return {};
+    std::string out(static_cast<std::size_t>(len - 1), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, ws, -1, out.data(), len, nullptr, nullptr);
+    return out;
+}
+
+[[nodiscard]] inline auto win32_known_folder(REFKNOWNFOLDERID rfid, std::string_view label)
+    -> std::expected<std::filesystem::path, cfire::Error>
+{
+    PWSTR wide = nullptr;
+    HRESULT hr = ::SHGetKnownFolderPath(rfid, KF_FLAG_CREATE, nullptr, &wide);
+    auto guard = cfire::scope_exit([&] {
+        if (wide) ::CoTaskMemFree(wide);
+    });
+    if (FAILED(hr) || !wide || !*wide) {
+        return cfire::make_error(std::format("os.{}: SHGetKnownFolderPath failed (0x{:08x})",
+            label, static_cast<unsigned long>(hr)));
+    }
+    std::string utf8 = win32_wide_to_utf8(wide);
+    if (utf8.empty()) {
+        return cfire::make_error(std::format("os.{}: empty known folder path", label));
+    }
+    return std::filesystem::path(win32_utf8_to_wide(utf8));
+}
+#endif
+
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE && !defined(PLATFORM_WEB)
+[[nodiscard]] inline auto os_objc_cls(const char* name) noexcept -> void* {
+#if defined(__OBJC__) && __has_feature(objc_arc)
+    return (__bridge void*)objc_getClass(name);
+#else
+    return reinterpret_cast<void*>(objc_getClass(name));
+#endif
+}
+#endif
+
+[[nodiscard]] inline auto validate_app_name(std::string_view app) -> std::expected<void, cfire::Error> {
+    if (app.empty()) return {};
+    if (app == "." || app == ".." || app.contains("..")) {
+        return cfire::make_error(std::format("invalid app directory name '{}': path traversal is not allowed", app));
+    }
+    for (char c : app) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 0x20 || uc == 0x7f || c == '/' || c == '\\' || c == ':') {
+            return cfire::make_error("invalid app directory name: forbidden path or control character");
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] inline auto ensure_app_dir(
+    const std::filesystem::path& base,
+    std::string_view app,
+    std::string_view fn_name
+) -> std::expected<std::string, cfire::Error> {
+    std::filesystem::path dir = base;
+    if (!app.empty()) {
+#if defined(_WIN32)
+        dir /= win32_utf8_to_wide(app);
+#else
+        dir /= std::filesystem::path(app);
+#endif
+    }
+    std::error_code ec;
+#if !defined(_WIN32)
+    bool existed = std::filesystem::exists(dir, ec);
+#endif
+    std::filesystem::create_directories(dir, ec);
+    if (ec || !std::filesystem::is_directory(dir, ec)) {
+        return cfire::make_error(std::format("os.{}: failed to create directory '{}': {}",
+            fn_name, dir.string(), ec ? ec.message() : "not a directory"));
+    }
+#if !defined(_WIN32)
+    if (!existed) {
+        (void)::chmod(dir.c_str(), 0700);
+    }
+#endif
+    auto u8 = dir.u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+[[nodiscard]] inline auto validate_open_url(std::string_view url) -> std::expected<void, cfire::Error> {
+    if (url.empty()) {
+        return cfire::make_error("os.open_url requires a non-empty URL");
+    }
+    for (char c : url) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 0x20 || uc == 0x7f) {
+            return cfire::make_error("os.open_url rejects URLs containing ASCII control characters");
+        }
+    }
+    std::size_t colon = url.find(':');
+    if (colon == std::string_view::npos || colon == 0) {
+        return cfire::make_error("os.open_url requires a valid URL scheme");
+    }
+    auto is_alpha = [](char c) noexcept {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    };
+    auto is_scheme_rest = [&](char c) noexcept {
+        return is_alpha(c) || (c >= '0' && c <= '9') || c == '+' || c == '.' || c == '-';
+    };
+    if (!is_alpha(url[0])) {
+        return cfire::make_error("os.open_url URL scheme must start with an ASCII letter");
+    }
+    std::string scheme;
+    scheme.reserve(colon);
+    for (std::size_t i = 0; i < colon; ++i) {
+        char c = url[i];
+        if (i > 0 && !is_scheme_rest(c)) {
+            return cfire::make_error("os.open_url URL contains invalid scheme character");
+        }
+        scheme.push_back((c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c);
+    }
+    if (scheme == "file" || scheme == "javascript") {
+        return cfire::make_error(std::format("os.open_url forbids '{}' URL scheme", scheme));
+    }
+    if (scheme == "mailto" || scheme == "tel") {
+        if (url.size() <= colon + 1) {
+            return cfire::make_error(std::format("os.open_url '{}' URL is missing target", scheme));
+        }
+        return {};
+    }
+    if (!url.substr(colon).starts_with("://") || url.size() <= colon + 3) {
+        return cfire::make_error(std::format("os.open_url '{}' URL must include '://' and a host/target", scheme));
+    }
+    return {};
+}
+
+#if defined(CFIRE_TEST_MODE)
+inline auto open_url_test_slot() -> std::pair<std::mutex&, std::string&> {
+    static std::mutex mu;
+    static std::string last_url;
+    return {mu, last_url};
+}
+
+[[nodiscard]] inline auto is_headless_test() noexcept -> bool {
+    if (const char* env_h = std::getenv("CFIRE_HEADLESS_TEST"); env_h && std::string_view(env_h) == "1") {
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] inline auto last_opened_url() -> std::string {
+    auto [mu, slot] = open_url_test_slot();
+    std::lock_guard<std::mutex> lk(mu);
+    return slot;
+}
+
+inline void clear_last_opened_url() {
+    auto [mu, slot] = open_url_test_slot();
+    std::lock_guard<std::mutex> lk(mu);
+    slot.clear();
+}
+#endif
+
+} // namespace detail
+
+[[nodiscard]] inline auto data_dir(std::string_view app = "") -> std::expected<std::string, cfire::Error> {
+    if (auto ok = detail::validate_app_name(app); !ok) return std::unexpected(ok.error());
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return cfire::make_error("os.data_dir is not supported on WebAssembly");
+#elif defined(_WIN32)
+    auto base = detail::win32_known_folder(FOLDERID_RoamingAppData, "data_dir");
+    if (!base) return std::unexpected(base.error());
+    return detail::ensure_app_dir(*base, app, "data_dir");
+#elif defined(__APPLE__)
+    std::string home = getenv("HOME").value_or("");
+    if (home.empty()) return cfire::make_error("os.data_dir: HOME environment variable is not set");
+    return detail::ensure_app_dir(std::filesystem::path(home) / "Library" / "Application Support", app, "data_dir");
+#else
+    std::filesystem::path base;
+    if (std::string xdg = getenv("XDG_DATA_HOME").value_or(""); !xdg.empty()) {
+        base = std::filesystem::path(xdg);
+    } else {
+        std::string home = getenv("HOME").value_or("");
+        if (home.empty()) return cfire::make_error("os.data_dir: HOME environment variable is not set");
+        base = std::filesystem::path(home) / ".local" / "share";
+    }
+    return detail::ensure_app_dir(base, app, "data_dir");
+#endif
+}
+
+[[nodiscard]] inline auto cache_dir(std::string_view app = "") -> std::expected<std::string, cfire::Error> {
+    if (auto ok = detail::validate_app_name(app); !ok) return std::unexpected(ok.error());
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return cfire::make_error("os.cache_dir is not supported on WebAssembly");
+#elif defined(_WIN32)
+    auto base = detail::win32_known_folder(FOLDERID_LocalAppData, "cache_dir");
+    if (!base) return std::unexpected(base.error());
+    return detail::ensure_app_dir(*base / L"Cache", app, "cache_dir");
+#elif defined(__APPLE__)
+    std::string home = getenv("HOME").value_or("");
+    if (home.empty()) return cfire::make_error("os.cache_dir: HOME environment variable is not set");
+    return detail::ensure_app_dir(std::filesystem::path(home) / "Library" / "Caches", app, "cache_dir");
+#else
+    std::filesystem::path base;
+    if (std::string xdg = getenv("XDG_CACHE_HOME").value_or(""); !xdg.empty()) {
+        base = std::filesystem::path(xdg);
+    } else {
+        std::string home = getenv("HOME").value_or("");
+        if (home.empty()) return cfire::make_error("os.cache_dir: HOME environment variable is not set");
+        base = std::filesystem::path(home) / ".cache";
+    }
+    return detail::ensure_app_dir(base, app, "cache_dir");
+#endif
+}
+
+[[nodiscard]] inline auto documents_dir() -> std::expected<std::string, cfire::Error> {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return cfire::make_error("os.documents_dir is not supported on WebAssembly");
+#elif defined(_WIN32)
+    auto base = detail::win32_known_folder(FOLDERID_Documents, "documents_dir");
+    if (!base) return std::unexpected(base.error());
+    return detail::ensure_app_dir(*base, "", "documents_dir");
+#elif defined(__APPLE__)
+    std::string home = getenv("HOME").value_or("");
+    if (home.empty()) return cfire::make_error("os.documents_dir: HOME environment variable is not set");
+    return detail::ensure_app_dir(std::filesystem::path(home) / "Documents", "", "documents_dir");
+#else
+    std::filesystem::path base;
+    if (std::string xdg = getenv("XDG_DOCUMENTS_DIR").value_or(""); !xdg.empty()) {
+        base = std::filesystem::path(xdg);
+    } else {
+        std::string home = getenv("HOME").value_or("");
+        if (home.empty()) return cfire::make_error("os.documents_dir: HOME environment variable is not set");
+        base = std::filesystem::path(home) / "Documents";
+    }
+    return detail::ensure_app_dir(base, "", "documents_dir");
+#endif
+}
+
+[[nodiscard]] inline auto open_url(std::string_view url) -> std::expected<void, cfire::Error> {
+    if (auto ok = detail::validate_open_url(url); !ok) return std::unexpected(ok.error());
+#if defined(CFIRE_TEST_MODE)
+    if (detail::is_headless_test()) {
+        auto [mu, slot] = detail::open_url_test_slot();
+        std::lock_guard<std::mutex> lk(mu);
+        slot.assign(url);
+        return {};
+    }
+#endif
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return cfire::make_error("os.open_url is not supported on WebAssembly");
+#elif defined(_WIN32)
+    std::wstring wurl = detail::win32_utf8_to_wide(url);
+    HINSTANCE res = ::ShellExecuteW(nullptr, L"open", wurl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<std::intptr_t>(res) <= 32) {
+        return cfire::make_error(std::format("os.open_url: ShellExecuteW failed (code {})",
+            static_cast<long>(reinterpret_cast<std::intptr_t>(res))));
+    }
+    return {};
+#elif defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    auto* raw_url = new std::string(url);
+    auto trampoline = [](void* ctx) noexcept {
+        std::unique_ptr<std::string> owned_url(static_cast<std::string*>(ctx));
+        void* pool = ::objc_autoreleasePoolPush();
+        auto pool_guard = cfire::scope_exit([&] { ::objc_autoreleasePoolPop(pool); });
+
+        void* nsstr_cls = detail::os_objc_cls("NSString");
+        void* nsurl_cls = detail::os_objc_cls("NSURL");
+        void* nsdict_cls = detail::os_objc_cls("NSDictionary");
+        void* uiapp_cls = detail::os_objc_cls("UIApplication");
+        if (!nsstr_cls || !nsurl_cls || !nsdict_cls || !uiapp_cls) return;
+
+        using FnStr = void* (*)(void*, SEL, const char*);
+        using FnUrl = void* (*)(void*, SEL, void*);
+        using FnDict = void* (*)(void*, SEL);
+        using FnApp = void* (*)(void*, SEL);
+        using FnOpen = void (*)(void*, SEL, void*, void*, void*);
+
+        void* ns_str = reinterpret_cast<FnStr>(objc_msgSend)(
+            nsstr_cls, sel_registerName("stringWithUTF8String:"), owned_url->c_str());
+        if (!ns_str) return;
+        void* ns_url = reinterpret_cast<FnUrl>(objc_msgSend)(
+            nsurl_cls, sel_registerName("URLWithString:"), ns_str);
+        if (!ns_url) return;
+        void* opts = reinterpret_cast<FnDict>(objc_msgSend)(nsdict_cls, sel_registerName("dictionary"));
+        void* app = reinterpret_cast<FnApp>(objc_msgSend)(uiapp_cls, sel_registerName("sharedApplication"));
+        if (!app) return;
+        reinterpret_cast<FnOpen>(objc_msgSend)(
+            app, sel_registerName("openURL:options:completionHandler:"), ns_url, opts, nullptr);
+    };
+    ::dispatch_async_f(dispatch_get_main_queue(), raw_url, +trampoline);
+    return {};
+#else
+    posix_spawn_file_actions_t actions;
+    ::posix_spawn_file_actions_init(&actions);
+    ::posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    ::posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    ::posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+
+#if defined(__APPLE__)
+    std::string bin = "/usr/bin/open";
+    std::string argv0 = "open";
+    char** env = *_NSGetEnviron();
+#else
+    std::string bin = "xdg-open";
+    std::string argv0 = "xdg-open";
+    char** env = ::environ;
+#endif
+    std::string url_str(url);
+    char* argv[] = { argv0.data(), url_str.data(), nullptr };
+    pid_t pid = 0;
+    int spawn_rc = ::posix_spawnp(&pid, bin.c_str(), &actions, nullptr, argv, env);
+    ::posix_spawn_file_actions_destroy(&actions);
+    if (spawn_rc != 0) {
+        return cfire::make_error(std::format("os.open_url: posix_spawnp('{}') failed: {}", bin, std::strerror(spawn_rc)));
+    }
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        return cfire::make_error(std::format("os.open_url: '{}' exited with status {}",
+            argv0, WIFEXITED(status) ? WEXITSTATUS(status) : status));
+    }
+    return {};
+#endif
 }
 
 } // namespace cfire::os

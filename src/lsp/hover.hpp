@@ -14,19 +14,6 @@ namespace cfire::lsp {
 #endif
 
 namespace detail {
-// a stdlib type by module namespace and bare name (`http`, `Request`).
-[[nodiscard]] inline auto find_stdlib_type_doc(std::string_view ns, std::string_view name)
-    -> std::pair<const cfire::doc::StdModuleDoc*, const cfire::doc::StdTypeDoc*> {
-    if (auto br = name.find('['); br != std::string_view::npos) name = name.substr(0, br);
-    for (const auto& mod : cfire::doc::stdlib_catalog()) {
-        if (mod.ns_alias != ns) continue;
-        for (const auto& td : mod.type_docs) {
-            if (td.bare_name() == name) return {&mod, &td};
-        }
-    }
-    return {nullptr, nullptr};
-}
-
 [[nodiscard]] inline auto render_stdlib_type_doc(const cfire::doc::StdModuleDoc& mod, const cfire::doc::StdTypeDoc& td) -> std::string {
     std::string out = std::format("### {} `{}.{}` (`{}`)\n{}\n", td.kind == "enum" ? "Enum" : td.kind == "struct" ? "Struct" : "Type",
                                   mod.ns_alias, td.name, mod.import_path, td.summary);
@@ -254,10 +241,13 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         }
     }
 
-    auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
-    if (!ast_res) return "";
-    const auto& ast = *ast_res;
-    auto env = detail::build_scope_bindings(ast, ws, lines, line);
+    auto doc_opt = get_or_check_doc(uri, text, line, character);
+    if (!doc_opt || !doc_opt->checked) return "";
+    const auto& doc = *doc_opt;
+    const auto& ast = doc.checked->ast;
+    const auto& ws = doc.ws;
+    const auto* sema_types = &doc.checked->type_table;
+    auto env = detail::build_scope_bindings(ast, ws, lines, line, sema_types);
 
     // 2. Check imported local `.cf` packages (`checksum` or `checksum.compute_tag`) and `cpp::` Clang AST Bridge!
     for (const auto& pkg : ws.local_packages) {
@@ -345,7 +335,10 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                 if (i > 0) params_str += ", ";
                 params_str += csym.param_types[i];
             }
-            std::string hdr = ws.cpp_symbol_header[sym.name];
+            std::string hdr;
+            if (auto hit = ws.cpp_symbol_header.find(sym.name); hit != ws.cpp_symbol_header.end()) {
+                hdr = hit->second;
+            }
             return std::format("### Native C/C++ Function `cpp::{}` (`<{}>`)\n```cpp\n{} {}({})\n```\n**cfire Return Type:** `{}`\n\nIngested via the **Clang AST Header Bridge** (`clang++ -Xclang -ast-dump=json`) with automatic `cfire::c_str` boundary coercion.",
                 csym.name, hdr, csym.return_type, csym.name, params_str, detail::cpp_return_to_cf(csym.return_type));
         }
@@ -354,7 +347,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
     // 3. If `qualifier.member` where `qualifier` is a local variable, chained field, or struct/enum:
     if (!sym.qualifier.empty()) {
         if (sym.name == "len") {
-            return "### Property `.len`\n```cf\nlen: usize\n```\n**Lowered C++23:** `.size()` (`std::size_t`)";
+            return "### Method `.len()`\n```cf\nfn len() -> usize\n```\n**Lowered C++23:** `.size()` (`std::size_t`)";
         }
         if (sym.name == "data" || sym.name == "data_ptr") {
             return "### Method `." + sym.name + "()`\n```cf\nfn (s: []T | str) " + sym.name + "() -> *T\n```\n**Lowered C++23:** `({}).data()`\n\nReturns a raw pointer to the underlying contiguous element buffer (`*const c_char` for `str`, `*const T` for immutable slices) for C FFI interop.";
@@ -362,7 +355,16 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         if (sym.name == "bytes") {
             return "### Method `.bytes()`\n```cf\nfn (s: str) bytes() -> []byte\n```\n**Lowered C++23:** `cfire::to_bytes({})`\n\nReturns a safe byte slice view (`std::span<const std::uint8_t>`) over the string's UTF-8 bytes.";
         }
-        std::string recv_type = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env);
+        std::string raw_recv = detail::resolve_qualifier_type(sym.qualifier, ast, ws, env, /*preserve_wrappers=*/true);
+        while (!raw_recv.empty() && raw_recv.back() == ' ') raw_recv.pop_back();
+        if (std::uint16_t raw_bits = cfire::frontend::builtin_recv_bits_for_type_name(raw_recv);
+            (raw_bits & (cfire::frontend::BmOptional | cfire::frontend::BmFallible)) != 0) {
+            if (const auto* bm = cfire::frontend::find_builtin_method(raw_bits, sym.name)) {
+                return std::format("### `{}.{}` (builtin method)\n```cf\n{}\n```\n{}\n\n**Example:**\n```cf\n{}\n```",
+                    raw_recv, bm->name, cfire::frontend::builtin_method_signature(*bm), bm->summary, bm->example);
+            }
+        }
+        std::string recv_type = detail::strip_wrappers(raw_recv);
         if (recv_type == "Error") {
             if (sym.name == "code") {
                 return "### `Error.code` (builtin method)\n```cf\nfn (e: Error) code() -> i32\n```\n**Lowered C++23:** `e.code()`\n\nReturns the machine-readable error code (e.g., `fs.ERR_EXISTS`, `fs.ERR_NOT_FOUND`, `fs.ERR_PERMISSION`, or `0` if unspecified).";
@@ -386,24 +388,24 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                 if (auto dot = fn.name.find('.'); dot != std::string::npos) {
                     std::string htype = fn.name.substr(0, dot);
                     std::string mname = fn.name.substr(dot + 1);
-                    if ((recv_type == htype || recv_type == mod.ns_alias + "." + htype || recv_type.starts_with("sync." + htype)) &&
-                        mname == sym.name) {
+                    if (detail::match_stdlib_handle_type(recv_type, mod, htype) && mname == sym.name) {
                         return std::format("### `{}` (`{}`)\n```cf\n{}\n```\n**Lowered C++23:** `{}`\n\n{}\n\n**Example:**\n```cf\n{}\n```",
                             fn.name, mod.import_path, fn.cf_sig, fn.cpp_lowering, fn.summary, fn.example);
                     }
                 }
             }
         }
-        // methods on builtin types (`s.trim`, `xs.sort`, `x.abs`) from the single table.
-        if (std::uint8_t bits = cfire::frontend::builtin_recv_bits_for_type_name(recv_type); bits != 0) {
+        // methods on builtin types (`s.trim`, `xs.sort`, `x.abs`, `opt.or_error`, `res.ignore_error`) from the single table.
+        if (std::uint16_t bits = cfire::frontend::builtin_recv_bits_for_type_name(recv_type); bits != 0) {
             if (const auto* bm = cfire::frontend::find_builtin_method(bits, sym.name)) {
                 return std::format("### `{}.{}` (builtin method)\n```cf\n{}\n```\n{}\n\n**Example:**\n```cf\n{}\n```",
                     recv_type, bm->name, cfire::frontend::builtin_method_signature(*bm), bm->summary, bm->example);
             }
         }
         // Check user struct fields & methods on `recv_type` (both local and imported packages)
-        auto check_structs = [&](const std::vector<cfire::frontend::StructDecl>& structs, const std::vector<std::string>& doc_lines) -> std::string {
-            for (const auto& st : structs) {
+        auto check_structs = [&](const std::vector<cfire::frontend::StructDecl>& structs, const std::vector<std::string>& doc_lines, std::size_t max_count) -> std::string {
+            for (std::size_t si = 0; si < max_count && si < structs.size(); ++si) {
+                const auto& st = structs[si];
                 if (st.name == recv_type) {
                     for (const auto& f : st.fields) {
                         if (f.name == sym.name) {
@@ -440,16 +442,17 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
             }
             return "";
         };
-        if (std::string s = check_structs(ast.structs, lines); !s.empty()) return s;
+        if (std::string s = check_structs(ast.structs, lines, doc.local_struct_count); !s.empty()) return s;
         for (const auto& pkg : ws.local_packages) {
             auto pkg_lines = detail::split_lines(get_doc_text(pkg.uri));
-            if (std::string s = check_structs(pkg.ast.structs, pkg_lines); !s.empty()) return s;
+            if (std::string s = check_structs(pkg.ast.structs, pkg_lines, pkg.ast.structs.size()); !s.empty()) return s;
         }
 
-        for (const auto& fn : ast.functions) {
+        for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+            const auto& fn = ast.functions[fi];
             if (fn.receiver && fn.receiver->type.name == recv_type && fn.name == sym.name) {
-                std::string doc = detail::extract_leading_doc_comments(lines, fn.line);
-                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                std::string doc_str = detail::extract_leading_doc_comments(lines, fn.line);
+                std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                 return std::format("### Method `{}.{}`\n```cf\n{}\n```\n**Lowered C++23:**\n```cpp\n{}\n```{}",
                     recv_type, fn.name, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), doc_sec);
             }
@@ -458,15 +461,16 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
             for (const auto& fn : pkg.ast.functions) {
                 if (fn.receiver && fn.receiver->type.name == recv_type && fn.name == sym.name) {
                     auto pkg_lines = detail::split_lines(get_doc_text(pkg.uri));
-                    std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
-                    std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                    std::string doc_str = detail::extract_leading_doc_comments(pkg_lines, fn.line);
+                    std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                     return std::format("### Method `{}.{}`\n```cf\n{}\n```\n**Lowered C++23:**\n```cpp\n{}\n```{}",
                         recv_type, fn.name, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), doc_sec);
                 }
             }
         }
         // Check enum variants (`Shape.Circle`)
-        for (const auto& en : ast.enums) {
+        for (std::size_t ei = 0; ei < doc.local_enum_count && ei < ast.enums.size(); ++ei) {
+            const auto& en = ast.enums[ei];
             if (en.name == recv_type) {
                 for (const auto& v : en.variants) {
                     if (v.name == sym.name) {
@@ -499,9 +503,10 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
     }
 
     // 5. Check top-level functions, structs, enums, and enum variants
-    for (const auto& fn : ast.functions) {
+    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+        const auto& fn = ast.functions[fi];
         if (fn.name == sym.name) {
-            std::string doc = detail::extract_leading_doc_comments(lines, fn.line);
+            std::string doc_str = detail::extract_leading_doc_comments(lines, fn.line);
             std::string cf_sig = cfire::fmt::format_fn_signature(fn);
             std::string cpp_sig = detail::lower_fn_preview(fn);
             std::string param_docs;
@@ -512,14 +517,15 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                         p.name, p.intent, cfire::fmt::format_type_ref(p.type), detail::lower_type_preview(p.type, true, p.intent));
                 }
             }
-            std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+            std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
             return std::format("### Function `{}`\n```cf\n{}\n```\n**Lowered ISO C++23:**\n```cpp\n{}\n```{}{}",
                 fn.name, cf_sig, cpp_sig, doc_sec, param_docs);
         }
     }
-    for (const auto& st : ast.structs) {
+    for (std::size_t si = 0; si < doc.local_struct_count && si < ast.structs.size(); ++si) {
+        const auto& st = ast.structs[si];
         if (st.name == sym.name) {
-            std::string doc = detail::extract_leading_doc_comments(lines, st.line);
+            std::string doc_str = detail::extract_leading_doc_comments(lines, st.line);
             std::unordered_set<std::string> vis;
             auto layout = detail::compute_struct_layout(st, ast, ws, vis);
             std::string layout_hdr = std::format("\n\n**Memory Layout (64-bit ABI):** `Size: {} bytes | Align: {} bytes`\n", layout.total_size, layout.align);
@@ -532,7 +538,7 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
                     f.name, off, fsize, cfire::fmt::format_type_ref(f.type), detail::lower_type_preview(f.type),
                     f.raw_tag.empty() ? "-" : f.raw_tag);
             }
-            std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+            std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
             return std::format("### Struct `{}`\n```cf\n{}\n```\nLowers 1-to-1 to C++23 aggregate `struct {}` (line {}).{}{}{}",
                 st.name, cfire::fmt::format_struct_signature(st), st.name, st.line, layout_hdr, doc_sec, fields_table);
         }
@@ -542,49 +548,51 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
         auto pkg_lines = detail::split_lines(get_doc_text(pkg.uri));
         for (const auto& fn : pkg.ast.functions) {
             if (fn.name == sym.name) {
-                std::string doc = detail::extract_leading_doc_comments(pkg_lines, fn.line);
-                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                std::string doc_str = detail::extract_leading_doc_comments(pkg_lines, fn.line);
+                std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                 return std::format("### Function `{}` (from `{}`)\n```cf\n{}\n```\n**Lowered ISO C++23:**\n```cpp\n{}\n```\nDefined at `{}:{}`{}",
                     fn.name, pkg.file_path, cfire::fmt::format_fn_signature(fn), detail::lower_fn_preview(fn), pkg.file_path, fn.line, doc_sec);
             }
         }
         for (const auto& st : pkg.ast.structs) {
             if (st.name == sym.name) {
-                std::string doc = detail::extract_leading_doc_comments(pkg_lines, st.line);
-                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                std::string doc_str = detail::extract_leading_doc_comments(pkg_lines, st.line);
+                std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                 return std::format("### Struct `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
                     st.name, pkg.file_path, cfire::fmt::format_struct_signature(st), pkg.file_path, st.line, doc_sec);
             }
         }
         for (const auto& en : pkg.ast.enums) {
             if (en.name == sym.name) {
-                std::string doc = detail::extract_leading_doc_comments(pkg_lines, en.line);
-                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                std::string doc_str = detail::extract_leading_doc_comments(pkg_lines, en.line);
+                std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                 return std::format("### Enum `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
                     en.name, pkg.file_path, cfire::fmt::format_enum_signature(en), pkg.file_path, en.line, doc_sec);
             }
         }
         for (const auto& ifc : pkg.ast.interfaces) {
             if (ifc.name == sym.name) {
-                std::string doc = detail::extract_leading_doc_comments(pkg_lines, ifc.line);
-                std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+                std::string doc_str = detail::extract_leading_doc_comments(pkg_lines, ifc.line);
+                std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
                 return std::format("### Interface `{}` (from `{}`)\n```cf\n{}\n```\nDefined at `{}:{}`{}",
                     ifc.name, pkg.file_path, cfire::fmt::format_interface_signature(ifc), pkg.file_path, ifc.line, doc_sec);
             }
         }
     }
-    for (const auto& ifc : ast.interfaces) {
+    for (std::size_t ii = 0; ii < doc.local_iface_count && ii < ast.interfaces.size(); ++ii) {
+        const auto& ifc = ast.interfaces[ii];
         if (ifc.name == sym.name) {
-            std::string doc = detail::extract_leading_doc_comments(lines, ifc.line);
-            std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+            std::string doc_str = detail::extract_leading_doc_comments(lines, ifc.line);
+            std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
             return std::format("### Interface `{}`\n```cf\n{}\n```\nCompile-time C++23 `concept {}` contract (line {}).{}",
                 ifc.name, cfire::fmt::format_interface_signature(ifc), ifc.name, ifc.line, doc_sec);
         }
     }
-    for (const auto& en : ast.enums) {
+    for (std::size_t ei = 0; ei < doc.local_enum_count && ei < ast.enums.size(); ++ei) {
+        const auto& en = ast.enums[ei];
         if (en.name == sym.name) {
-            std::string doc = detail::extract_leading_doc_comments(lines, en.line);
-            std::string doc_sec = doc.empty() ? "" : ("\n\n**Documentation:**\n" + doc);
+            std::string doc_str = detail::extract_leading_doc_comments(lines, en.line);
+            std::string doc_sec = doc_str.empty() ? "" : ("\n\n**Documentation:**\n" + doc_str);
             return std::format("### Algebraic Enum `{}`\n```cf\n{}\n```\nLowers to `std::variant` with exhaustive `match` verification (line {}).{}",
                 en.name, cfire::fmt::format_enum_signature(en), en.line, doc_sec);
         }
@@ -601,9 +609,15 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
     int target_col_1 = character + 1;
 
     std::vector<cfire::frontend::ExprPtr> all_exprs;
-    for (const auto& fn : ast.functions) detail::collect_stmt_exprs(fn.body, all_exprs);
-    for (const auto& t : ast.tests) detail::collect_stmt_exprs(t.body, all_exprs);
-    for (const auto& gv : ast.global_vars) if (gv.value) detail::collect_all_exprs(gv.value, all_exprs);
+    for (std::size_t fi = 0; fi < doc.local_fn_count && fi < ast.functions.size(); ++fi) {
+        detail::collect_stmt_exprs(ast.functions[fi].body, all_exprs);
+    }
+    for (std::size_t ti = 0; ti < doc.local_test_count && ti < ast.tests.size(); ++ti) {
+        detail::collect_stmt_exprs(ast.tests[ti].body, all_exprs);
+    }
+    for (std::size_t gi = 0; gi < doc.local_global_count && gi < ast.global_vars.size(); ++gi) {
+        if (ast.global_vars[gi].value) detail::collect_all_exprs(ast.global_vars[gi].value, all_exprs);
+    }
 
     cfire::frontend::ExprPtr best_expr = nullptr;
     int best_span = 999999;
@@ -628,9 +642,10 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
 
     if (best_expr) {
         std::string exp_str = detail::expr_to_string(best_expr);
-        std::string cf_type = detail::infer_expr_cf_type(best_expr, ast, ws, env);
+        std::string cf_type = detail::infer_expr_cf_type(best_expr, ast, ws, env, sema_types);
         if (!exp_str.empty() && cf_type != "auto") {
-            std::string cpp_type = detail::cf_type_string_to_cpp(cf_type);
+            std::string cpp_type = detail::sema_type_id_to_cpp_preview(best_expr->resolved_type_id, sema_types);
+            if (cpp_type.empty()) cpp_type = detail::cf_type_string_to_cpp(cf_type);
             return std::format("### Expression `{}`\n```cf\n{}: {}\n```\n**Lowered ISO C++23:** `{}`",
                 exp_str, exp_str, cf_type, cpp_type);
         }
@@ -664,7 +679,10 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_hover(const std::string& uri, int lin
 CFIRE_LSP_FEAT_INLINE auto Server::compute_signature_help(const std::string& uri, int line, int character) -> std::string {
     std::string text = get_doc_text(uri);
     auto lines = detail::split_lines(text);
-    auto ctx_opt = detail::find_call_context(lines, line, character);
+    int u8_char = (line >= 0 && static_cast<std::size_t>(line) < lines.size())
+        ? detail::utf16_col_to_utf8_col(lines[static_cast<std::size_t>(line)], character)
+        : character;
+    auto ctx_opt = detail::find_call_context(lines, line, u8_char);
     if (!ctx_opt) return "null";
     const auto& ctx = *ctx_opt;
 
@@ -683,37 +701,69 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_signature_help(const std::string& uri
 
     auto extract_params_from_sig = [](std::string_view sig) -> std::vector<std::string> {
         std::vector<std::string> plabels;
-        auto lp = sig.find('(');
-        auto rp = sig.rfind(')');
-        if (lp != std::string_view::npos && rp != std::string_view::npos && rp > lp + 1) {
-            std::string plist(sig.substr(lp + 1, rp - lp - 1));
-            std::istringstream iss(plist);
-            std::string item;
-            while (std::getline(iss, item, ',')) {
-                plabels.push_back(cfire::fmt::detail::trim_ws(item));
+        std::string_view s = sig;
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+        if (s.starts_with("fn ")) {
+            s.remove_prefix(3);
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
+        }
+        if (!s.empty() && s.front() == '(') {
+            int depth = 1;
+            s.remove_prefix(1);
+            while (!s.empty() && depth > 0) {
+                if (s.front() == '(') ++depth;
+                else if (s.front() == ')') --depth;
+                s.remove_prefix(1);
+            }
+        }
+        auto lp = s.find('(');
+        if (lp == std::string_view::npos) return plabels;
+        std::size_t rp = lp + 1;
+        int depth = 1;
+        while (rp < s.size() && depth > 0) {
+            if (s[rp] == '(') ++depth;
+            else if (s[rp] == ')') --depth;
+            if (depth > 0) ++rp;
+        }
+        if (rp > lp + 1) {
+            std::string_view plist = s.substr(lp + 1, rp - lp - 1);
+            std::size_t pstart = 0;
+            int pd = 0;
+            for (std::size_t i = 0; i < plist.size(); ++i) {
+                char c = plist[i];
+                if (c == '(' || c == '[') ++pd;
+                else if (c == ')' || c == ']') --pd;
+                else if (c == ',' && pd == 0) {
+                    std::string item = cfire::fmt::detail::trim_ws(plist.substr(pstart, i - pstart));
+                    if (!item.empty()) plabels.push_back(std::move(item));
+                    pstart = i + 1;
+                }
+            }
+            if (pstart < plist.size()) {
+                std::string tail = cfire::fmt::detail::trim_ws(plist.substr(pstart));
+                if (!tail.empty()) plabels.push_back(std::move(tail));
             }
         }
         return plabels;
     };
 
-    // 1. Check `core:*` stdlib catalog
+    auto [ast_res, ws] = get_or_parse_ast(uri, text, line, u8_char);
+
+    // 1. Check `core:*` / `ext:*` stdlib catalog (supports custom import aliases)
     if (!ctx.qualifier.empty()) {
-        for (const auto& mod : cfire::doc::stdlib_catalog()) {
-            if (mod.ns_alias == ctx.qualifier) {
-                for (const auto& fn : mod.functions) {
-                    if (fn.name == ctx.callee) {
-                        return format_sig_resp(
-                            fn.cf_sig,
-                            std::format("{} (C++23: `{}`)", fn.summary, fn.cpp_lowering),
-                            extract_params_from_sig(fn.cf_sig));
-                    }
+        if (const auto* mod = detail::resolve_stdlib_module_by_alias(ctx.qualifier, ast_res ? &(*ast_res) : nullptr)) {
+            for (const auto& fn : mod->functions) {
+                if (fn.name == ctx.callee && fn.cf_sig.starts_with("fn ")) {
+                    return format_sig_resp(
+                        fn.cf_sig,
+                        std::format("{} (C++23: `{}`)", fn.summary, fn.cpp_lowering),
+                        extract_params_from_sig(fn.cf_sig));
                 }
             }
         }
     }
 
-    // 2. Check user functions, methods, imported `.cf` packages, stdlib handles, and `cpp::` functions
-    auto [ast_res, ws] = get_or_parse_ast(uri, text, line, character);
+    // 2. Check user functions, methods, imported `.cf` packages, builtin methods, stdlib handles, and `cpp::` functions
     if (ast_res) {
         auto env = detail::build_scope_bindings(*ast_res, ws, lines, line);
 
@@ -730,13 +780,22 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_signature_help(const std::string& uri
                 plabels);
         };
 
-        for (const auto& fn : ast_res->functions) {
-            if (fn.name == ctx.callee) return format_fn_decl(fn);
+        if (ctx.qualifier.empty()) {
+            for (const auto& fn : ast_res->functions) {
+                if (!fn.receiver && fn.name == ctx.callee) return format_fn_decl(fn);
+            }
+            for (const auto& pkg : ws.local_packages) {
+                if (pkg.ast.package_name == ast_res->package_name && !ast_res->package_name.empty()) {
+                    for (const auto& fn : pkg.ast.functions) {
+                        if (!fn.receiver && fn.name == ctx.callee) return format_fn_decl(fn);
+                    }
+                }
+            }
         }
         for (const auto& pkg : ws.local_packages) {
-            if (ctx.qualifier.empty() || ctx.qualifier == pkg.alias) {
+            if (ctx.qualifier == pkg.alias) {
                 for (const auto& fn : pkg.ast.functions) {
-                    if (fn.name == ctx.callee) return format_fn_decl(fn);
+                    if (!fn.receiver && fn.name == ctx.callee) return format_fn_decl(fn);
                 }
             }
         }
@@ -753,14 +812,56 @@ CFIRE_LSP_FEAT_INLINE auto Server::compute_signature_help(const std::string& uri
             }
         }
         if (!ctx.qualifier.empty()) {
-            std::string recv_type = detail::resolve_qualifier_type(ctx.qualifier, *ast_res, ws, env);
+            std::string raw_recv = detail::resolve_qualifier_type(ctx.qualifier, *ast_res, ws, env, /*preserve_wrappers=*/true);
+            while (!raw_recv.empty() && raw_recv.back() == ' ') raw_recv.pop_back();
+            if (std::uint16_t raw_bits = cfire::frontend::builtin_recv_bits_for_type_name(raw_recv);
+                (raw_bits & (cfire::frontend::BmOptional | cfire::frontend::BmFallible)) != 0) {
+                if (const auto* bm = cfire::frontend::find_builtin_method(raw_bits, ctx.callee)) {
+                    std::string sig = cfire::frontend::builtin_method_signature(*bm);
+                    return format_sig_resp(sig, bm->summary, extract_params_from_sig(sig));
+                }
+            }
+            std::string recv_type = detail::strip_wrappers(raw_recv);
+            std::string base_recv = recv_type;
+            if (auto br = base_recv.find('['); br != std::string::npos) base_recv.erase(br);
+
+            // Builtin methods (`s.split`, `xs.insert`, `x.clamp`, `m.insert`)
+            if (std::uint16_t bits = cfire::frontend::builtin_recv_bits_for_type_name(recv_type); bits != 0) {
+                if (const auto* bm = cfire::frontend::find_builtin_method(bits, ctx.callee)) {
+                    std::string sig = cfire::frontend::builtin_method_signature(*bm);
+                    return format_sig_resp(sig, bm->summary, extract_params_from_sig(sig));
+                }
+            }
+            if (ctx.callee == "parse" &&
+                (recv_type == "bool" ||
+                 (cfire::frontend::builtin_recv_bits_for_type_name(recv_type) & cfire::frontend::BmNum) != 0)) {
+                std::string sig = std::format("fn {}.parse(s: str) -> {}!", recv_type, recv_type);
+                return format_sig_resp(sig, "Parses a string literal into this type, returning an `Error` if invalid.", {"s: str"});
+            }
+            if (recv_type == "Error") {
+                if (ctx.callee == "code") return format_sig_resp("fn (e: Error) code() -> i32", "Machine-readable error code.", {});
+                if (ctx.callee == "message") return format_sig_resp("fn (e: Error) message() -> str", "Human-readable error message.", {});
+            }
+            // User receiver methods
+            for (const auto& fn : ast_res->functions) {
+                if (fn.receiver && fn.receiver->type.name == base_recv && fn.name == ctx.callee) {
+                    return format_fn_decl(fn);
+                }
+            }
+            for (const auto& pkg : ws.local_packages) {
+                for (const auto& fn : pkg.ast.functions) {
+                    if (fn.receiver && fn.receiver->type.name == base_recv && fn.name == ctx.callee) {
+                        return format_fn_decl(fn);
+                    }
+                }
+            }
+            // Stdlib handle & static type methods
             for (const auto& mod : cfire::doc::stdlib_catalog()) {
                 for (const auto& fn : mod.functions) {
                     if (auto dot = fn.name.find('.'); dot != std::string::npos) {
                         std::string htype = fn.name.substr(0, dot);
                         std::string mname = fn.name.substr(dot + 1);
-                        if ((recv_type == htype || recv_type == mod.ns_alias + "." + htype || recv_type.starts_with("sync." + htype)) &&
-                            mname == ctx.callee) {
+                        if (detail::match_stdlib_handle_type(recv_type, mod, htype) && mname == ctx.callee) {
                             return format_sig_resp(fn.cf_sig, fn.summary, extract_params_from_sig(fn.cf_sig));
                         }
                     }

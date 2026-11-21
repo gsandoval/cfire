@@ -26,7 +26,7 @@
     #line 14 "control_flow.cf"
     std::int64_t sum = 0;
     #line 15 "control_flow.cf"
-    for (auto i = static_cast<std::int64_t>(0), _range_end_i = static_cast<std::int64_t>(5); i < _range_end_i; ++i) {
+    for (std::int64_t i = static_cast<std::int64_t>(0), _range_end_i = static_cast<std::int64_t>(5); i < _range_end_i; ++i) {
         #line 16 "control_flow.cf"
         sum += i;
     }
@@ -47,9 +47,9 @@ auto main(int argc, char** argv) -> int {
     #line 26 "control_flow.cf"
     auto _defer_1 = cfire::scope_exit([&] { (void)(std::println("cleanup completed")); });
     #line 27 "control_flow.cf"
-    auto val = test_branches(15);
+    std::string val = test_branches(15);
     #line 28 "control_flow.cf"
-    auto total = test_loops();
+    std::int64_t total = test_loops();
     #line 29 "control_flow.cf"
     (void)(std::println("val: {}, total: {}", val, total));
     return 0;

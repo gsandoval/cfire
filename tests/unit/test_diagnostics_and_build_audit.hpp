@@ -50,7 +50,7 @@ void test_crash_proof_frontend_and_tools(const std::filesystem::path& rt_dir) {
         bool has_clang_leak = false;
         for (const auto& d : diags) {
             if (d.code == "cfire/UNRESOLVED-PACKAGE" && d.line == 2) has_unresolved = true;
-            if (d.code == "cfire/TYPE-ERROR") has_clang_leak = true;
+            if (d.code == "cfire/TYPE-ERROR" || d.code == "cfire/INTERNAL-BACKEND-ERROR") has_clang_leak = true;
         }
         require(has_unresolved, "expected cfire/UNRESOLVED-PACKAGE on line 2");
         require(!has_clang_leak, "missing package must not fall through to a clang TYPE-ERROR");

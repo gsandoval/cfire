@@ -131,14 +131,17 @@ public:
     // scopes being emitted; their `scope.spawn` calls add the task to the collector.
     std::unordered_map<std::string, std::pair<std::string, std::string>> value_scope_results_{};
 
-    // A `.cf` type written as text (`i32`, `[]str`, `http.Request`) in C++, for types Sema records as strings.
-    [[nodiscard]] auto lower_type_text(const std::string& cf_type) const -> std::string {
-        const std::string probe = std::format("package cf_probe\nfn cf_probe(x: {}) {{\n}}\n", cf_type);
-        if (auto ast = cfire::frontend::parse_source("<type>", probe); ast && !ast->functions.empty() && !ast->functions[0].params.empty()) {
-            return lower_owning_type(ast->functions[0].params[0].type);
-        }
-        return "auto";
-    }
+    enum class LowerContext : uint8_t {
+        Value,
+        ParamIn,
+        ParamMut,
+        ParamMove,
+        Return,
+        RangeIndex
+    };
+    [[nodiscard]] auto lower_named_cpp_type(std::string_view raw_name, bool has_type_args) const -> std::string;
+    [[nodiscard]] auto lower_type_id(TypeId tid, LowerContext ctx = LowerContext::Value) const -> std::optional<std::string>;
+    [[nodiscard]] auto lower_var_decl_cpp_type(const VarDeclStmt& st) const -> std::string;
     std::unordered_set<std::string> local_vars_{};
     std::unordered_set<std::string> ptr_vars_{};
     std::unordered_set<std::string> ptr_field_names_{};
@@ -518,10 +521,9 @@ public:
                     uit != cfire::frontend::StdlibCatalogIndex::instance().unambiguous_methods.end()) {
                     if (uit->second.is_optional) return true;
                 }
-                if (mem->field == "parse_i64" || mem->field == "parse_i32" || mem->field == "parse_u64" ||
-                    mem->field == "parse_f64" || mem->field == "parse_bool" ||
-                    mem->field == "try_recv" || mem->field == "recv_timeout" ||
-                    mem->field == "getenv_opt" || mem->field == "read_line") {
+                if (mem->field == "try_recv" || mem->field == "recv_timeout" ||
+                    mem->field == "read_line" || mem->field == "ignore_error" ||
+                    (mem->field == "getenv" && call->args.size() <= 1)) {
                     return true;
                 }
             }
@@ -537,6 +539,7 @@ public:
     [[nodiscard]] auto emit_match_expr(const MatchExpr& me) -> std::string;
     [[nodiscard]] auto match_lambda_header() const -> std::string;
     std::string match_expr_result_type_{};
+    TypeId match_expr_result_tid_{TypeId::Unknown()};
 
     struct InterpolationResult {
         std::string fmt_str{};
@@ -590,6 +593,9 @@ public:
     [[nodiscard]] auto resolve_concept_name(std::string_view bound) const -> std::string {
         if (auto it = cf_.interface_defs.find(std::string(bound)); it != cf_.interface_defs.end()) {
             return it->second.name;
+        }
+        if (bound == "Comparable" || bound == "Ordered" || bound == "Numeric" || bound == "Integer") {
+            return "cfire::constraints::" + std::string(bound);
         }
         if (auto dot = bound.rfind('.'); dot != std::string_view::npos) {
             return std::string(bound.substr(dot + 1));

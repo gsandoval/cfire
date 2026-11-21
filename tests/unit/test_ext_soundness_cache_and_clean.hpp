@@ -83,7 +83,8 @@ void test_ext_soundness_cache_and_clean(const std::filesystem::path& rt_dir) {
             "import \"ext:zstd\" as z\n"
             "import \"ext:compress\" as c\n"
             "import \"ext:ai/agent\" as a\n"
-            "import \"ext:tako\" as t\n"
+            "import \"core:tako\" as t\n"
+            "import \"core:audio\" as au\n"
             "import \"core:http\" as h\n"
             "import \"core:aes\" as ae\n"
             "import \"core:webui\" as wu\n"
@@ -103,7 +104,8 @@ void test_ext_soundness_cache_and_clean(const std::filesystem::path& rt_dir) {
             "import \"ext:compress/zstd\" as z",
             "import \"ext:compress/zstd\" as c",
             "import \"ext:ai\" as a",
-            "import \"core:tako\" as t",
+            "import \"ext:tako\" as t",
+            "import \"ext:audio\" as au",
             "import \"core:net/http\" as h",
             "import \"core:crypto/aes\" as ae",
             "import \"ext:webui\" as wu"

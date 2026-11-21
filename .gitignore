@@ -1,11 +1,16 @@
 # Build outputs
 /cfire
 /.cfire_test_runner
+/.cfire_test_runner.exe
 /.cfire_build.log
 /.vmtest
 /.vmtest.log
+/.vmtest_manifest
 /.cfire_host.pch*
+/.cfire_test.pch*
+/.cfire_test_asan.pch*
 *.o.log
+/*.log
 /cfire_cross_*
 /cfire_wasm_gui_*
 *.o
@@ -36,5 +41,10 @@ __pycache__/
 /.fuzz_replay_*
 /.cfire_gitsha
 /.cfire_test_runner_asan
+/.cfire_test_runner_asan.exe
 /.cfire_test_runner_tsan
-/.cfire_check.log
+/.cfire_test_runner_tsan.exe
+/.cfire_check*.log
+/*.asan.o
+/tests/*/*.asan.o
+/tests/*.asan.o

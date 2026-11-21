@@ -19,12 +19,14 @@ namespace cfire::frontend {
 
 [[nodiscard]] auto analyze_resilient(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {},
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns = {}
 ) -> CheckedFile;
 
 [[nodiscard]] auto analyze(
     FileAST ast,
-    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {}
+    std::unordered_map<std::string, std::vector<std::string>> pre_cpp_fn_params = {},
+    std::unordered_map<std::string, std::string> pre_cpp_fn_returns = {}
 ) -> std::expected<CheckedFile, std::string>;
 
 } // namespace cfire::frontend

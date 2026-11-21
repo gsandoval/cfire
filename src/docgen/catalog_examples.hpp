@@ -353,7 +353,7 @@ fn main() {
 import "core:os"
 
 fn main() {
-    home := os.getenv_opt("HOME") or "/tmp"
+    home := os.getenv("HOME") or "/tmp"
     println("Environment $HOME: {}", home)
 
     // Execute external process without shell interpretation and capture stdout/exit code
@@ -464,7 +464,7 @@ import "core:encoding/csv"
 
 fn main() {
     csv_data := "service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n"
-    table := csv.parse(csv_data)
+    table := try csv.parse(csv_data)
     for row in table {
         println("Service: {}, Region: {}, QPS: {}", row[0], row[1], row[2])
     }
@@ -554,10 +554,10 @@ fn main() {
     }
 })CF";
     }
-    if (mod == "core:audio") {
+    if (mod == "ext:audio") {
         return R"CF(package main
 
-import "core:audio"
+import "ext:audio"
 
 fn main() {
     try audio.init(48000, 2)
@@ -726,10 +726,10 @@ fn main() {
     app.run()
 })CF";
     }
-    if (mod == "core:tako") {
+    if (mod == "ext:tako") {
         return R"CF(package main
 
-import "core:tako" as tk
+import "ext:tako" as tk
 
 fn main() -> void! {
     mut s3 := tk.NewS3Service()

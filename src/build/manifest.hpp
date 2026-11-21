@@ -2,6 +2,7 @@
 // src/build/manifest.hpp — `build.cf` & `CMakeLists.txt` Manifest Parsing & Target Resolution
 
 #include "toolchain_layout.hpp"
+#include <unordered_set>
 
 #ifndef CFIRE_INFRA_INLINE
 #ifdef CFIRE_SPLIT_TUS
@@ -73,6 +74,18 @@ struct ExecutableSpec {
     bool static_link{false};
     bool universal{false};
     std::string macos_min{};
+    std::string version{};
+    std::string build_number{};
+    std::vector<std::string> resources{};
+    bool has_explicit_resources{false};
+    std::string ios_min{};
+    std::vector<std::string> ios_orientations{};
+    std::vector<int> ios_device_family{};
+    std::string provisioning_profile{};
+    std::string entitlements{};
+    std::string privacy_manifest{};
+    std::vector<std::pair<std::string, std::string>> info_plist_extras{};
+    std::unordered_set<std::string> info_plist_bool_keys{};
 };
 
 struct ParsedBuildCf {
@@ -131,6 +144,22 @@ struct BuildPlan {
     bool static_link{false};
     bool universal{false};
     std::string macos_min{};
+    std::string version{};
+    std::string build_number{};
+    std::vector<std::string> resources{};
+    bool has_explicit_resources{false};
+    bool has_cpp_interop{false};
+    std::string ios_min{};
+    std::vector<std::string> ios_orientations{};
+    std::vector<int> ios_device_family{};
+    std::string provisioning_profile{};
+    std::string entitlements{};
+    std::string privacy_manifest{};
+    std::vector<std::pair<std::string, std::string>> info_plist_extras{};
+    std::unordered_set<std::string> info_plist_bool_keys{};
+    std::string manifest_dir{};
+    bool emit_ipa{false};
+    std::string ios_ipa_path{};
     bool use_vendored_sqlite3{false};
     bool use_vendored_simdjson{false};
     std::vector<std::string> portable_notes{};
@@ -376,6 +405,80 @@ CFIRE_INFRA_INLINE void resolve_plan_pkg_configs(
             } else if (fld.name == "MacosMin" || fld.name == "macos_min") {
                 if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
                     exe_spec.macos_min = lit->value;
+                }
+            } else if (fld.name == "Version" || fld.name == "version") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.version = lit->value;
+                }
+            } else if (fld.name == "BuildNumber" || fld.name == "build_number") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.build_number = lit->value;
+                }
+            } else if (fld.name == "Resources" || fld.name == "resources") {
+                collect_str_or_arr(*fld.value, exe_spec.resources, true);
+                exe_spec.has_explicit_resources = true;
+            } else if (fld.name == "IosMin" || fld.name == "ios_min") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.ios_min = lit->value;
+                }
+            } else if (fld.name == "IosOrientations" || fld.name == "ios_orientations") {
+                collect_str_or_arr(*fld.value, exe_spec.ios_orientations, true);
+            } else if (fld.name == "IosDeviceFamily" || fld.name == "ios_device_family") {
+                auto add_family = [&](std::string_view raw) {
+                    if (raw == "1" || raw == "iphone" || raw == "iPhone") {
+                        exe_spec.ios_device_family.push_back(1);
+                    } else if (raw == "2" || raw == "ipad" || raw == "iPad") {
+                        exe_spec.ios_device_family.push_back(2);
+                    }
+                };
+                exe_spec.ios_device_family.clear();
+                if (const auto* arr = std::get_if<frontend::ArrayLitExpr>(&fld.value->node)) {
+                    for (const auto& el : arr->elements) {
+                        if (el) {
+                            if (const auto* lit = std::get_if<frontend::LiteralExpr>(&el->node)) {
+                                add_family(lit->value);
+                            }
+                        }
+                    }
+                } else if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    add_family(lit->value);
+                }
+            } else if (fld.name == "ProvisioningProfile" || fld.name == "provisioning_profile") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.provisioning_profile = lit->value;
+                }
+            } else if (fld.name == "Entitlements" || fld.name == "entitlements") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.entitlements = lit->value;
+                }
+            } else if (fld.name == "PrivacyManifest" || fld.name == "privacy_manifest") {
+                if (const auto* lit = std::get_if<frontend::LiteralExpr>(&fld.value->node)) {
+                    exe_spec.privacy_manifest = lit->value;
+                }
+            } else if (fld.name == "InfoPlist" || fld.name == "info_plist") {
+                if (const auto* map_lit = std::get_if<frontend::StructLitExpr>(&fld.value->node)) {
+                    auto upsert_plist = [&](const std::string& k, std::string v, bool is_bool) {
+                        for (auto& kv : exe_spec.info_plist_extras) {
+                            if (kv.first == k) {
+                                kv.second = std::move(v);
+                                if (is_bool) exe_spec.info_plist_bool_keys.insert(k);
+                                else exe_spec.info_plist_bool_keys.erase(k);
+                                return;
+                            }
+                        }
+                        exe_spec.info_plist_extras.emplace_back(k, std::move(v));
+                        if (is_bool) exe_spec.info_plist_bool_keys.insert(k);
+                    };
+                    for (const auto& mf : map_lit->fields) {
+                        if (!mf.value) continue;
+                        if (const auto* lit = std::get_if<frontend::LiteralExpr>(&mf.value->node)) {
+                            if (lit->kind == frontend::TokenKind::KwTrue || lit->kind == frontend::TokenKind::KwFalse) {
+                                upsert_plist(mf.name, lit->kind == frontend::TokenKind::KwTrue ? "true" : "false", true);
+                            } else {
+                                upsert_plist(mf.name, lit->value, false);
+                            }
+                        }
+                    }
                 }
             }
         }

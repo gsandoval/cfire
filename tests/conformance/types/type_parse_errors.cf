@@ -1,0 +1,64 @@
+// expect: stdout
+// | 127 255 -42 100 1.5 2.25 true false
+// | err_empty=true err_u8=true err_f32=true err_alpha=true err_bool=true
+// | match=7 if=9 try=55
+package main
+
+fn add_parsed(a: str, b: str) -> i64! {
+    return try i64.parse(a) + try i64.parse(b)
+}
+
+fn err_msg(res: i32!) -> str {
+    match res {
+        Ok(_) => return ""
+        Err(e) => return e.message()
+    }
+}
+
+fn main() -> void! {
+    a := try i8.parse("127")
+    b := try u8.parse("255")
+    c := try i64.parse(" -42 ")
+    d := try usize.parse("100")
+    e := try f32.parse("1.5")
+    f := try f64.parse("2.25")
+    g := try bool.parse("TRUE")
+    h := try bool.parse("0")
+    println("{} {} {} {} {} {} {} {}", a, b, c, d, e, f, g, h)
+
+    msg_empty := err_msg(i32.parse(""))
+    mut msg_u8 := ""
+    match u8.parse("300") {
+        Ok(_) => {}
+        Err(e1) => msg_u8 = e1.message()
+    }
+    mut msg_f32 := ""
+    match f32.parse("1e100") {
+        Ok(_) => {}
+        Err(e2) => msg_f32 = e2.message()
+    }
+    msg_alpha := err_msg(i32.parse("abc"))
+    mut msg_bool := ""
+    match bool.parse("maybe") {
+        Ok(_) => {}
+        Err(e3) => msg_bool = e3.message()
+    }
+    println("err_empty={} err_u8={} err_f32={} err_alpha={} err_bool={}",
+        msg_empty.contains("i32") && msg_empty.contains("empty"),
+        msg_u8.contains("u8") && msg_u8.contains("out of range"),
+        msg_f32.contains("f32") && msg_f32.contains("out of range"),
+        msg_alpha.contains("i32") && msg_alpha.contains("invalid"),
+        msg_bool.contains("bool"))
+
+    mut mval := 0
+    match i32.parse("7") {
+        Ok(v) => mval = v
+        Err(_) => {}
+    }
+    mut ifval := 0
+    if v := i32.parse("9") {
+        ifval = v
+    }
+    tval := try add_parsed("20", "35")
+    println("match={} if={} try={}", mval, ifval, tval)
+}

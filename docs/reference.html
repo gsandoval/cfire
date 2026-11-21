@@ -2053,11 +2053,10 @@ syncCfireThemeBtn();
         </button>
         <select class="mobile-topic-select" id="ref-mobile-pane-select" aria-label="Jump to module" onchange="if(this.value)navigateToRefPane(this.value)">
           <option value="overview">Overview (37 Modules)</option>
-          <option value="mod-builtin">builtin (156 fns)</option>
-          <option value="mod-audio">core:audio (25 fns)</option>
+          <option value="mod-builtin">builtin (158 fns)</option>
           <option value="mod-build">core:build (22 fns)</option>
-          <option value="mod-cli">core:cli (7 fns)</option>
-          <option value="mod-collections">core:collections (4 fns)</option>
+          <option value="mod-cli">core:cli (6 fns)</option>
+          <option value="mod-collections">core:collections (31 fns)</option>
           <option value="mod-aes">core:crypto/aes (8 fns)</option>
           <option value="mod-blake3">core:crypto/blake3 (1 fns)</option>
           <option value="mod-hmac">core:crypto/hmac (7 fns)</option>
@@ -2067,7 +2066,7 @@ syncCfireThemeBtn();
           <option value="mod-hex">core:encoding/hex (4 fns)</option>
           <option value="mod-fs">core:fs (44 fns)</option>
           <option value="mod-json">core:json (6 fns)</option>
-          <option value="mod-keychain">core:keychain (3 fns)</option>
+          <option value="mod-keychain">core:keychain (4 fns)</option>
           <option value="mod-log">core:log (8 fns)</option>
           <option value="mod-math">core:math (10 fns)</option>
           <option value="mod-net">core:net (20 fns)</option>
@@ -2076,20 +2075,21 @@ syncCfireThemeBtn();
           <option value="mod-tls">core:net/tls (7 fns)</option>
           <option value="mod-url">core:net/url (3 fns)</option>
           <option value="mod-websocket">core:net/websocket (20 fns)</option>
-          <option value="mod-os">core:os (18 fns)</option>
+          <option value="mod-os">core:os (21 fns)</option>
           <option value="mod-rand">core:rand (4 fns)</option>
           <option value="mod-regex">core:regex (10 fns)</option>
           <option value="mod-sync">core:sync (22 fns)</option>
           <option value="mod-context">core:sync/context (8 fns)</option>
-          <option value="mod-tako">core:tako (8 fns)</option>
           <option value="mod-time">core:time (34 fns)</option>
           <option value="mod-unicode">core:unicode (6 fns)</option>
           <option value="mod-ai">ext:ai (56 fns)</option>
+          <option value="mod-audio">ext:audio (25 fns)</option>
           <option value="mod-zstd">ext:compress/zstd (4 fns)</option>
           <option value="mod-sodium">ext:crypto/sodium (9 fns)</option>
           <option value="mod-sqlite">ext:db/sqlite (8 fns)</option>
           <option value="mod-ssh">ext:net/ssh (27 fns)</option>
-          <option value="mod-webui">ext:webui (62 fns)</option>
+          <option value="mod-tako">ext:tako (8 fns)</option>
+          <option value="mod-webui">ext:webui (64 fns)</option>
           <option value="diagnostics">Diagnostics (38 Rules)</option>
         </select>
         <button type="button" class="mobile-mode-btn" id="ref-mobile-mode-cycle" onclick="setRefMode(currentRefMode==='all'?'module':'all')" title="Switch reading mode">Module</button>
@@ -2104,14 +2104,13 @@ syncCfireThemeBtn();
         </ul>
         <h4>Builtin Types</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
-          <li class="nav-item"><a href="#mod-builtin" id="nav-pane-mod-builtin" onclick="navigateToRefPane('mod-builtin'); return false;"><code>Builtin Types: Methods, Associated Items & make</code> <span style="color:var(--muted);font-size:0.75rem;">(156)</span></a></li>
+          <li class="nav-item"><a href="#mod-builtin" id="nav-pane-mod-builtin" onclick="navigateToRefPane('mod-builtin'); return false;"><code>Builtin Types: Methods, Associated Items & make</code> <span style="color:var(--muted);font-size:0.75rem;">(158)</span></a></li>
         </ul>
-        <h4>Foundational Core (30)</h4>
+        <h4>Foundational Core (28)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
-          <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>core:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
           <li class="nav-item"><a href="#mod-build" id="nav-pane-mod-build" onclick="navigateToRefPane('mod-build'); return false;"><code>core:build</code> <span style="color:var(--muted);font-size:0.75rem;">(22)</span></a></li>
-          <li class="nav-item"><a href="#mod-cli" id="nav-pane-mod-cli" onclick="navigateToRefPane('mod-cli'); return false;"><code>core:cli</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
-          <li class="nav-item"><a href="#mod-collections" id="nav-pane-mod-collections" onclick="navigateToRefPane('mod-collections'); return false;"><code>core:collections</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
+          <li class="nav-item"><a href="#mod-cli" id="nav-pane-mod-cli" onclick="navigateToRefPane('mod-cli'); return false;"><code>core:cli</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
+          <li class="nav-item"><a href="#mod-collections" id="nav-pane-mod-collections" onclick="navigateToRefPane('mod-collections'); return false;"><code>core:collections</code> <span style="color:var(--muted);font-size:0.75rem;">(31)</span></a></li>
           <li class="nav-item"><a href="#mod-aes" id="nav-pane-mod-aes" onclick="navigateToRefPane('mod-aes'); return false;"><code>core:crypto/aes</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-blake3" id="nav-pane-mod-blake3" onclick="navigateToRefPane('mod-blake3'); return false;"><code>core:crypto/blake3</code> <span style="color:var(--muted);font-size:0.75rem;">(1)</span></a></li>
           <li class="nav-item"><a href="#mod-hmac" id="nav-pane-mod-hmac" onclick="navigateToRefPane('mod-hmac'); return false;"><code>core:crypto/hmac</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
@@ -2121,7 +2120,7 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#mod-hex" id="nav-pane-mod-hex" onclick="navigateToRefPane('mod-hex'); return false;"><code>core:encoding/hex</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-fs" id="nav-pane-mod-fs" onclick="navigateToRefPane('mod-fs'); return false;"><code>core:fs</code> <span style="color:var(--muted);font-size:0.75rem;">(44)</span></a></li>
           <li class="nav-item"><a href="#mod-json" id="nav-pane-mod-json" onclick="navigateToRefPane('mod-json'); return false;"><code>core:json</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
-          <li class="nav-item"><a href="#mod-keychain" id="nav-pane-mod-keychain" onclick="navigateToRefPane('mod-keychain'); return false;"><code>core:keychain</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
+          <li class="nav-item"><a href="#mod-keychain" id="nav-pane-mod-keychain" onclick="navigateToRefPane('mod-keychain'); return false;"><code>core:keychain</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-log" id="nav-pane-mod-log" onclick="navigateToRefPane('mod-log'); return false;"><code>core:log</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-math" id="nav-pane-mod-math" onclick="navigateToRefPane('mod-math'); return false;"><code>core:math</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
           <li class="nav-item"><a href="#mod-net" id="nav-pane-mod-net" onclick="navigateToRefPane('mod-net'); return false;"><code>core:net</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
@@ -2130,23 +2129,24 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#mod-tls" id="nav-pane-mod-tls" onclick="navigateToRefPane('mod-tls'); return false;"><code>core:net/tls</code> <span style="color:var(--muted);font-size:0.75rem;">(7)</span></a></li>
           <li class="nav-item"><a href="#mod-url" id="nav-pane-mod-url" onclick="navigateToRefPane('mod-url'); return false;"><code>core:net/url</code> <span style="color:var(--muted);font-size:0.75rem;">(3)</span></a></li>
           <li class="nav-item"><a href="#mod-websocket" id="nav-pane-mod-websocket" onclick="navigateToRefPane('mod-websocket'); return false;"><code>core:net/websocket</code> <span style="color:var(--muted);font-size:0.75rem;">(20)</span></a></li>
-          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(18)</span></a></li>
+          <li class="nav-item"><a href="#mod-os" id="nav-pane-mod-os" onclick="navigateToRefPane('mod-os'); return false;"><code>core:os</code> <span style="color:var(--muted);font-size:0.75rem;">(21)</span></a></li>
           <li class="nav-item"><a href="#mod-rand" id="nav-pane-mod-rand" onclick="navigateToRefPane('mod-rand'); return false;"><code>core:rand</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-regex" id="nav-pane-mod-regex" onclick="navigateToRefPane('mod-regex'); return false;"><code>core:regex</code> <span style="color:var(--muted);font-size:0.75rem;">(10)</span></a></li>
           <li class="nav-item"><a href="#mod-sync" id="nav-pane-mod-sync" onclick="navigateToRefPane('mod-sync'); return false;"><code>core:sync</code> <span style="color:var(--muted);font-size:0.75rem;">(22)</span></a></li>
           <li class="nav-item"><a href="#mod-context" id="nav-pane-mod-context" onclick="navigateToRefPane('mod-context'); return false;"><code>core:sync/context</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
-          <li class="nav-item"><a href="#mod-tako" id="nav-pane-mod-tako" onclick="navigateToRefPane('mod-tako'); return false;"><code>core:tako</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-time" id="nav-pane-mod-time" onclick="navigateToRefPane('mod-time'); return false;"><code>core:time</code> <span style="color:var(--muted);font-size:0.75rem;">(34)</span></a></li>
           <li class="nav-item"><a href="#mod-unicode" id="nav-pane-mod-unicode" onclick="navigateToRefPane('mod-unicode'); return false;"><code>core:unicode</code> <span style="color:var(--muted);font-size:0.75rem;">(6)</span></a></li>
         </ul>
-        <h4 style="margin-top:1rem;">Domain Extensions (6)</h4>
+        <h4 style="margin-top:1rem;">Domain Extensions (8)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#mod-ai" id="nav-pane-mod-ai" onclick="navigateToRefPane('mod-ai'); return false;"><code>ext:ai</code> <span style="color:var(--muted);font-size:0.75rem;">(56)</span></a></li>
+          <li class="nav-item"><a href="#mod-audio" id="nav-pane-mod-audio" onclick="navigateToRefPane('mod-audio'); return false;"><code>ext:audio</code> <span style="color:var(--muted);font-size:0.75rem;">(25)</span></a></li>
           <li class="nav-item"><a href="#mod-zstd" id="nav-pane-mod-zstd" onclick="navigateToRefPane('mod-zstd'); return false;"><code>ext:compress/zstd</code> <span style="color:var(--muted);font-size:0.75rem;">(4)</span></a></li>
           <li class="nav-item"><a href="#mod-sodium" id="nav-pane-mod-sodium" onclick="navigateToRefPane('mod-sodium'); return false;"><code>ext:crypto/sodium</code> <span style="color:var(--muted);font-size:0.75rem;">(9)</span></a></li>
           <li class="nav-item"><a href="#mod-sqlite" id="nav-pane-mod-sqlite" onclick="navigateToRefPane('mod-sqlite'); return false;"><code>ext:db/sqlite</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
           <li class="nav-item"><a href="#mod-ssh" id="nav-pane-mod-ssh" onclick="navigateToRefPane('mod-ssh'); return false;"><code>ext:net/ssh</code> <span style="color:var(--muted);font-size:0.75rem;">(27)</span></a></li>
-          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(62)</span></a></li>
+          <li class="nav-item"><a href="#mod-tako" id="nav-pane-mod-tako" onclick="navigateToRefPane('mod-tako'); return false;"><code>ext:tako</code> <span style="color:var(--muted);font-size:0.75rem;">(8)</span></a></li>
+          <li class="nav-item"><a href="#mod-webui" id="nav-pane-mod-webui" onclick="navigateToRefPane('mod-webui'); return false;"><code>ext:webui</code> <span style="color:var(--muted);font-size:0.75rem;">(64)</span></a></li>
         </ul>
         <h4 style="margin-top:1rem;">Vendor Libraries (0)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
@@ -2226,7 +2226,7 @@ syncCfireThemeBtn();
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 37 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">37 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (30 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (6 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (0 bundled C/C++ graphics engines) — plus 38 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">37 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (28 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (8 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (0 bundled C/C++ graphics engines) — plus 38 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Text, Containers, Math &amp; Data Formats</div>
         <div class="ref-category-grid">
           <a href="#mod-unicode" class="ref-mod-card" onclick="navigateToRefPane('mod-unicode'); return false;">
@@ -2248,7 +2248,7 @@ syncCfireThemeBtn();
           <a href="#mod-collections" class="ref-mod-card" onclick="navigateToRefPane('mod-collections'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:collections</span>
-              <span class="ref-mod-card-count">4 fns</span>
+              <span class="ref-mod-card-count">31 fns</span>
             </div>
             <div class="ref-mod-card-title">Generic Containers (Set, PriorityQueue, MinQueue, Deque)</div>
             <div class="ref-mod-card-desc">Standard generic containers backed by STL unordered_set, priority_queue, and deque.</div>
@@ -2315,10 +2315,10 @@ syncCfireThemeBtn();
           <a href="#mod-os" class="ref-mod-card" onclick="navigateToRefPane('mod-os'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:os</span>
-              <span class="ref-mod-card-count">18 fns</span>
+              <span class="ref-mod-card-count">21 fns</span>
             </div>
-            <div class="ref-mod-card-title">Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</div>
-            <div class="ref-mod-card-desc">Process environment inspection, working directory queries, standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make(os.RawTerminal)</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>).</div>
+            <div class="ref-mod-card-title">Environment, App Directories, Terminal, Pipes, URLs &amp; Subprocesses</div>
+            <div class="ref-mod-card-desc">Process environment inspection, working directory and persistent OS app directory queries (<code>data_dir</code>, <code>cache_dir</code>, <code>documents_dir</code>), safe external URL launching (<code>open_url</code>), standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make(os.RawTerminal)</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>).</div>
           </a>
           <a href="#mod-time" class="ref-mod-card" onclick="navigateToRefPane('mod-time'); return false;">
             <div class="ref-mod-card-head">
@@ -2347,7 +2347,7 @@ syncCfireThemeBtn();
           <a href="#mod-cli" class="ref-mod-card" onclick="navigateToRefPane('mod-cli'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:cli</span>
-              <span class="ref-mod-card-count">7 fns</span>
+              <span class="ref-mod-card-count">6 fns</span>
             </div>
             <div class="ref-mod-card-title">Struct-Tag Command-Line Parser &amp; Interactive Prompts</div>
             <div class="ref-mod-card-desc">Generates zero-boilerplate command-line flag parsers from struct field tags (<code>cli:&quot;--flag,help&quot;</code>), subcommand/positional argument helpers, and interactive terminal prompts.</div>
@@ -2363,10 +2363,10 @@ syncCfireThemeBtn();
           <a href="#mod-keychain" class="ref-mod-card" onclick="navigateToRefPane('mod-keychain'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">core:keychain</span>
-              <span class="ref-mod-card-count">3 fns</span>
+              <span class="ref-mod-card-count">4 fns</span>
             </div>
-            <div class="ref-mod-card-title">Native OS Credential Keychain &amp; Secret Service</div>
-            <div class="ref-mod-card-desc">Cross-platform OS credential storage backed by <code>Security.framework</code> (<code>SecItemAdd</code> / <code>SecItemCopyMatching</code> / <code>SecItemDelete</code>) on macOS &amp; iOS, <code>libsecret</code> (<code>secret-tool</code>) on Linux, and Windows Credential Manager (<code>CredWriteA</code> / <code>CredReadA</code>) on Windows.</div>
+            <div class="ref-mod-card-title">Native OS Credential Keychain &amp; Apple Biometric Auth</div>
+            <div class="ref-mod-card-desc">Cross-platform OS credential storage backed by <code>Security.framework</code> (<code>SecItemAdd</code> / <code>SecItemCopyMatching</code> / <code>SecItemDelete</code>) on macOS &amp; iOS, <code>libsecret</code> (<code>secret-tool</code>) on Linux, and Windows Credential Manager (<code>CredWriteW</code> / <code>CredReadW</code>) on Windows, plus Face ID / Touch ID and device passcode user-presence verification via Apple <code>LocalAuthentication</code>.</div>
           </a>
           <a href="#mod-build" class="ref-mod-card" onclick="navigateToRefPane('mod-build'); return false;">
             <div class="ref-mod-card-head">
@@ -2377,7 +2377,7 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-desc">Declarative build manifest module (<code>build.cf</code>) for configuring packages (<code>build.Package</code>), native/GUI/WebAssembly/iOS executables (<code>build.Executable</code>, <code>build.App</code>), static/shared libraries (<code>build.Library</code>), pre-build codegen steps (<code>build.Step</code>, <code>build.Command</code>), C/C++ source targets (<code>build.CC</code>), external CMake/Make/Ninja/Git/Archive dependencies (<code>build.CMake</code>, <code>build.Make</code>, <code>build.Ninja</code>, <code>build.Git</code>, <code>build.Archive</code>), native pkg-config/library/include/define/framework settings (<code>build.PkgConfig</code>, <code>build.Link</code>, <code>build.Libraries</code>, <code>build.Include</code>, <code>build.Includes</code>, <code>build.Define</code>, <code>build.Defines</code>, <code>build.Frameworks</code>), and compile-time host/target queries (<code>build.os()</code>, <code>build.arch()</code>).</div>
           </a>
         </div>
-        <div class="ref-category-title">core:* — Networking, Web Protocols &amp; Audio</div>
+        <div class="ref-category-title">core:* — Networking &amp; Web Protocols</div>
         <div class="ref-category-grid">
           <a href="#mod-net" class="ref-mod-card" onclick="navigateToRefPane('mod-net'); return false;">
             <div class="ref-mod-card-head">
@@ -2427,14 +2427,6 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-title">RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</div>
             <div class="ref-mod-card-desc">RFC 6455 full-duplex <code>ws://</code> and <code>wss://</code> WebSocket client (<code>connect</code>, with <code>verify_peer: false</code> for self-signed certificates), standalone server (<code>make(websocket.Server, port)</code>, <code>tls: websocket.TlsConfig{...}</code> for <code>wss://</code>), and connection upgrade handler (<code>upgrade</code>) with automated framing, client masking, and Ping/Pong management.</div>
           </a>
-          <a href="#mod-audio" class="ref-mod-card" onclick="navigateToRefPane('mod-audio'); return false;">
-            <div class="ref-mod-card-head">
-              <span class="ref-mod-card-code">core:audio</span>
-              <span class="ref-mod-card-count">25 fns</span>
-            </div>
-            <div class="ref-mod-card-title">Audio Engine, Polyphonic Mixer, Synth &amp; WAV</div>
-            <div class="ref-mod-card-desc">Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic <code>Sound</code> playback with pitch/pan/looping, and real-time float32 <code>Stream</code> DSP across macOS, iOS, WebAssembly, and Linux.</div>
-          </a>
         </div>
         <div class="ref-category-title">core:* — Cryptography &amp; Hashing</div>
         <div class="ref-category-grid">
@@ -2471,7 +2463,7 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-desc">Computes NIST FIPS 180-4 SHA-256 digests and generates OS-backed cryptographically secure random bytes (<code>arc4random_buf</code> / <code>/dev/urandom</code>).</div>
           </a>
         </div>
-        <div class="ref-category-title">ext:* — Native C Libraries, WebUI &amp; AI Engines</div>
+        <div class="ref-category-title">ext:* — Native C Libraries, Audio, Cloud, WebUI &amp; AI Engines</div>
         <div class="ref-category-grid">
           <a href="#mod-ai" class="ref-mod-card" onclick="navigateToRefPane('mod-ai'); return false;">
             <div class="ref-mod-card-head">
@@ -2480,6 +2472,14 @@ syncCfireThemeBtn();
             </div>
             <div class="ref-mod-card-title">On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</div>
             <div class="ref-mod-card-desc">Unified AI SDK built around stateful <code>Client</code> and <code>Agent</code> objects supporting Cross-Platform On-Device Intelligence (<code>ai.local()</code> / <code>ai.apple()</code>: <code>NaturalLanguage</code>/<code>PDFKit</code>/<code>Vision</code> on Apple; dynamic <code>libtesseract</code>/<code>pdftotext</code> + pure C++23 decoders and AVX2/NEON SIMD on Linux/Windows/WASM), OpenAI (<code>ai.openai()</code>), Anthropic Claude (<code>ai.anthropic()</code>), Google Gemini (<code>ai.gemini()</code>), Ollama (<code>ai.ollama()</code>), vLLM/llama.cpp (<code>ai.openai_compatible()</code>), and deterministic offline mocks (<code>ai.mock()</code>, <code>ai.mock_sequence()</code>), with multi-turn tool-calling agents (<code>make(ai.Agent, client, model)</code>), self-correcting structured outputs (<code>Client.generate_struct[T]</code>, <code>Agent.run_struct[T]</code>, <code>Agent.run_struct_validated[T]</code>) backed by compile-time <code>validate:&quot;...&quot;</code> struct tags, stateful client embeddings/OCR/language recognition (<code>Client.embed</code>, <code>Client.embed_image</code>, <code>Client.ocr</code>, <code>Client.detect_language</code>), pure stateless document parsers (<code>load_document</code>, <code>chunk_document</code>), SIMD vector math (<code>cosine_similarity</code>, <code>l2_distance</code>, <code>dot_product</code>, <code>normalize</code>), and a Model Context Protocol server (<code>McpServer</code>) that shares tool definitions with <code>Agent</code> (<code>use_mcp</code>).</div>
+          </a>
+          <a href="#mod-audio" class="ref-mod-card" onclick="navigateToRefPane('mod-audio'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">ext:audio</span>
+              <span class="ref-mod-card-count">25 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Audio Engine, Polyphonic Mixer, Synth &amp; WAV</div>
+            <div class="ref-mod-card-desc">Multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic <code>Sound</code> playback with pitch/pan/looping, and real-time float32 <code>Stream</code> DSP across macOS, iOS, WebAssembly, and Linux.</div>
           </a>
           <a href="#mod-zstd" class="ref-mod-card" onclick="navigateToRefPane('mod-zstd'); return false;">
             <div class="ref-mod-card-head">
@@ -2513,10 +2513,18 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-title">First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</div>
             <div class="ref-mod-card-desc">SSHv2 client, interactive PTY terminal sessions, one-shot command execution, SFTP file transfers, and TCP port forwarding backed by <code>libssh</code> (<code>CFIRE_HAS_LIBSSH=1</code>) with deterministic loopback/mock support (<code>ssh.enable_mock_server()</code>) for headless testing.</div>
           </a>
+          <a href="#mod-tako" class="ref-mod-card" onclick="navigateToRefPane('mod-tako'); return false;">
+            <div class="ref-mod-card-head">
+              <span class="ref-mod-card-code">ext:tako</span>
+              <span class="ref-mod-card-count">8 fns</span>
+            </div>
+            <div class="ref-mod-card-title">Tako Cloud SDK Primitives (S3, SQS)</div>
+            <div class="ref-mod-card-desc">Cloud primitives and storage compatibility services (<code>ext:tako</code>).</div>
+          </a>
           <a href="#mod-webui" class="ref-mod-card" onclick="navigateToRefPane('mod-webui'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">ext:webui</span>
-              <span class="ref-mod-card-count">62 fns</span>
+              <span class="ref-mod-card-count">64 fns</span>
             </div>
             <div class="ref-mod-card-title">Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</div>
             <div class="ref-mod-card-desc">Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge.</div>
@@ -2543,53 +2551,53 @@ syncCfireThemeBtn();
       </article>
       <article class="ref-pane" id="ref-pane-mod-builtin" data-pane-id="mod-builtin" data-pane-short="builtin" data-pane-title="builtin — Builtin Types: Methods, Associated Items &amp; make">
         <h2 id="mod-builtin" style="margin-top:0.25rem;"><code>import "builtin"</code> &mdash; Builtin Types: Methods, Associated Items &amp; make</h2>
-        <p>Operations on values of builtin types are methods on the value: <code>s.trim()</code>, <code>xs.sort()</code>, <code>m.keys()</code>, <code>x.abs()</code>, <code>f.sqrt()</code>. Searches return <code>T?</code>, never <code>-1</code>. Limits and parsing belong to the type: <code>i32.MAX</code>, <code>f64.NAN</code>, <code>i32.parse(s) -&gt; i32?</code>. <code>make</code> is the one construction builtin, and the type decides where memory lives: <code>make(T, args)</code> is a value, <code>make(own[T], args)</code> / <code>make(shared[T], args)</code> are heap-owned, and <code>make([]T, len[, cap])</code> is a slice. In the table, <code>Self</code> is the receiver type, <code>T</code> the element type and <code>K</code>/<code>V</code> the map key/value types. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(always available)</code> &bull; Namespace: <code>builtin.*</code> &bull; 156 exported functions</small></p>
+        <p>Operations on values of builtin types are methods on the value: <code>s.trim()</code>, <code>xs.sort()</code>, <code>m.keys()</code>, <code>x.abs()</code>, <code>f.sqrt()</code>. Searches return <code>T?</code>, never <code>-1</code>. Limits and parsing belong to the type: <code>i32.MAX</code>, <code>f64.NAN</code>, <code>i32.parse(s) -&gt; i32!</code>. Bridge wrappers explicitly via <code>opt.or_error(msg[, code]) -&gt; T!</code> and <code>res.ignore_error() -&gt; T?</code>. <code>make</code> is the one construction builtin, and the type decides where memory lives: <code>make(T, args)</code> is a value, <code>make(own[T], args)</code> / <code>make(shared[T], args)</code> are heap-owned, and <code>make([]T, len[, cap])</code> is a slice. In the table, <code>Self</code> is the receiver type, <code>T</code> the element type and <code>K</code>/<code>V</code> the map key/value types. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(always available)</code> &bull; Namespace: <code>builtin.*</code> &bull; 158 exported functions</small></p>
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>fn (x: i64) abs() -&gt; Self</code></td><td><code>cfire::bm::abs(x, ...)</code></td><td>Absolute value. Integer <code>MIN.abs()</code> panics; use <code>checked_abs</code> or <code>wrapping_abs</code>.<br/><code>d := (a - b).abs()</code></td></tr>
-            <tr><td><code>fn (x: i64) min(a: Self) -&gt; Self</code></td><td><code>cfire::bm::min(x, ...)</code></td><td>Smaller of the two values (for floats, a NaN operand yields the other operand).<br/><code>lo := a.min(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) max(a: Self) -&gt; Self</code></td><td><code>cfire::bm::max(x, ...)</code></td><td>Larger of the two values (for floats, a NaN operand yields the other operand).<br/><code>hi := a.max(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) clamp(a: Self, b: Self) -&gt; Self</code></td><td><code>cfire::bm::clamp(x, ...)</code></td><td>Restricts the value to <code>lo..=hi</code>; panics when <code>lo &gt; hi</code> (or either bound is NaN).<br/><code>v := x.clamp(0, 255)</code></td></tr>
+            <tr><td><code>fn (x: i64) min(other: Self) -&gt; Self</code></td><td><code>cfire::bm::min(x, ...)</code></td><td>Smaller of the two values (for floats, a NaN operand yields the other operand).<br/><code>lo := a.min(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) max(other: Self) -&gt; Self</code></td><td><code>cfire::bm::max(x, ...)</code></td><td>Larger of the two values (for floats, a NaN operand yields the other operand).<br/><code>hi := a.max(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) clamp(lo: Self, hi: Self) -&gt; Self</code></td><td><code>cfire::bm::clamp(x, ...)</code></td><td>Restricts the value to <code>lo..=hi</code>; panics when <code>lo &gt; hi</code> (or either bound is NaN).<br/><code>v := x.clamp(0, 255)</code></td></tr>
             <tr><td><code>fn (x: i64) signum() -&gt; Self</code></td><td><code>cfire::bm::signum(x, ...)</code></td><td><code>-1</code>, <code>0</code> or <code>1</code> (floats: <code>-1.0</code>, <code>±0.0</code>, <code>1.0</code>, NaN for NaN).<br/><code>s := delta.signum()</code></td></tr>
-            <tr><td><code>fn (x: i64) pow(a: Self) -&gt; Self</code></td><td><code>cfire::bm::pow(x, ...)</code></td><td>Integer power (a negative exponent or overflow panics) or float power.<br/><code>kb := base.pow(10)</code></td></tr>
+            <tr><td><code>fn (x: i64) pow(exp: Self) -&gt; Self</code></td><td><code>cfire::bm::pow(x, ...)</code></td><td>Integer power (a negative exponent or overflow panics) or float power.<br/><code>kb := base.pow(10)</code></td></tr>
             <tr><td><code>fn (x: i64) count_ones() -&gt; u32</code></td><td><code>cfire::bm::count_ones(x, ...)</code></td><td>Number of set bits.<br/><code>bits := mask.count_ones()</code></td></tr>
             <tr><td><code>fn (x: i64) leading_zeros() -&gt; u32</code></td><td><code>cfire::bm::leading_zeros(x, ...)</code></td><td>Number of leading zero bits.<br/><code>lz := x.leading_zeros()</code></td></tr>
             <tr><td><code>fn (x: i64) trailing_zeros() -&gt; u32</code></td><td><code>cfire::bm::trailing_zeros(x, ...)</code></td><td>Number of trailing zero bits.<br/><code>tz := x.trailing_zeros()</code></td></tr>
             <tr><td><code>fn (x: i64) is_power_of_two() -&gt; bool</code></td><td><code>cfire::bm::is_power_of_two(x, ...)</code></td><td><code>true</code> for 1, 2, 4, …; <code>false</code> for zero and negatives.<br/><code>ok := n.is_power_of_two()</code></td></tr>
-            <tr><td><code>fn (x: i64) div_euclid(a: Self) -&gt; Self</code></td><td><code>cfire::bm::div_euclid(x, ...)</code></td><td>Euclidean division (the remainder is never negative); panics on division by zero or overflow.<br/><code>q := a.div_euclid(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) rem_euclid(a: Self) -&gt; Self</code></td><td><code>cfire::bm::rem_euclid(x, ...)</code></td><td>Euclidean remainder, always <code>&gt;= 0</code>; integer division by zero panics.<br/><code>i := idx.rem_euclid(len)</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_add(a: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_add(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>s := a.checked_add(b) or 0</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_sub(a: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_sub(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>s := a.checked_sub(b) or 0</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_mul(a: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_mul(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>p := a.checked_mul(b) or 0</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_div(a: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_div(x, ...)</code></td><td><code>none</code> on division by zero or overflow (<code>MIN / -1</code>).<br/><code>q := a.checked_div(b) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) div_euclid(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::div_euclid(x, ...)</code></td><td>Euclidean division (the remainder is never negative); panics on division by zero or overflow.<br/><code>q := a.div_euclid(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) rem_euclid(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::rem_euclid(x, ...)</code></td><td>Euclidean remainder, always <code>&gt;= 0</code>; integer division by zero panics.<br/><code>i := idx.rem_euclid(len)</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_add(rhs: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_add(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>s := a.checked_add(b) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_sub(rhs: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_sub(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>s := a.checked_sub(b) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_mul(rhs: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_mul(x, ...)</code></td><td><code>none</code> on overflow.<br/><code>p := a.checked_mul(b) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_div(rhs: Self) -&gt; Self?</code></td><td><code>cfire::bm::checked_div(x, ...)</code></td><td><code>none</code> on division by zero or overflow (<code>MIN / -1</code>).<br/><code>q := a.checked_div(b) or 0</code></td></tr>
             <tr><td><code>fn (x: i64) checked_neg() -&gt; Self?</code></td><td><code>cfire::bm::checked_neg(x, ...)</code></td><td><code>none</code> on overflow (<code>MIN</code>, or any non-zero unsigned value).<br/><code>n := a.checked_neg() or 0</code></td></tr>
             <tr><td><code>fn (x: i64) checked_abs() -&gt; Self?</code></td><td><code>cfire::bm::checked_abs(x, ...)</code></td><td><code>none</code> for <code>MIN</code>.<br/><code>d := a.checked_abs() or 0</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_add(a: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_add(x, ...)</code></td><td>Two's-complement wrapping addition.<br/><code>h := h.wrapping_add(c)</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_sub(a: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_sub(x, ...)</code></td><td>Two's-complement wrapping subtraction.<br/><code>d := a.wrapping_sub(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_mul(a: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_mul(x, ...)</code></td><td>Two's-complement wrapping multiplication.<br/><code>h := h.wrapping_mul(16777619)</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_div(a: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_div(x, ...)</code></td><td>Wrapping division (<code>MIN / -1 == MIN</code>); division by zero panics.<br/><code>q := a.wrapping_div(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_add(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_add(x, ...)</code></td><td>Two's-complement wrapping addition.<br/><code>h := h.wrapping_add(c)</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_sub(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_sub(x, ...)</code></td><td>Two's-complement wrapping subtraction.<br/><code>d := a.wrapping_sub(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_mul(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_mul(x, ...)</code></td><td>Two's-complement wrapping multiplication.<br/><code>h := h.wrapping_mul(16777619)</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_div(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::wrapping_div(x, ...)</code></td><td>Wrapping division (<code>MIN / -1 == MIN</code>); division by zero panics.<br/><code>q := a.wrapping_div(b)</code></td></tr>
             <tr><td><code>fn (x: i64) wrapping_neg() -&gt; Self</code></td><td><code>cfire::bm::wrapping_neg(x, ...)</code></td><td>Two's-complement wrapping negation.<br/><code>n := a.wrapping_neg()</code></td></tr>
             <tr><td><code>fn (x: i64) wrapping_abs() -&gt; Self</code></td><td><code>cfire::bm::wrapping_abs(x, ...)</code></td><td>Absolute value, wrapping for <code>MIN</code>.<br/><code>d := a.wrapping_abs()</code></td></tr>
-            <tr><td><code>fn (x: i64) saturating_add(a: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_add(x, ...)</code></td><td>Addition clamped to <code>MIN..=MAX</code>.<br/><code>s := a.saturating_add(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) saturating_sub(a: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_sub(x, ...)</code></td><td>Subtraction clamped to <code>MIN..=MAX</code>.<br/><code>s := a.saturating_sub(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) saturating_mul(a: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_mul(x, ...)</code></td><td>Multiplication clamped to <code>MIN..=MAX</code>.<br/><code>p := a.saturating_mul(b)</code></td></tr>
-            <tr><td><code>fn (x: i64) saturating_div(a: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_div(x, ...)</code></td><td>Division clamped to <code>MIN..=MAX</code> (<code>MIN / -1 == MAX</code>); division by zero panics.<br/><code>q := a.saturating_div(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) saturating_add(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_add(x, ...)</code></td><td>Addition clamped to <code>MIN..=MAX</code>.<br/><code>s := a.saturating_add(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) saturating_sub(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_sub(x, ...)</code></td><td>Subtraction clamped to <code>MIN..=MAX</code>.<br/><code>s := a.saturating_sub(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) saturating_mul(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_mul(x, ...)</code></td><td>Multiplication clamped to <code>MIN..=MAX</code>.<br/><code>p := a.saturating_mul(b)</code></td></tr>
+            <tr><td><code>fn (x: i64) saturating_div(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::saturating_div(x, ...)</code></td><td>Division clamped to <code>MIN..=MAX</code> (<code>MIN / -1 == MAX</code>); division by zero panics.<br/><code>q := a.saturating_div(b)</code></td></tr>
             <tr><td><code>fn (x: i64) saturating_neg() -&gt; Self</code></td><td><code>cfire::bm::saturating_neg(x, ...)</code></td><td>Negation clamped to <code>MIN..=MAX</code>.<br/><code>n := a.saturating_neg()</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_shl(a: u32) -&gt; Self</code></td><td><code>(dedicated lowering)</code></td><td>Left shift with the count taken modulo the bit width.<br/><code>x := x.wrapping_shl(n)</code></td></tr>
-            <tr><td><code>fn (x: i64) wrapping_shr(a: u32) -&gt; Self</code></td><td><code>(dedicated lowering)</code></td><td>Right shift with the count taken modulo the bit width.<br/><code>x := x.wrapping_shr(n)</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_shl(a: u32) -&gt; Self?</code></td><td><code>(dedicated lowering)</code></td><td><code>none</code> when the count is <code>&gt;=</code> the bit width.<br/><code>x := v.checked_shl(n) or 0</code></td></tr>
-            <tr><td><code>fn (x: i64) checked_shr(a: u32) -&gt; Self?</code></td><td><code>(dedicated lowering)</code></td><td><code>none</code> when the count is <code>&gt;=</code> the bit width.<br/><code>x := v.checked_shr(n) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_shl(bits: u32) -&gt; Self</code></td><td><code>(dedicated lowering)</code></td><td>Left shift with the count taken modulo the bit width.<br/><code>x := x.wrapping_shl(n)</code></td></tr>
+            <tr><td><code>fn (x: i64) wrapping_shr(bits: u32) -&gt; Self</code></td><td><code>(dedicated lowering)</code></td><td>Right shift with the count taken modulo the bit width.<br/><code>x := x.wrapping_shr(n)</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_shl(bits: u32) -&gt; Self?</code></td><td><code>(dedicated lowering)</code></td><td><code>none</code> when the count is <code>&gt;=</code> the bit width.<br/><code>x := v.checked_shl(n) or 0</code></td></tr>
+            <tr><td><code>fn (x: i64) checked_shr(bits: u32) -&gt; Self?</code></td><td><code>(dedicated lowering)</code></td><td><code>none</code> when the count is <code>&gt;=</code> the bit width.<br/><code>x := v.checked_shr(n) or 0</code></td></tr>
             <tr><td><code>fn (x: i64) wrapping_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T</code> that wraps on overflow: <code>x.wrapping_as[u8]()</code>.<br/><code>b := x.wrapping_as[u8]()</code></td></tr>
             <tr><td><code>fn (x: i64) saturating_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T</code> that clamps on overflow: <code>x.saturating_as[u8]()</code>.<br/><code>b := x.saturating_as[u8]()</code></td></tr>
             <tr><td><code>fn (x: i64) try_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T?</code>, <code>none</code> when the value does not fit: <code>x.try_as[u8]()</code>.<br/><code>b := x.try_as[u8]() or 0</code></td></tr>
             <tr><td><code>fn (f: f64) abs() -&gt; Self</code></td><td><code>cfire::bm::abs(f, ...)</code></td><td>Absolute value. Integer <code>MIN.abs()</code> panics; use <code>checked_abs</code> or <code>wrapping_abs</code>.<br/><code>d := (a - b).abs()</code></td></tr>
-            <tr><td><code>fn (f: f64) min(a: Self) -&gt; Self</code></td><td><code>cfire::bm::min(f, ...)</code></td><td>Smaller of the two values (for floats, a NaN operand yields the other operand).<br/><code>lo := a.min(b)</code></td></tr>
-            <tr><td><code>fn (f: f64) max(a: Self) -&gt; Self</code></td><td><code>cfire::bm::max(f, ...)</code></td><td>Larger of the two values (for floats, a NaN operand yields the other operand).<br/><code>hi := a.max(b)</code></td></tr>
-            <tr><td><code>fn (f: f64) clamp(a: Self, b: Self) -&gt; Self</code></td><td><code>cfire::bm::clamp(f, ...)</code></td><td>Restricts the value to <code>lo..=hi</code>; panics when <code>lo &gt; hi</code> (or either bound is NaN).<br/><code>v := x.clamp(0, 255)</code></td></tr>
+            <tr><td><code>fn (f: f64) min(other: Self) -&gt; Self</code></td><td><code>cfire::bm::min(f, ...)</code></td><td>Smaller of the two values (for floats, a NaN operand yields the other operand).<br/><code>lo := a.min(b)</code></td></tr>
+            <tr><td><code>fn (f: f64) max(other: Self) -&gt; Self</code></td><td><code>cfire::bm::max(f, ...)</code></td><td>Larger of the two values (for floats, a NaN operand yields the other operand).<br/><code>hi := a.max(b)</code></td></tr>
+            <tr><td><code>fn (f: f64) clamp(lo: Self, hi: Self) -&gt; Self</code></td><td><code>cfire::bm::clamp(f, ...)</code></td><td>Restricts the value to <code>lo..=hi</code>; panics when <code>lo &gt; hi</code> (or either bound is NaN).<br/><code>v := x.clamp(0, 255)</code></td></tr>
             <tr><td><code>fn (f: f64) signum() -&gt; Self</code></td><td><code>cfire::bm::signum(f, ...)</code></td><td><code>-1</code>, <code>0</code> or <code>1</code> (floats: <code>-1.0</code>, <code>±0.0</code>, <code>1.0</code>, NaN for NaN).<br/><code>s := delta.signum()</code></td></tr>
-            <tr><td><code>fn (f: f64) pow(a: Self) -&gt; Self</code></td><td><code>cfire::bm::pow(f, ...)</code></td><td>Integer power (a negative exponent or overflow panics) or float power.<br/><code>kb := base.pow(10)</code></td></tr>
-            <tr><td><code>fn (f: f64) rem_euclid(a: Self) -&gt; Self</code></td><td><code>cfire::bm::rem_euclid(f, ...)</code></td><td>Euclidean remainder, always <code>&gt;= 0</code>; integer division by zero panics.<br/><code>i := idx.rem_euclid(len)</code></td></tr>
+            <tr><td><code>fn (f: f64) pow(exp: Self) -&gt; Self</code></td><td><code>cfire::bm::pow(f, ...)</code></td><td>Integer power (a negative exponent or overflow panics) or float power.<br/><code>kb := base.pow(10)</code></td></tr>
+            <tr><td><code>fn (f: f64) rem_euclid(rhs: Self) -&gt; Self</code></td><td><code>cfire::bm::rem_euclid(f, ...)</code></td><td>Euclidean remainder, always <code>&gt;= 0</code>; integer division by zero panics.<br/><code>i := idx.rem_euclid(len)</code></td></tr>
             <tr><td><code>fn (f: f64) wrapping_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T</code> that wraps on overflow: <code>x.wrapping_as[u8]()</code>.<br/><code>b := x.wrapping_as[u8]()</code></td></tr>
             <tr><td><code>fn (f: f64) saturating_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T</code> that clamps on overflow: <code>x.saturating_as[u8]()</code>.<br/><code>b := x.saturating_as[u8]()</code></td></tr>
             <tr><td><code>fn (f: f64) try_as()</code></td><td><code>(dedicated lowering)</code></td><td>Conversion to <code>T?</code>, <code>none</code> when the value does not fit: <code>x.try_as[u8]()</code>.<br/><code>b := x.try_as[u8]() or 0</code></td></tr>
@@ -2600,7 +2608,7 @@ syncCfireThemeBtn();
             <tr><td><code>fn (f: f64) fract() -&gt; Self</code></td><td><code>cfire::bm::fract(f, ...)</code></td><td>Fractional part, <code>x - x.trunc()</code>.<br/><code>f := x.fract()</code></td></tr>
             <tr><td><code>fn (f: f64) sqrt() -&gt; Self</code></td><td><code>cfire::bm::sqrt(f, ...)</code></td><td>Square root (NaN for negative input).<br/><code>d := (dx * dx + dy * dy).sqrt()</code></td></tr>
             <tr><td><code>fn (f: f64) cbrt() -&gt; Self</code></td><td><code>cfire::bm::cbrt(f, ...)</code></td><td>Cube root.<br/><code>c := v.cbrt()</code></td></tr>
-            <tr><td><code>fn (f: f64) powi(a: i32) -&gt; Self</code></td><td><code>cfire::bm::powi(f, ...)</code></td><td>Raises to an integer power.<br/><code>a := r.powi(2)</code></td></tr>
+            <tr><td><code>fn (f: f64) powi(exp: i32) -&gt; Self</code></td><td><code>cfire::bm::powi(f, ...)</code></td><td>Raises to an integer power.<br/><code>a := r.powi(2)</code></td></tr>
             <tr><td><code>fn (f: f64) exp() -&gt; Self</code></td><td><code>cfire::bm::exp(f, ...)</code></td><td><code>e</code> raised to x.<br/><code>y := x.exp()</code></td></tr>
             <tr><td><code>fn (f: f64) ln() -&gt; Self</code></td><td><code>cfire::bm::ln(f, ...)</code></td><td>Natural logarithm.<br/><code>y := x.ln()</code></td></tr>
             <tr><td><code>fn (f: f64) log2() -&gt; Self</code></td><td><code>cfire::bm::log2(f, ...)</code></td><td>Base-2 logarithm.<br/><code>bits := n.log2()</code></td></tr>
@@ -2621,71 +2629,73 @@ syncCfireThemeBtn();
             <tr><td><code>fn (f: f64) is_finite() -&gt; bool</code></td><td><code>cfire::bm::is_finite(f, ...)</code></td><td><code>true</code> unless NaN or infinite.<br/><code>ok := x.is_finite()</code></td></tr>
             <tr><td><code>fn (s: str) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (s: str) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
-            <tr><td><code>fn (s: str) contains(a: str) -&gt; bool</code></td><td><code>cfire::bm::contains(s, ...)</code></td><td><code>true</code> if the substring occurs.<br/><code>if path.contains(&quot;..&quot;) { return }</code></td></tr>
-            <tr><td><code>fn (s: str) starts_with(a: str) -&gt; bool</code></td><td><code>cfire::bm::starts_with(s, ...)</code></td><td><code>true</code> if <code>s</code> begins with <code>prefix</code>.<br/><code>if line.starts_with(&quot;#&quot;) { continue }</code></td></tr>
-            <tr><td><code>fn (s: str) ends_with(a: str) -&gt; bool</code></td><td><code>cfire::bm::ends_with(s, ...)</code></td><td><code>true</code> if <code>s</code> ends with <code>suffix</code>.<br/><code>if name.ends_with(&quot;.cf&quot;) { ... }</code></td></tr>
-            <tr><td><code>fn (s: str) index_of(a: str, b: usize = default) -&gt; usize?</code></td><td><code>cfire::bm::index_of(s, ...)</code></td><td>Byte position of the first occurrence at or after <code>start</code> (default 0), or <code>none</code>.<br/><code>dot := path.index_of(&quot;.&quot;) or { return }</code></td></tr>
-            <tr><td><code>fn (s: str) last_index_of(a: str) -&gt; usize?</code></td><td><code>cfire::bm::last_index_of(s, ...)</code></td><td>Byte position of the last occurrence, or <code>none</code>.<br/><code>slash := path.last_index_of(&quot;/&quot;) or 0</code></td></tr>
-            <tr><td><code>fn (s: str) split(a: str) -&gt; []str</code></td><td><code>cfire::bm::split(s, ...)</code></td><td>Splits on every occurrence of <code>sep</code> (an empty <code>s</code> gives one empty part).<br/><code>parts := line.split(&quot;,&quot;)</code></td></tr>
-            <tr><td><code>fn (s: str) split_n(a: str, b: usize) -&gt; []str</code></td><td><code>cfire::bm::split_n(s, ...)</code></td><td>Splits into at most <code>n</code> parts; the last part holds the rest.<br/><code>kv := line.split_n(&quot;=&quot;, 2)</code></td></tr>
+            <tr><td><code>fn (s: str) contains(sub: str) -&gt; bool</code></td><td><code>cfire::bm::contains(s, ...)</code></td><td><code>true</code> if the substring occurs.<br/><code>if path.contains(&quot;..&quot;) { return }</code></td></tr>
+            <tr><td><code>fn (s: str) starts_with(prefix: str) -&gt; bool</code></td><td><code>cfire::bm::starts_with(s, ...)</code></td><td><code>true</code> if <code>s</code> begins with <code>prefix</code>.<br/><code>if line.starts_with(&quot;#&quot;) { continue }</code></td></tr>
+            <tr><td><code>fn (s: str) ends_with(suffix: str) -&gt; bool</code></td><td><code>cfire::bm::ends_with(s, ...)</code></td><td><code>true</code> if <code>s</code> ends with <code>suffix</code>.<br/><code>if name.ends_with(&quot;.cf&quot;) { ... }</code></td></tr>
+            <tr><td><code>fn (s: str) index_of(needle: str, start: usize = default) -&gt; usize?</code></td><td><code>cfire::bm::index_of(s, ...)</code></td><td>Byte position of the first occurrence at or after <code>start</code> (default 0), or <code>none</code>.<br/><code>dot := path.index_of(&quot;.&quot;) or { return }</code></td></tr>
+            <tr><td><code>fn (s: str) last_index_of(needle: str) -&gt; usize?</code></td><td><code>cfire::bm::last_index_of(s, ...)</code></td><td>Byte position of the last occurrence, or <code>none</code>.<br/><code>slash := path.last_index_of(&quot;/&quot;) or 0</code></td></tr>
+            <tr><td><code>fn (s: str) split(sep: str) -&gt; []str</code></td><td><code>cfire::bm::split(s, ...)</code></td><td>Splits on every occurrence of <code>sep</code> (an empty <code>s</code> gives one empty part).<br/><code>parts := line.split(&quot;,&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) split_n(sep: str, n: usize) -&gt; []str</code></td><td><code>cfire::bm::split_n(s, ...)</code></td><td>Splits into at most <code>n</code> parts; the last part holds the rest.<br/><code>kv := line.split_n(&quot;=&quot;, 2)</code></td></tr>
             <tr><td><code>fn (s: str) lines() -&gt; []str</code></td><td><code>cfire::bm::lines(s, ...)</code></td><td>Splits on <code>\n</code>, dropping a trailing <code>\r</code> from each line and a final empty line.<br/><code>for line in text.lines() { ... }</code></td></tr>
             <tr><td><code>fn (s: str) trim() -&gt; str</code></td><td><code>cfire::bm::trim(s, ...)</code></td><td>View without leading and trailing ASCII whitespace.<br/><code>name := raw.trim()</code></td></tr>
             <tr><td><code>fn (s: str) trim_start() -&gt; str</code></td><td><code>cfire::bm::trim_start(s, ...)</code></td><td>View without leading ASCII whitespace.<br/><code>body := text.trim_start()</code></td></tr>
             <tr><td><code>fn (s: str) trim_end() -&gt; str</code></td><td><code>cfire::bm::trim_end(s, ...)</code></td><td>View without trailing ASCII whitespace.<br/><code>line := raw.trim_end()</code></td></tr>
-            <tr><td><code>fn (s: str) strip_prefix(a: str) -&gt; str?</code></td><td><code>cfire::bm::strip_prefix(s, ...)</code></td><td>View after <code>prefix</code>, or <code>none</code> if <code>s</code> does not start with it.<br/><code>rest := arg.strip_prefix(&quot;--&quot;) or { continue }</code></td></tr>
-            <tr><td><code>fn (s: str) strip_suffix(a: str) -&gt; str?</code></td><td><code>cfire::bm::strip_suffix(s, ...)</code></td><td>View before <code>suffix</code>, or <code>none</code> if <code>s</code> does not end with it.<br/><code>stem := file.strip_suffix(&quot;.cf&quot;) or file</code></td></tr>
-            <tr><td><code>fn (s: str) replace(a: str, b: str) -&gt; str</code></td><td><code>cfire::bm::replace(s, ...)</code></td><td>Copy with the first occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace(&quot;a&quot;, &quot;b&quot;)</code></td></tr>
-            <tr><td><code>fn (s: str) replace_all(a: str, b: str) -&gt; str</code></td><td><code>cfire::bm::replace_all(s, ...)</code></td><td>Copy with every occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace_all(&quot;\t&quot;, &quot;    &quot;)</code></td></tr>
-            <tr><td><code>fn (s: str) repeat(a: usize) -&gt; str</code></td><td><code>cfire::bm::repeat(s, ...)</code></td><td><code>s</code> concatenated <code>n</code> times.<br/><code>rule := &quot;-&quot;.repeat(40)</code></td></tr>
+            <tr><td><code>fn (s: str) strip_prefix(prefix: str) -&gt; str?</code></td><td><code>cfire::bm::strip_prefix(s, ...)</code></td><td>View after <code>prefix</code>, or <code>none</code> if <code>s</code> does not start with it.<br/><code>rest := arg.strip_prefix(&quot;--&quot;) or { continue }</code></td></tr>
+            <tr><td><code>fn (s: str) strip_suffix(suffix: str) -&gt; str?</code></td><td><code>cfire::bm::strip_suffix(s, ...)</code></td><td>View before <code>suffix</code>, or <code>none</code> if <code>s</code> does not end with it.<br/><code>stem := file.strip_suffix(&quot;.cf&quot;) or file</code></td></tr>
+            <tr><td><code>fn (s: str) replace(from: str, to: str) -&gt; str</code></td><td><code>cfire::bm::replace(s, ...)</code></td><td>Copy with the first occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace(&quot;a&quot;, &quot;b&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) replace_all(from: str, to: str) -&gt; str</code></td><td><code>cfire::bm::replace_all(s, ...)</code></td><td>Copy with every occurrence of <code>from</code> replaced.<br/><code>s2 := s.replace_all(&quot;\t&quot;, &quot;    &quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) repeat(n: usize) -&gt; str</code></td><td><code>cfire::bm::repeat(s, ...)</code></td><td><code>s</code> concatenated <code>n</code> times.<br/><code>rule := &quot;-&quot;.repeat(40)</code></td></tr>
             <tr><td><code>fn (s: str) to_upper() -&gt; str</code></td><td><code>cfire::bm::to_upper(s, ...)</code></td><td>ASCII upper-case copy.<br/><code>tag := name.to_upper()</code></td></tr>
             <tr><td><code>fn (s: str) to_lower() -&gt; str</code></td><td><code>cfire::bm::to_lower(s, ...)</code></td><td>ASCII lower-case copy.<br/><code>key := header.to_lower()</code></td></tr>
             <tr><td><code>fn (s: str) runes() -&gt; []u32</code></td><td><code>cfire::bm::runes(s, ...)</code></td><td>Unicode code points (invalid UTF-8 bytes decode as U+FFFD).<br/><code>for r in s.runes() { ... }</code></td></tr>
             <tr><td><code>fn (s: str) rune_count() -&gt; usize</code></td><td><code>cfire::bm::rune_count(s, ...)</code></td><td>Number of Unicode code points.<br/><code>n := s.rune_count()</code></td></tr>
             <tr><td><code>fn (s: str) bytes() -&gt; []byte</code></td><td><code>(dedicated lowering)</code></td><td>The UTF-8 bytes of <code>s</code>.<br/><code>raw := s.bytes()</code></td></tr>
             <tr><td><code>fn (s: str) pop() -&gt; T?</code></td><td><code>cfire::bm::pop(s, ...)</code></td><td>Removes and returns the last element (last byte for <code>str</code>), or <code>none</code> when empty.<br/><code>last := stack.pop() or { break }</code></td></tr>
-            <tr><td><code>fn (s: str) with_ext(a: str) -&gt; str</code></td><td><code>(dedicated lowering)</code></td><td>Path with its extension replaced.<br/><code>out := path.with_ext(&quot;.o&quot;)</code></td></tr>
+            <tr><td><code>fn (s: str) with_ext(ext: str) -&gt; str</code></td><td><code>(dedicated lowering)</code></td><td>Path with its extension replaced.<br/><code>out := path.with_ext(&quot;.o&quot;)</code></td></tr>
             <tr><td><code>fn (xs: []T) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (xs: []T) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
             <tr><td><code>fn (xs: []T) pop() -&gt; T?</code></td><td><code>cfire::bm::pop(xs, ...)</code></td><td>Removes and returns the last element (last byte for <code>str</code>), or <code>none</code> when empty.<br/><code>last := stack.pop() or { break }</code></td></tr>
-            <tr><td><code>fn (xs: []T) contains(a: T) -&gt; bool</code></td><td><code>cfire::bm::contains(xs, ...)</code></td><td><code>true</code> if an element equals <code>v</code>.<br/><code>if xs.contains(3) { ... }</code></td></tr>
-            <tr><td><code>fn (xs: []T) index_of(a: T) -&gt; usize?</code></td><td><code>cfire::bm::index_of(xs, ...)</code></td><td>Position of the first element equal to <code>v</code>, or <code>none</code>.<br/><code>i := xs.index_of(v) or { return }</code></td></tr>
+            <tr><td><code>fn (xs: []T) contains(val: T) -&gt; bool</code></td><td><code>cfire::bm::contains(xs, ...)</code></td><td><code>true</code> if an element equals <code>v</code>.<br/><code>if xs.contains(3) { ... }</code></td></tr>
+            <tr><td><code>fn (xs: []T) index_of(val: T) -&gt; usize?</code></td><td><code>cfire::bm::index_of(xs, ...)</code></td><td>Position of the first element equal to <code>v</code>, or <code>none</code>.<br/><code>i := xs.index_of(v) or { return }</code></td></tr>
             <tr><td><code>fn (xs: []T) first() -&gt; T?</code></td><td><code>cfire::bm::first(xs, ...)</code></td><td>Copy of the first element, or <code>none</code> when empty.<br/><code>head := xs.first() or 0</code></td></tr>
             <tr><td><code>fn (xs: []T) last() -&gt; T?</code></td><td><code>cfire::bm::last(xs, ...)</code></td><td>Copy of the last element, or <code>none</code> when empty.<br/><code>tail := xs.last() or 0</code></td></tr>
             <tr><td><code>fn (xs: []T) reverse()</code></td><td><code>cfire::bm::reverse(xs, ...)</code></td><td>Reverses the elements in place.<br/><code>xs.reverse()</code></td></tr>
             <tr><td><code>fn (xs: []T) sort()</code></td><td><code>cfire::bm::sort(xs, ...)</code></td><td>Sorts in place, ascending.<br/><code>xs.sort()</code></td></tr>
-            <tr><td><code>fn (xs: []T) sort_by(a: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(xs, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
+            <tr><td><code>fn (xs: []T) sort_by(cmp: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(xs, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
             <tr><td><code>fn (xs: []T) is_sorted() -&gt; bool</code></td><td><code>cfire::bm::is_sorted(xs, ...)</code></td><td><code>true</code> if the elements are in ascending order.<br/><code>assert(xs.is_sorted())</code></td></tr>
-            <tr><td><code>fn (xs: []T) binary_search(a: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(xs, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
-            <tr><td><code>fn (xs: []T) join(a: str) -&gt; str</code></td><td><code>cfire::bm::join(xs, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
-            <tr><td><code>fn (xs: []T) push(a: T)</code></td><td><code>(dedicated lowering)</code></td><td>Appends <code>v</code>.<br/><code>xs.push(4)</code></td></tr>
-            <tr><td><code>fn (xs: []T) insert(a: usize, b: T)</code></td><td><code>cfire::bm::insert(xs, ...)</code></td><td>Inserts <code>v</code> at <code>i</code>, shifting later elements; panics when <code>i &gt; len()</code>.<br/><code>xs.insert(0, head)</code></td></tr>
-            <tr><td><code>fn (xs: []T) remove(a: usize) -&gt; T</code></td><td><code>cfire::bm::remove(xs, ...)</code></td><td>Removes and returns the element at <code>i</code>, shifting later elements; panics when out of range.<br/><code>x := xs.remove(0)</code></td></tr>
-            <tr><td><code>fn (xs: []T) swap_remove(a: usize) -&gt; T</code></td><td><code>cfire::bm::swap_remove(xs, ...)</code></td><td>Removes the element at <code>i</code> by moving the last one into its place (O(1)); panics when out of range.<br/><code>x := xs.swap_remove(i)</code></td></tr>
-            <tr><td><code>fn (xs: []T) truncate(a: usize)</code></td><td><code>cfire::bm::truncate(xs, ...)</code></td><td>Keeps the first <code>n</code> elements (no effect when <code>n &gt;= len()</code>).<br/><code>xs.truncate(10)</code></td></tr>
-            <tr><td><code>fn (xs: []T) extend(a: []T)</code></td><td><code>cfire::bm::extend(xs, ...)</code></td><td>Appends a copy of every element of <code>other</code>.<br/><code>xs.extend(more)</code></td></tr>
+            <tr><td><code>fn (xs: []T) binary_search(val: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(xs, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
+            <tr><td><code>fn (xs: []T) join(sep: str) -&gt; str</code></td><td><code>cfire::bm::join(xs, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
+            <tr><td><code>fn (xs: []T) push(val: T)</code></td><td><code>(dedicated lowering)</code></td><td>Appends <code>v</code>.<br/><code>xs.push(4)</code></td></tr>
+            <tr><td><code>fn (xs: []T) insert(idx: usize, val: T)</code></td><td><code>cfire::bm::insert(xs, ...)</code></td><td>Inserts <code>v</code> at <code>i</code>, shifting later elements; panics when <code>i &gt; len()</code>.<br/><code>xs.insert(0, head)</code></td></tr>
+            <tr><td><code>fn (xs: []T) remove(idx: usize) -&gt; T</code></td><td><code>cfire::bm::remove(xs, ...)</code></td><td>Removes and returns the element at <code>i</code>, shifting later elements; panics when out of range.<br/><code>x := xs.remove(0)</code></td></tr>
+            <tr><td><code>fn (xs: []T) swap_remove(idx: usize) -&gt; T</code></td><td><code>cfire::bm::swap_remove(xs, ...)</code></td><td>Removes the element at <code>i</code> by moving the last one into its place (O(1)); panics when out of range.<br/><code>x := xs.swap_remove(i)</code></td></tr>
+            <tr><td><code>fn (xs: []T) truncate(n: usize)</code></td><td><code>cfire::bm::truncate(xs, ...)</code></td><td>Keeps the first <code>n</code> elements (no effect when <code>n &gt;= len()</code>).<br/><code>xs.truncate(10)</code></td></tr>
+            <tr><td><code>fn (xs: []T) extend(other: []T)</code></td><td><code>cfire::bm::extend(xs, ...)</code></td><td>Appends a copy of every element of <code>other</code>.<br/><code>xs.extend(more)</code></td></tr>
             <tr><td><code>fn (xs: []T) clear()</code></td><td><code>cfire::bm::clear(xs, ...)</code></td><td>Removes every element.<br/><code>xs.clear()</code></td></tr>
             <tr><td><code>fn (xs: []T) bytes() -&gt; []byte</code></td><td><code>(dedicated lowering)</code></td><td>Byte view of the slice's storage.<br/><code>raw := xs.bytes()</code></td></tr>
             <tr><td><code>fn (arr: [N]T) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (arr: [N]T) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) contains(a: T) -&gt; bool</code></td><td><code>cfire::bm::contains(arr, ...)</code></td><td><code>true</code> if an element equals <code>v</code>.<br/><code>if xs.contains(3) { ... }</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) index_of(a: T) -&gt; usize?</code></td><td><code>cfire::bm::index_of(arr, ...)</code></td><td>Position of the first element equal to <code>v</code>, or <code>none</code>.<br/><code>i := xs.index_of(v) or { return }</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) contains(val: T) -&gt; bool</code></td><td><code>cfire::bm::contains(arr, ...)</code></td><td><code>true</code> if an element equals <code>v</code>.<br/><code>if xs.contains(3) { ... }</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) index_of(val: T) -&gt; usize?</code></td><td><code>cfire::bm::index_of(arr, ...)</code></td><td>Position of the first element equal to <code>v</code>, or <code>none</code>.<br/><code>i := xs.index_of(v) or { return }</code></td></tr>
             <tr><td><code>fn (arr: [N]T) first() -&gt; T?</code></td><td><code>cfire::bm::first(arr, ...)</code></td><td>Copy of the first element, or <code>none</code> when empty.<br/><code>head := xs.first() or 0</code></td></tr>
             <tr><td><code>fn (arr: [N]T) last() -&gt; T?</code></td><td><code>cfire::bm::last(arr, ...)</code></td><td>Copy of the last element, or <code>none</code> when empty.<br/><code>tail := xs.last() or 0</code></td></tr>
             <tr><td><code>fn (arr: [N]T) reverse()</code></td><td><code>cfire::bm::reverse(arr, ...)</code></td><td>Reverses the elements in place.<br/><code>xs.reverse()</code></td></tr>
             <tr><td><code>fn (arr: [N]T) sort()</code></td><td><code>cfire::bm::sort(arr, ...)</code></td><td>Sorts in place, ascending.<br/><code>xs.sort()</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) sort_by(a: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(arr, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) sort_by(cmp: fn(T, T) -&gt; bool)</code></td><td><code>cfire::bm::sort_by(arr, ...)</code></td><td>Sorts in place with a strict <code>less(a, b)</code> comparator.<br/><code>xs.sort_by(|a, b| a.score &gt; b.score)</code></td></tr>
             <tr><td><code>fn (arr: [N]T) is_sorted() -&gt; bool</code></td><td><code>cfire::bm::is_sorted(arr, ...)</code></td><td><code>true</code> if the elements are in ascending order.<br/><code>assert(xs.is_sorted())</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) binary_search(a: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(arr, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
-            <tr><td><code>fn (arr: [N]T) join(a: str) -&gt; str</code></td><td><code>cfire::bm::join(arr, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) binary_search(val: T) -&gt; usize?</code></td><td><code>cfire::bm::binary_search(arr, ...)</code></td><td>Position of <code>v</code> in an ascending sequence, or <code>none</code>.<br/><code>i := xs.binary_search(42) or { return }</code></td></tr>
+            <tr><td><code>fn (arr: [N]T) join(sep: str) -&gt; str</code></td><td><code>cfire::bm::join(arr, ...)</code></td><td>Concatenates a <code>[]str</code> with <code>sep</code> between elements.<br/><code>csv := fields.join(&quot;,&quot;)</code></td></tr>
             <tr><td><code>fn (m: map[K]V) len() -&gt; usize</code></td><td><code>(dedicated lowering)</code></td><td>Number of elements (bytes for <code>str</code>).<br/><code>n := xs.len()</code></td></tr>
             <tr><td><code>fn (m: map[K]V) is_empty() -&gt; bool</code></td><td><code>(dedicated lowering)</code></td><td><code>true</code> when <code>len() == 0</code>.<br/><code>if s.is_empty() { return }</code></td></tr>
             <tr><td><code>fn (m: map[K]V) clear()</code></td><td><code>cfire::bm::clear(m, ...)</code></td><td>Removes every element.<br/><code>xs.clear()</code></td></tr>
-            <tr><td><code>fn (m: map[K]V) contains(a: K) -&gt; bool</code></td><td><code>cfire::bm::contains(m, ...)</code></td><td><code>true</code> if the key is present.<br/><code>if m.contains(&quot;id&quot;) { ... }</code></td></tr>
-            <tr><td><code>fn (m: map[K]V) get(a: K) -&gt; V?</code></td><td><code>cfire::bm::get(m, ...)</code></td><td>Copy of the value for <code>k</code>, or <code>none</code>.<br/><code>port := cfg.get(&quot;port&quot;) or 8080</code></td></tr>
-            <tr><td><code>fn (m: map[K]V) insert(a: K, b: V) -&gt; V?</code></td><td><code>cfire::bm::insert(m, ...)</code></td><td>Sets <code>k</code> to <code>v</code>; returns the previous value, or <code>none</code>.<br/><code>old := m.insert(k, v)</code></td></tr>
-            <tr><td><code>fn (m: map[K]V) remove(a: K) -&gt; V?</code></td><td><code>cfire::bm::remove(m, ...)</code></td><td>Removes <code>k</code>; returns its value, or <code>none</code> if absent.<br/><code>gone := m.remove(k)</code></td></tr>
+            <tr><td><code>fn (m: map[K]V) contains(key: K) -&gt; bool</code></td><td><code>cfire::bm::contains(m, ...)</code></td><td><code>true</code> if the key is present.<br/><code>if m.contains(&quot;id&quot;) { ... }</code></td></tr>
+            <tr><td><code>fn (m: map[K]V) get(key: K) -&gt; V?</code></td><td><code>cfire::bm::get(m, ...)</code></td><td>Copy of the value for <code>k</code>, or <code>none</code>.<br/><code>port := cfg.get(&quot;port&quot;) or 8080</code></td></tr>
+            <tr><td><code>fn (m: map[K]V) insert(key: K, val: V) -&gt; V?</code></td><td><code>cfire::bm::insert(m, ...)</code></td><td>Sets <code>k</code> to <code>v</code>; returns the previous value, or <code>none</code>.<br/><code>old := m.insert(k, v)</code></td></tr>
+            <tr><td><code>fn (m: map[K]V) remove(key: K) -&gt; V?</code></td><td><code>cfire::bm::remove(m, ...)</code></td><td>Removes <code>k</code>; returns its value, or <code>none</code> if absent.<br/><code>gone := m.remove(k)</code></td></tr>
             <tr><td><code>fn (m: map[K]V) keys() -&gt; []K</code></td><td><code>cfire::bm::keys(m, ...)</code></td><td>Copy of the keys, in unspecified order.<br/><code>for k in m.keys() { ... }</code></td></tr>
             <tr><td><code>fn (m: map[K]V) values() -&gt; []V</code></td><td><code>cfire::bm::values(m, ...)</code></td><td>Copy of the values, in unspecified order.<br/><code>total := m.values().len()</code></td></tr>
+            <tr><td><code>fn (opt: T?) or_error(msg: str, code: i32 = default) -&gt; T!</code></td><td><code>cfire::bm::or_error(opt, ...)</code></td><td>Promote <code>none</code> into an error value lazily, unwrapping <code>some</code>.<br/><code>user := find_user(id).or_error(&quot;not found&quot;)</code></td></tr>
+            <tr><td><code>fn (res: T!) ignore_error() -&gt; T?</code></td><td><code>cfire::bm::ignore_error(res)</code></td><td>Discard the error of a non-void fallible value, yielding <code>T?</code>.<br/><code>age := i32.parse(raw).ignore_error()</code></td></tr>
             <tr><td><code>const &lt;int&gt;.MAX: Self</code></td><td><code>std::numeric_limits&lt;std::int64_t&gt;::max()</code></td><td>Largest value of the type.<br/><code>v := i32.MAX</code></td></tr>
             <tr><td><code>const &lt;int&gt;.MIN: Self</code></td><td><code>std::numeric_limits&lt;std::int64_t&gt;::min()</code></td><td>Smallest value of the type.<br/><code>v := i32.MIN</code></td></tr>
             <tr><td><code>const &lt;int&gt;.BITS: u32</code></td><td><code>static_cast&lt;std::uint32_t&gt;(std::numeric_limits&lt;std::make_unsigned_t&lt;std::int64_t&gt;&gt;::digits)</code></td><td>Width in bits (<code>u32</code>).<br/><code>v := i32.BITS</code></td></tr>
@@ -2696,7 +2706,7 @@ syncCfireThemeBtn();
             <tr><td><code>const &lt;float&gt;.INF: Self</code></td><td><code>std::numeric_limits&lt;double&gt;::infinity()</code></td><td>Positive infinity.<br/><code>v := f64.INF</code></td></tr>
             <tr><td><code>const &lt;float&gt;.NEG_INF: Self</code></td><td><code>(-std::numeric_limits&lt;double&gt;::infinity())</code></td><td>Negative infinity.<br/><code>v := f64.NEG_INF</code></td></tr>
             <tr><td><code>const &lt;float&gt;.NAN: Self</code></td><td><code>std::numeric_limits&lt;double&gt;::quiet_NaN()</code></td><td>Not a number.<br/><code>v := f64.NAN</code></td></tr>
-            <tr><td><code>fn T.parse(s: str) -&gt; T?</code></td><td><code>cfire::bm::parse&lt;T&gt;(s)</code></td><td>Parses a complete literal of any numeric type or <code>bool</code> (surrounding whitespace ignored; <code>bool</code> accepts <code>true</code>/<code>false</code>/<code>1</code>/<code>0</code>); <code>none</code> on invalid or out-of-range input.<br/><code>port := u16.parse(arg) or 8080</code></td></tr>
+            <tr><td><code>fn T.parse(s: str) -&gt; T!</code></td><td><code>cfire::bm::parse&lt;T&gt;(s, &quot;T&quot;)</code></td><td>Parses a complete literal of any numeric type or <code>bool</code> (surrounding whitespace ignored; <code>bool</code> accepts <code>true</code>/<code>false</code>/<code>1</code>/<code>0</code>), returning an <code>Error</code> on empty, invalid, or out-of-range input.<br/><code>port := try u16.parse(arg)</code></td></tr>
             <tr><td><code>make(T) / make(T, args...)</code></td><td><code>T{} / cfire_ctor_T(args...)</code></td><td>A value of <code>T</code>: default field values, or the type's constructor <code>fn (T) make(...) -&gt; T</code> (one per type).<br/><code>p := make(Point, 3, 4)</code></td></tr>
             <tr><td><code>make(own[T], args...) / make(shared[T], args...)</code></td><td><code>cfire::make_own&lt;T&gt;(...) / cfire::make_shared_ptr&lt;T&gt;(...)</code></td><td>A heap-owned <code>T</code> (<code>unique_ptr</code> / <code>shared_ptr</code>), built from one <code>T</code> value or the constructor's arguments.<br/><code>node := make(own[Node], Node{v: 1})</code></td></tr>
             <tr><td><code>make([]T, len) / make([]T, len, cap)</code></td><td><code>cfire::make_slice&lt;T&gt;(len[, cap])</code></td><td><code>len</code> zero-filled elements, optionally with <code>cap</code> reserved; a negative size or <code>cap &lt; len</code> panics.<br/><code>buf := make([]byte, 0, 4096)</code></td></tr>
@@ -2710,87 +2720,8 @@ syncCfireThemeBtn();
             <span class="pager-dir">&larr; Overview</span>
             <span class="pager-title">All 37 Standard Library Modules</span>
           </a>
-          <a href="#mod-audio" class="pager-card next" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">Next Module (2/37) &rarr;</span>
-            <span class="pager-title">core:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
-          </a>
-        </nav>
-      </article>
-      <article class="ref-pane" id="ref-pane-mod-audio" data-pane-id="mod-audio" data-pane-short="core:audio" data-pane-title="core:audio — Audio Engine, Polyphonic Mixer, Synth &amp; WAV">
-        <h2 id="mod-audio" style="margin-top:0.25rem;"><code>import "core:audio"</code> &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</h2>
-        <p>Zero-dependency multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic <code>Sound</code> playback with pitch/pan/looping, and real-time float32 <code>Stream</code> DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code> &bull; Namespace: <code>audio.*</code> &bull; 25 exported functions</small></p>
-        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
-        <pre><code>package main
-
-import &quot;core:audio&quot;
-
-fn main() {
-    try audio.init(48000, 2)
-    defer audio.close()
-    audio.set_master_volume(0.8)
-
-    // 1. Zero-asset procedural sound effect playback
-    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
-    coin_sfx := audio.load_sound_from_wave(coin_wave)
-    coin_sfx.play()
-
-    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
-    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
-    try audio.save_wav(tone, &quot;a440.wav&quot;)
-
-    stream := try audio.open_stream(48000, 2)
-    if stream.needs_data(2048) {
-        stream.push_samples(tone.samples)
-    }
-    println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
-}</code></pre>
-        <div class="table-wrap api-table-wrap"><table>
-          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>audio.Waveform</code></td><td>enum</td><td>Oscillator shape for <code>audio.gen_tone</code> and <code>audio.gen_chirp</code>.<br/>Variants: <code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code></td></tr>
-            <tr><td><code>audio.SfxPreset</code></td><td>enum</td><td>A procedural sound effect for <code>audio.gen_sfx</code>.<br/>Variants: <code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code></td></tr>
-            <tr><td><code>audio.Wave</code></td><td>struct</td><td>An in-memory waveform: interleaved <code>f32</code> samples in <code>-1.0</code>..<code>1.0</code>.<br/>Fields: <code>samples: []f32</code>, <code>sample_rate: i32</code>, <code>channels: i32</code></td></tr>
-            <tr><td><code>audio.Sound</code></td><td>handle</td><td>A wave registered with the mixer, playable many times at once (polyphonic).</td></tr>
-            <tr><td><code>audio.Stream</code></td><td>handle</td><td>A real-time output stream you push samples into, for custom synthesis.</td></tr>
-          </tbody>
-        </table></div>
-        <div class="table-wrap api-table-wrap"><table>
-          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-          <tbody>
-            <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
-            <tr><td><code>fn close()</code></td><td><code>cfire::audio::close()</code></td><td>Stops all active sounds and streams and releases audio hardware resources.<br/><code>defer audio.close()</code></td></tr>
-            <tr><td><code>fn is_ready() -&gt; bool</code></td><td><code>cfire::audio::is_ready()</code></td><td>Returns <code>true</code> if the audio subsystem is initialized.<br/><code>if audio.is_ready() { ... }</code></td></tr>
-            <tr><td><code>fn set_master_volume(vol: f32)</code></td><td><code>cfire::audio::set_master_volume(vol)</code></td><td>Sets the master output volume multiplier (<code>0.0</code> to <code>1.0</code>).<br/><code>audio.set_master_volume(0.8)</code></td></tr>
-            <tr><td><code>fn master_volume() -&gt; f32</code></td><td><code>cfire::audio::master_volume()</code></td><td>Returns the current master output volume multiplier.<br/><code>v := audio.master_volume()</code></td></tr>
-            <tr><td><code>fn rms_level() -&gt; f32</code></td><td><code>cfire::audio::rms_level()</code></td><td>Returns the live master RMS amplitude (<code>0.0</code> to <code>1.0</code>) for UI audio meters.<br/><code>rms := audio.rms_level()</code></td></tr>
-            <tr><td><code>fn peak_level() -&gt; f32</code></td><td><code>cfire::audio::peak_level()</code></td><td>Returns the live master peak amplitude (<code>0.0</code> to <code>1.0</code>) for UI visualizers.<br/><code>pk := audio.peak_level()</code></td></tr>
-            <tr><td><code>fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)</code></td><td>Synthesizes a stereo waveform (<code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code>) with smooth ADSR envelope.<br/><code>w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)</code></td></tr>
-            <tr><td><code>fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)</code></td><td>Synthesizes a frequency-swept tone from <code>start_hz</code> to <code>end_hz</code>.<br/><code>sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)</code></td></tr>
-            <tr><td><code>fn gen_sfx(preset: SfxPreset) -&gt; Wave</code></td><td><code>cfire::audio::gen_sfx(preset)</code></td><td>Generates a zero-asset procedural sound effect (<code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code>).<br/><code>coin := audio.gen_sfx(audio.SfxPreset::Coin)</code></td></tr>
-            <tr><td><code>fn encode_wav(wave: Wave) -&gt; []byte</code></td><td><code>cfire::audio::encode_wav(wave)</code></td><td>Encodes an in-memory <code>Wave</code> into a 16-bit PCM RIFF/WAV byte slice.<br/><code>wav_bytes := audio.encode_wav(w)</code></td></tr>
-            <tr><td><code>fn decode_wav(data: []byte) -&gt; Wave!</code></td><td><code>cfire::audio::decode_wav(data)</code></td><td>Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a <code>Wave</code>.<br/><code>w := try audio.decode_wav(wav_bytes)</code></td></tr>
-            <tr><td><code>fn save_wav(wave: Wave, path: str) -&gt; void!</code></td><td><code>cfire::audio::save_wav(wave, path)</code></td><td>Writes a <code>Wave</code> to disk as a standard <code>.wav</code> file.<br/><code>try audio.save_wav(w, &quot;tone.wav&quot;)</code></td></tr>
-            <tr><td><code>fn load_wav(path: str) -&gt; Wave!</code></td><td><code>cfire::audio::load_wav(path)</code></td><td>Loads and decodes a <code>.wav</code> file from disk or app bundle.<br/><code>w := try audio.load_wav(&quot;tone.wav&quot;)</code></td></tr>
-            <tr><td><code>fn load_sound_from_wave(wave: Wave) -&gt; Sound</code></td><td><code>cfire::audio::load_sound_from_wave(wave)</code></td><td>Registers an in-memory <code>Wave</code> with the polyphonic mixer and returns a playable <code>Sound</code> handle.<br/><code>sfx := audio.load_sound_from_wave(coin)</code></td></tr>
-            <tr><td><code>fn load_sound(path: str) -&gt; Sound!</code></td><td><code>cfire::audio::load_sound(path)</code></td><td>Loads a <code>.wav</code> file from disk into a playable polyphonic <code>Sound</code> handle.<br/><code>sfx := try audio.load_sound(&quot;click.wav&quot;)</code></td></tr>
-            <tr><td><code>fn (s: Sound) play()</code></td><td><code>s.play()</code></td><td>Triggers polyphonic playback of the sound.<br/><code>sfx.play()</code></td></tr>
-            <tr><td><code>fn (s: Sound) stop()</code></td><td><code>s.stop()</code></td><td>Stops active voices playing this sound.<br/><code>sfx.stop()</code></td></tr>
-            <tr><td><code>fn (s: Sound) set_volume(vol: f32)</code></td><td><code>s.set_volume(vol)</code></td><td>Sets playback gain (<code>0.0</code> to <code>2.0</code>) for this sound.<br/><code>sfx.set_volume(0.75)</code></td></tr>
-            <tr><td><code>fn (s: Sound) set_pitch(pitch: f32)</code></td><td><code>s.set_pitch(pitch)</code></td><td>Sets playback pitch/rate multiplier (<code>1.0</code> = original pitch).<br/><code>sfx.set_pitch(1.25)</code></td></tr>
-            <tr><td><code>fn (s: Sound) set_pan(pan: f32)</code></td><td><code>s.set_pan(pan)</code></td><td>Sets constant-power stereo pan (<code>-1.0</code> left, <code>0.0</code> center, <code>+1.0</code> right).<br/><code>sfx.set_pan(-0.5)</code></td></tr>
-            <tr><td><code>fn (s: Sound) set_looping(loop: bool)</code></td><td><code>s.set_looping(loop)</code></td><td>Enables or disables seamless loop playback.<br/><code>sfx.set_looping(true)</code></td></tr>
-            <tr><td><code>fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; Stream!</code></td><td><code>cfire::audio::open_stream(sample_rate, channels)</code></td><td>Opens a real-time push <code>Stream</code> for custom DSP synthesis.<br/><code>stream := try audio.open_stream(48000, 2)</code></td></tr>
-            <tr><td><code>fn (st: Stream) push_samples(samples: []f32)</code></td><td><code>st.push_samples(samples)</code></td><td>Pushes interleaved <code>f32</code> PCM samples into the stream's lock-free ring buffer.<br/><code>stream.push_samples(pcm_chunk)</code></td></tr>
-            <tr><td><code>fn (st: Stream) needs_data(target_frames: i32 = 2048) -&gt; bool</code></td><td><code>st.needs_data(target_frames)</code></td><td>Returns <code>true</code> when buffered frames fall below <code>target_frames</code>.<br/><code>if stream.needs_data(1024) { ... }</code></td></tr>
-          </tbody>
-        </table></div>
-        <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-builtin" class="pager-card prev" onclick="navigateToRefPane('mod-builtin'); return false;">
-            <span class="pager-dir">&larr; Previous Module (1/37)</span>
-            <span class="pager-title">builtin &mdash; Builtin Types: Methods, Associated Items &amp; make</span>
-          </a>
           <a href="#mod-build" class="pager-card next" onclick="navigateToRefPane('mod-build'); return false;">
-            <span class="pager-dir">Next Module (3/37) &rarr;</span>
+            <span class="pager-dir">Next Module (2/37) &rarr;</span>
             <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
           </a>
         </nav>
@@ -2873,19 +2804,19 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-audio" class="pager-card prev" onclick="navigateToRefPane('mod-audio'); return false;">
-            <span class="pager-dir">&larr; Previous Module (2/37)</span>
-            <span class="pager-title">core:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
+          <a href="#mod-builtin" class="pager-card prev" onclick="navigateToRefPane('mod-builtin'); return false;">
+            <span class="pager-dir">&larr; Previous Module (1/37)</span>
+            <span class="pager-title">builtin &mdash; Builtin Types: Methods, Associated Items &amp; make</span>
           </a>
           <a href="#mod-cli" class="pager-card next" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">Next Module (4/37) &rarr;</span>
+            <span class="pager-dir">Next Module (3/37) &rarr;</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-cli" data-pane-id="mod-cli" data-pane-short="core:cli" data-pane-title="core:cli — Struct-Tag Command-Line Parser &amp; Interactive Prompts">
         <h2 id="mod-cli" style="margin-top:0.25rem;"><code>import "core:cli"</code> &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</h2>
-        <p>Generates zero-boilerplate command-line flag parsers from struct field tags (<code>cli:&quot;--flag,help&quot;</code>), subcommand/positional argument helpers, and interactive terminal prompts. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>cli.*</code> &bull; 7 exported functions</small></p>
+        <p>Generates zero-boilerplate command-line flag parsers from struct field tags (<code>cli:&quot;--flag,help&quot;</code>), subcommand/positional argument helpers, and interactive terminal prompts. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>cli.*</code> &bull; 6 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2907,8 +2838,7 @@ fn main() {
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
-            <tr><td><code>fn parse[T](args: []str = []) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses CLI flags (<code>str</code>, <code>i64</code>, <code>i32</code>, <code>f64</code>, <code>bool</code>) into a tagged struct <code>T</code>.<br/><code>args := try cli.parse[Args]()</code></td></tr>
-            <tr><td><code>fn try_parse[T](args: []str = []) -&gt; T?</code></td><td><code>cfire::cli::try_parse&lt;T&gt;(argc, argv)</code></td><td>Parses and validates CLI flags into a tagged struct <code>T</code>, returning <code>none</code> if any numeric flag argument is invalid.<br/><code>args := cli.try_parse[Args]() or { return }</code></td></tr>
+            <tr><td><code>fn parse[T](args: []str = []) -&gt; T!</code></td><td><code>cfire::cli::parse&lt;T&gt;(argc, argv)</code></td><td>Parses and validates CLI flags (<code>str</code>, <code>i64</code>, <code>i32</code>, <code>u16</code>, <code>f64</code>, <code>bool</code>) into a tagged struct <code>T</code>, returning an <code>Error</code> if any numeric or boolean flag argument is invalid.<br/><code>args := try cli.parse[Args]()</code></td></tr>
             <tr><td><code>fn args() -&gt; []str</code></td><td><code>cfire::cli::args()</code></td><td>Returns the raw command-line arguments passed to the process (excluding <code>argv[0]</code>).<br/><code>raw := cli.args()</code></td></tr>
             <tr><td><code>fn subcommand() -&gt; str</code></td><td><code>cfire::cli::subcommand()</code></td><td>Returns the first non-flag positional argument (subcommand name) or <code>&quot;&quot;</code> if none.<br/><code>cmd := cli.subcommand()</code></td></tr>
             <tr><td><code>fn positional() -&gt; []str</code></td><td><code>cfire::cli::positional()</code></td><td>Returns all non-flag positional arguments passed on the command line.<br/><code>files := cli.positional()</code></td></tr>
@@ -2918,18 +2848,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-build" class="pager-card prev" onclick="navigateToRefPane('mod-build'); return false;">
-            <span class="pager-dir">&larr; Previous Module (3/37)</span>
+            <span class="pager-dir">&larr; Previous Module (2/37)</span>
             <span class="pager-title">core:build &mdash; Declarative Project &amp; Cross-Platform Build System (`build.cf`)</span>
           </a>
           <a href="#mod-collections" class="pager-card next" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">Next Module (5/37) &rarr;</span>
+            <span class="pager-dir">Next Module (4/37) &rarr;</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, MinQueue, Deque)</span>
           </a>
         </nav>
       </article>
       <article class="ref-pane" id="ref-pane-mod-collections" data-pane-id="mod-collections" data-pane-short="core:collections" data-pane-title="core:collections — Generic Containers (Set, PriorityQueue, MinQueue, Deque)">
         <h2 id="mod-collections" style="margin-top:0.25rem;"><code>import "core:collections"</code> &mdash; Generic Containers (Set, PriorityQueue, MinQueue, Deque)</h2>
-        <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>collections.*</code> &bull; 4 exported functions</small></p>
+        <p>Standard generic containers backed by STL unordered_set, priority_queue, and deque. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>collections.*</code> &bull; 31 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -2968,18 +2898,45 @@ fn main() {
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
             <tr><td><code>type Set[T] struct</code></td><td><code>cfire::collections::Set&lt;T&gt;</code></td><td>Generic hash set container.<br/><code>mut s := collections.Set[str]{}</code></td></tr>
+            <tr><td><code>fn (mut s: Set[T]) insert(val: T) -&gt; bool</code></td><td><code>s.insert(val)</code></td><td>Inserts <code>val</code> into the set; returns <code>true</code> if <code>val</code> was newly inserted.<br/><code>added := s.insert(&quot;alpha&quot;)</code></td></tr>
+            <tr><td><code>fn (s: Set[T]) contains(val: T) -&gt; bool</code></td><td><code>s.contains(val)</code></td><td>Returns <code>true</code> if <code>val</code> is present in the set.<br/><code>if s.contains(&quot;alpha&quot;) { ... }</code></td></tr>
+            <tr><td><code>fn (mut s: Set[T]) remove(val: T) -&gt; bool</code></td><td><code>s.remove(val)</code></td><td>Removes <code>val</code> from the set; returns <code>true</code> if it was present.<br/><code>removed := s.remove(&quot;alpha&quot;)</code></td></tr>
+            <tr><td><code>fn (s: Set[T]) len() -&gt; usize</code></td><td><code>s.len()</code></td><td>Returns the number of elements in the set.<br/><code>n := s.len()</code></td></tr>
+            <tr><td><code>fn (s: Set[T]) empty() -&gt; bool</code></td><td><code>s.empty()</code></td><td>Returns <code>true</code> when the set has no elements.<br/><code>if s.empty() { return }</code></td></tr>
+            <tr><td><code>fn (mut s: Set[T]) clear()</code></td><td><code>s.clear()</code></td><td>Removes every element from the set.<br/><code>s.clear()</code></td></tr>
+            <tr><td><code>fn (s: Set[T]) to_slice() -&gt; []T</code></td><td><code>s.to_slice()</code></td><td>Returns a newly allocated slice containing a copy of every element in unspecified order.<br/><code>items := s.to_slice()</code></td></tr>
             <tr><td><code>type PriorityQueue[T] struct</code></td><td><code>cfire::collections::PriorityQueue&lt;T&gt;</code></td><td>Max-first priority queue: <code>push(v)</code>, <code>pop() -&gt; T?</code>, <code>peek() -&gt; T?</code>, <code>len()</code>, <code>empty()</code>.<br/><code>mut pq := collections.PriorityQueue[i32]{}</code></td></tr>
+            <tr><td><code>fn (mut pq: PriorityQueue[T]) push(val: T)</code></td><td><code>pq.push(val)</code></td><td>Pushes <code>val</code> into the max-first priority queue.<br/><code>pq.push(42)</code></td></tr>
+            <tr><td><code>fn (pq: PriorityQueue[T]) peek() -&gt; T?</code></td><td><code>pq.peek()</code></td><td>Returns a copy of the largest element without removing it, or <code>none</code> when empty.<br/><code>top := pq.peek() or 0</code></td></tr>
+            <tr><td><code>fn (pq: PriorityQueue[T]) top() -&gt; T</code></td><td><code>pq.top()</code></td><td>Returns the largest element (panics when empty).<br/><code>best := pq.top()</code></td></tr>
+            <tr><td><code>fn (mut pq: PriorityQueue[T]) pop() -&gt; T?</code></td><td><code>pq.pop()</code></td><td>Removes and returns the largest element, or <code>none</code> when empty.<br/><code>next := pq.pop() or { break }</code></td></tr>
+            <tr><td><code>fn (pq: PriorityQueue[T]) len() -&gt; usize</code></td><td><code>pq.len()</code></td><td>Returns the number of queued elements.<br/><code>n := pq.len()</code></td></tr>
+            <tr><td><code>fn (pq: PriorityQueue[T]) empty() -&gt; bool</code></td><td><code>pq.empty()</code></td><td>Returns <code>true</code> when the priority queue is empty.<br/><code>if pq.empty() { break }</code></td></tr>
             <tr><td><code>type MinQueue[T] struct</code></td><td><code>cfire::collections::MinQueue&lt;T&gt;</code></td><td>Min-first priority queue (smallest element pops first), with the same methods as <code>PriorityQueue[T]</code>. Tuples order element by element, so <code>MinQueue[(i64, i64)]</code> pops the lowest cost first.<br/><code>mut open := collections.MinQueue[i64]{}</code></td></tr>
+            <tr><td><code>fn (mut q: MinQueue[T]) push(val: T)</code></td><td><code>q.push(val)</code></td><td>Pushes <code>val</code> into the min-first priority queue.<br/><code>q.push(10)</code></td></tr>
+            <tr><td><code>fn (q: MinQueue[T]) peek() -&gt; T?</code></td><td><code>q.peek()</code></td><td>Returns a copy of the smallest element without removing it, or <code>none</code> when empty.<br/><code>lo := q.peek() or 0</code></td></tr>
+            <tr><td><code>fn (q: MinQueue[T]) top() -&gt; T</code></td><td><code>q.top()</code></td><td>Returns the smallest element (panics when empty).<br/><code>best := q.top()</code></td></tr>
+            <tr><td><code>fn (mut q: MinQueue[T]) pop() -&gt; T?</code></td><td><code>q.pop()</code></td><td>Removes and returns the smallest element, or <code>none</code> when empty.<br/><code>next := q.pop() or { break }</code></td></tr>
+            <tr><td><code>fn (q: MinQueue[T]) len() -&gt; usize</code></td><td><code>q.len()</code></td><td>Returns the number of queued elements.<br/><code>n := q.len()</code></td></tr>
+            <tr><td><code>fn (q: MinQueue[T]) empty() -&gt; bool</code></td><td><code>q.empty()</code></td><td>Returns <code>true</code> when the min-queue is empty.<br/><code>if q.empty() { break }</code></td></tr>
             <tr><td><code>type Deque[T] struct</code></td><td><code>cfire::collections::Deque&lt;T&gt;</code></td><td>Generic double-ended queue.<br/><code>mut dq := collections.Deque[i32]{}</code></td></tr>
+            <tr><td><code>fn (mut d: Deque[T]) push_back(val: T)</code></td><td><code>d.push_back(val)</code></td><td>Appends <code>val</code> to the back of the deque.<br/><code>dq.push_back(1)</code></td></tr>
+            <tr><td><code>fn (mut d: Deque[T]) push_front(val: T)</code></td><td><code>d.push_front(val)</code></td><td>Prepends <code>val</code> to the front of the deque.<br/><code>dq.push_front(0)</code></td></tr>
+            <tr><td><code>fn (mut d: Deque[T]) pop_back() -&gt; T</code></td><td><code>d.pop_back()</code></td><td>Removes and returns the back element.<br/><code>back := dq.pop_back()</code></td></tr>
+            <tr><td><code>fn (mut d: Deque[T]) pop_front() -&gt; T</code></td><td><code>d.pop_front()</code></td><td>Removes and returns the front element.<br/><code>front := dq.pop_front()</code></td></tr>
+            <tr><td><code>fn (d: Deque[T]) at(idx: usize) -&gt; T?</code></td><td><code>d.at(idx)</code></td><td>Returns the element at <code>idx</code>, or <code>none</code> when <code>idx &gt;= len()</code>.<br/><code>v := dq.at(0) or 0</code></td></tr>
+            <tr><td><code>fn (d: Deque[T]) len() -&gt; usize</code></td><td><code>d.len()</code></td><td>Returns the number of elements in the deque.<br/><code>n := dq.len()</code></td></tr>
+            <tr><td><code>fn (d: Deque[T]) empty() -&gt; bool</code></td><td><code>d.empty()</code></td><td>Returns <code>true</code> when the deque is empty.<br/><code>if dq.empty() { return }</code></td></tr>
+            <tr><td><code>fn (mut d: Deque[T]) clear()</code></td><td><code>d.clear()</code></td><td>Removes every element from the deque.<br/><code>dq.clear()</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-cli" class="pager-card prev" onclick="navigateToRefPane('mod-cli'); return false;">
-            <span class="pager-dir">&larr; Previous Module (4/37)</span>
+            <span class="pager-dir">&larr; Previous Module (3/37)</span>
             <span class="pager-title">core:cli &mdash; Struct-Tag Command-Line Parser &amp; Interactive Prompts</span>
           </a>
           <a href="#mod-aes" class="pager-card next" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">Next Module (6/37) &rarr;</span>
+            <span class="pager-dir">Next Module (5/37) &rarr;</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
         </nav>
@@ -3028,11 +2985,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-collections" class="pager-card prev" onclick="navigateToRefPane('mod-collections'); return false;">
-            <span class="pager-dir">&larr; Previous Module (5/37)</span>
+            <span class="pager-dir">&larr; Previous Module (4/37)</span>
             <span class="pager-title">core:collections &mdash; Generic Containers (Set, PriorityQueue, MinQueue, Deque)</span>
           </a>
           <a href="#mod-blake3" class="pager-card next" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">Next Module (7/37) &rarr;</span>
+            <span class="pager-dir">Next Module (6/37) &rarr;</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
         </nav>
@@ -3058,11 +3015,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-aes" class="pager-card prev" onclick="navigateToRefPane('mod-aes'); return false;">
-            <span class="pager-dir">&larr; Previous Module (6/37)</span>
+            <span class="pager-dir">&larr; Previous Module (5/37)</span>
             <span class="pager-title">core:crypto/aes &mdash; NIST FIPS 197 AES-256 Symmetric Encryption &amp; GCM AEAD</span>
           </a>
           <a href="#mod-hmac" class="pager-card next" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">Next Module (8/37) &rarr;</span>
+            <span class="pager-dir">Next Module (7/37) &rarr;</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
         </nav>
@@ -3100,11 +3057,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-blake3" class="pager-card prev" onclick="navigateToRefPane('mod-blake3'); return false;">
-            <span class="pager-dir">&larr; Previous Module (7/37)</span>
+            <span class="pager-dir">&larr; Previous Module (6/37)</span>
             <span class="pager-title">core:crypto/blake3 &mdash; Cryptographic 256-Bit Digest (Alias)</span>
           </a>
           <a href="#mod-sha256" class="pager-card next" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">Next Module (9/37) &rarr;</span>
+            <span class="pager-dir">Next Module (8/37) &rarr;</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
         </nav>
@@ -3134,11 +3091,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hmac" class="pager-card prev" onclick="navigateToRefPane('mod-hmac'); return false;">
-            <span class="pager-dir">&larr; Previous Module (8/37)</span>
+            <span class="pager-dir">&larr; Previous Module (7/37)</span>
             <span class="pager-title">core:crypto/hmac &mdash; RFC 2104 HMAC-SHA256, RFC 5869 HKDF &amp; PBKDF2-SHA256</span>
           </a>
           <a href="#mod-base64" class="pager-card next" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">Next Module (10/37) &rarr;</span>
+            <span class="pager-dir">Next Module (9/37) &rarr;</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
         </nav>
@@ -3170,11 +3127,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sha256" class="pager-card prev" onclick="navigateToRefPane('mod-sha256'); return false;">
-            <span class="pager-dir">&larr; Previous Module (9/37)</span>
+            <span class="pager-dir">&larr; Previous Module (8/37)</span>
             <span class="pager-title">core:crypto/sha256 &mdash; Standard FIPS 180-4 SHA-256 Digest &amp; CSPRNG</span>
           </a>
           <a href="#mod-csv" class="pager-card next" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">Next Module (11/37) &rarr;</span>
+            <span class="pager-dir">Next Module (10/37) &rarr;</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
         </nav>
@@ -3189,7 +3146,7 @@ import &quot;core:encoding/csv&quot;
 
 fn main() {
     csv_data := &quot;service,region,qps\nauth,us-west-2,1450\napi,eu-central-1,4200\n&quot;
-    table := csv.parse(csv_data)
+    table := try csv.parse(csv_data)
     for row in table {
         println(&quot;Service: {}, Region: {}, QPS: {}&quot;, row[0], row[1], row[2])
     }
@@ -3201,7 +3158,7 @@ fn main() {
         <div class="table-wrap api-table-wrap"><table>
           <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
           <tbody>
-            <tr><td><code>fn parse(s: str) -&gt; [][]str</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses a CSV string into a 2D table of rows and columns.<br/><code>rows := csv.parse(content)</code></td></tr>
+            <tr><td><code>fn parse(s: str) -&gt; [][]str!</code></td><td><code>cfire::csv::parse(s)</code></td><td>Parses an RFC 4180 CSV string into a 2D table of rows and columns, returning an <code>Error</code> on malformed or unclosed quotes.<br/><code>rows := try csv.parse(content)</code></td></tr>
             <tr><td><code>fn stringify(rows: [][]str) -&gt; str</code></td><td><code>cfire::csv::stringify(rows)</code></td><td>Serializes a 2D table of strings into an RFC 4180 formatted CSV string.<br/><code>out := csv.stringify(rows)</code></td></tr>
             <tr><td><code>fn read_all(path: str) -&gt; [][]str!</code></td><td><code>cfire::csv::read_all(path)</code></td><td>Reads an entire CSV file from disk and parses it into rows.<br/><code>table := try csv.read_all(&quot;data.csv&quot;)</code></td></tr>
             <tr><td><code>fn write_all(path: str, rows: [][]str) -&gt; void!</code></td><td><code>cfire::csv::write_all(path, rows)</code></td><td>Serializes rows to CSV and writes to disk.<br/><code>try csv.write_all(&quot;report.csv&quot;, table)</code></td></tr>
@@ -3209,11 +3166,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-base64" class="pager-card prev" onclick="navigateToRefPane('mod-base64'); return false;">
-            <span class="pager-dir">&larr; Previous Module (10/37)</span>
+            <span class="pager-dir">&larr; Previous Module (9/37)</span>
             <span class="pager-title">core:encoding/base64 &mdash; RFC 4648 Base64 &amp; URL-Safe Encoding/Decoding</span>
           </a>
           <a href="#mod-hex" class="pager-card next" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">Next Module (12/37) &rarr;</span>
+            <span class="pager-dir">Next Module (11/37) &rarr;</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
         </nav>
@@ -3245,11 +3202,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-csv" class="pager-card prev" onclick="navigateToRefPane('mod-csv'); return false;">
-            <span class="pager-dir">&larr; Previous Module (11/37)</span>
+            <span class="pager-dir">&larr; Previous Module (10/37)</span>
             <span class="pager-title">core:encoding/csv &mdash; RFC 4180 CSV Parsing &amp; Stringification</span>
           </a>
           <a href="#mod-fs" class="pager-card next" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">Next Module (13/37) &rarr;</span>
+            <span class="pager-dir">Next Module (12/37) &rarr;</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
         </nav>
@@ -3337,11 +3294,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-hex" class="pager-card prev" onclick="navigateToRefPane('mod-hex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (12/37)</span>
+            <span class="pager-dir">&larr; Previous Module (11/37)</span>
             <span class="pager-title">core:encoding/hex &mdash; Hexadecimal Encoding &amp; Decoding</span>
           </a>
           <a href="#mod-json" class="pager-card next" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">Next Module (14/37) &rarr;</span>
+            <span class="pager-dir">Next Module (13/37) &rarr;</span>
             <span class="pager-title">core:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
         </nav>
@@ -3393,18 +3350,18 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-fs" class="pager-card prev" onclick="navigateToRefPane('mod-fs'); return false;">
-            <span class="pager-dir">&larr; Previous Module (13/37)</span>
+            <span class="pager-dir">&larr; Previous Module (12/37)</span>
             <span class="pager-title">core:fs &mdash; Filesystem &amp; Zero-Copy Byte I/O</span>
           </a>
           <a href="#mod-keychain" class="pager-card next" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">Next Module (15/37) &rarr;</span>
-            <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
+            <span class="pager-dir">Next Module (14/37) &rarr;</span>
+            <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Apple Biometric Auth</span>
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-keychain" data-pane-id="mod-keychain" data-pane-short="core:keychain" data-pane-title="core:keychain — Native OS Credential Keychain &amp; Secret Service">
-        <h2 id="mod-keychain" style="margin-top:0.25rem;"><code>import "core:keychain"</code> &mdash; Native OS Credential Keychain &amp; Secret Service</h2>
-        <p>Cross-platform OS credential storage backed by <code>Security.framework</code> (<code>SecItemAdd</code> / <code>SecItemCopyMatching</code> / <code>SecItemDelete</code>) on macOS &amp; iOS, <code>libsecret</code> (<code>secret-tool</code>) on Linux, and Windows Credential Manager (<code>CredWriteA</code> / <code>CredReadA</code>) on Windows. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-framework Security (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)</code> &bull; Namespace: <code>keychain.*</code> &bull; 3 exported functions</small></p>
+      <article class="ref-pane" id="ref-pane-mod-keychain" data-pane-id="mod-keychain" data-pane-short="core:keychain" data-pane-title="core:keychain — Native OS Credential Keychain &amp; Apple Biometric Auth">
+        <h2 id="mod-keychain" style="margin-top:0.25rem;"><code>import "core:keychain"</code> &mdash; Native OS Credential Keychain &amp; Apple Biometric Auth</h2>
+        <p>Cross-platform OS credential storage backed by <code>Security.framework</code> (<code>SecItemAdd</code> / <code>SecItemCopyMatching</code> / <code>SecItemDelete</code>) on macOS &amp; iOS, <code>libsecret</code> (<code>secret-tool</code>) on Linux, and Windows Credential Manager (<code>CredWriteW</code> / <code>CredReadW</code>) on Windows, plus Face ID / Touch ID and device passcode user-presence verification via Apple <code>LocalAuthentication</code>. <br/><small style="color:var(--muted)">Auto-linked flags: <code>-framework Security -lobjc (macOS/iOS) / libsecret (Linux) / Advapi32 (Windows)</code> &bull; Namespace: <code>keychain.*</code> &bull; 4 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -3422,15 +3379,16 @@ fn main() {
             <tr><td><code>fn set(service: str, account: str, secret: str) -&gt; void!</code></td><td><code>cfire::keychain::set(service, account, secret)</code></td><td>Stores or updates a generic password for <code>(service, account)</code> in the OS keychain.<br/><code>try keychain.set(&quot;dev.flint.vault&quot;, &quot;master&quot;, token)</code></td></tr>
             <tr><td><code>fn get(service: str, account: str) -&gt; str!</code></td><td><code>cfire::keychain::get(service, account)</code></td><td>Retrieves the secret stored for <code>(service, account)</code> from the OS keychain.<br/><code>sec := try keychain.get(&quot;dev.flint.vault&quot;, &quot;master&quot;)</code></td></tr>
             <tr><td><code>fn delete_password(service: str, account: str) -&gt; void!</code></td><td><code>cfire::keychain::delete_password(service, account)</code></td><td>Removes the credential entry for <code>(service, account)</code> from the OS keychain.<br/><code>try keychain.delete_password(&quot;dev.flint.vault&quot;, &quot;master&quot;)</code></td></tr>
+            <tr><td><code>fn authenticate_biometric(reason: str, allow_passcode: bool = true) -&gt; bool!</code></td><td><code>cfire::keychain::authenticate_biometric(reason, allow_passcode)</code></td><td>Prompts for Face ID / Touch ID (with optional device passcode fallback when <code>allow_passcode</code> is <code>true</code>) via Apple <code>LocalAuthentication</code>; returns <code>Err</code> on unsupported platforms or when invoked on a GUI main thread.<br/><code>ok := try keychain.authenticate_biometric(&quot;Unlock vault&quot;, allow_passcode: true)</code></td></tr>
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-json" class="pager-card prev" onclick="navigateToRefPane('mod-json'); return false;">
-            <span class="pager-dir">&larr; Previous Module (14/37)</span>
+            <span class="pager-dir">&larr; Previous Module (13/37)</span>
             <span class="pager-title">core:json &mdash; Compile-Time SIMD JSON Reflection &amp; Dynamic DOM</span>
           </a>
           <a href="#mod-log" class="pager-card next" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">Next Module (16/37) &rarr;</span>
+            <span class="pager-dir">Next Module (15/37) &rarr;</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
         </nav>
@@ -3474,11 +3432,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-keychain" class="pager-card prev" onclick="navigateToRefPane('mod-keychain'); return false;">
-            <span class="pager-dir">&larr; Previous Module (15/37)</span>
-            <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Secret Service</span>
+            <span class="pager-dir">&larr; Previous Module (14/37)</span>
+            <span class="pager-title">core:keychain &mdash; Native OS Credential Keychain &amp; Apple Biometric Auth</span>
           </a>
           <a href="#mod-math" class="pager-card next" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">Next Module (17/37) &rarr;</span>
+            <span class="pager-dir">Next Module (16/37) &rarr;</span>
             <span class="pager-title">core:math &mdash; Math Constants &amp; Multi-Input Functions</span>
           </a>
         </nav>
@@ -3513,11 +3471,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-log" class="pager-card prev" onclick="navigateToRefPane('mod-log'); return false;">
-            <span class="pager-dir">&larr; Previous Module (16/37)</span>
+            <span class="pager-dir">&larr; Previous Module (15/37)</span>
             <span class="pager-title">core:log &mdash; Structured Leveled Logging</span>
           </a>
           <a href="#mod-net" class="pager-card next" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">Next Module (18/37) &rarr;</span>
+            <span class="pager-dir">Next Module (17/37) &rarr;</span>
             <span class="pager-title">core:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
         </nav>
@@ -3579,11 +3537,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-math" class="pager-card prev" onclick="navigateToRefPane('mod-math'); return false;">
-            <span class="pager-dir">&larr; Previous Module (17/37)</span>
+            <span class="pager-dir">&larr; Previous Module (16/37)</span>
             <span class="pager-title">core:math &mdash; Math Constants &amp; Multi-Input Functions</span>
           </a>
           <a href="#mod-http" class="pager-card next" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">Next Module (19/37) &rarr;</span>
+            <span class="pager-dir">Next Module (18/37) &rarr;</span>
             <span class="pager-title">core:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
         </nav>
@@ -3643,7 +3601,7 @@ fn main() {
             <tr><td><code>fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -&gt; Response!</code></td><td><code>cfire::http::get(url, headers, verify_peer, timeout_ms)</code></td><td>Executes an HTTP or HTTPS GET request against a target URL within the end-to-end <code>timeout_ms</code> deadline (<code>0</code> disables).<br/><code>resp := try http.get(&quot;https://127.0.0.1:8443/health&quot;, {}, false, timeout_ms: 5000)</code></td></tr>
             <tr><td><code>fn post(url: str, body: str, content_type: str = &quot;application/json&quot;, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -&gt; Response!</code></td><td><code>cfire::http::post(url, body, content_type, headers, verify_peer, timeout_ms)</code></td><td>Executes an HTTP or HTTPS POST request with payload body within <code>timeout_ms</code> (<code>0</code> disables).<br/><code>resp := try http.post(&quot;http://127.0.0.1:8080/items&quot;, &quot;{\&quot;id\&quot;: 1}&quot;)</code></td></tr>
             <tr><td><code>fn request(method: str, url: str, body: str = &quot;&quot;, content_type: str = &quot;&quot;, headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = &quot;&quot;, timeout_ms: i64 = 30000) -&gt; Response!</code></td><td><code>cfire::http::request(method, url, body, content_type, headers, verify_peer, ca_file, timeout_ms)</code></td><td>Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within <code>timeout_ms</code> (<code>0</code> disables).<br/><code>resp := try http.request(&quot;DELETE&quot;, &quot;http://127.0.0.1:8080/items/1&quot;)</code></td></tr>
-            <tr><td><code>fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -&gt; bool, verify_peer: bool = true, ca_file: str = &quot;&quot;, timeout_ms: i64 = 30000) -&gt; void!</code></td><td><code>cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)</code></td><td>Streams an HTTP/HTTPS POST response using Server-Sent Events (<code>text/event-stream</code>) and chunked transfer encoding, invoking <code>on_event</code> for each event.<br/><code>try http.post_sse(url, payload, headers, |ev| { print(&quot;{}&quot;, ev.data); return true })</code></td></tr>
+            <tr><td><code>fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -&gt; bool, verify_peer: bool = true, ca_file: str = &quot;&quot;, timeout_ms: i64 = 30000) -&gt; Response!</code></td><td><code>cfire::http::post_sse(url, body, headers, on_event, verify_peer, ca_file, timeout_ms)</code></td><td>Streams an HTTP/HTTPS POST response using Server-Sent Events (<code>text/event-stream</code>) and chunked transfer encoding, invoking <code>on_event</code> for each event.<br/><code>try http.post_sse(url, payload, headers, |ev| { print(&quot;{}&quot;, ev.data); return true })</code></td></tr>
             <tr><td><code>fn serve_in_background(port: u16, handler: fn(Request) -&gt; Response | Router, tls: TlsConfig = {}, host: str = &quot;0.0.0.0&quot;) -&gt; HttpServer!</code></td><td><code>cfire::http::serve_in_background(port, handler, tls, host)</code></td><td>Binds a server on <code>host:port</code>, starts its background event loop, and returns the live <code>HttpServer</code> handle.<br/><code>mut srv := try http.serve_in_background(0, router, host: &quot;127.0.0.1&quot;)</code></td></tr>
             <tr><td><code>fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = &quot;0.0.0.0&quot;) -&gt; HttpServer!</code></td><td><code>cfire::http::make_server(port, tls, host)</code></td><td><code>make(http.Server, port)</code> creates an HTTP server listening on <code>host:port</code> (<code>0</code> picks an ephemeral port); <code>make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})</code> serves HTTPS, and <code>host: &quot;127.0.0.1&quot;</code> restricts binding to loopback.<br/><code>mut srv := try make(http.Server, 8443, tls: http.TlsConfig{cert_file: &quot;cert.pem&quot;, key_file: &quot;key.pem&quot;}, host: &quot;127.0.0.1&quot;)</code></td></tr>
             <tr><td><code>fn make() -&gt; Router</code></td><td><code>cfire::http::make_router()</code></td><td><code>make(http.Router)</code> creates an independent HTTP &amp; WebSocket request router supporting path parameters (<code>:id</code>) and wildcards (<code>*path</code>).<br/><code>mut router := make(http.Router)</code></td></tr>
@@ -3674,11 +3632,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-net" class="pager-card prev" onclick="navigateToRefPane('mod-net'); return false;">
-            <span class="pager-dir">&larr; Previous Module (18/37)</span>
+            <span class="pager-dir">&larr; Previous Module (17/37)</span>
             <span class="pager-title">core:net &mdash; POSIX BSD TCP Sockets &amp; Loopback Networking</span>
           </a>
           <a href="#mod-ipc" class="pager-card next" onclick="navigateToRefPane('mod-ipc'); return false;">
-            <span class="pager-dir">Next Module (20/37) &rarr;</span>
+            <span class="pager-dir">Next Module (19/37) &rarr;</span>
             <span class="pager-title">core:net/ipc &mdash; Cross-Platform Local IPC &amp; Peer Credentials</span>
           </a>
         </nav>
@@ -3741,11 +3699,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-http" class="pager-card prev" onclick="navigateToRefPane('mod-http'); return false;">
-            <span class="pager-dir">&larr; Previous Module (19/37)</span>
+            <span class="pager-dir">&larr; Previous Module (18/37)</span>
             <span class="pager-title">core:net/http &mdash; HTTP/1.1 &amp; HTTPS Client, Server &amp; Router</span>
           </a>
           <a href="#mod-tls" class="pager-card next" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">Next Module (21/37) &rarr;</span>
+            <span class="pager-dir">Next Module (20/37) &rarr;</span>
             <span class="pager-title">core:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
         </nav>
@@ -3793,11 +3751,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-ipc" class="pager-card prev" onclick="navigateToRefPane('mod-ipc'); return false;">
-            <span class="pager-dir">&larr; Previous Module (20/37)</span>
+            <span class="pager-dir">&larr; Previous Module (19/37)</span>
             <span class="pager-title">core:net/ipc &mdash; Cross-Platform Local IPC &amp; Peer Credentials</span>
           </a>
           <a href="#mod-url" class="pager-card next" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">Next Module (22/37) &rarr;</span>
+            <span class="pager-dir">Next Module (21/37) &rarr;</span>
             <span class="pager-title">core:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
         </nav>
@@ -3835,11 +3793,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-tls" class="pager-card prev" onclick="navigateToRefPane('mod-tls'); return false;">
-            <span class="pager-dir">&larr; Previous Module (21/37)</span>
+            <span class="pager-dir">&larr; Previous Module (20/37)</span>
             <span class="pager-title">core:net/tls &mdash; TLS 1.2 / 1.3 &amp; X.509 Certificate Engine</span>
           </a>
           <a href="#mod-websocket" class="pager-card next" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">Next Module (23/37) &rarr;</span>
+            <span class="pager-dir">Next Module (22/37) &rarr;</span>
             <span class="pager-title">core:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
         </nav>
@@ -3905,25 +3863,25 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-url" class="pager-card prev" onclick="navigateToRefPane('mod-url'); return false;">
-            <span class="pager-dir">&larr; Previous Module (22/37)</span>
+            <span class="pager-dir">&larr; Previous Module (21/37)</span>
             <span class="pager-title">core:net/url &mdash; RFC 3986 URL Parsing &amp; URL Encoding</span>
           </a>
           <a href="#mod-os" class="pager-card next" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">Next Module (24/37) &rarr;</span>
-            <span class="pager-title">core:os &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</span>
+            <span class="pager-dir">Next Module (23/37) &rarr;</span>
+            <span class="pager-title">core:os &mdash; Environment, App Directories, Terminal, Pipes, URLs &amp; Subprocesses</span>
           </a>
         </nav>
       </article>
-      <article class="ref-pane" id="ref-pane-mod-os" data-pane-id="mod-os" data-pane-short="core:os" data-pane-title="core:os — Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses">
-        <h2 id="mod-os" style="margin-top:0.25rem;"><code>import "core:os"</code> &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</h2>
-        <p>Process environment inspection, working directory queries, standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make(os.RawTerminal)</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>os.*</code> &bull; 18 exported functions</small></p>
+      <article class="ref-pane" id="ref-pane-mod-os" data-pane-id="mod-os" data-pane-short="core:os" data-pane-title="core:os — Environment, App Directories, Terminal, Pipes, URLs &amp; Subprocesses">
+        <h2 id="mod-os" style="margin-top:0.25rem;"><code>import "core:os"</code> &mdash; Environment, App Directories, Terminal, Pipes, URLs &amp; Subprocesses</h2>
+        <p>Process environment inspection, working directory and persistent OS app directory queries (<code>data_dir</code>, <code>cache_dir</code>, <code>documents_dir</code>), safe external URL launching (<code>open_url</code>), standard stream handles (<code>os.stdin()</code>, <code>os.stdout()</code>, <code>os.stderr()</code>), RAII pipes (<code>os.pipe()</code>), raw terminal control (<code>is_tty</code>, <code>term_size</code>, <code>make(os.RawTerminal)</code>, <code>on_signal</code>), and subprocess execution (<code>command</code>, <code>exec_output</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only; -lshell32 -lole32 on Windows, -lobjc UIKit on iOS)</code> &bull; Namespace: <code>os.*</code> &bull; 21 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
 import &quot;core:os&quot;
 
 fn main() {
-    home := os.getenv_opt(&quot;HOME&quot;) or &quot;/tmp&quot;
+    home := os.getenv(&quot;HOME&quot;) or &quot;/tmp&quot;
     println(&quot;Environment $HOME: {}&quot;, home)
 
     // Execute external process without shell interpretation and capture stdout/exit code
@@ -3943,10 +3901,13 @@ fn main() {
           <tbody>
             <tr><td><code>fn args() -&gt; []str</code></td><td><code>cfire::os::args()</code></td><td>Returns the command-line arguments passed to the current process.<br/><code>argv := os.args()</code></td></tr>
             <tr><td><code>fn exit(code: i32)</code></td><td><code>cfire::os::exit(code)</code></td><td>Terminates the current process immediately with status <code>code</code>.<br/><code>os.exit(1)</code></td></tr>
-            <tr><td><code>fn getenv(key: str, fallback: str = &quot;&quot;) -&gt; str</code></td><td><code>cfire::os::getenv(key, fallback)</code></td><td>Reads environment variable <code>key</code>, returning <code>fallback</code> if unset.<br/><code>mode := os.getenv(&quot;ENV&quot;, &quot;dev&quot;)</code></td></tr>
-            <tr><td><code>fn getenv_opt(key: str) -&gt; str?</code></td><td><code>cfire::os::getenv_opt(key)</code></td><td>Reads environment variable <code>key</code>, returning <code>none</code> if unset.<br/><code>val := os.getenv_opt(&quot;API_KEY&quot;) or { return }</code></td></tr>
+            <tr><td><code>fn getenv(key: str) -&gt; str?</code></td><td><code>cfire::os::getenv(key)</code></td><td>Reads environment variable <code>key</code>, returning <code>none</code> if unset.<br/><code>mode := os.getenv(&quot;ENV&quot;) or &quot;dev&quot;</code></td></tr>
             <tr><td><code>fn setenv(key: str, value: str)</code></td><td><code>cfire::os::setenv(key, value)</code></td><td>Sets environment variable <code>key</code> to <code>value</code> in the current process.<br/><code>os.setenv(&quot;MODE&quot;, &quot;prod&quot;)</code></td></tr>
             <tr><td><code>fn cwd() -&gt; str</code></td><td><code>cfire::os::cwd()</code></td><td>Returns the current working directory path.<br/><code>dir := os.cwd()</code></td></tr>
+            <tr><td><code>fn data_dir(app: str = &quot;&quot;) -&gt; str!</code></td><td><code>cfire::os::data_dir(app)</code></td><td>Returns (and creates with <code>0700</code> permissions if missing) the OS-standard persistent application data directory (<code>Application Support</code> on Apple, <code>XDG_DATA_HOME</code> on Linux, <code>FOLDERID_RoamingAppData</code> on Windows).<br/><code>dir := try os.data_dir(&quot;myapp&quot;)</code></td></tr>
+            <tr><td><code>fn cache_dir(app: str = &quot;&quot;) -&gt; str!</code></td><td><code>cfire::os::cache_dir(app)</code></td><td>Returns (and creates with <code>0700</code> permissions if missing) the OS-standard cache directory (<code>Library/Caches</code> on Apple, <code>XDG_CACHE_HOME</code> on Linux, <code>FOLDERID_LocalAppData\\Cache</code> on Windows).<br/><code>dir := try os.cache_dir(&quot;myapp&quot;)</code></td></tr>
+            <tr><td><code>fn documents_dir() -&gt; str!</code></td><td><code>cfire::os::documents_dir()</code></td><td>Returns (and creates with <code>0700</code> permissions if missing) the user's OS-standard Documents directory (<code>~/Documents</code> on Apple, <code>XDG_DOCUMENTS_DIR</code> on Linux, <code>FOLDERID_Documents</code> on Windows).<br/><code>docs := try os.documents_dir()</code></td></tr>
+            <tr><td><code>fn open_url(url: str) -&gt; void!</code></td><td><code>cfire::os::open_url(url)</code></td><td>Opens a validated external URL (<code>http://</code>, <code>https://</code>, <code>mailto:</code>, <code>tel:</code>, or custom schemes; rejects <code>file:</code> / <code>javascript:</code> schemes and control characters) via the OS handler without shell interpretation.<br/><code>try os.open_url(&quot;https://cfire.memo.engineer&quot;)</code></td></tr>
             <tr><td><code>fn getpid() -&gt; i64</code></td><td><code>cfire::os::getpid()</code></td><td>Returns the process ID (PID) of the current process.<br/><code>pid := os.getpid()</code></td></tr>
             <tr><td><code>fn stdin() -&gt; File</code></td><td><code>cfire::os::stdin_file()</code></td><td>Returns a non-owning <code>fs.File</code> stream handle wrapping standard input (FD 0).<br/><code>line := os.stdin().read_line() or { return }</code></td></tr>
             <tr><td><code>fn stdout() -&gt; File</code></td><td><code>cfire::os::stdout_file()</code></td><td>Returns a non-owning <code>fs.File</code> stream handle wrapping standard output (FD 1).<br/><code>_ = try os.stdout().write_text(&quot;ok\n&quot;)</code></td></tr>
@@ -3963,11 +3924,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-websocket" class="pager-card prev" onclick="navigateToRefPane('mod-websocket'); return false;">
-            <span class="pager-dir">&larr; Previous Module (23/37)</span>
+            <span class="pager-dir">&larr; Previous Module (22/37)</span>
             <span class="pager-title">core:net/websocket &mdash; RFC 6455 High-Level WebSockets &amp; WSS Client &amp; Server</span>
           </a>
           <a href="#mod-rand" class="pager-card next" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">Next Module (25/37) &rarr;</span>
+            <span class="pager-dir">Next Module (24/37) &rarr;</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
         </nav>
@@ -3997,11 +3958,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-os" class="pager-card prev" onclick="navigateToRefPane('mod-os'); return false;">
-            <span class="pager-dir">&larr; Previous Module (24/37)</span>
-            <span class="pager-title">core:os &mdash; Environment, Standard Streams, Terminal, Pipes &amp; Subprocesses</span>
+            <span class="pager-dir">&larr; Previous Module (23/37)</span>
+            <span class="pager-title">core:os &mdash; Environment, App Directories, Terminal, Pipes, URLs &amp; Subprocesses</span>
           </a>
           <a href="#mod-regex" class="pager-card next" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">Next Module (26/37) &rarr;</span>
+            <span class="pager-dir">Next Module (25/37) &rarr;</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
         </nav>
@@ -4050,11 +4011,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-rand" class="pager-card prev" onclick="navigateToRefPane('mod-rand'); return false;">
-            <span class="pager-dir">&larr; Previous Module (25/37)</span>
+            <span class="pager-dir">&larr; Previous Module (24/37)</span>
             <span class="pager-title">core:rand &mdash; Thread-Local MT19937_64 &amp; CSPRNG Generator</span>
           </a>
           <a href="#mod-sync" class="pager-card next" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">Next Module (27/37) &rarr;</span>
+            <span class="pager-dir">Next Module (26/37) &rarr;</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
         </nav>
@@ -4106,7 +4067,7 @@ fn main() {
             <tr><td><code>fn make[T](initial: T) -&gt; Mutex[T]</code></td><td><code>cfire::sync::make_mutex&lt;T&gt;(initial)</code></td><td><code>make(sync.Mutex[T], initial)</code> creates a mutex protecting a value of type <code>T</code>; <code>make(sync.Mutex[void])</code> is a pure lock.<br/><code>mu := make(sync.Mutex[i64], 0)</code></td></tr>
             <tr><td><code>fn make[T](initial: T) -&gt; Atomic[T]</code></td><td><code>cfire::sync::make_atomic&lt;T&gt;(initial)</code></td><td><code>make(sync.Atomic[T], initial)</code> creates an atomic variable holding <code>initial</code>.<br/><code>hits := make(sync.Atomic[i64], 0)</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) send(val: T)</code></td><td><code>ch.send(val)</code></td><td>Sends a value into the channel and wakes one waiting receiver.<br/><code>ch.send(42)</code></td></tr>
-            <tr><td><code>fn (ch: Channel[T]) recv() -&gt; T!</code></td><td><code>ch.recv()</code></td><td>Blocks until a value is available or returns an error if the channel is closed and empty.<br/><code>v := ch.recv() or 0</code></td></tr>
+            <tr><td><code>fn (ch: Channel[T]) recv() -&gt; T?</code></td><td><code>ch.recv()</code></td><td>Blocks until a value is available or returns <code>none</code> if the channel is closed and empty.<br/><code>v := ch.recv() or 0</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) try_recv() -&gt; T?</code></td><td><code>ch.try_recv()</code></td><td>Attempts a non-blocking receive from the channel, returning <code>none</code> immediately if the queue is empty.<br/><code>v := ch.try_recv() or { return }</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) recv_timeout(timeout_ms: i64) -&gt; T?</code></td><td><code>ch.recv_timeout(timeout_ms)</code></td><td>Waits up to <code>timeout_ms</code> milliseconds for a value from the channel, returning <code>none</code> on timeout or closed empty channel.<br/><code>v := ch.recv_timeout(50) or { return }</code></td></tr>
             <tr><td><code>fn (ch: Channel[T]) recv_ctx(ctx: Context) -&gt; T!</code></td><td><code>ch.recv_ctx(ctx)</code></td><td>Receives from the channel or aborts immediately with an error if <code>ctx</code> is cancelled.<br/><code>v := try ch.recv_ctx(ctx)</code></td></tr>
@@ -4128,11 +4089,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-regex" class="pager-card prev" onclick="navigateToRefPane('mod-regex'); return false;">
-            <span class="pager-dir">&larr; Previous Module (26/37)</span>
+            <span class="pager-dir">&larr; Previous Module (25/37)</span>
             <span class="pager-title">core:regex &mdash; ECMAScript Regular Expressions</span>
           </a>
           <a href="#mod-context" class="pager-card next" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">Next Module (28/37) &rarr;</span>
+            <span class="pager-dir">Next Module (27/37) &rarr;</span>
             <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
         </nav>
@@ -4177,50 +4138,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sync" class="pager-card prev" onclick="navigateToRefPane('mod-sync'); return false;">
-            <span class="pager-dir">&larr; Previous Module (27/37)</span>
+            <span class="pager-dir">&larr; Previous Module (26/37)</span>
             <span class="pager-title">core:sync &mdash; Thread-Safe Typed Channels &amp; Mutexes</span>
           </a>
-          <a href="#mod-tako" class="pager-card next" onclick="navigateToRefPane('mod-tako'); return false;">
-            <span class="pager-dir">Next Module (29/37) &rarr;</span>
-            <span class="pager-title">core:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
-          </a>
-        </nav>
-      </article>
-      <article class="ref-pane" id="ref-pane-mod-tako" data-pane-id="mod-tako" data-pane-short="core:tako" data-pane-title="core:tako — Tako Cloud SDK Primitives (S3, SQS)">
-        <h2 id="mod-tako" style="margin-top:0.25rem;"><code>import "core:tako"</code> &mdash; Tako Cloud SDK Primitives (S3, SQS)</h2>
-        <p>Cloud primitives and storage compatibility services (<code>core:tako</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>tako.*</code> &bull; 8 exported functions</small></p>
-        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
-        <pre><code>package main
-
-import &quot;core:tako&quot; as tk
-
-fn main() -&gt; void! {
-    mut s3 := tk.NewS3Service()
-    try s3.CreateBucket(&quot;data&quot;)
-    _ = try s3.PutObject(&quot;data&quot;, &quot;item.json&quot;, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;, &quot;application/json&quot;)
-    obj := try s3.GetObject(&quot;data&quot;, &quot;item.json&quot;)
-    println(&quot;Stored payload: {}&quot;, obj.Body)
-}</code></pre>
-        <div class="table-wrap api-table-wrap"><table>
-          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
-          <tbody>
-            <tr><td><code>fn NewS3Service() -&gt; S3Service</code></td><td><code>cfire::tako::NewS3Service()</code></td><td>Creates an S3 compatible storage service client.<br/><code>s3 := tako.NewS3Service()</code></td></tr>
-            <tr><td><code>fn NewSQSService() -&gt; SQSService</code></td><td><code>cfire::tako::NewSQSService()</code></td><td>Creates an SQS compatible message queue service client.<br/><code>sqs := tako.NewSQSService()</code></td></tr>
-            <tr><td><code>fn (mut s: S3Service) CreateBucket(name: str) -&gt; void!</code></td><td><code>s.CreateBucket(name)</code></td><td>Creates a storage bucket.<br/><code>try s3.CreateBucket(&quot;b&quot;)</code></td></tr>
-            <tr><td><code>fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -&gt; str!</code></td><td><code>s.PutObject(bucket, key, data, content_type)</code></td><td>Uploads an object and returns its ETag.<br/><code>etag := try s3.PutObject(&quot;b&quot;, &quot;k&quot;, &quot;d&quot;, &quot;text/plain&quot;)</code></td></tr>
-            <tr><td><code>fn (mut s: S3Service) GetObject(bucket: str, key: str) -&gt; S3Object!</code></td><td><code>s.GetObject(bucket, key)</code></td><td>Downloads an object from storage.<br/><code>obj := try s3.GetObject(&quot;b&quot;, &quot;k&quot;)</code></td></tr>
-            <tr><td><code>fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -&gt; str!</code></td><td><code>s.CreateQueue(name, fifo)</code></td><td>Creates a message queue and returns its URL.<br/><code>q := try sqs.CreateQueue(&quot;q&quot;, true)</code></td></tr>
-            <tr><td><code>fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = &quot;&quot;, dedup: str = &quot;&quot;) -&gt; str!</code></td><td><code>s.SendMessage(queue_url, body, group, dedup)</code></td><td>Publishes a message to the queue.<br/><code>id := try sqs.SendMessage(q, &quot;body&quot;)</code></td></tr>
-            <tr><td><code>fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -&gt; []SQSMessage!</code></td><td><code>s.ReceiveMessages(queue_url, max_messages)</code></td><td>Receives available messages from the queue.<br/><code>msgs := try sqs.ReceiveMessages(q, 1)</code></td></tr>
-          </tbody>
-        </table></div>
-        <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
-            <span class="pager-dir">&larr; Previous Module (28/37)</span>
-            <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
-          </a>
           <a href="#mod-time" class="pager-card next" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">Next Module (30/37) &rarr;</span>
+            <span class="pager-dir">Next Module (28/37) &rarr;</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
         </nav>
@@ -4289,12 +4211,12 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-tako" class="pager-card prev" onclick="navigateToRefPane('mod-tako'); return false;">
-            <span class="pager-dir">&larr; Previous Module (29/37)</span>
-            <span class="pager-title">core:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
+          <a href="#mod-context" class="pager-card prev" onclick="navigateToRefPane('mod-context'); return false;">
+            <span class="pager-dir">&larr; Previous Module (27/37)</span>
+            <span class="pager-title">core:sync/context &mdash; Cancellation Tokens &amp; Deadline Contexts</span>
           </a>
           <a href="#mod-unicode" class="pager-card next" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">Next Module (31/37) &rarr;</span>
+            <span class="pager-dir">Next Module (29/37) &rarr;</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
         </nav>
@@ -4334,11 +4256,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-time" class="pager-card prev" onclick="navigateToRefPane('mod-time'); return false;">
-            <span class="pager-dir">&larr; Previous Module (30/37)</span>
+            <span class="pager-dir">&larr; Previous Module (28/37)</span>
             <span class="pager-title">core:time &mdash; Time, Calendar Dates, Durations &amp; RFC 3339 Formatting</span>
           </a>
           <a href="#mod-ai" class="pager-card next" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">Next Module (32/37) &rarr;</span>
+            <span class="pager-dir">Next Module (30/37) &rarr;</span>
             <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</span>
           </a>
         </nav>
@@ -4469,11 +4391,90 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-unicode" class="pager-card prev" onclick="navigateToRefPane('mod-unicode'); return false;">
-            <span class="pager-dir">&larr; Previous Module (31/37)</span>
+            <span class="pager-dir">&larr; Previous Module (29/37)</span>
             <span class="pager-title">core:unicode &mdash; UTF-8 Decoding, Rune Counting &amp; Unicode Manipulation</span>
           </a>
+          <a href="#mod-audio" class="pager-card next" onclick="navigateToRefPane('mod-audio'); return false;">
+            <span class="pager-dir">Next Module (31/37) &rarr;</span>
+            <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
+          </a>
+        </nav>
+      </article>
+      <article class="ref-pane" id="ref-pane-mod-audio" data-pane-id="mod-audio" data-pane-short="ext:audio" data-pane-title="ext:audio — Audio Engine, Polyphonic Mixer, Synth &amp; WAV">
+        <h2 id="mod-audio" style="margin-top:0.25rem;"><code>import "ext:audio"</code> &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</h2>
+        <p>Multi-target audio synthesis, RIFF/WAV encoding and decoding, polyphonic <code>Sound</code> playback with pitch/pan/looping, and real-time float32 <code>Stream</code> DSP across macOS, iOS, WebAssembly, and Linux. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(AudioToolbox / WebAudio / ALSA)</code> &bull; Namespace: <code>audio.*</code> &bull; 25 exported functions</small></p>
+        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
+        <pre><code>package main
+
+import &quot;ext:audio&quot;
+
+fn main() {
+    try audio.init(48000, 2)
+    defer audio.close()
+    audio.set_master_volume(0.8)
+
+    // 1. Zero-asset procedural sound effect playback
+    coin_wave := audio.gen_sfx(audio.SfxPreset::Coin)
+    coin_sfx := audio.load_sound_from_wave(coin_wave)
+    coin_sfx.play()
+
+    // 2. Synthesize tone, encode/save as 16-bit RIFF WAV, and stream live DSP
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)
+    try audio.save_wav(tone, &quot;a440.wav&quot;)
+
+    stream := try audio.open_stream(48000, 2)
+    if stream.needs_data(2048) {
+        stream.push_samples(tone.samples)
+    }
+    println(&quot;Audio RMS: {}, Peak: {}&quot;, audio.rms_level(), audio.peak_level())
+}</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th>Type</th><th>Kind</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>audio.Waveform</code></td><td>enum</td><td>Oscillator shape for <code>audio.gen_tone</code> and <code>audio.gen_chirp</code>.<br/>Variants: <code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code></td></tr>
+            <tr><td><code>audio.SfxPreset</code></td><td>enum</td><td>A procedural sound effect for <code>audio.gen_sfx</code>.<br/>Variants: <code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code></td></tr>
+            <tr><td><code>audio.Wave</code></td><td>struct</td><td>An in-memory waveform: interleaved <code>f32</code> samples in <code>-1.0</code>..<code>1.0</code>.<br/>Fields: <code>samples: []f32</code>, <code>sample_rate: i32</code>, <code>channels: i32</code></td></tr>
+            <tr><td><code>audio.Sound</code></td><td>handle</td><td>A wave registered with the mixer, playable many times at once (polyphonic).</td></tr>
+            <tr><td><code>audio.Stream</code></td><td>handle</td><td>A real-time output stream you push samples into, for custom synthesis.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>fn init(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; void!</code></td><td><code>cfire::audio::init(sample_rate, channels)</code></td><td>Initializes the hardware audio output queue (or headless software mixer in CI).<br/><code>try audio.init(48000, 2)</code></td></tr>
+            <tr><td><code>fn close()</code></td><td><code>cfire::audio::close()</code></td><td>Stops all active sounds and streams and releases audio hardware resources.<br/><code>defer audio.close()</code></td></tr>
+            <tr><td><code>fn is_ready() -&gt; bool</code></td><td><code>cfire::audio::is_ready()</code></td><td>Returns <code>true</code> if the audio subsystem is initialized.<br/><code>if audio.is_ready() { ... }</code></td></tr>
+            <tr><td><code>fn set_master_volume(vol: f32)</code></td><td><code>cfire::audio::set_master_volume(vol)</code></td><td>Sets the master output volume multiplier (<code>0.0</code> to <code>1.0</code>).<br/><code>audio.set_master_volume(0.8)</code></td></tr>
+            <tr><td><code>fn master_volume() -&gt; f32</code></td><td><code>cfire::audio::master_volume()</code></td><td>Returns the current master output volume multiplier.<br/><code>v := audio.master_volume()</code></td></tr>
+            <tr><td><code>fn rms_level() -&gt; f32</code></td><td><code>cfire::audio::rms_level()</code></td><td>Returns the live master RMS amplitude (<code>0.0</code> to <code>1.0</code>) for UI audio meters.<br/><code>rms := audio.rms_level()</code></td></tr>
+            <tr><td><code>fn peak_level() -&gt; f32</code></td><td><code>cfire::audio::peak_level()</code></td><td>Returns the live master peak amplitude (<code>0.0</code> to <code>1.0</code>) for UI visualizers.<br/><code>pk := audio.peak_level()</code></td></tr>
+            <tr><td><code>fn gen_tone(kind: Waveform, freq_hz: f32, duration_sec: f32, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_tone(kind, freq_hz, duration_sec, volume)</code></td><td>Synthesizes a stereo waveform (<code>Sine</code>, <code>Square</code>, <code>Saw</code>, <code>Triangle</code>, <code>Noise</code>) with smooth ADSR envelope.<br/><code>w := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.25, 0.5)</code></td></tr>
+            <tr><td><code>fn gen_chirp(start_hz: f32, end_hz: f32, duration_sec: f32, kind: Waveform = Waveform::Sine, volume: f32 = 0.5) -&gt; Wave</code></td><td><code>cfire::audio::gen_chirp(start_hz, end_hz, duration_sec, kind, volume)</code></td><td>Synthesizes a frequency-swept tone from <code>start_hz</code> to <code>end_hz</code>.<br/><code>sweep := audio.gen_chirp(220.0, 880.0, 0.2, audio.Waveform::Saw, 0.4)</code></td></tr>
+            <tr><td><code>fn gen_sfx(preset: SfxPreset) -&gt; Wave</code></td><td><code>cfire::audio::gen_sfx(preset)</code></td><td>Generates a zero-asset procedural sound effect (<code>Tap</code>, <code>Coin</code>, <code>Laser</code>, <code>Explosion</code>, <code>PowerUp</code>, <code>Jump</code>, <code>Alert</code>).<br/><code>coin := audio.gen_sfx(audio.SfxPreset::Coin)</code></td></tr>
+            <tr><td><code>fn encode_wav(wave: Wave) -&gt; []byte</code></td><td><code>cfire::audio::encode_wav(wave)</code></td><td>Encodes an in-memory <code>Wave</code> into a 16-bit PCM RIFF/WAV byte slice.<br/><code>wav_bytes := audio.encode_wav(w)</code></td></tr>
+            <tr><td><code>fn decode_wav(data: []byte) -&gt; Wave!</code></td><td><code>cfire::audio::decode_wav(data)</code></td><td>Decodes a RIFF/WAV byte slice (8/16/24-bit PCM or 32-bit float) into a <code>Wave</code>.<br/><code>w := try audio.decode_wav(wav_bytes)</code></td></tr>
+            <tr><td><code>fn save_wav(wave: Wave, path: str) -&gt; void!</code></td><td><code>cfire::audio::save_wav(wave, path)</code></td><td>Writes a <code>Wave</code> to disk as a standard <code>.wav</code> file.<br/><code>try audio.save_wav(w, &quot;tone.wav&quot;)</code></td></tr>
+            <tr><td><code>fn load_wav(path: str) -&gt; Wave!</code></td><td><code>cfire::audio::load_wav(path)</code></td><td>Loads and decodes a <code>.wav</code> file from disk or app bundle.<br/><code>w := try audio.load_wav(&quot;tone.wav&quot;)</code></td></tr>
+            <tr><td><code>fn load_sound_from_wave(wave: Wave) -&gt; Sound</code></td><td><code>cfire::audio::load_sound_from_wave(wave)</code></td><td>Registers an in-memory <code>Wave</code> with the polyphonic mixer and returns a playable <code>Sound</code> handle.<br/><code>sfx := audio.load_sound_from_wave(coin)</code></td></tr>
+            <tr><td><code>fn load_sound(path: str) -&gt; Sound!</code></td><td><code>cfire::audio::load_sound(path)</code></td><td>Loads a <code>.wav</code> file from disk into a playable polyphonic <code>Sound</code> handle.<br/><code>sfx := try audio.load_sound(&quot;click.wav&quot;)</code></td></tr>
+            <tr><td><code>fn (s: Sound) play()</code></td><td><code>s.play()</code></td><td>Triggers polyphonic playback of the sound.<br/><code>sfx.play()</code></td></tr>
+            <tr><td><code>fn (s: Sound) stop()</code></td><td><code>s.stop()</code></td><td>Stops active voices playing this sound.<br/><code>sfx.stop()</code></td></tr>
+            <tr><td><code>fn (s: Sound) set_volume(vol: f32)</code></td><td><code>s.set_volume(vol)</code></td><td>Sets playback gain (<code>0.0</code> to <code>2.0</code>) for this sound.<br/><code>sfx.set_volume(0.75)</code></td></tr>
+            <tr><td><code>fn (s: Sound) set_pitch(pitch: f32)</code></td><td><code>s.set_pitch(pitch)</code></td><td>Sets playback pitch/rate multiplier (<code>1.0</code> = original pitch).<br/><code>sfx.set_pitch(1.25)</code></td></tr>
+            <tr><td><code>fn (s: Sound) set_pan(pan: f32)</code></td><td><code>s.set_pan(pan)</code></td><td>Sets constant-power stereo pan (<code>-1.0</code> left, <code>0.0</code> center, <code>+1.0</code> right).<br/><code>sfx.set_pan(-0.5)</code></td></tr>
+            <tr><td><code>fn (s: Sound) set_looping(loop: bool)</code></td><td><code>s.set_looping(loop)</code></td><td>Enables or disables seamless loop playback.<br/><code>sfx.set_looping(true)</code></td></tr>
+            <tr><td><code>fn open_stream(sample_rate: i32 = 48000, channels: i32 = 2) -&gt; Stream!</code></td><td><code>cfire::audio::open_stream(sample_rate, channels)</code></td><td>Opens a real-time push <code>Stream</code> for custom DSP synthesis.<br/><code>stream := try audio.open_stream(48000, 2)</code></td></tr>
+            <tr><td><code>fn (st: Stream) push_samples(samples: []f32)</code></td><td><code>st.push_samples(samples)</code></td><td>Pushes interleaved <code>f32</code> PCM samples into the stream's lock-free ring buffer.<br/><code>stream.push_samples(pcm_chunk)</code></td></tr>
+            <tr><td><code>fn (st: Stream) needs_data(target_frames: i32 = 2048) -&gt; bool</code></td><td><code>st.needs_data(target_frames)</code></td><td>Returns <code>true</code> when buffered frames fall below <code>target_frames</code>.<br/><code>if stream.needs_data(1024) { ... }</code></td></tr>
+          </tbody>
+        </table></div>
+        <nav class="chapter-pager" aria-label="Module Pagination">
+          <a href="#mod-ai" class="pager-card prev" onclick="navigateToRefPane('mod-ai'); return false;">
+            <span class="pager-dir">&larr; Previous Module (30/37)</span>
+            <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</span>
+          </a>
           <a href="#mod-zstd" class="pager-card next" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">Next Module (33/37) &rarr;</span>
+            <span class="pager-dir">Next Module (32/37) &rarr;</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
         </nav>
@@ -4507,12 +4508,12 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-ai" class="pager-card prev" onclick="navigateToRefPane('mod-ai'); return false;">
-            <span class="pager-dir">&larr; Previous Module (32/37)</span>
-            <span class="pager-title">ext:ai &mdash; On-Device &amp; Cloud AI, Agent Orchestration, Document Ingestion &amp; MCP</span>
+          <a href="#mod-audio" class="pager-card prev" onclick="navigateToRefPane('mod-audio'); return false;">
+            <span class="pager-dir">&larr; Previous Module (31/37)</span>
+            <span class="pager-title">ext:audio &mdash; Audio Engine, Polyphonic Mixer, Synth &amp; WAV</span>
           </a>
           <a href="#mod-sodium" class="pager-card next" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">Next Module (34/37) &rarr;</span>
+            <span class="pager-dir">Next Module (33/37) &rarr;</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
         </nav>
@@ -4550,11 +4551,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-zstd" class="pager-card prev" onclick="navigateToRefPane('mod-zstd'); return false;">
-            <span class="pager-dir">&larr; Previous Module (33/37)</span>
+            <span class="pager-dir">&larr; Previous Module (32/37)</span>
             <span class="pager-title">ext:compress/zstd &mdash; Native Zstandard Frame Compression</span>
           </a>
           <a href="#mod-sqlite" class="pager-card next" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">Next Module (35/37) &rarr;</span>
+            <span class="pager-dir">Next Module (34/37) &rarr;</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
           </a>
         </nav>
@@ -4613,11 +4614,11 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sodium" class="pager-card prev" onclick="navigateToRefPane('mod-sodium'); return false;">
-            <span class="pager-dir">&larr; Previous Module (34/37)</span>
+            <span class="pager-dir">&larr; Previous Module (33/37)</span>
             <span class="pager-title">ext:crypto/sodium &mdash; Memory-Hard Argon2id KDF, BLAKE2b, Subkey Derivation &amp; XChaCha20-Poly1305 AEAD</span>
           </a>
           <a href="#mod-ssh" class="pager-card next" onclick="navigateToRefPane('mod-ssh'); return false;">
-            <span class="pager-dir">Next Module (36/37) &rarr;</span>
+            <span class="pager-dir">Next Module (35/37) &rarr;</span>
             <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
         </nav>
@@ -4693,8 +4694,47 @@ fn main() {
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
           <a href="#mod-sqlite" class="pager-card prev" onclick="navigateToRefPane('mod-sqlite'); return false;">
-            <span class="pager-dir">&larr; Previous Module (35/37)</span>
+            <span class="pager-dir">&larr; Previous Module (34/37)</span>
             <span class="pager-title">ext:db/sqlite &mdash; Embedded SQLite3 &amp; SQLCipher with WAL, Vector Search &amp; Row Mapping</span>
+          </a>
+          <a href="#mod-tako" class="pager-card next" onclick="navigateToRefPane('mod-tako'); return false;">
+            <span class="pager-dir">Next Module (36/37) &rarr;</span>
+            <span class="pager-title">ext:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
+          </a>
+        </nav>
+      </article>
+      <article class="ref-pane" id="ref-pane-mod-tako" data-pane-id="mod-tako" data-pane-short="ext:tako" data-pane-title="ext:tako — Tako Cloud SDK Primitives (S3, SQS)">
+        <h2 id="mod-tako" style="margin-top:0.25rem;"><code>import "ext:tako"</code> &mdash; Tako Cloud SDK Primitives (S3, SQS)</h2>
+        <p>Cloud primitives and storage compatibility services (<code>ext:tako</code>). <br/><small style="color:var(--muted)">Auto-linked flags: <code>(header-only)</code> &bull; Namespace: <code>tako.*</code> &bull; 8 exported functions</small></p>
+        <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
+        <pre><code>package main
+
+import &quot;ext:tako&quot; as tk
+
+fn main() -&gt; void! {
+    mut s3 := tk.NewS3Service()
+    try s3.CreateBucket(&quot;data&quot;)
+    _ = try s3.PutObject(&quot;data&quot;, &quot;item.json&quot;, &quot;{\&quot;status\&quot;:\&quot;ok\&quot;}&quot;, &quot;application/json&quot;)
+    obj := try s3.GetObject(&quot;data&quot;, &quot;item.json&quot;)
+    println(&quot;Stored payload: {}&quot;, obj.Body)
+}</code></pre>
+        <div class="table-wrap api-table-wrap"><table>
+          <thead><tr><th><code>.cf</code> Signature</th><th>C++23 Lowering</th><th>Description &amp; Example</th></tr></thead>
+          <tbody>
+            <tr><td><code>fn NewS3Service() -&gt; S3Service</code></td><td><code>cfire::tako::NewS3Service()</code></td><td>Creates an S3 compatible storage service client.<br/><code>s3 := tako.NewS3Service()</code></td></tr>
+            <tr><td><code>fn NewSQSService() -&gt; SQSService</code></td><td><code>cfire::tako::NewSQSService()</code></td><td>Creates an SQS compatible message queue service client.<br/><code>sqs := tako.NewSQSService()</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) CreateBucket(name: str) -&gt; void!</code></td><td><code>s.CreateBucket(name)</code></td><td>Creates a storage bucket.<br/><code>try s3.CreateBucket(&quot;b&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) PutObject(bucket: str, key: str, data: str, content_type: str) -&gt; str!</code></td><td><code>s.PutObject(bucket, key, data, content_type)</code></td><td>Uploads an object and returns its ETag.<br/><code>etag := try s3.PutObject(&quot;b&quot;, &quot;k&quot;, &quot;d&quot;, &quot;text/plain&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: S3Service) GetObject(bucket: str, key: str) -&gt; S3Object!</code></td><td><code>s.GetObject(bucket, key)</code></td><td>Downloads an object from storage.<br/><code>obj := try s3.GetObject(&quot;b&quot;, &quot;k&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) CreateQueue(name: str, fifo: bool = false) -&gt; str!</code></td><td><code>s.CreateQueue(name, fifo)</code></td><td>Creates a message queue and returns its URL.<br/><code>q := try sqs.CreateQueue(&quot;q&quot;, true)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) SendMessage(queue_url: str, body: str, group: str = &quot;&quot;, dedup: str = &quot;&quot;) -&gt; str!</code></td><td><code>s.SendMessage(queue_url, body, group, dedup)</code></td><td>Publishes a message to the queue.<br/><code>id := try sqs.SendMessage(q, &quot;body&quot;)</code></td></tr>
+            <tr><td><code>fn (mut s: SQSService) ReceiveMessages(queue_url: str, max_messages: i32 = 1) -&gt; []SQSMessage!</code></td><td><code>s.ReceiveMessages(queue_url, max_messages)</code></td><td>Receives available messages from the queue.<br/><code>msgs := try sqs.ReceiveMessages(q, 1)</code></td></tr>
+          </tbody>
+        </table></div>
+        <nav class="chapter-pager" aria-label="Module Pagination">
+          <a href="#mod-ssh" class="pager-card prev" onclick="navigateToRefPane('mod-ssh'); return false;">
+            <span class="pager-dir">&larr; Previous Module (35/37)</span>
+            <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
           </a>
           <a href="#mod-webui" class="pager-card next" onclick="navigateToRefPane('mod-webui'); return false;">
             <span class="pager-dir">Next Module (37/37) &rarr;</span>
@@ -4704,7 +4744,7 @@ fn main() {
       </article>
       <article class="ref-pane" id="ref-pane-mod-webui" data-pane-id="mod-webui" data-pane-short="ext:webui" data-pane-title="ext:webui — Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework">
         <h2 id="mod-webui" style="margin-top:0.25rem;"><code>import "ext:webui"</code> &mdash; Hybrid Native WebView &amp; Two-Way Typed RPC Application Framework</h2>
-        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 62 exported functions</small></p>
+        <p>Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge. <br/><small style="color:var(--muted)">Auto-linked flags: <code>(WKWebView / WebKitGTK / WebView2 + JSON-RPC 2.0)</code> &bull; Namespace: <code>webui.*</code> &bull; 64 exported functions</small></p>
         <div class="code-header"><span class="tag-cf">Practical Workflow Example (.cf)</span></div>
         <pre><code>package main
 
@@ -4768,14 +4808,15 @@ fn main() {
             <tr><td><code>fn (mut app: App) bind_action(name: str, handler: fn() -&gt; any!)</code></td><td><code>app.bind_action(name, handler)</code></td><td>Binds a zero-argument action closure to <code>window.backend.&lt;name&gt;()</code>.<br/><code>app.bind_action(&quot;reset_desk&quot;) || { return &quot;ok&quot; }</code></td></tr>
             <tr><td><code>fn (mut app: App) bind_action_async(name: str, handler: fn() -&gt; any!)</code></td><td><code>app.bind_action_async(name, handler)</code></td><td>Binds a zero-argument RPC action that executes asynchronously on a background worker thread.<br/><code>app.bind_action_async(&quot;sync_now&quot;) || { return run_sync() }</code></td></tr>
             <tr><td><code>fn (mut app: App) bind_raw(name: str, handler: fn(str) -&gt; str!)</code></td><td><code>app.bind_raw(name, handler)</code></td><td>Binds a raw JSON string RPC handler to <code>window.backend.&lt;name&gt;(params)</code>.<br/><code>app.bind_raw(&quot;raw_op&quot;) |raw_json| { return raw_json }</code></td></tr>
-            <tr><td><code>fn (mut app: App) on(event: str, handler: fn(str))</code></td><td><code>app.on(event, handler)</code></td><td>Subscribes a backend callback to frontend events (<code>window.runtime.EventsEmit</code>) and native desktop lifecycle events (<code>&quot;window:close_requested&quot;</code>, <code>&quot;window:fullscreen&quot;</code> with <code>{&quot;fullscreen&quot;:bool}</code>, <code>&quot;window:file_drop&quot;</code> with <code>{&quot;paths&quot;:[...]}</code>, and <code>&quot;window:reopen&quot;</code> on macOS Dock click).<br/><code>app.on(&quot;window:file_drop&quot;) |payload| { println(&quot;{}&quot;, payload) }</code></td></tr>
+            <tr><td><code>fn (mut app: App) on(event: str, handler: fn(str))</code></td><td><code>app.on(event, handler)</code></td><td>Subscribes a backend callback to frontend events (<code>window.runtime.EventsEmit</code>) and native desktop/mobile lifecycle events (<code>&quot;app:active&quot;</code>, <code>&quot;app:inactive&quot;</code>, <code>&quot;app:foreground&quot;</code>, <code>&quot;app:background&quot;</code>, <code>&quot;app:open_url&quot;</code>, <code>&quot;app:notification_opened&quot;</code>, <code>&quot;app:external_navigation&quot;</code>, <code>&quot;app:webview_reloaded&quot;</code>, <code>&quot;keyboard:change&quot;</code>, <code>&quot;window:close_requested&quot;</code>, <code>&quot;window:fullscreen&quot;</code>, <code>&quot;window:file_drop&quot;</code>, and <code>&quot;window:reopen&quot;</code>).<br/><code>app.on(&quot;app:open_url&quot;) |payload| { println(&quot;{}&quot;, payload) }</code></td></tr>
             <tr><td><code>fn (mut app: App) emit(event: str, payload: any)</code></td><td><code>app.emit(event, payload)</code></td><td>Serializes <code>payload</code> as JSON and dispatches it to all frontend <code>window.runtime.EventsOn(event, fn)</code> listeners.<br/><code>app.emit(&quot;meter:peak&quot;, status)</code></td></tr>
             <tr><td><code>fn (mut app: App) emit_bytes(event: str, data: []byte)</code></td><td><code>app.emit_bytes(event, data)</code></td><td>Emits a binary <code>[]byte</code> payload to frontend <code>window.runtime.EventsOn(event, fn)</code> listeners as a Base64-decoded <code>Uint8Array</code>.<br/><code>app.emit_bytes(&quot;pty:data&quot;, chunk)</code></td></tr>
             <tr><td><code>fn (mut app: App) clear_history()</code></td><td><code>app.clear_history()</code></td><td>Clears the bounded in-memory ring buffer of recorded emitted events.<br/><code>app.clear_history()</code></td></tr>
             <tr><td><code>fn (mut app: App) set_max_history(max_events: usize)</code></td><td><code>app.set_max_history(max_events)</code></td><td>Sets the maximum number of emitted events retained per event name for testing inspection (<code>0</code> disables history retention).<br/><code>app.set_max_history(128)</code></td></tr>
             <tr><td><code>fn (app: App) clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)</code></td><td><code>app.clipboard_set(text, concealed, clear_after_ms)</code></td><td>Copies <code>text</code> to the native OS system clipboard (<code>NSPasteboard</code> on macOS, <code>GtkClipboard</code> on Linux, <code>Win32</code> on Windows), optionally marking it concealed (<code>org.nspasteboard.ConcealedType</code> / <code>ExcludeClipboardContentFromMonitorProcessing</code>) and auto-clearing after <code>clear_after_ms</code> if unchanged.<br/><code>app.clipboard_set(token, true, 15000)</code></td></tr>
             <tr><td><code>fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)</code></td><td><code>app.clipboard_set_secret(text, clear_after_ms)</code></td><td>Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after <code>clear_after_ms</code> if the clipboard has not been overwritten.<br/><code>app.clipboard_set_secret(password, 30000)</code></td></tr>
-            <tr><td><code>fn (app: App) clipboard_get() -&gt; str</code></td><td><code>app.clipboard_get()</code></td><td>Reads current plain text from the native OS system clipboard.<br/><code>clip := app.clipboard_get()</code></td></tr>
+            <tr><td><code>fn (app: App) is_clipboard_concealed() -&gt; bool</code></td><td><code>app.is_clipboard_concealed()</code></td><td>Returns <code>true</code> if the most recent clipboard write was marked as concealed/secret.<br/><code>concealed := app.is_clipboard_concealed()</code></td></tr>
+            <tr><td><code>fn (app: App) clipboard_get() -&gt; str</code></td><td><code>app.clipboard_get()</code></td><td>Reads current plain text from the native OS system clipboard (triggers iOS 16+ OS paste permission prompt when reading external apps' pasteboard contents).<br/><code>clip := app.clipboard_get()</code></td></tr>
             <tr><td><code>fn (app: App) monospace_fonts() -&gt; []str</code></td><td><code>app.monospace_fonts()</code></td><td>Enumerates installed system monospace font families (<code>NSFontManager</code> on macOS, <code>fc-list :spacing=mono</code> on Linux, <code>EnumFontFamiliesExW</code> on Windows).<br/><code>fonts := app.monospace_fonts()</code></td></tr>
             <tr><td><code>fn (mut app: App) set_icon(icon_path: str)</code></td><td><code>app.set_icon(icon_path)</code></td><td>Sets the application window and dock/taskbar icon from a <code>.png</code>, <code>.icns</code>, or <code>.ico</code> file.<br/><code>app.set_icon(&quot;assets/icon.png&quot;)</code></td></tr>
             <tr><td><code>fn (mut app: App) set_tray(icon_path: str, tooltip: str = &quot;&quot;)</code></td><td><code>app.set_tray(icon_path, tooltip)</code></td><td>Configures a system tray / menu-bar status item (<code>NSStatusItem</code> on macOS, <code>GtkStatusIcon</code> on Linux, <code>Shell_NotifyIconW</code> on Windows).<br/><code>app.set_tray(&quot;assets/tray.png&quot;, &quot;Flint&quot;)</code></td></tr>
@@ -4810,7 +4851,8 @@ fn main() {
             <tr><td><code>fn (mut app: App) center()</code></td><td><code>app.center()</code></td><td>Centers the native window on the active screen.<br/><code>app.center()</code></td></tr>
             <tr><td><code>fn (app: App) open_file_dialog(title: str = &quot;Open File&quot;) -&gt; str</code></td><td><code>app.open_file_dialog(title)</code></td><td>Opens a native OS file picker dialog and returns the selected path (or <code>&quot;&quot;</code> if cancelled).<br/><code>path := app.open_file_dialog(&quot;Select Audio Track&quot;)</code></td></tr>
             <tr><td><code>fn (app: App) save_file_dialog(title: str = &quot;Save File&quot;, default_name: str = &quot;&quot;) -&gt; str</code></td><td><code>app.save_file_dialog(title, default_name)</code></td><td>Opens a native OS save-file dialog and returns the chosen destination path.<br/><code>dest := app.save_file_dialog(&quot;Export Preset&quot;, &quot;studio.json&quot;)</code></td></tr>
-            <tr><td><code>fn (app: App) message_dialog(title: str, message: str)</code></td><td><code>app.message_dialog(title, message)</code></td><td>Displays a modal native OS alert dialog.<br/><code>app.message_dialog(&quot;Export Complete&quot;, &quot;Saved master preset.&quot;)</code></td></tr>
+            <tr><td><code>fn (mut app: App) allow_navigation_origin(origin: str)</code></td><td><code>app.allow_navigation_origin(origin)</code></td><td>Permits in-WebView navigation to an additional exact <code>scheme://host[:port]</code> origin (for embedded OAuth/dev flows). All other external links open safely in the OS browser (<code>SFSafariViewController</code> on iOS, default browser on desktop) and emit <code>&quot;app:external_navigation&quot;</code>.<br/><code>app.allow_navigation_origin(&quot;https://auth.example.com&quot;)</code></td></tr>
+            <tr><td><code>fn (app: App) initial_url() -&gt; str?</code></td><td><code>app.initial_url()</code></td><td>Returns the cold-start Universal Link or deep-link URL that launched the app, if any (<code>none</code> on normal launch).<br/><code>if u := app.initial_url() { route(u) }</code></td></tr>
             <tr><td><code>fn (mut app: App) call_rpc(method: str, params_json: str = &quot;{}&quot;) -&gt; str!</code></td><td><code>app.call_rpc(method, params_json)</code></td><td>Directly invokes a bound RPC handler in-memory without opening a window (ideal for <code>cfire test</code> and <code>fuzz</code> blocks).<br/><code>res := try app.call_rpc(&quot;set_track&quot;, &quot;{\&quot;channel\&quot;:1}&quot;)</code></td></tr>
             <tr><td><code>fn (mut app: App) dispatch_event(event: str, data_json: str = &quot;{}&quot;)</code></td><td><code>app.dispatch_event(event, data_json)</code></td><td>Dispatches a synthetic frontend event to <code>app.on(event)</code> listeners during headless testing.<br/><code>app.dispatch_event(&quot;fader:input&quot;, &quot;{\&quot;channel\&quot;:1}&quot;)</code></td></tr>
             <tr><td><code>fn (app: App) resolve_asset_mime(path: str) -&gt; str</code></td><td><code>app.resolve_asset_mime(path)</code></td><td>Returns the MIME type the embedded asset server reports for <code>path</code> (useful in headless contract tests).<br/><code>mime := app.resolve_asset_mime(&quot;/index.html&quot;)</code></td></tr>
@@ -4827,9 +4869,9 @@ fn main() {
           </tbody>
         </table></div>
         <nav class="chapter-pager" aria-label="Module Pagination">
-          <a href="#mod-ssh" class="pager-card prev" onclick="navigateToRefPane('mod-ssh'); return false;">
+          <a href="#mod-tako" class="pager-card prev" onclick="navigateToRefPane('mod-tako'); return false;">
             <span class="pager-dir">&larr; Previous Module (36/37)</span>
-            <span class="pager-title">ext:net/ssh &mdash; First-Class SSH Client, PTY, SFTP &amp; Port Forwarding</span>
+            <span class="pager-title">ext:tako &mdash; Tako Cloud SDK Primitives (S3, SQS)</span>
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
             <span class="pager-dir">Diagnostics Reference &rarr;</span>

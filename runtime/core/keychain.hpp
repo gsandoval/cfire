@@ -2,10 +2,14 @@
 #include "../cfire_prelude.hpp"
 #include "os.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <expected>
 #include <format>
+#include <future>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,8 +17,25 @@
 #include <vector>
 
 #if defined(__APPLE__) && !defined(PLATFORM_WEB)
+#include <TargetConditionals.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
+#include <dlfcn.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
+#ifndef CFIRE_OBJC_AUTORELEASE_DECLARED
+#define CFIRE_OBJC_AUTORELEASE_DECLARED 1
+extern "C" {
+void* objc_autoreleasePoolPush(void);
+void objc_autoreleasePoolPop(void*);
+}
+#endif
+#ifndef CFIRE_OBJC_STACK_BLOCK_DECLARED
+#define CFIRE_OBJC_STACK_BLOCK_DECLARED 1
+extern "C" {
+extern void* _NSConcreteStackBlock[];
+}
+#endif
 #elif defined(_WIN32)
 #include <windows.h>
 #include <wincred.h>
@@ -338,6 +359,241 @@ inline auto utf8_to_wide(std::string_view s) -> std::wstring {
     std::string_view account
 ) -> std::expected<void, cfire::Error> {
     return delete_password(service, account);
+}
+
+namespace detail {
+
+#if defined(CFIRE_TEST_MODE)
+inline auto mock_biometric_slot() -> std::pair<std::mutex&, std::string&> {
+    static std::mutex mu;
+    static std::string mode;
+    return {mu, mode};
+}
+
+inline void set_mock_biometric(std::string_view mode) {
+    auto [mu, slot] = mock_biometric_slot();
+    std::lock_guard<std::mutex> lk(mu);
+    slot.assign(mode);
+}
+
+inline void clear_mock_biometric() {
+    auto [mu, slot] = mock_biometric_slot();
+    std::lock_guard<std::mutex> lk(mu);
+    slot.clear();
+}
+#endif
+
+#if defined(__APPLE__) && !defined(PLATFORM_WEB)
+[[nodiscard]] inline auto kc_objc_cls(const char* name) noexcept -> void* {
+#if defined(__OBJC__) && __has_feature(objc_arc)
+    return (__bridge void*)objc_getClass(name);
+#else
+    return reinterpret_cast<void*>(objc_getClass(name));
+#endif
+}
+
+[[nodiscard]] inline auto ns_error_info(void* err_obj, std::string_view fallback) -> std::pair<int, std::string> {
+    if (!err_obj) return {0, std::string(fallback)};
+    using FnCode = long (*)(void*, SEL);
+    using FnObj = void* (*)(void*, SEL);
+    using FnUtf8 = const char* (*)(void*, SEL);
+    long code = reinterpret_cast<FnCode>(objc_msgSend)(err_obj, sel_registerName("code"));
+    void* desc_ns = reinterpret_cast<FnObj>(objc_msgSend)(err_obj, sel_registerName("localizedDescription"));
+    const char* desc_c = desc_ns ? reinterpret_cast<FnUtf8>(objc_msgSend)(desc_ns, sel_registerName("UTF8String")) : nullptr;
+    std::string msg = (desc_c && *desc_c) ? std::string(desc_c) : std::string(fallback);
+    return {static_cast<int>(code), std::move(msg)};
+}
+
+[[nodiscard]] inline auto is_gui_main_thread() noexcept -> bool {
+    void* nsthread_cls = kc_objc_cls("NSThread");
+    if (!nsthread_cls) return false;
+    using FnBool = BOOL (*)(void*, SEL);
+    if (reinterpret_cast<FnBool>(objc_msgSend)(nsthread_cls, sel_registerName("isMainThread")) == 0) {
+        return false;
+    }
+#if !TARGET_OS_IPHONE
+    void* ns_app_sym = ::dlsym(RTLD_DEFAULT, "NSApp");
+    if (!ns_app_sym) return false;
+    void* app = *reinterpret_cast<void**>(ns_app_sym);
+    if (!app) return false;
+    return reinterpret_cast<FnBool>(objc_msgSend)(app, sel_registerName("isRunning")) != 0;
+#else
+    void* uiapp_cls = kc_objc_cls("UIApplication");
+    if (!uiapp_cls) return false;
+    using FnApp = void* (*)(void*, SEL);
+    void* app = reinterpret_cast<FnApp>(objc_msgSend)(uiapp_cls, sel_registerName("sharedApplication"));
+    return app != nullptr;
+#endif
+}
+
+struct LaReplyState {
+    std::promise<std::expected<bool, cfire::Error>> promise{};
+    std::atomic<bool> completed{false};
+};
+
+struct LaBlockDescriptor {
+    unsigned long reserved;
+    unsigned long size;
+    void (*copy_helper)(void* dst, void* src);
+    void (*dispose_helper)(void* src);
+};
+
+struct LaReplyBlock {
+    void* isa;
+    int flags;
+    int reserved;
+    void (*invoke)(void*, BOOL, void*);
+    const LaBlockDescriptor* descriptor;
+    std::shared_ptr<LaReplyState>* state_holder;
+};
+
+inline void la_block_copy(void* dst_raw, void* src_raw) {
+    auto* dst = static_cast<LaReplyBlock*>(dst_raw);
+    auto* src = static_cast<LaReplyBlock*>(src_raw);
+    dst->state_holder = new std::shared_ptr<LaReplyState>(*src->state_holder);
+}
+
+inline void la_block_dispose(void* src_raw) {
+    auto* src = static_cast<LaReplyBlock*>(src_raw);
+    delete src->state_holder;
+    src->state_holder = nullptr;
+}
+
+inline void la_block_invoke(void* blk_raw, BOOL success, void* err_obj) {
+    void* pool = ::objc_autoreleasePoolPush();
+    auto pool_guard = cfire::scope_exit([&] { ::objc_autoreleasePoolPop(pool); });
+
+    auto* blk = static_cast<LaReplyBlock*>(blk_raw);
+    if (!blk || !blk->state_holder || !*blk->state_holder) return;
+    auto state = *blk->state_holder;
+    if (state->completed.exchange(true, std::memory_order_acq_rel)) return;
+
+    if (success != 0) {
+        state->promise.set_value(true);
+        return;
+    }
+    if (err_obj) {
+        auto [code, desc] = ns_error_info(err_obj, "biometric evaluation failed");
+        // kLAErrorAuthenticationFailed (-1) and kLAErrorUserCancel (-2)
+        if (code == -1 || code == -2) {
+            state->promise.set_value(false);
+        } else {
+            state->promise.set_value(cfire::make_error(desc, code));
+        }
+        return;
+    }
+    state->promise.set_value(false);
+}
+#endif
+
+} // namespace detail
+
+[[nodiscard]] inline auto authenticate_biometric(
+    std::string_view reason,
+    bool allow_passcode = true
+) -> std::expected<bool, cfire::Error> {
+    if (reason.empty()) {
+        return cfire::make_error("keychain.authenticate_biometric requires a non-empty reason");
+    }
+#if defined(CFIRE_TEST_MODE)
+    if (detail::is_headless_test()) {
+        std::string mode;
+        {
+            auto [mu, slot] = detail::mock_biometric_slot();
+            std::lock_guard<std::mutex> lk(mu);
+            mode = slot;
+        }
+        if (mode.empty()) {
+            if (const char* env_m = std::getenv("CFIRE_MOCK_BIOMETRIC"); env_m && *env_m) {
+                mode.assign(env_m);
+            }
+        }
+        if (mode.empty() || mode == "1" || mode == "true") {
+            return true;
+        }
+        if (mode == "0" || mode == "false") {
+            return false;
+        }
+        if (mode == "err" || mode == "error") {
+            return cfire::make_error("biometric authentication unavailable (mock)");
+        }
+        return cfire::make_error(std::format("biometric authentication mock error: {}", mode));
+    }
+#endif
+#if defined(__APPLE__) && !defined(PLATFORM_WEB)
+    if (detail::is_gui_main_thread()) {
+        return cfire::make_error("biometric authentication must run on a background thread (e.g. bind_async)");
+    }
+
+    void* pool = ::objc_autoreleasePoolPush();
+    auto pool_guard = cfire::scope_exit([&] { ::objc_autoreleasePoolPop(pool); });
+
+    static void* la_lib = ::dlopen(
+        "/System/Library/Frameworks/LocalAuthentication.framework/LocalAuthentication",
+        RTLD_LAZY);
+    (void)la_lib;
+
+    void* la_cls = detail::kc_objc_cls("LAContext");
+    void* nsstr_cls = detail::kc_objc_cls("NSString");
+    if (!la_cls || !nsstr_cls) {
+        return cfire::make_error("LocalAuthentication framework unavailable on this system");
+    }
+
+    using FnZero = void* (*)(void*, SEL);
+    void* ctx_alloc = reinterpret_cast<FnZero>(objc_msgSend)(la_cls, sel_registerName("alloc"));
+    void* ctx = ctx_alloc ? reinterpret_cast<FnZero>(objc_msgSend)(ctx_alloc, sel_registerName("init")) : nullptr;
+    if (!ctx) {
+        return cfire::make_error("keychain.authenticate_biometric failed to allocate LAContext");
+    }
+    auto ctx_guard = cfire::scope_exit([&] {
+        reinterpret_cast<void (*)(void*, SEL)>(objc_msgSend)(ctx, sel_registerName("release"));
+    });
+
+    // LAPolicyDeviceOwnerAuthentication (2) or LAPolicyDeviceOwnerAuthenticationWithBiometrics (1)
+    const long policy = allow_passcode ? 2L : 1L;
+    void* can_err = nullptr;
+    using FnCanEval = BOOL (*)(void*, SEL, long, void**);
+    BOOL can_eval = reinterpret_cast<FnCanEval>(objc_msgSend)(
+        ctx, sel_registerName("canEvaluatePolicy:error:"), policy, &can_err);
+    if (can_eval == 0) {
+        auto [code, desc] = detail::ns_error_info(can_err, "biometric authentication is not available");
+        return cfire::make_error(desc, code);
+    }
+
+    std::string reason_str(reason);
+    using FnStrUtf8 = void* (*)(void*, SEL, const char*);
+    void* ns_reason = reinterpret_cast<FnStrUtf8>(objc_msgSend)(
+        nsstr_cls, sel_registerName("stringWithUTF8String:"), reason_str.c_str());
+    if (!ns_reason) {
+        return cfire::make_error("keychain.authenticate_biometric failed to encode reason string");
+    }
+
+    auto state = std::make_shared<detail::LaReplyState>();
+    auto fut = state->promise.get_future();
+
+    static const detail::LaBlockDescriptor kDesc{
+        0,
+        sizeof(detail::LaReplyBlock),
+        detail::la_block_copy,
+        detail::la_block_dispose,
+    };
+    detail::LaReplyBlock reply_blk{
+        _NSConcreteStackBlock,
+        (1 << 25),
+        0,
+        detail::la_block_invoke,
+        &kDesc,
+        &state,
+    };
+
+    using FnEval = void (*)(void*, SEL, long, void*, void*);
+    reinterpret_cast<FnEval>(objc_msgSend)(
+        ctx, sel_registerName("evaluatePolicy:localizedReason:reply:"), policy, ns_reason, &reply_blk);
+    return fut.get();
+#else
+    (void)allow_passcode;
+    return cfire::make_error("biometric authentication is not supported on this platform");
+#endif
 }
 
 } // namespace cfire::keychain

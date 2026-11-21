@@ -307,9 +307,6 @@ struct StdlibCatalogIndex {
     info.max_args = any_variadic ? static_cast<std::size_t>(1024) : info.params.size();
 
     // Runtime parity overrides:
-    if (ns == "cli" && fn_name == "parse") {
-        info.is_fallible = false;
-    }
     if (ns == "ai" && fn_name == "Client.ask") {
         info.min_args = 1;
         info.max_args = 3;

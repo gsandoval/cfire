@@ -297,13 +297,19 @@ namespace cfire::frontend {
             em.set_source_path(gv.source_path);
             if (gv.line > 0) em.emit_line_directive(gv.line);
             em.cur_pkg_ = gv.package_name;
-            std::string type_str = gv.type ? em.lower_owning_type(*gv.type) : "auto";
-            if (!gv.type && gv.value) {
+            std::string type_str = gv.type ? em.lower_owning_type(*gv.type) : "";
+            if (type_str.empty() && (!gv.value || !std::holds_alternative<ClosureExpr>(gv.value->node))) {
+                if (auto lowered = em.lower_type_id(TypeId{gv.resolved_type_id}, Emitter::LowerContext::Value)) {
+                    type_str = std::move(*lowered);
+                }
+            }
+            if (type_str.empty() && gv.value) {
                 if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&gv.value->node); arr_lit && !arr_lit->elements.empty()) {
                     std::string inferred = em.infer_array_lit_cpp_type(*arr_lit);
                     if (!inferred.empty()) type_str = std::move(inferred);
                 }
             }
+            if (type_str.empty()) type_str = "auto";
             std::string mut_str = gv.is_mut ? "" : "const ";
             std::string gname = (!gv.package_name.empty() && em.colliding_gv_names_.contains(gv.name))
                 ? std::format("cfire_pkg_{}__{}", gv.package_name, em.sanitize_cpp_ident(gv.name))
@@ -932,7 +938,8 @@ namespace cfire::frontend {
                 if (!ex.handler_body.empty() && !is_top_handled) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_res_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
+                    std::string tmp_t = lower_type_id(ex.inner ? TypeId{ex.inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                    writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(ex.inner)));
                     writeln(std::format("if (!{}.has_value()) {{", tmp));
                     ++indent_;
                     emit_or_handler_body(ex, tmp, in_main);
@@ -953,7 +960,8 @@ namespace cfire::frontend {
                 if (!is_top_handled) {
                     int id = ++try_count_;
                     std::string tmp = std::format("_try_{}", id);
-                    writeln(std::format("auto {} = {};", tmp, emit_expr(ex.inner)));
+                    std::string tmp_t = lower_type_id(ex.inner ? TypeId{ex.inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value).value_or("auto");
+                    writeln(std::format("{} {} = {};", tmp_t, tmp, emit_expr(ex.inner)));
                     emit_try_unwrap_check(tmp, stmt_line, in_main);
                     hoisted_tries_[e] = std::format("cfire::unwrap_val(std::move({}))", tmp);
                     last_source_line_ = -1;
@@ -962,6 +970,353 @@ namespace cfire::frontend {
         }, e->node);
     }
 
+
+    CFIRE_CG_INLINE auto Emitter::lower_named_cpp_type(std::string_view raw_name, bool has_type_args) const -> std::string {
+        std::string name(raw_name);
+        if (!is_local_type(name)) {
+            if (name == "Error") return "cfire::Error";
+            if (name == "sqlite::Conn" || name == "sqlite.Conn") return "cfire::sqlite::Conn";
+            if (name == "ipc::Conn" || name == "ipc.Conn" ||
+                (name == "Conn" && used_core_.contains("ipc") && !used_core_.contains("websocket") && !used_core_.contains("sqlite"))) {
+                return "cfire::ipc::Conn";
+            }
+            if (name == "ipc::Listener" || name == "ipc.Listener" || (name == "Listener" && used_core_.contains("ipc"))) {
+                return "cfire::ipc::Listener";
+            }
+            if (name == "ipc::PeerCred" || name == "ipc.PeerCred" || (name == "PeerCred" && used_core_.contains("ipc"))) {
+                return "cfire::ipc::PeerCred";
+            }
+            if (name == "fs::FileInfo" || name == "fs.FileInfo" || (name == "FileInfo" && used_core_.contains("fs"))) {
+                return "cfire::fs::FileInfo";
+            }
+            if (name == "context::Context" || name == "context.Context" || name == "Context") return "cfire::sync::context::Context";
+            if (name == "websocket::Conn" || name == "websocket.Conn" || name == "Conn" || name == "websocket::WebSocket" || name == "websocket.WebSocket" || name == "WebSocket") return "cfire::websocket::Conn";
+            if (name == "websocket::Server" || name == "websocket.Server") return "cfire::websocket::Server";
+            if (name == "websocket::TlsConfig" || name == "websocket.TlsConfig") return "cfire::http::TlsConfig";
+            if (name == "http::Request" || name == "http.Request" || name == "Request") return "cfire::http::Request";
+            if (name == "http::Response" || name == "http.Response" || name == "Response") return "cfire::http::Response";
+            if (name == "http::Router" || name == "http.Router" || name == "Router") return "cfire::http::Router";
+            if (name == "http::HttpServer" || name == "http.HttpServer" || name == "HttpServer") return "cfire::http::HttpServer";
+            // the names `.cf` code uses for these differ from the C++ class or namespace.
+            if (name == "http::Server" || name == "http.Server") return "cfire::http::HttpServer";
+            if (name == "sync::Context" || name == "sync.Context") return "cfire::sync::context::Context";
+            if (name == "sync::MutexGuard" || name == "sync.MutexGuard") return "cfire::sync::MutexGuard";
+            if (name == "url::Url" || name == "url.Url" || name == "Url") return "cfire::url::Url";
+            if (name == "tls::ServerContext" || name == "tls.ServerContext" || name == "ServerContext") return "cfire::tls::ServerContext";
+            if (name == "tls::CertKeyPair" || name == "tls.CertKeyPair" || name == "CertKeyPair") return "cfire::tls::CertKeyPair";
+            if (name == "fs::File" || name == "fs.File" || (name == "File" && used_core_.contains("fs"))) return "cfire::fs::File";
+            if (name == "net::TcpConn" || name == "net.TcpConn" || name == "TcpConn") return "cfire::net::TcpConn";
+            if (name == "net::TcpListener" || name == "net.TcpListener" || name == "TcpListener") return "cfire::net::TcpListener";
+            if (name == "ssh::Channel" || name == "ssh.Channel") return "cfire::ssh::Channel";
+            if (name == "ssh::Session" || name == "ssh.Session") return "cfire::ssh::Session";
+            if (name == "audio::Wave" || name == "audio.Wave") return "cfire::audio::Wave";
+            if (name == "audio::Sound" || name == "audio.Sound") return "cfire::audio::Sound";
+            if (name == "audio::Stream" || name == "audio.Stream") return "cfire::audio::Stream";
+            if (name == "audio::Waveform" || name == "audio.Waveform") return "cfire::audio::Waveform";
+            if (name == "audio::SfxPreset" || name == "audio.SfxPreset") return "cfire::audio::SfxPreset";
+            if (name == "http::SseEvent" || name == "http.SseEvent" || name == "SseEvent") return "cfire::http::SseEvent";
+            if (name == "ai::Provider" || name == "ai.Provider") return "cfire::ai::Provider";
+            if (name == "ai::Client" || name == "ai.Client") return "cfire::ai::Client";
+            if (name == "ai::Message" || name == "ai.Message") return "cfire::ai::Message";
+            if (name == "ai::Tool" || name == "ai.Tool") return "cfire::ai::Tool";
+            if (name == "ai::ToolCall" || name == "ai.ToolCall") return "cfire::ai::ToolCall";
+            if (name == "ai::ChatResponse" || name == "ai.ChatResponse") return "cfire::ai::ChatResponse";
+            if (name == "ai::McpServer" || name == "ai.McpServer") return "cfire::ai::McpServer";
+            if (name == "ai::Agent" || name == "ai.Agent") return "cfire::ai::Agent";
+            if (name == "webui::App" || name == "webui.App" || (name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
+        }
+        std::string clean = std::move(name);
+        if (clean.starts_with("cpp.")) clean.erase(0, 4);
+        else if (clean.starts_with("cpp::")) clean.erase(0, 5);
+        for (const auto& q : cf_.cpp_qualifiers) {
+            if (clean.starts_with(q + ".")) {
+                clean.erase(0, q.size() + 1);
+                break;
+            }
+            if (clean.starts_with(q + "::")) {
+                clean.erase(0, q.size() + 2);
+                break;
+            }
+        }
+        auto sep_pos = clean.find_first_of(".:");
+        if (sep_pos != std::string::npos) {
+            bool is_dcolon = (clean[sep_pos] == ':' && sep_pos + 1 < clean.size() && clean[sep_pos + 1] == ':');
+            std::string mod = clean.substr(0, sep_pos);
+            std::string rest = clean.substr(sep_pos + (is_dcolon ? 2 : 1));
+            if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) {
+                mod = it->second;
+            }
+            if (auto it = cf_.core_aliases.find(mod); it != cf_.core_aliases.end()) {
+                mod = it->second;
+            }
+            std::string mangled = std::format("cfire_pkg_{}__{}", mod, rest);
+            if (is_local_type(mangled)) {
+                clean = std::move(mangled);
+            } else if (used_core_.contains(mod)) {
+                clean = std::format("cfire::{}::{}", mod, rest);
+            } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
+                clean = rest;
+            } else if (cfire::frontend::StdlibCatalogIndex::instance().has_namespace(mod)) {
+                // every stdlib module's types live in `cfire::<ns>` (`aes.GcmResult`, `http.ServerLimits`),
+                // including modules whose core key differs from their namespace (`core:net/http`, `core:crypto/aes`).
+                clean = std::format("cfire::{}::{}", mod, rest);
+            }
+        } else {
+            if (clean == "Channel" && used_core_.contains("sync")) {
+                clean = "cfire::sync::Channel";
+            } else if (clean == "Mutex" && used_core_.contains("sync")) {
+                clean = has_type_args ? "cfire::sync::MutexT" : "cfire::sync::Mutex";
+            } else if (clean == "Atomic" && used_core_.contains("sync")) {
+                clean = "cfire::sync::Atomic";
+            } else if (clean == "Task" && used_core_.contains("async")) {
+                clean = "cfire::async::Task";
+            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "MinQueue" || clean == "Deque" || clean == "BTreeMap" || clean == "BitSet") && used_core_.contains("collections")) {
+                clean = std::format("cfire::collections::{}", clean);
+            }
+        }
+        if (has_type_args && (clean == "cfire::sync::Mutex" || clean == "sync.Mutex" || clean == "sync::Mutex")) {
+            clean = "cfire::sync::MutexT";
+        }
+        return clean;
+    }
+
+    CFIRE_CG_INLINE auto Emitter::lower_type_id(TypeId tid, LowerContext ctx) const -> std::optional<std::string> {
+        if (!tid.is_valid() || tid.is_unknown() || tid.is_error() || tid.is_foreign() || tid.is_never()) {
+            return std::nullopt;
+        }
+        if (cf_.type_table.contains_unknown(tid) || cf_.type_table.contains_error(tid) || cf_.type_table.contains_foreign(tid)) {
+            return std::nullopt;
+        }
+        if (ctx == LowerContext::Value && cf_.type_table.contains_type_param(tid)) {
+            return std::nullopt;
+        }
+        const TypeDesc& d = cf_.type_table.get(tid);
+        auto wrap_param = [ctx](std::string base, bool by_val_param_in = false) -> std::string {
+            switch (ctx) {
+                case LowerContext::ParamMut: return base + "&";
+                case LowerContext::ParamMove: return base + "&&";
+                case LowerContext::ParamIn: return by_val_param_in ? base : ("const " + base + "&");
+                case LowerContext::Value:
+                case LowerContext::Return:
+                case LowerContext::RangeIndex: return base;
+            }
+            return base;
+        };
+        auto is_scalar_prim = [this](TypeId t) -> bool {
+            const TypeDesc& td = cf_.type_table.get(t);
+            switch (td.kind) {
+                case TypeKind::Bool:
+                case TypeKind::Int8:
+                case TypeKind::Int16:
+                case TypeKind::Int32:
+                case TypeKind::Int64:
+                case TypeKind::Uint8:
+                case TypeKind::Uint16:
+                case TypeKind::Uint32:
+                case TypeKind::Uint64:
+                case TypeKind::Isize:
+                case TypeKind::Usize:
+                case TypeKind::Float32:
+                case TypeKind::Float64:
+                case TypeKind::Byte:
+                    return true;
+                default:
+                    return td.kind == TypeKind::NominalStruct && (td.name == "c_char" || td.name == "char");
+            }
+        };
+        switch (d.kind) {
+            case TypeKind::Unknown:
+            case TypeKind::Never:
+            case TypeKind::Error:
+            case TypeKind::Foreign:
+            case TypeKind::Interface:
+                return std::nullopt;
+            case TypeKind::Void:
+                return ctx == LowerContext::Return ? std::optional<std::string>{"void"} : std::nullopt;
+            case TypeKind::TypeParam: {
+                if (!generic_params_.contains(d.name)) return std::nullopt;
+                if (ctx == LowerContext::ParamMut) return d.name + "&";
+                if (ctx == LowerContext::ParamMove) return d.name + "&&";
+                if (ctx == LowerContext::ParamIn) return "const " + d.name + "&";
+                return d.name;
+            }
+            case TypeKind::Bool: return wrap_param("bool", true);
+            case TypeKind::Int8: return wrap_param("std::int8_t", true);
+            case TypeKind::Int16: return wrap_param("std::int16_t", true);
+            case TypeKind::Int32: return wrap_param("std::int32_t", true);
+            case TypeKind::Int64: return wrap_param("std::int64_t", true);
+            case TypeKind::Uint8:
+            case TypeKind::Byte: return wrap_param("std::uint8_t", true);
+            case TypeKind::Uint16: return wrap_param("std::uint16_t", true);
+            case TypeKind::Uint32: return wrap_param("std::uint32_t", true);
+            case TypeKind::Uint64: return wrap_param("std::uint64_t", true);
+            case TypeKind::Isize: return wrap_param("std::ptrdiff_t", true);
+            case TypeKind::Usize: return wrap_param("std::size_t", true);
+            case TypeKind::Float32: return wrap_param("float", true);
+            case TypeKind::Float64: return wrap_param("double", true);
+            case TypeKind::Str:
+                if (ctx == LowerContext::ParamIn) return std::string("cfire::str_ref");
+                return wrap_param("std::string", false);
+            case TypeKind::Borrow: {
+                if (d.elem_type == TypeId::Str()) {
+                    if (ctx == LowerContext::Return) return std::string("std::string");
+                    return std::string("cfire::str_ref");
+                }
+                const auto& ed = cf_.type_table.get(d.elem_type);
+                if (ed.kind == TypeKind::Slice) {
+                    auto elem = lower_type_id(ed.elem_type, LowerContext::Return);
+                    if (!elem) return std::nullopt;
+                    return std::format("std::span<const {}>", *elem);
+                }
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return std::format("const {}&", *elem);
+            }
+            case TypeKind::MutBorrow: {
+                if (d.elem_type == TypeId::Str()) return std::string("std::string&");
+                const auto& ed = cf_.type_table.get(d.elem_type);
+                if (ed.kind == TypeKind::Slice) {
+                    auto elem = lower_type_id(ed.elem_type, LowerContext::Return);
+                    if (!elem) return std::nullopt;
+                    return std::format("std::span<{}>", *elem);
+                }
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return std::format("{}&", *elem);
+            }
+            case TypeKind::RawPtr: {
+                const auto& ed = cf_.type_table.get(d.elem_type);
+                if (ed.name == "c_void") return std::string("const void*");
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return std::format("const {}*", *elem);
+            }
+            case TypeKind::MutPtr: {
+                const auto& ed = cf_.type_table.get(d.elem_type);
+                if (ed.name == "c_void") return std::string("void*");
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return std::format("{}*", *elem);
+            }
+            case TypeKind::Own: {
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return wrap_param(std::format("std::unique_ptr<{}>", *elem), false);
+            }
+            case TypeKind::Shared: {
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return wrap_param(std::format("std::shared_ptr<{}>", *elem), false);
+            }
+            case TypeKind::Slice: {
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                if (ctx == LowerContext::ParamIn && *elem != "bool" && !cf_.type_table.contains_type_param(d.elem_type)) {
+                    return std::format("cfire::slice_ref<{}>", *elem);
+                }
+                return wrap_param(std::format("std::vector<{}>", *elem), false);
+            }
+            case TypeKind::Array: {
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return wrap_param(std::format("std::array<{}, {}>", *elem, d.array_len), false);
+            }
+            case TypeKind::Map: {
+                auto k = lower_type_id(d.key_type, LowerContext::Return);
+                auto v = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!k || !v) return std::nullopt;
+                return wrap_param(std::format("cfire::Map<{}, {}>", *k, *v), false);
+            }
+            case TypeKind::Optional: {
+                std::optional<std::string> elem;
+                const auto& ed = cf_.type_table.get(d.elem_type);
+                if (ed.kind == TypeKind::Borrow && ed.elem_type == TypeId::Str()) {
+                    elem = std::string("std::string");
+                } else {
+                    elem = lower_type_id(d.elem_type, LowerContext::Return);
+                }
+                if (!elem) return std::nullopt;
+                return wrap_param(std::format("std::optional<{}>", *elem), is_scalar_prim(d.elem_type));
+            }
+            case TypeKind::Fallible: {
+                auto elem = lower_type_id(d.elem_type, LowerContext::Return);
+                if (!elem) return std::nullopt;
+                return wrap_param(std::format("std::expected<{}, cfire::Error>", *elem), is_scalar_prim(d.elem_type));
+            }
+            case TypeKind::Tuple: {
+                if (d.param_types.empty()) return std::nullopt;
+                std::string inner;
+                for (std::size_t i = 0; i < d.param_types.size(); ++i) {
+                    if (i > 0) inner += ", ";
+                    auto pt = lower_type_id(d.param_types[i], LowerContext::Return);
+                    if (!pt) return std::nullopt;
+                    inner += *pt;
+                }
+                return wrap_param(std::format("std::tuple<{}>", inner), false);
+            }
+            case TypeKind::Function: {
+                auto ret = lower_type_id(d.ret_type, LowerContext::Return);
+                if (!ret) return std::nullopt;
+                std::string params;
+                for (std::size_t i = 0; i < d.param_types.size(); ++i) {
+                    if (i > 0) params += ", ";
+                    auto pt = lower_type_id(d.param_types[i], LowerContext::ParamIn);
+                    if (!pt) return std::nullopt;
+                    params += *pt;
+                }
+                return wrap_param(std::format("std::function<{}({})>", *ret, params), false);
+            }
+            case TypeKind::GenericInst: {
+                std::string base = lower_named_cpp_type(d.base_name, !d.type_args.empty());
+                if (!base.starts_with("cfire::") && !is_local_type(base) &&
+                    !cf_.struct_defs.contains(base) && !cf_.enums.contains(base) &&
+                    !cf_.declared_type_names.contains(base)) {
+                    return std::nullopt;
+                }
+                if (d.type_args.empty()) return wrap_param(base, false);
+                std::string args;
+                for (std::size_t i = 0; i < d.type_args.size(); ++i) {
+                    if (i > 0) args += ", ";
+                    auto at = lower_type_id(d.type_args[i], LowerContext::Return);
+                    if (!at) return std::nullopt;
+                    args += *at;
+                }
+                return wrap_param(std::format("{}<{}>", base, args), false);
+            }
+            case TypeKind::NominalStruct:
+            case TypeKind::NominalEnum: {
+                if (d.name.empty() || d.name == "any" || d.name == "Self" || d.name == "Fn" ||
+                    d.name == "unknown" || d.name == "<error>" || d.name == "<foreign>") {
+                    return std::nullopt;
+                }
+                if (d.name == "c_void") {
+                    return ctx == LowerContext::Return ? std::optional<std::string>{"void"} : std::nullopt;
+                }
+                if (d.name == "c_char" || d.name == "char") return wrap_param("char", true);
+                if (d.name == "path") {
+                    if (ctx == LowerContext::ParamIn) return std::string("const std::filesystem::path&");
+                    return wrap_param("std::filesystem::path", false);
+                }
+                if (d.name == "Error" && !is_local_type("Error")) return wrap_param("cfire::Error", false);
+                std::string mapped = lower_named_cpp_type(d.name, false);
+                if (auto sdit = cf_.struct_defs.find(mapped);
+                    sdit != cf_.struct_defs.end() && !sdit->second.type_params.empty()) {
+                    return std::nullopt;
+                }
+                if (auto edit = cf_.enums.find(mapped);
+                    edit != cf_.enums.end() && !edit->second.type_params.empty()) {
+                    return std::nullopt;
+                }
+                if (!mapped.starts_with("cfire::") && !is_local_type(mapped) &&
+                    !cf_.struct_defs.contains(mapped) && !cf_.enums.contains(mapped) &&
+                    !cf_.declared_type_names.contains(mapped)) {
+                    return std::nullopt;
+                }
+                return wrap_param(mapped, false);
+            }
+        }
+        return std::nullopt;
+    }
 
     CFIRE_CG_INLINE auto Emitter::lower_raw_owning_type(const TypeRef& tr) const -> std::string {
         if (tr.is_mut_borrow) {
@@ -1031,105 +1386,8 @@ namespace cfire::frontend {
         if (tr.name == "f64") return "double";
         if (tr.name == "bool") return "bool";
         if (tr.name == "void") return "void";
-        if (!is_local_type(tr.name)) {
-            if (tr.name == "sqlite::Conn") return "cfire::sqlite::Conn";
-            if (tr.name == "ipc::Conn" || tr.name == "ipc.Conn" ||
-                (tr.name == "Conn" && used_core_.contains("ipc") && !used_core_.contains("websocket") && !used_core_.contains("sqlite"))) {
-                return "cfire::ipc::Conn";
-            }
-            if (tr.name == "ipc::Listener" || tr.name == "ipc.Listener" || (tr.name == "Listener" && used_core_.contains("ipc"))) {
-                return "cfire::ipc::Listener";
-            }
-            if (tr.name == "ipc::PeerCred" || tr.name == "ipc.PeerCred" || (tr.name == "PeerCred" && used_core_.contains("ipc"))) {
-                return "cfire::ipc::PeerCred";
-            }
-            if (tr.name == "fs::FileInfo" || tr.name == "fs.FileInfo" || (tr.name == "FileInfo" && used_core_.contains("fs"))) {
-                return "cfire::fs::FileInfo";
-            }
-            if (tr.name == "context::Context" || tr.name == "Context") return "cfire::sync::context::Context";
-            if (tr.name == "websocket::Conn" || tr.name == "Conn" || tr.name == "websocket::WebSocket" || tr.name == "websocket.WebSocket" || tr.name == "WebSocket") return "cfire::websocket::Conn";
-            if (tr.name == "websocket::Server") return "cfire::websocket::Server";
-            if (tr.name == "http::Request" || tr.name == "Request") return "cfire::http::Request";
-            if (tr.name == "http::Response" || tr.name == "Response") return "cfire::http::Response";
-            if (tr.name == "http::Router" || tr.name == "Router") return "cfire::http::Router";
-            if (tr.name == "http::HttpServer" || tr.name == "HttpServer") return "cfire::http::HttpServer";
-            // the names `.cf` code uses for these differ from the C++ class or namespace.
-            if (tr.name == "http::Server" || tr.name == "http.Server") return "cfire::http::HttpServer";
-            if (tr.name == "sync::Context" || tr.name == "sync.Context") return "cfire::sync::context::Context";
-            if (tr.name == "url::Url" || tr.name == "Url") return "cfire::url::Url";
-            if (tr.name == "tls::ServerContext" || tr.name == "ServerContext") return "cfire::tls::ServerContext";
-            if (tr.name == "tls::CertKeyPair" || tr.name == "CertKeyPair") return "cfire::tls::CertKeyPair";
-            if (tr.name == "fs::File" || tr.name == "fs.File" || (tr.name == "File" && used_core_.contains("fs"))) return "cfire::fs::File";
-            if (tr.name == "net::TcpConn" || tr.name == "net.TcpConn" || tr.name == "TcpConn") return "cfire::net::TcpConn";
-            if (tr.name == "net::TcpListener" || tr.name == "net.TcpListener" || tr.name == "TcpListener") return "cfire::net::TcpListener";
-            if (tr.name == "ssh::Channel" || tr.name == "ssh.Channel") return "cfire::ssh::Channel";
-            if (tr.name == "ssh::Session" || tr.name == "ssh.Session") return "cfire::ssh::Session";
-            if (tr.name == "audio::Wave") return "cfire::audio::Wave";
-            if (tr.name == "audio::Sound") return "cfire::audio::Sound";
-            if (tr.name == "audio::Stream") return "cfire::audio::Stream";
-            if (tr.name == "audio::Waveform") return "cfire::audio::Waveform";
-            if (tr.name == "audio::SfxPreset") return "cfire::audio::SfxPreset";
-            if (tr.name == "http::SseEvent" || tr.name == "SseEvent") return "cfire::http::SseEvent";
-            if (tr.name == "ai::Provider") return "cfire::ai::Provider";
-            if (tr.name == "ai::Client") return "cfire::ai::Client";
-            if (tr.name == "ai::Message") return "cfire::ai::Message";
-            if (tr.name == "ai::Tool") return "cfire::ai::Tool";
-            if (tr.name == "ai::ToolCall") return "cfire::ai::ToolCall";
-            if (tr.name == "ai::ChatResponse") return "cfire::ai::ChatResponse";
-            if (tr.name == "ai::McpServer") return "cfire::ai::McpServer";
-            if (tr.name == "ai::Agent") return "cfire::ai::Agent";
-            if (tr.name == "webui::App" || (tr.name == "App" && used_core_.contains("webui"))) return "cfire::webui::App";
-        }
-        std::string clean = tr.name;
-        if (clean.starts_with("cpp.")) clean.erase(0, 4);
-        else if (clean.starts_with("cpp::")) clean.erase(0, 5);
-        for (const auto& q : cf_.cpp_qualifiers) {
-            if (clean.starts_with(q + ".")) {
-                clean.erase(0, q.size() + 1);
-                break;
-            }
-            if (clean.starts_with(q + "::")) {
-                clean.erase(0, q.size() + 2);
-                break;
-            }
-        }
-        auto sep_pos = clean.find_first_of(".:");
-        if (sep_pos != std::string::npos) {
-            bool is_dcolon = (clean[sep_pos] == ':' && sep_pos + 1 < clean.size() && clean[sep_pos + 1] == ':');
-            std::string mod = clean.substr(0, sep_pos);
-            std::string rest = clean.substr(sep_pos + (is_dcolon ? 2 : 1));
-            if (auto it = core_aliases_.find(mod); it != core_aliases_.end()) {
-                mod = it->second;
-            }
-            if (auto it = cf_.core_aliases.find(mod); it != cf_.core_aliases.end()) {
-                mod = it->second;
-            }
-            if (used_core_.contains(mod)) {
-                clean = std::format("cfire::{}::{}", mod, rest);
-            } else if (is_local_type(rest) || is_vendor_alias(mod) || is_cpp_qualifier(mod)) {
-                clean = rest;
-            } else if (cfire::frontend::StdlibCatalogIndex::instance().has_namespace(mod)) {
-                // every stdlib module's types live in `cfire::<ns>` (`aes.GcmResult`, `http.ServerLimits`),
-                // including modules whose core key differs from their namespace (`core:net/http`, `core:crypto/aes`).
-                clean = std::format("cfire::{}::{}", mod, rest);
-            }
-        } else {
-            if (clean == "Channel" && used_core_.contains("sync")) {
-                clean = "cfire::sync::Channel";
-            } else if (clean == "Mutex" && used_core_.contains("sync")) {
-                clean = tr.type_args.empty() ? "cfire::sync::Mutex" : "cfire::sync::MutexT";
-            } else if (clean == "Atomic" && used_core_.contains("sync")) {
-                clean = "cfire::sync::Atomic";
-            } else if (clean == "Task" && used_core_.contains("async")) {
-                clean = "cfire::async::Task";
-            } else if ((clean == "Set" || clean == "PriorityQueue" || clean == "MinQueue" || clean == "Deque" || clean == "BTreeMap" || clean == "BitSet") && used_core_.contains("collections")) {
-                clean = std::format("cfire::collections::{}", clean);
-            }
-        }
+        std::string clean = lower_named_cpp_type(tr.name, !tr.type_args.empty());
         if (!tr.type_args.empty()) {
-            if (clean == "cfire::sync::Mutex" || clean == "sync.Mutex" || clean == "sync::Mutex") {
-                clean = "cfire::sync::MutexT";
-            }
             std::string args;
             for (std::size_t i = 0; i < tr.type_args.size(); ++i) {
                 if (i > 0) args += ", ";

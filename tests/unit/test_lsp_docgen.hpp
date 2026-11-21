@@ -349,7 +349,7 @@ type Config struct {
         "LSP prepareRename on keyword fn expected null result (LSP-04)");
     require(rpc_resp.contains(R"("id":32)") &&
             rpc_resp.contains(R"("label":"read_bytes")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_bytes(${1:path})$0")") &&
+            rpc_resp.contains(R"json("newText":"fs.read_bytes($0)")json") &&
             rpc_resp.contains(R"("insertTextFormat":2)") &&
             rpc_resp.contains("core:fs (auto-import)") &&
             rpc_resp.contains(R"("additionalTextEdits":[)") &&
@@ -357,7 +357,7 @@ type Config struct {
         "LSP auto-import completion for unimported stdlib module expected additionalTextEdits (LSP-05)");
     require(rpc_resp.contains(R"("id":33)") &&
             rpc_resp.contains(R"("label":"read_bytes")") &&
-            rpc_resp.contains(R"("insertText":"fs.read_bytes(${1:path})$0")") &&
+            rpc_resp.contains(R"json("newText":"fs.read_bytes($0)")json") &&
             rpc_resp.contains("fs: fn read_bytes"),
         "LSP completion for already imported stdlib module expected no auto-import edit (LSP-05)");
     require(rpc_resp.contains(R"("id":34)") &&
@@ -536,6 +536,8 @@ fn main() {
     app.bind[TrackMix]("set_track") |req| {
         req.
     }
+    init_u := app.initial_url()
+    _ = init_u
 }
 )";
         w_in << rpc_frame(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
@@ -545,6 +547,7 @@ fn main() {
         w_in << rpc_frame(R"({"jsonrpc":"2.0","id":401,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":10,"character":10}}})");
         w_in << rpc_frame(R"({"jsonrpc":"2.0","id":402,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":12,"character":8}}})");
         w_in << rpc_frame(R"({"jsonrpc":"2.0","id":403,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"},"position":{"line":14,"character":12}}})");
+        w_in << rpc_frame(R"({"jsonrpc":"2.0","id":405,"method":"textDocument/inlayHint","params":{"textDocument":{"uri":"file:///tmp/webui_lsp.cf"}}})");
         w_in << rpc_frame(R"({"jsonrpc":"2.0","id":404,"method":"shutdown","params":null})");
         w_in << rpc_frame(R"({"jsonrpc":"2.0","method":"exit","params":null})");
 
@@ -560,12 +563,18 @@ fn main() {
                 w_resp.contains(R"("label":"on")") &&
                 w_resp.contains(R"("label":"emit")") &&
                 w_resp.contains(R"("label":"serve_dir")") &&
+                w_resp.contains(R"("label":"allow_navigation_origin")") &&
+                w_resp.contains(R"("label":"initial_url")") &&
+                w_resp.contains(R"("label":"is_clipboard_concealed")") &&
+                !w_resp.contains(R"("label":"message_dialog")") &&
                 w_resp.contains(R"("label":"run")"),
-            "LSP completion on app. expected webui.App handle methods (WEBUI-P0-06)");
+            "LSP completion on app. expected webui.App handle methods and no retired message_dialog (WEBUI-P0-06 / CF-251)");
         require(w_resp.contains(R"("id":403)") &&
                 w_resp.contains(R"("label":"channel")") &&
                 w_resp.contains(R"("label":"gain")"),
             "LSP completion on req. inside app.bind[TrackMix] block expected struct fields channel and gain (WEBUI-P0-06)");
+        require(w_resp.contains(R"("id":405)") && w_resp.contains(": str?"),
+            "LSP inlayHint on init_u := app.initial_url() resolves optional str? via stdlib_catalog() (CF-251)");
     }
 
     // 2f. Chained method completion (`try os.stdin().`), `: []str` inlay hints on chained calls, parameter snippets, and onTypeFormatting
@@ -606,27 +615,26 @@ fn main() {
         chain_srv.handle_stream(c_in, c_out);
         std::string c_resp = c_out.str();
 
-        require(c_resp.contains(R"("documentOnTypeFormattingProvider")"),
-            "LSP initialize advertises documentOnTypeFormattingProvider");
+        require(!c_resp.contains(R"("documentOnTypeFormattingProvider")"),
+            "LSP initialize must not advertise documentOnTypeFormattingProvider (Q82)");
         require(c_resp.contains(R"("id":501)") &&
                 c_resp.contains(R"("label":"read_lines")") &&
-                c_resp.contains(R"("insertText":"read_lines()$0")") &&
+                c_resp.contains(R"("newText":"read_lines()$0")") &&
                 c_resp.contains(R"("label":"read_text")"),
             "LSP second-level completion on 'try os.stdin().' returns fs.File methods with snippet tabstops");
         require(c_resp.contains(R"("id":502)") &&
                 c_resp.contains(R"("label":"split")") &&
-                c_resp.contains(R"("insertText":"split(${1:a})$0")") &&
+                c_resp.contains(R"json("newText":"split($0)")json") &&
                 c_resp.contains(R"("label":"trim")"),
-            "LSP completion on a str value lists builtin methods with parameter tabstop snippets");
+            "LSP completion on a str value lists builtin methods with empty-parens call snippets");
         require(c_resp.contains(R"("id":503)") &&
                 c_resp.contains(R"("label":": []str")"),
             "LSP inlayHint infers ': []str' for 'lines := try os.stdin().read_lines()'");
         require(c_resp.contains(R"("id":504)") &&
                 c_resp.contains("line: str"),
             "LSP hover infers 'line: str' for 'for line in lines' where lines is []str");
-        require(c_resp.contains(R"("id":505)") &&
-                c_resp.contains(R"("newText":"        ")"),
-            "LSP onTypeFormatting on newline after 'for line in lines {' indents by 8 spaces");
+        require(c_resp.contains(R"("id":505,"result":[])"),
+            "LSP onTypeFormatting returns empty array (editor language-configuration handles brace/Enter indent)");
     }
 
     auto ide_res = cfire::lsp::configure_ide(rt_dir.parent_path(), "zed");
@@ -947,19 +955,19 @@ fn main() {
                 llm_ref.contains("for i in 1..=n") &&
                 llm_ref.contains("assert_eq") &&
                 llm_ref.contains("cfire init") &&
-                llm_ref.contains("core:tako") &&
+                llm_ref.contains("ext:tako") &&
                 !llm_ref.contains("pkg:tako") &&
                 !llm_ref.contains("@pkg("),
-            "generate_llm_reference() documents build.cf and core:tako");
+            "generate_llm_reference() documents build.cf and ext:tako");
 
         auto agent_rules = cfire::lsp::cfire_agent_rules_markdown("cfire");
         require(agent_rules.contains("Same-Directory Package Merging") &&
                 agent_rules.contains("0..n") &&
                 agent_rules.contains("assert_eq") &&
-                agent_rules.contains("core:tako") &&
+                agent_rules.contains("ext:tako") &&
                 !agent_rules.contains("pkg:tako") &&
                 !agent_rules.contains("@pkg("),
-            "cfire_agent_rules_markdown() documents build.cf and core:tako");
+            "cfire_agent_rules_markdown() documents build.cf and ext:tako");
 
         ScopedTempDir sync_tmp("cfire_lsp_mcp_sync");
         auto types_cf = sync_tmp.file("types.cf", R"CF(package main

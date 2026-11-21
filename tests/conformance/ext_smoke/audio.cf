@@ -1,0 +1,55 @@
+// expect: stdout
+// | ext:audio ok
+package main
+
+import "ext:audio"
+import "core:fs"
+import "core:os"
+
+fn main() {
+    os.setenv("CFIRE_HEADLESS_TEST", "1")
+    try audio.init(48000, 2)
+    defer audio.close()
+
+    assert(audio.is_ready())
+    audio.set_master_volume(0.8)
+    assert(audio.master_volume() > 0.75)
+    assert(audio.master_volume() < 0.85)
+
+    tone := audio.gen_tone(audio.Waveform::Sine, 440.0, 0.05, 0.5)
+    chirp := audio.gen_chirp(220.0, 880.0, 0.05, audio.Waveform::Sine, 0.4)
+    coin := audio.gen_sfx(audio.SfxPreset::Coin)
+    assert(tone.samples.len() > 0)
+    assert(chirp.samples.len() > 0)
+    assert(coin.samples.len() > 0)
+
+    wav_bytes := audio.encode_wav(tone)
+    assert(wav_bytes.len() > 44)
+    decoded := try audio.decode_wav(wav_bytes)
+    assert_eq(decoded.samples.len(), tone.samples.len())
+
+    try audio.save_wav(tone, "smoke.wav")
+    loaded := try audio.load_wav("smoke.wav")
+    assert_eq(loaded.samples.len(), tone.samples.len())
+
+    snd := audio.load_sound_from_wave(decoded)
+    file_snd := try audio.load_sound("smoke.wav")
+    try fs.remove("smoke.wav")
+
+    snd.set_volume(0.9)
+    snd.set_pitch(1.0)
+    snd.set_pan(0.0)
+    snd.set_looping(false)
+    snd.play()
+    snd.stop()
+    file_snd.stop()
+
+    stream := try audio.open_stream(48000, 2)
+    assert(stream.needs_data(2048))
+    stream.push_samples(tone.samples)
+
+    assert(audio.rms_level() >= 0.0)
+    assert(audio.peak_level() >= 0.0)
+
+    println("ext:audio ok")
+}

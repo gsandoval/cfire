@@ -183,6 +183,10 @@ inline void parallel_for_each_index(std::size_t n, std::size_t jobs, F&& job) {
 }
 
 [[nodiscard]] inline auto default_jobs() -> std::size_t {
+    if (const char* env_jobs = std::getenv("CFIRE_TEST_JOBS"); env_jobs && *env_jobs) {
+        int n = std::atoi(env_jobs);
+        if (n > 0) return static_cast<std::size_t>(std::min(32, n));
+    }
     const unsigned hc = std::thread::hardware_concurrency();
-    return std::max<std::size_t>(1, std::min<std::size_t>(8, (hc == 0 ? 2 : hc) / 2));
+    return std::max<std::size_t>(1, std::min<std::size_t>(16, hc == 0 ? 4 : hc));
 }

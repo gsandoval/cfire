@@ -113,7 +113,7 @@ fuzz "csv stringify/parse single-row round-trip" |a: str, b: str| {
     if clean_a.len() > 0 || clean_b.len() > 0 {
         rows: [][] str = [[clean_a, clean_b]]
         serialized := csv.stringify(rows)
-        parsed := csv.parse(serialized)
+        parsed := csv.parse(serialized) or err { panic("unexpected csv.parse failure: " + err.message()) }
         assert_eq(parsed.len(), 1)
         assert_eq(parsed[0].len(), 2)
         assert_eq(parsed[0][0], clean_a)

@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -63,7 +64,21 @@ inline bool g_universal_mode = false;
 
 inline std::string g_macos_min_version{};
 
+inline std::string g_ios_min_version{};
+
+inline std::string g_sign_identity_override{};
+
+inline std::string g_provisioning_profile_override{};
+
+inline std::string g_entitlements_override{};
+
+inline bool g_emit_ipa_mode = false;
+
 inline constexpr std::string_view kDefaultMacosMinVersion = "13.3";
+
+inline constexpr std::string_view kDefaultIosMinVersion = "17.0";
+
+inline constexpr std::string_view kMinSupportedIosVersion = "16.3";
 
 inline std::string g_sanitizer_set = "address,undefined";
 
@@ -93,6 +108,12 @@ inline std::string g_sanitizer_set = "address,undefined";
     auto p = parse_macos_version_pair(ver);
     if (!p) return false;
     return p->first > 13 || (p->first == 13 && p->second >= 3);
+}
+
+[[nodiscard]] inline auto is_ios_min_supported(std::string_view ver) -> bool {
+    auto p = parse_macos_version_pair(ver);
+    if (!p) return false;
+    return p->first > 16 || (p->first == 16 && p->second >= 3);
 }
 
 [[nodiscard]] inline auto is_apple_triple(std::string_view target_triple) noexcept -> bool {
@@ -174,7 +195,8 @@ inline void set_build_profile(BuildProfile profile) {
     std::string_view target_triple,
     bool is_ios,
     bool is_wasm,
-    std::string_view manifest_macos_min = {}
+    std::string_view manifest_macos_min = {},
+    bool force_for_app_bundle = false
 ) -> std::string {
     if (!is_macos_target(target_triple, is_ios, is_wasm)) return {};
     if (!g_macos_min_version.empty()) return g_macos_min_version;
@@ -185,10 +207,28 @@ inline void set_build_profile(BuildProfile profile) {
             return std::string(rest);
         }
     }
-    if (g_portable_mode || g_universal_mode || !is_dev_debug_profile()) {
+    if (g_portable_mode || g_universal_mode || force_for_app_bundle || !is_dev_debug_profile()) {
         return std::string(kDefaultMacosMinVersion);
     }
     return {};
+}
+
+[[nodiscard]] inline auto resolve_effective_ios_min(
+    std::string_view target_triple,
+    std::string_view manifest_ios_min = {}
+) -> std::string {
+    if (!g_ios_min_version.empty()) return g_ios_min_version;
+    if (!manifest_ios_min.empty()) return std::string(manifest_ios_min);
+    if (auto pos = target_triple.find("-apple-ios"); pos != std::string_view::npos) {
+        std::string_view rest = target_triple.substr(pos + std::string_view("-apple-ios").size());
+        if (auto dash = rest.find('-'); dash != std::string_view::npos) {
+            rest = rest.substr(0, dash);
+        }
+        if (!rest.empty() && parse_macos_version_pair(rest).has_value()) {
+            return std::string(rest);
+        }
+    }
+    return std::string(kDefaultIosMinVersion);
 }
 
 [[nodiscard]] inline auto sanitizer_opt_flags() -> std::string {
@@ -213,7 +253,22 @@ inline void set_build_profile(BuildProfile profile) {
 #endif
 }
 
+inline constexpr uint64_t kDefaultPchCacheMaxBytes = 2048ULL * 1024ULL * 1024ULL; // 2 GiB
+
 [[nodiscard]] CFIRE_INFRA_INLINE auto pch_cache_dir() -> std::filesystem::path;
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto configured_pch_max_bytes() -> uint64_t;
+
+CFIRE_INFRA_INLINE void evict_pch_cache_to_budget(
+    const std::filesystem::path& pch_dir,
+    uint64_t max_bytes,
+    std::string_view preserve_stem = ""
+);
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto filter_pch_relevant_cflags(
+    const std::filesystem::path& runtime_dir,
+    const std::vector<std::string>& cflags
+) -> std::vector<std::string>;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto runtime_headers_fingerprint(const std::filesystem::path& runtime_dir) -> std::string;
 
@@ -393,6 +448,145 @@ struct PchDirLockGuard {
 
 }
 
+[[nodiscard]] CFIRE_INFRA_INLINE auto configured_pch_max_bytes() -> uint64_t {
+    if (const char* env_mb = std::getenv("CFIRE_PCH_CACHE_MAX_MB"); env_mb && *env_mb) {
+        long long mb = std::atoll(env_mb);
+        if (mb <= 0) return 0;
+        return static_cast<uint64_t>(mb) * 1024ULL * 1024ULL;
+    }
+    return kDefaultPchCacheMaxBytes;
+}
+
+CFIRE_INFRA_INLINE void evict_pch_cache_to_budget(
+    const std::filesystem::path& pch_dir,
+    uint64_t max_bytes,
+    std::string_view preserve_stem
+) {
+    if (max_bytes == 0) return;
+    std::error_code ec;
+    if (pch_dir.empty() || !std::filesystem::exists(pch_dir, ec) || ec) return;
+
+    struct PchEntry {
+        std::string stem;
+        std::filesystem::path pch_path;
+        std::filesystem::path hpp_path;
+        uint64_t size = 0;
+        int64_t mtime_ns = 0;
+    };
+    std::vector<PchEntry> items;
+    uint64_t total_size = 0;
+    const auto now_ft = std::filesystem::file_time_type::clock::now();
+
+    for (const auto& de : std::filesystem::directory_iterator(pch_dir, ec)) {
+        if (ec) break;
+        if (!de.is_regular_file(ec)) continue;
+        const auto name = de.path().filename().string();
+        if (name.contains(".tmp.")) {
+            auto ft = de.last_write_time(ec);
+            if (!ec && now_ft - ft > std::chrono::minutes(10)) {
+                std::filesystem::remove(de.path(), ec);
+            }
+            ec.clear();
+            continue;
+        }
+        if (de.path().extension() != ".pch") continue;
+        uint64_t sz = de.file_size(ec);
+        if (ec) continue;
+        auto ft = de.last_write_time(ec);
+        int64_t ns = ec ? 0 : std::chrono::duration_cast<std::chrono::nanoseconds>(
+            ft.time_since_epoch()
+        ).count();
+        std::string stem = de.path().stem().string();
+        items.push_back(PchEntry{
+            stem,
+            de.path(),
+            pch_dir / (stem + ".hpp"),
+            sz,
+            ns
+        });
+        total_size += sz;
+    }
+
+    if (total_size <= max_bytes) return;
+
+    std::sort(items.begin(), items.end(), [](const PchEntry& a, const PchEntry& b) {
+        return a.mtime_ns < b.mtime_ns;
+    });
+
+    for (const auto& item : items) {
+        if (total_size <= max_bytes) break;
+        if (!preserve_stem.empty() && item.stem == preserve_stem) continue;
+        auto lock_dir = std::filesystem::path(item.pch_path.string() + ".lock");
+        if (std::filesystem::exists(lock_dir, ec)) continue;
+        std::filesystem::remove(item.pch_path, ec);
+        std::filesystem::remove(item.hpp_path, ec);
+        if (total_size >= item.size) total_size -= item.size;
+        else total_size = 0;
+    }
+}
+
+[[nodiscard]] CFIRE_INFRA_INLINE auto filter_pch_relevant_cflags(
+    const std::filesystem::path& runtime_dir,
+    const std::vector<std::string>& cflags
+) -> std::vector<std::string> {
+    std::error_code ec;
+    auto can_rt = runtime_dir.empty() ? std::filesystem::path{} : std::filesystem::weakly_canonical(runtime_dir, ec);
+    if (ec || can_rt.empty()) can_rt = runtime_dir;
+    const std::string rt_str = can_rt.lexically_normal().generic_string();
+
+    ec.clear();
+    auto raw_tmp = std::filesystem::temp_directory_path(ec);
+    std::string tmp_str;
+    if (!ec && !raw_tmp.empty()) {
+        auto can_tmp = std::filesystem::weakly_canonical(raw_tmp, ec);
+        if (ec || can_tmp.empty()) can_tmp = raw_tmp;
+        tmp_str = can_tmp.lexically_normal().generic_string();
+        while (tmp_str.size() > 1 && tmp_str.back() == '/') tmp_str.pop_back();
+    }
+
+    auto path_starts_with_dir = [](std::string_view p, std::string_view dir) -> bool {
+        if (dir.empty() || !p.starts_with(dir)) return false;
+        return p.size() == dir.size() || p[dir.size()] == '/';
+    };
+
+    auto is_ephemeral_include_dir = [&](std::string_view inc_raw) -> bool {
+        while (inc_raw.size() >= 2 && inc_raw.front() == '"' && inc_raw.back() == '"') {
+            inc_raw = inc_raw.substr(1, inc_raw.size() - 2);
+        }
+        if (inc_raw.empty()) return false;
+        std::error_code pec;
+        auto can_p = std::filesystem::weakly_canonical(std::filesystem::path(inc_raw), pec);
+        std::string norm = (pec || can_p.empty())
+            ? std::filesystem::path(inc_raw).lexically_normal().generic_string()
+            : can_p.lexically_normal().generic_string();
+        if (!rt_str.empty() && path_starts_with_dir(norm, rt_str)) return false;
+        if (!tmp_str.empty() && path_starts_with_dir(norm, tmp_str)) return true;
+        return false;
+    };
+
+    std::vector<std::string> out;
+    out.reserve(cflags.size());
+    for (std::size_t i = 0; i < cflags.size(); ++i) {
+        const auto& f = cflags[i];
+        if (f == "-I" && i + 1 < cflags.size()) {
+            if (is_ephemeral_include_dir(cflags[i + 1])) {
+                ++i;
+                continue;
+            }
+            out.push_back(f);
+            out.push_back(cflags[++i]);
+            continue;
+        }
+        if (f.starts_with("-I") && f.size() > 2) {
+            if (is_ephemeral_include_dir(std::string_view(f).substr(2))) {
+                continue;
+            }
+        }
+        out.push_back(f);
+    }
+    return out;
+}
+
 [[nodiscard]] CFIRE_INFRA_INLINE auto compute_composite_pch_stem(
     const std::filesystem::path& runtime_dir,
     std::string_view umbrella_content,
@@ -404,19 +598,18 @@ struct PchDirLockGuard {
     std::string cxx_bin = resolve_cxx_compiler();
     std::string compiler_fp = compiler_binary_fingerprint(cxx_bin);
     std::string rt_fp = runtime_headers_fingerprint(runtime_dir);
+    auto filtered_cflags = filter_pch_relevant_cflags(runtime_dir, cflags);
 
     std::string key = std::format(
-        "v4|rt={}|rtfp={}|cc={}|ver={}|sha={}|opt={}|st={}|it={}\n",
+        "v5|rt={}|rtfp={}|cc={}|opt={}|st={}|it={}\n",
         (ec ? runtime_dir : can_rt).string(),
         rt_fp,
         compiler_fp,
-        cfire::version::kVersion,
-        cfire::version::kGitSha,
         opt_flags,
         pch_static_flag(),
         pch_instantiate_templates_flag()
     );
-    for (const auto& cf : cflags) {
+    for (const auto& cf : filtered_cflags) {
         key += "cf:";
         key += cf;
         key.push_back('\n');
@@ -443,9 +636,37 @@ struct PchDirLockGuard {
     if (!std::filesystem::exists(prelude_hdr, ec) || ec) return "";
 
     auto pch_dir = pch_cache_dir();
-    std::string stem = compute_composite_pch_stem(runtime_dir, umbrella_content, opt_flags, cflags);
+    auto filtered_cflags = filter_pch_relevant_cflags(runtime_dir, cflags);
+    std::string stem = compute_composite_pch_stem(runtime_dir, umbrella_content, opt_flags, filtered_cflags);
     auto umb_hpp = pch_dir / (stem + ".hpp");
     auto pch_path = pch_dir / (stem + ".pch");
+
+    auto maybe_prune_once_for_dir = [&](std::string_view keep_stem) {
+        const uint64_t budget = configured_pch_max_bytes();
+        if (budget == 0) return;
+        static std::mutex prune_mu;
+        static std::filesystem::path last_pruned_dir;
+        bool should_prune = false;
+        {
+            std::lock_guard<std::mutex> lk(prune_mu);
+            if (last_pruned_dir != pch_dir) {
+                last_pruned_dir = pch_dir;
+                should_prune = true;
+            }
+        }
+        if (should_prune) {
+            evict_pch_cache_to_budget(pch_dir, budget, keep_stem);
+        }
+    };
+
+    auto touch_hit_mtime = [&]() {
+        std::error_code mec;
+        auto ft = std::filesystem::last_write_time(pch_path, mec);
+        const auto now_ft = std::filesystem::file_time_type::clock::now();
+        if (!mec && now_ft - ft > std::chrono::minutes(5)) {
+            std::filesystem::last_write_time(pch_path, now_ft, mec);
+        }
+    };
 
     auto pch_ready = [&]() {
         std::error_code pec;
@@ -453,11 +674,15 @@ struct PchDirLockGuard {
                std::filesystem::file_size(pch_path, pec) > 0 && !pec;
     };
     if (pch_ready()) {
+        touch_hit_mtime();
+        maybe_prune_once_for_dir(stem);
         return pch_path.string();
     }
 
     detail::PchDirLockGuard lock(pch_path);
     if (pch_ready()) {
+        touch_hit_mtime();
+        maybe_prune_once_for_dir(stem);
         return pch_path.string();
     }
 
@@ -468,7 +693,7 @@ struct PchDirLockGuard {
     std::string cxx_bin = resolve_cxx_compiler();
     auto tmp_pch_path = pch_dir / std::format("{}.tmp.{}.pch", stem, current_pid());
     std::string cmd = cxx_bin;
-    for (const auto& f : cflags) {
+    for (const auto& f : filtered_cflags) {
         cmd += " " + f;
     }
     cmd += std::format(
@@ -489,6 +714,9 @@ struct PchDirLockGuard {
     if (ec) {
         std::filesystem::remove(tmp_pch_path, ec);
         if (!pch_ready()) return "";
+    }
+    if (const uint64_t budget = configured_pch_max_bytes(); budget > 0) {
+        evict_pch_cache_to_budget(pch_dir, budget, stem);
     }
     return pch_path.string();
 }

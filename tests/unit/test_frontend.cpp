@@ -1,6 +1,7 @@
 #include "../test_harness.hpp"
 #include "../../src/mcp.hpp"
 #include "test_lsp_docgen.hpp"
+#include "test_lsp_completion_and_sync.hpp"
 #include "test_ergonomics_upstream.hpp"
 #include "test_golden_codegen.hpp"
 #include "test_diagnostics_and_build_audit.hpp"
@@ -373,14 +374,14 @@ fn main() {
         }
     }
 
-    // 6. Multi-target core:audio synthesis, WAV codec, polyphonic Sound & Stream DSP
+    // 6. Multi-target ext:audio synthesis, WAV codec, polyphonic Sound & Stream DSP
     {
-        ScopedTempDir tmp("cfire_core_audio");
+        ScopedTempDir tmp("cfire_ext_audio");
         // generic_string(): forward slashes, so a Windows path pasted into the .cf string has no `\t` escapes
         auto wav_path = (tmp.path / "test_tone.wav").generic_string();
         auto cf_path = tmp.file("audio_test.cf", std::format(R"CF(package main
 
-import "core:audio"
+import "ext:audio"
 import "core:os"
 
 fn main() {{

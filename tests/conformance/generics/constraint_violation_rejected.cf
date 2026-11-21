@@ -1,0 +1,12 @@
+package main
+fn smaller[T: Ordered](a: T, b: T) -> T {
+    if a < b {
+        return a
+    }
+    return b
+}
+fn main() {
+    _ = smaller(true, false) //~ error cfire/UNSATISFIED-CONSTRAINT
+    opt := i32.parse("5").ignore_error()
+    _ = smaller(opt, opt) //~ error cfire/UNWRAPPED-OPTIONAL
+}

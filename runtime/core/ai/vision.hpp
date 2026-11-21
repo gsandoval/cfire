@@ -380,7 +380,7 @@ struct DecodedImage {
     (void)img_bytes;
 #endif
     // Tier 3: Optional local Vision LLM OCR fallback when CFIRE_OCR_MODEL is set
-    std::string ocr_model = cfire::os::getenv("CFIRE_OCR_MODEL", "");
+    std::string ocr_model = cfire::os::getenv("CFIRE_OCR_MODEL").value_or("");
     if (!ocr_model.empty()) {
         std::string b64 = cfire::base64::encode(img_bytes);
         std::string body = std::format(
@@ -738,7 +738,9 @@ struct DecodedImage {
 
     if (doc.mime_type == "text/csv") {
         doc.format = "csv";
-        auto rows = cfire::csv::parse(raw_text);
+        auto rows_res = cfire::csv::parse(raw_text);
+        if (!rows_res) return std::unexpected(rows_res.error());
+        const auto& rows = *rows_res;
         std::string md;
         for (std::size_t r = 0; r < rows.size(); ++r) {
             md += "| ";
@@ -851,7 +853,7 @@ struct DecodedImage {
         return detail::embed_image_local(bytes, 384);
     }
     // Cloud multimodal embedding fallback (e.g. Gemini embedContent with inlineData)
-    std::string key = cfire::os::getenv("GEMINI_API_KEY", "");
+    std::string key = cfire::os::getenv("GEMINI_API_KEY").value_or("");
     std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent", model);
     std::unordered_map<std::string, std::string> headers;
     headers["x-goog-api-key"] = key;

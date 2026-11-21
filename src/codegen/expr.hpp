@@ -494,6 +494,27 @@ namespace cfire::frontend {
             return emit_expr(ex.inner);
         } else if constexpr (std::is_same_v<T, TryExpr>) {
             std::string inner = emit_expr(ex.inner);
+            auto ret_opt = lower_type_id(TypeId{e->resolved_type_id}, LowerContext::Return);
+            auto inner_opt = lower_type_id(ex.inner ? TypeId{ex.inner->resolved_type_id} : TypeId::Unknown(), LowerContext::Value);
+            if (ret_opt && inner_opt) {
+                if (*ret_opt == "void") {
+                    return std::format("([&]() -> void {{\n"
+                                       "    {1} _res = ({0});\n"
+                                       "    if (!_res.has_value()) {{\n"
+                                       "        std::println(stderr, \"Error: {{}}\", _res.error().message());\n"
+                                       "        std::abort();\n"
+                                       "    }}\n"
+                                       "}})()", inner, *inner_opt);
+                }
+                return std::format("([&]() -> {2} {{\n"
+                                   "    {1} _res = ({0});\n"
+                                   "    if (!_res.has_value()) {{\n"
+                                   "        std::println(stderr, \"Error: {{}}\", _res.error().message());\n"
+                                   "        std::abort();\n"
+                                   "    }}\n"
+                                   "    return cfire::unwrap_val(std::move(_res));\n"
+                                   "}})()", inner, *inner_opt, *ret_opt);
+            }
             return std::format("([&]() -> decltype(auto) {{\n"
                                "    auto&& _res = ({0});\n"
                                "    if (!_res.has_value()) {{\n"
@@ -801,8 +822,20 @@ namespace cfire::frontend {
         }
         if (mem->field == "parse" && call.args.size() == 1) {
             if (std::string prim = primitive_prefix_cpp(mem->object); !prim.empty()) {
-                return std::format("cfire::bm::parse<{}>({})", prim, emit_call_arg(call.args[0]));
+                const auto* prim_id = std::get_if<IdentExpr>(&mem->object->node);
+                std::string cf_name = prim_id ? prim_id->name : std::string("number");
+                return std::format("cfire::bm::parse<{}>({}, \"{}\")", prim, emit_call_arg(call.args[0]), cf_name);
             }
+        }
+        // Wrapper bridge methods (Q93): run before generic `builtin` (*opt) dereferencing.
+        if (mem->field == "or_error" && (call.args.size() == 1 || call.args.size() == 2)) {
+            std::string err_expr = call.args.size() == 1
+                ? std::format("cfire::make_error({})", emit_call_arg(call.args[0]))
+                : std::format("cfire::make_error({}, {})", emit_call_arg(call.args[0]), emit_call_arg(call.args[1]));
+            return std::format("cfire::bm::or_error({}, [&]() {{ return {}; }})", emit_expr(mem->object), err_expr);
+        }
+        if (mem->field == "ignore_error" && call.args.empty()) {
+            return std::format("cfire::bm::ignore_error({})", emit_expr(mem->object));
         }
         // methods on builtin types (src/sema/builtin_methods.hpp) lower to `cfire::bm::<name>(recv, args...)`.
         if (mem->resolution && mem->resolution->kind == SymbolKind::Method && mem->resolution->owner_type == "builtin") {
@@ -1370,9 +1403,17 @@ CFIRE_CG_INLINE auto Emitter::analyze_closure_returns(
     sb << (cl.is_escaping ? "[=" + view_param_captures(cl.body) + "](" : std::string("[&]("));
     for (std::size_t i = 0; i < cl.params.size(); ++i) {
         if (i > 0) sb << ", ";
+        std::string p_intent = (i < cl.param_intents.size()) ? cl.param_intents[i] : "in";
+        LowerContext p_ctx = (p_intent == "mut" || p_intent == "out") ? LowerContext::ParamMut
+                           : (p_intent == "move" ? LowerContext::ParamMove : LowerContext::ParamIn);
         if (i < cl.param_types.size() && cl.param_types[i].has_value()) {
-            std::string p_intent = (i < cl.param_intents.size()) ? cl.param_intents[i] : "in";
             sb << lower_param_type(p_intent, *cl.param_types[i]) << " " << cl.params[i];
+        } else if (i < cl.resolved_param_types.size() && cl.resolved_param_types[i] != 0) {
+            if (auto pt = lower_type_id(TypeId{cl.resolved_param_types[i]}, p_ctx)) {
+                sb << *pt << " " << cl.params[i];
+            } else {
+                sb << "auto&& " << cl.params[i];
+            }
         } else {
             sb << "auto&& " << cl.params[i];
         }
@@ -1393,10 +1434,23 @@ CFIRE_CG_INLINE auto Emitter::analyze_closure_returns(
         if (has_fallible && !has_val_ret) {
             sb << ")" << mut_spec << " -> std::expected<void, cfire::Error> {\n";
             is_fallible_void = true;
-        } else if (has_fallible && !val_ret_cpp.empty()) {
-            sb << ")" << mut_spec << " -> std::expected<" << val_ret_cpp << ", cfire::Error> {\n";
+        } else if (has_fallible) {
+            TypeId unwrapped = cf_.type_table.unwrap_fallible(TypeId{cl.resolved_return_type_id});
+            std::string ok_cpp = lower_type_id(unwrapped, LowerContext::Return).value_or(val_ret_cpp);
+            if (!ok_cpp.empty() && ok_cpp != "void") {
+                sb << ")" << mut_spec << " -> std::expected<" << ok_cpp << ", cfire::Error> {\n";
+            } else {
+                sb << ")" << mut_spec << " {\n";
+            }
+        } else if (has_val_ret) {
+            if (auto ret_cpp = lower_type_id(TypeId{cl.resolved_return_type_id}, LowerContext::Return);
+                ret_cpp && *ret_cpp != "void") {
+                sb << ")" << mut_spec << " -> " << *ret_cpp << " {\n";
+            } else {
+                sb << ")" << mut_spec << " {\n";
+            }
         } else {
-            sb << ")" << mut_spec << " {\n";
+            sb << ")" << mut_spec << " -> void {\n";
         }
     }
     ++indent_;

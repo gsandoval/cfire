@@ -2570,7 +2570,7 @@ void test_unified_stdlib_metadata_table(const std::filesystem::path& rt_dir) {
     auto fn_getenv = cat_idx.find_ns_fn("os", "getenv");
     require(fn_getenv != nullptr, "cat_idx has os.getenv");
     if (fn_getenv) {
-        require(fn_getenv->return_type == "str", "os.getenv returns str");
+        require(fn_getenv->return_type == "str?", "os.getenv returns str?");
     }
 
     // Verify end-to-end execution with multiple stdlib modules derived from catalog
@@ -2587,7 +2587,7 @@ fn main() {
     assert(sq == 4.0, "math.sqrt returned 4.0")
     rep := "banana".replace_all("a", "o")
     assert(rep == "bonono", "str.replace_all executed correctly")
-    home := os.getenv("NONEXISTENT_VAR_12345", "fallback_val")
+    home := os.getenv("NONEXISTENT_VAR_12345") or "fallback_val"
     assert(home == "fallback_val", "os.getenv fallback")
     println("stdlib metadata catalog test verified")
 }
@@ -3088,3 +3088,5 @@ fn main() {
 
     std::println("--- PASS: test_error_binding_and_named_arg_validation");
 }
+
+#include "test_closed_type_checker.hpp"

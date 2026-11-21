@@ -33,7 +33,7 @@ namespace detail {
 
 // clang-format off
 [[nodiscard]] inline auto module_type_docs(std::string_view mod) -> std::vector<StdTypeDoc> {
-    if (mod == "core:audio") return {
+    if (mod == "ext:audio") return {
         {"Waveform", "enum", "Oscillator shape for `audio.gen_tone` and `audio.gen_chirp`.", {}, {"Sine", "Square", "Saw", "Triangle", "Noise"}},
         {"SfxPreset", "enum", "A procedural sound effect for `audio.gen_sfx`.", {}, {"Tap", "Coin", "Laser", "Explosion", "PowerUp", "Jump", "Alert"}},
         {"Wave", "struct", "An in-memory waveform: interleaved `f32` samples in `-1.0`..`1.0`.", {

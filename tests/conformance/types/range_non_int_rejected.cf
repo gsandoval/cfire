@@ -1,0 +1,6 @@
+package main
+fn main() {
+    for i in "a".."z" { //~ error cfire/TYPE-MISMATCH
+        println("{}", i)
+    }
+}
