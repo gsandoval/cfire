@@ -2046,10 +2046,11 @@ private:
                                 break;
                             }
                         }
-                        if (ok && cur().kind == TokenKind::RBracket) {
+                        if (ok && cur().kind == TokenKind::RBracket && !type_args.empty()) {
                             advance(); // ']'
-                            auto call = parse_call_with_callee(std::move(*expr), std::move(type_args));
-                            if (call) {
+                            if (cur().kind == TokenKind::LParen && !is_destructure_lookahead(0).first) {
+                                auto call = parse_call_with_callee(std::move(*expr), std::move(type_args));
+                                if (!call) return std::unexpected(call.error());
                                 expr = std::move(*call);
                                 break;
                             }

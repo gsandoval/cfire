@@ -760,6 +760,24 @@ void test_security_and_fuzzing([[maybe_unused]] const std::filesystem::path& rt_
         deep_type += "i32 = []\n}\n";
         auto dtype_res = cfire::frontend::parse_source_resilient("deep_type.cf", deep_type);
         require(!dtype_res.ok(), "frontend::parse_source_resilient rejects 1,000-deep slice type without stack overflow");
+
+        std::string nested_gen = "package main\nfn f() {\n";
+        for (int i = 0; i < 40; ++i) {
+            nested_gen += "    _ = a.b[T](\"x\", |r: T| -> void! {\n";
+        }
+        auto ngen_res = cfire::frontend::parse_source_resilient("nested_generic_call.cf", nested_gen);
+        require(!ngen_res.ok(), "frontend::parse_source_resilient rejects 40-deep unclosed generic closure calls");
+        require(ngen_res.ast.arena && ngen_res.ast.arena->total_allocated_bytes() < 4 * 1024 * 1024,
+            std::format("nested unclosed generic calls stay within linear AST arena memory (got {} bytes)",
+                ngen_res.ast.arena ? ngen_res.ast.arena->total_allocated_bytes() : 0));
+
+        auto idx_destr = cfire::frontend::parse_source_resilient("idx_destr.cf",
+            "package main\nfn f(arr: []i32) {\n    x := arr[i]\n    (a, b) := pair()\n}\n");
+        require(idx_destr.ok(), "index expression followed by tuple destructuring parses cleanly");
+
+        auto idx_and_gen_calls = cfire::frontend::parse_source_resilient("idx_and_gen_calls.cf",
+            "package main\nfn f(arr: []fn(i32) -> i32) {\n    x := arr[0](1) + arr[i + 1](2) + foo[i32](3)\n}\n");
+        require(idx_and_gen_calls.ok(), "non-type index calls alongside generic call parse cleanly");
     }
 
     // 5. SEC-P0-02: Deterministic PRNG Mutation Fuzzer Across All Untrusted Input Parsers (10,000+ inputs)

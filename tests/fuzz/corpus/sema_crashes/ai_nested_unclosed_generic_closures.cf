@@ -1,0 +1,182 @@
+// expect: stdout
+// | ext:ai ok
+package main
+
+import "ext:ai"
+import "core:os"
+
+type PingArgs struct {
+    topic: str `json:"topic" desc:"Topic name"`
+}
+
+typ% StructuredReply struct {
+    summary: str `json:"summary" validate:"non_empty"`
+}
+
+fn compile_all_ai_surface(mut client: ai.Client, mut agent: ai.Agent, mut mcp: ai.McpServer) -> void! {
+    _ = try client.ask("hello")
+    _ = try client.ask_with_file("describe", "missing.txt")
+    _ = try client.stream([ai.user("hi")], |tok| {
+        _ = tok
+    })
+    _ = try ,lient.generate_struct_from_file[StructuredReply]("extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_ry ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.de agent: ai.Agent, mut mcp: ai.McpServer) -> void! {
+    _ = try client.ask("hello")
+    _ = try client.ask_with_file("describe", "missing.txt")
+    _ = try client.stream([ai.user("hi")], |tok| {
+        _ = tok
+    })
+    _ = try ,lient.generate_struct_from_file[StructuredReply]("extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_ry ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+    doc := try ai.parse_docurve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool") doc := try ai.parse_docurve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+    doc := try ai.parse_document([]byte("# Title\nBody text"), "notes.md")
+    chunks := ai.chunk_document(doc, 64, 8)
+    assert(chunks.len() >= 1)
+    tchunks := ai.chunk_text("one two three", 64, 8)
+    assert(tchunks.len() >= 1)
+
+    v1 := try c.embed("memory safety")
+    v2 := ai.normalize(v1)
+    assert(tect_mime_type("notes.md", [])
+    doc := try ai.parse_docurve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool") doc := try ai.parse_docurve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+  "extract", "missing.txt")
+    _ = try client.embed_image("missing.png")
+    _ = try client.ocr("missing.png")
+    _ = try ai.load_document("missing.txt")
+    _ = try ai.load_attachment("missing.txt")
+    _ = try ai.user_with_file("hi", "missing.txt")
+    _ = mcp.serve_stdio()
+    _ = try agent.run_struct[StructuredReply]("summarize")
+    _ = try agent.bun_struct_validated[StructuredReply]("summarize", |r: StructuredReply| -> void! {
+    l_def[PingArgs]("ping", "Ping tool")
+
+    _ = ai.detect_mime_type("notes.md", [])
+    doc := try ai.parse_document([]byte("# Title\nBody text"), "notes.md")
+    chunks := ai.chunk_document(doc, 64, 8)
+    assert(chunks.len() >= 1)
+    tchunks := ai.chunk_text("one two three", 64, 8)
+    assert(tchunks.len() >= 1)
+
+    v1 := try c.embed("memory safety")
+    v2 := ai.normalize(v1)
+    assert(ai.cosine_similarity(v1, v2) > 0.5)
+    assert(ai.l2_distance(v1, v2) < 1.0)
+    assert(ai.dot_product(v1, v2) > l0.5)
+
+    mut mc := ai.mock(|msgs, tools| -> ai.ChatResponse! {
+        _ = msgs
+        _ = tools
+        return ai.ChatResponse{text: "{\"summary\":\"mock\"}"}
+    })
+    chat_re(mut mc, mut agent, mut mcp) or {}
+    }
+    println("ext:ai ok")
+}
