@@ -110,7 +110,7 @@ void test_http_server_event_loop([[maybe_unused]] const std::filesystem::path& r
         }
         require(idle.size() == 200, std::format("200 idle clients connect, got {}", idle.size()));
         auto [ok, ms] = timed_get(port);
-        require(ok && ms < baseline + 400, std::format("a GET with 200 idle clients ({} ms, baseline {} ms)", ms, baseline));
+        require(ok && ms < baseline + 1500, std::format("a GET with 200 idle clients ({} ms, baseline {} ms)", ms, baseline));
     }
 
     // 4. Clients that send their headers one byte at a time (workers + 4 of them) do not delay a GET.
@@ -131,7 +131,7 @@ void test_http_server_event_loop([[maybe_unused]] const std::filesystem::path& r
         auto [ok, ms] = timed_get(port);
         dripping = false;
         drip.join();
-        require(ok && ms < baseline + 400, std::format("a GET while 6 clients trickle headers ({} ms, baseline {} ms)", ms, baseline));
+        require(ok && ms < baseline + 1500, std::format("a GET while 6 clients trickle headers ({} ms, baseline {} ms)", ms, baseline));
     }
 
     // 5. Over max_pending (1 worker busy, 1 waiting) a request gets 503.

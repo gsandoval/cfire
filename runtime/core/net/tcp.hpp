@@ -639,7 +639,7 @@ private:
     const bool wildcard = host.empty() || host == "0.0.0.0" || host == "*" || host == "::";
     const bool v6_literal = !wildcard && host.find(':') != std::string_view::npos;
     auto bound = [&](int fd, sockaddr* addr, socklen_t addr_len) -> std::optional<TcpListener> {
-        if (::bind(fd, addr, addr_len) == 0 && ::listen(fd, 16) == 0) {
+        if (::bind(fd, addr, addr_len) == 0 && ::listen(fd, SOMAXCONN) == 0) {
             sockaddr_storage got{};
             socklen_t len = sizeof(got);
             ::getsockname(fd, reinterpret_cast<sockaddr*>(&got), &len);
