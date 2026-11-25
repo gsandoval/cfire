@@ -240,14 +240,14 @@ namespace cfire::cli {
                 if (std::filesystem::exists("build.cf", bcf_ec)) {
                     if (auto parsed = cfire::build::parse_build_cf("build.cf")) {
                         cfire::build::apply_manifest_pkg_fields(
-                            insp_plan, ".", parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes, parsed->defines);
+                            insp_plan, ".", parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes, parsed->defines, parsed->cflags, parsed->ldflags);
                         for (const auto& ex : parsed->executables) {
                             cfire::build::apply_manifest_pkg_fields(
-                                insp_plan, ".", ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines);
+                                insp_plan, ".", ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines, ex.cflags, ex.ldflags);
                         }
                     }
                 }
-                cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
+                (void)cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
                 if (auto dr = cfire::build::resolve_plan_defines(insp_plan); !dr) {
                     if (json_mode) {
                         std::println("{{\"success\": false, \"header\": \"{}\", \"error\": \"{}\"}}",

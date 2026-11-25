@@ -438,7 +438,7 @@ Every tool in the `cfire` workflow lives inside the single `cfire` binary:
 | `cfire clean [path\|build.cf]` | `--cache`, `--all`, `--dry-run`, `--json` | Removes nested project `.cfire/` directories and manifest outputs (`--cache` safely cleans the marker-guarded OS/XDG user cache and owned legacy caches). |
 | `cfire check [file.cf\|dir]` | `--json`, `--fix` | Workspace-aware lexer, parser, Clang header bridge, and semantic/loan/intent analyzer (with optional auto-fix via `--fix`). |
 | `cfire fix [file.cf\|dir]` | `--dry-run`, `--json` | Automatically inserts missing `core:*` imports, missing call-site `mut` markers, and missing `match` arms. |
-| `cfire test [file.cf\|dir]` | `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks. |
+| `cfire test [file.cf\|dir]` | `--release`, `--debug`, `--sanitize`, `--json`, `--filter <pattern>`, `--bench`, `--fuzz-runs <N>`, `--seed <S>`, `--bench-time <ms>` | Compiles and executes `test`, `fuzz` (with counterexample shrinking), `///` doc-tests, and `[auto] json round-trip` checks (defaults to `-O0 -g`; `--release` uses `-O2 -g`). |
 | `cfire bench [file.cf\|dir]` | `--json`, `--filter <pattern>`, `--bench-time <ms>` | Runs parameterized statistical micro-benchmarks (`bench "name" \|size in [...]\| { ... }`). |
 | `cfire eval <code\|-e expr>` | `-e <expr>` | Evaluates a one-shot expression or statement block from CLI arguments or `stdin`. |
 | `cfire serve [target\|dir]` | `--port <n>`, `--no-open` | Builds WebAssembly targets and serves static/WASM assets with COOP/COEP headers. |
@@ -461,7 +461,7 @@ In C++, local variables are mutable by default (`int x = 10;`) and numeric types
 `cfire` flips both defaults:
 1. **Immutable by Default (`:=`)**: Declaring `count := 42` emits `const std::int64_t count = 42;`. You only mark a variable `mut` when its state genuinely changes over time.
 2. **Explicit Numeric Conversions (`i32(x)`, `f64(x)`)**: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using clean constructor-style calls (`f64(count)`, `f32(x)`, `i32(y)`, `u8(b)`, `byte(b)`, `usize(n)`).
-3. **Native String Interpolation**: Every double-quoted string (`"..."`) supports `{expr}` interpolation directly—including arbitrary expressions and format specifiers like `"{scaled:.2f}"` or `"{mask:04x}"`—without needing a `f"..."` prefix.
+3. **Native String Interpolation & Brace Escaping**: Every double-quoted string (`"..."`) supports `{expr}` interpolation directly—including arbitrary expressions and format specifiers like `"{scaled:.2f}"` or `"{mask:04x}"`—without needing a `f"..."` prefix. Use `\{` and `\}` to produce literal `{` and `}` consistently in every double-quoted string (plain, interpolated, and `println`/`format`), or use raw backtick strings (`` `...` ``) where escapes, interpolation, and formatting are never applied. Double braces (`{{` / `}}`) are rejected as brace escapes inside interpolated and format strings (`cfire/INVALID-INTERPOLATION`).
 
 ```cfire
 package main
@@ -637,7 +637,8 @@ When you need heap allocation, `cfire` gives you owning smart pointers, and the 
 | `shared[T]` | `make(shared[T], val)` | Atomic reference-counted shared heap ownership | `std::shared_ptr<T>` |
 
 There are no raw pointers in `cfire` code: no `*T` type, no `&x`, no `*p`, and no `&T` reference type. Each job a pointer does in C++ has a direct form:
-- **Read a value without copying it**: parameters are read-only views by default (`fn f(s: str)` takes a `std::string_view`); write `mut` when the callee changes the argument (`fn f(mut xs: []i32)`, called as `f(mut xs)`).
+- **Read a value without copying it**: parameters are read-only views by default (`fn f(s: str)` takes a `cfire::str_ref` view; `s[a..b]` slices UTF-8 boundaries safely, and `s.bytes()[a..b]` slices raw bytes zero-copy on a named `str`); write `mut` when the callee changes the argument (`fn f(mut xs: []i32)`, called as `f(mut xs)`).
+- **Views in, copies out**: returning or assigning a view into an owned `str` or `[]T` destination (e.g., `return s[1..]` or `tail: str = s[1..]`) copies into the owned value automatically.
 - **Point at an element**: keep its index (`cursor := 2`, then `xs[cursor] += 1`).
 - **Let parallel tasks write results**: return them from the task (`results := async.scope ...`), or give each task its own element with `scope.spawn |mut xs[i]| { ... }` (Chapter 10).
 - **Share or own heap data**: `own[T]` / `shared[T]`, reached through their fields (`pkt.sequence`).
@@ -1734,7 +1735,7 @@ Because `cfire` compiles to ISO C++23, calling C or C++ libraries requires **zer
 | :--- | :--- | :--- |
 | `i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool` | `int8_t`..`int64_t`, `uint8_t`..`uint64_t`, `float`, `double`, `bool` | Identical C++23 scalar type (0-cost pass-through) |
 | `str` passed to `const char*` | `const char*` | Automatic `cfire::c_arg(s)` (`.c_str()`, 0 allocation) |
-| read-only `str` parameter, `s[a..b]` | `cfire::str_ref` (derives from `std::string_view`) | 0-copy pointer + length view; converts to `std::string` where an owned `str` is needed |
+| read-only `str` parameter, `s[a..b]` | `cfire::str_ref` (derives from `std::string_view`) | 0-copy pointer + length view (no `.c_str()` member inside `cpp {}` blocks; pass `cfire::c_str(s)` which wipes its temporary buffer on destruction) |
 | `[]T` / `[N]T` / `str` passed to a pointer parameter (`T*`, `const T*`, `void*`) | `T*` | The buffer pointer (`cfire::c_ptr`); byte-sized element types convert (`[]byte` to `char*`) |
 | `mut x: T` parameter | `T&` | A mutable reference; C out-pointers (`int*` written by the callee) go through a `cpp { ... }` block |
 | `own[T]` | `T*` via `.release()`, back with `own[T].from_raw(p)` | Hands ownership across the boundary |
@@ -1973,6 +1974,7 @@ test "fibonacci sequence progression" {
 ```bash
 # Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
 cfire test
+cfire test --release
 cfire test --filter "base cases"
 cfire test --json
 ```
@@ -2051,6 +2053,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/INDEX-OUT-OF-BOUNDS` | Detailed rule | Compile-Time Out-of-Bounds or Negative Constant Sequence Index |
 | `cfire/INTERNAL-BACKEND-ERROR` | Tooling | Internal compiler error: the C++ backend rejected generated code for a pure .cf program that Sema accepted (please report). |
 | `cfire/INVALID-ATTRIBUTE` | Attributes | An attribute on a declaration is unknown, misplaced, or has invalid arguments. |
+| `cfire/INVALID-BUILD-VALUE` | Build manifest | A field or argument in `build.cf` cannot be evaluated as a compile-time constant manifest value. |
 | `cfire/INVALID-CONSTRUCTOR` | Detailed rule | Associated Function Other Than `make` |
 | `cfire/INVALID-IMPORT` | Imports | A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`). |
 | `cfire/INVALID-INDEX` | Types | Indexing a value that is not a string, slice, array or map. |
@@ -2619,7 +2622,7 @@ fn main() {
     mut mcp := make(ai.McpServer, "cfire-kb-server", "1.0.0")
 
     mcp.register_tool[SearchArgs]("search_kb", "Searches the internal knowledge base", |args: SearchArgs| -> str! {
-        return "[{{\"query\":\"{args.query}\",\"limit\":{args.limit}}}]"
+        return "[\{\"query\":\"{args.query}\",\"limit\":{args.limit}\}]"
     })
 
     // Test JSON-RPC 2.0 dispatch in memory (call mcp.serve_stdio() in production)
@@ -2846,6 +2849,7 @@ Release binaries (`cfire build`) follow secure-by-default WebView settings while
 | :--- | :--- | :--- |
 | `app.set_devtools(enabled)` / `devtools_enabled()` | `fn(bool)` / `fn() -> bool` | Toggles Web Inspector / DevTools across `WKWebView`, `WebKitGTK`, and `WebView2`. Defaults to `false` in `Release` (`cfire build`) and `true` in debug/test runs unless overridden. |
 | `app.set_context_menu(enabled)` / `context_menu_enabled()` | `fn(bool)` / `fn() -> bool` | Toggles the browser's default right-click context menu. Defaults to `false` in `Release` (`cfire build`) and `true` in debug/test runs unless overridden. |
+| `app.set_browser_keys(enabled)` / `browser_keys_enabled()` | `fn(bool)` / `fn() -> bool` | Toggles built-in browser accelerator keys (`F5`, `Ctrl+R`, `Ctrl+W`, zoom shortcuts on Windows WebView2). Defaults to `false` in `Release` (`cfire build`) and `true` in debug/test runs unless overridden. |
 | `app.set_autofill(enabled)` / `autofill_enabled()` | `fn(bool)` / `fn() -> bool` | Opts windows and sensitive secret inputs out of password autosave and form autofill (`ICoreWebView2Settings4` on Windows plus preload `autocomplete="off"` enforcement on WebKit). |
 | `app.on("app:active")` / `app.on("app:inactive")` | `{}` | Emitted on focus/activation transitions across all 4 OSes (iOS `UISceneDelegate`, macOS `NSApplicationDelegate`, Linux GTK `focus-in-event`/`focus-out-event`, Windows `WM_ACTIVATE`). |
 | `app.on("app:foreground")` / `app.on("app:background")` | `{}` | Emitted on iOS foreground/background scene lifecycle transitions. |
@@ -2854,7 +2858,7 @@ Release binaries (`cfire build`) follow secure-by-default WebView settings while
 | `app.on("keyboard:change")` | `{"visible":bool,"height":px}` | Emitted on iOS software keyboard show/hide transitions with end-frame pixel height. |
 | `app.on("window:fullscreen")` | `{"fullscreen":true}` / `{"fullscreen":false}` | Emitted on native fullscreen entry and exit transitions across macOS, Linux GTK3, Windows, and headless tests. |
 | `app.on("window:file_drop")` | `{"paths":["/path/to/file"]}` | Emitted when files are dropped onto the window, carrying native OS filesystem paths (macOS `NSDraggingDestination`, Linux GTK URI drops, Windows `WM_DROPFILES` & WebView2 `ICoreWebView2File`). |
-| iOS Safe Areas & Native Escape Hatch | `viewport-fit=cover` / C++ interop | Include `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` and style against `env(safe-area-inset-top)` / `env(safe-area-inset-bottom)` on iOS; use `native_window_handle()`, `native_webview_handle()`, and `native_view_controller_handle()` in C++/ObjC++ plugins for direct SDK customization. |
+| iOS Safe Areas & Native Escape Hatch | `viewport-fit=cover` / C++ interop | Include `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` and style against `env(safe-area-inset-top)` / `env(safe-area-inset-bottom)` on iOS; use `native_window_handle()`, `native_webview_handle()`, `native_controller_handle()`, and `native_view_controller_handle()` in C++/ObjC++ plugins for direct SDK customization. |
 | Desktop OS Integrations | Automatic | Clicking the macOS Dock icon reopens a hidden or miniaturized window (`"window:reopen"`), and Windows enables Per-Monitor-V2 HiDPI scaling automatically (`SetProcessDpiAwarenessContext` + `WM_DPICHANGED`). |
 
 ### Headless & Live Offscreen `WKWebView` Testing (`cfire test`)

@@ -1,0 +1,28 @@
+// expect: stdout
+// | ok
+package main
+
+import "core:fs"
+import "core:os"
+import cpp "<stdio.h>"
+
+fn rename_roundtrip(path: str) -> void! {
+    tmp := path + ".tmp"
+    try fs.write_text(tmp, "x")
+    try fs.rename(tmp, path)
+    got := try fs.read_text(path)
+    assert(got == "x")
+}
+
+fn main() -> void! {
+    base := os.getenv("TEMP") or (os.getenv("TMPDIR") or "/tmp")
+    dir := "{base}/cfire_cf264_{os.getpid()}"
+    try fs.mkdir_all(dir)
+    defer {
+        _ = fs.remove(dir)
+    }
+    target := "{dir}/renamed.txt"
+    try rename_roundtrip(target)
+    _ = fs.remove(target)
+    println("ok")
+}

@@ -813,10 +813,10 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
                     if (std::filesystem::exists(bcf, ec)) {
                         if (auto parsed = cfire::build::parse_build_cf(bcf)) {
                             cfire::build::apply_manifest_pkg_fields(
-                                lsp_plan, search_dir, parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes, parsed->defines);
+                                lsp_plan, search_dir, parsed->pkg_config, parsed->libraries, parsed->frameworks, parsed->includes, parsed->defines, parsed->cflags, parsed->ldflags);
                             for (const auto& ex : parsed->executables) {
                                 cfire::build::apply_manifest_pkg_fields(
-                                    lsp_plan, search_dir, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines);
+                                    lsp_plan, search_dir, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines, ex.cflags, ex.ldflags);
                             }
                             for (const auto& dep : parsed->external_deps) {
                                 if (!dep.source.empty()) {
@@ -839,7 +839,7 @@ CFIRE_LSP_SERVER_INLINE auto Server::resolve_workspace(const std::string& uri, c
                             }
                         }
                         auto rt_dir = cfire::build::locate_toolchain_layout().runtime_dir;
-                        cfire::build::resolve_plan_pkg_configs(lsp_plan, rt_dir);
+                        (void)cfire::build::resolve_plan_pkg_configs(lsp_plan, rt_dir);
                         (void)cfire::build::resolve_plan_defines(lsp_plan);
                         break;
                     }

@@ -81,13 +81,14 @@ struct ToolchainLayout {
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto split_ws(std::string_view sv) -> std::vector<std::string>;
 
-CFIRE_INFRA_INLINE void query_pkg_config(
+[[nodiscard]] CFIRE_INFRA_INLINE auto query_pkg_config(
     const std::string& pkg,
     std::vector<std::string>& cflags,
     std::vector<std::string>& libs,
     const std::filesystem::path& install_root = {},
-    bool static_link = false
-);
+    bool static_link = false,
+    bool strict = false
+) -> std::expected<void, std::string>;
 
 CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
 
@@ -314,12 +315,13 @@ CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string;
     return out;
 }
 
-CFIRE_INFRA_INLINE void query_pkg_config(
+[[nodiscard]] CFIRE_INFRA_INLINE auto query_pkg_config(
     const std::string& pkg,
     std::vector<std::string>& cflags,
     std::vector<std::string>& libs,
     const std::filesystem::path& install_root,
-    bool static_link) {
+    bool static_link,
+    bool strict) -> std::expected<void, std::string> {
     std::vector<std::string> extra_pc_dirs;
     if (!install_root.empty()) {
         std::error_code ec;
@@ -379,7 +381,7 @@ CFIRE_INFRA_INLINE void query_pkg_config(
                 : (local_root / "lib");
             libs.push_back("-L" + lib_dir.string());
             libs.push_back(lib_flag);
-            return;
+            return {};
         }
         for (const auto& pc_rel : {local_root / "lib" / "pkgconfig", local_root / "share" / "pkgconfig"}) {
             if (std::filesystem::is_directory(pc_rel, ec)) {
@@ -401,17 +403,29 @@ CFIRE_INFRA_INLINE void query_pkg_config(
         }
     }
 
+    PkgConfigProbeResult pc_res;
     if (!ignore_sys || has_explicit_pc_env) {
-        auto pc_res = ProbeCache::instance().probe_pkg_config(pkg, static_link, install_root, extra_pc_dirs);
+        pc_res = ProbeCache::instance().probe_pkg_config(pkg, static_link, install_root, extra_pc_dirs);
         if (pc_res.found) {
             for (auto& f : split_ws(pc_res.cflags)) cflags.push_back(std::move(f));
             if (!pc_res.libs.empty()) {
                 for (auto& l : split_ws(pc_res.libs)) libs.push_back(std::move(l));
-                return;
+                return {};
             }
+        } else if (strict && !pc_res.error.empty() &&
+                   (pc_res.error.contains("required by") || pc_res.error.contains("Requested ") ||
+                    pc_res.error.contains("Conflicts") || pc_res.error.contains("syntax error"))) {
+            return std::unexpected(std::format("pkg-config dependency resolution failed for '{}':\n{}", pkg, pc_res.error));
         }
     }
-    if (ignore_sys) return;
+    if (ignore_sys) {
+        if (strict && !pc_res.found) {
+            return std::unexpected(pc_res.error.empty()
+                ? std::format("pkg-config package '{}' could not be resolved (system libraries ignored)", pkg)
+                : std::format("pkg-config package '{}' could not be resolved:\n{}", pkg, pc_res.error));
+        }
+        return {};
+    }
     // Fallback probe when pkg-config is unavailable or package has no .pc file
     if (!hdr.empty()) {
         std::vector<std::string> prefixes;
@@ -442,15 +456,22 @@ CFIRE_INFRA_INLINE void query_pkg_config(
                     libs.push_back(std::string("-L") + prefix + "/lib");
                 }
                 libs.push_back(lib_flag);
-                return;
+                return {};
             }
         }
 #if defined(__APPLE__)
         if (pkg == "sqlite3") {
             libs.push_back("-lsqlite3");
+            return {};
         }
 #endif
     }
+    if (strict && !pc_res.found) {
+        return std::unexpected(pc_res.error.empty()
+            ? std::format("pkg-config package '{}' was not found", pkg)
+            : std::format("pkg-config package '{}' was not found:\n{}", pkg, pc_res.error));
+    }
+    return {};
 }
 
 CFIRE_INFRA_INLINE auto trim_whitespace(std::string_view s) -> std::string {

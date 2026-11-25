@@ -1,0 +1,35 @@
+// expect: stdout
+// | [{"url":"a"},{"url":"b"}]
+// | [1,2,3]
+// | ["x","y"]
+// | [[1,2],[3]]
+package main
+
+import "core:json"
+
+type Link struct {
+    url: str `json:"url"`
+}
+
+fn dump_links(list: []Link) -> str {
+    return json.stringify(list)
+}
+
+fn dump_ints(nums: []i64) -> str {
+    return json.stringify(nums)
+}
+
+fn dump_strs(xs: []str) -> str {
+    return json.stringify(xs)
+}
+
+fn dump_nested(xss: [][]i64) -> str {
+    return json.stringify(xss)
+}
+
+fn main() {
+    println(dump_links([Link{ url: "a" }, Link{ url: "b" }]))
+    println(dump_ints([1, 2, 3]))
+    println(dump_strs(["x", "y"]))
+    println(dump_nested([[1, 2], [3]]))
+}

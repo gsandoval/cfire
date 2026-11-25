@@ -344,10 +344,44 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
     }
     if (found_bcf.empty()) return {};
 
-    auto parsed = parse_build_cf(found_bcf);
+    auto parsed = parse_build_cf(found_bcf, plan.target_triple);
     if (!parsed) return std::unexpected(parsed.error());
     auto bcf_parent = found_bcf.parent_path();
     plan.manifest_dir = bcf_parent.empty() ? std::string(".") : bcf_parent.string();
+    auto add_bcf_sources_dep = [&](const std::string& dep_name,
+                                   const std::vector<std::string>& srcs,
+                                   const std::vector<std::string>& incs,
+                                   const std::vector<std::string>& defs,
+                                   const std::vector<std::string>& cfs) {
+        if (srcs.empty()) return;
+        for (const auto& ed : plan.external_deps) {
+            if (ed.name == dep_name) return;
+        }
+        ExternalDepSpec dep;
+        dep.name = dep_name;
+        dep.driver = "CC";
+        dep.source = ".";
+        dep.base_dir = bcf_parent;
+        dep.sources = srcs;
+        dep.includes = incs;
+        for (const auto& d : parsed->defines) {
+            auto eq = d.find('=');
+            if (eq == std::string::npos) dep.defines[d] = "1";
+            else dep.defines[d.substr(0, eq)] = d.substr(eq + 1);
+        }
+        for (const auto& d : defs) {
+            auto eq = d.find('=');
+            if (eq == std::string::npos) dep.defines[d] = "1";
+            else dep.defines[d.substr(0, eq)] = d.substr(eq + 1);
+        }
+        for (const auto& c : parsed->cflags) {
+            for (auto& tok : split_ws(c)) dep.extra_cflags.push_back(std::move(tok));
+        }
+        for (const auto& c : cfs) {
+            for (auto& tok : split_ws(c)) dep.extra_cflags.push_back(std::move(tok));
+        }
+        plan.external_deps.push_back(std::move(dep));
+    };
     apply_manifest_pkg_fields(
         plan,
         bcf_parent,
@@ -355,8 +389,11 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
         parsed->libraries,
         parsed->frameworks,
         parsed->includes,
-        parsed->defines
+        parsed->defines,
+        parsed->cflags,
+        parsed->ldflags
     );
+    add_bcf_sources_dep("__bcf_pkg_sources", parsed->sources, parsed->includes, {}, {});
     if (!parsed->executables.empty()) {
         const ExecutableSpec* matched_exe = &parsed->executables[0];
         bool exact_entry_match = false;
@@ -437,11 +474,13 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
         }
         if (test_mode || !exact_entry_match) {
             for (const auto& ex : parsed->executables) {
-                apply_manifest_pkg_fields(plan, bcf_parent, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines);
+                apply_manifest_pkg_fields(plan, bcf_parent, ex.pkg_config, ex.libraries, ex.frameworks, ex.includes, ex.defines, ex.cflags, ex.ldflags);
+                add_bcf_sources_dep("__bcf_exe_" + ex.name + "_sources", ex.sources, ex.includes, ex.defines, ex.cflags);
             }
         } else {
             apply_manifest_pkg_fields(
-                plan, bcf_parent, matched_exe->pkg_config, matched_exe->libraries, matched_exe->frameworks, matched_exe->includes, matched_exe->defines);
+                plan, bcf_parent, matched_exe->pkg_config, matched_exe->libraries, matched_exe->frameworks, matched_exe->includes, matched_exe->defines, matched_exe->cflags, matched_exe->ldflags);
+            add_bcf_sources_dep("__bcf_exe_" + matched_exe->name + "_sources", matched_exe->sources, matched_exe->includes, matched_exe->defines, matched_exe->cflags);
         }
     }
     for (auto& dep : parsed->external_deps) {
@@ -608,7 +647,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
             return;
         }
         seen_pc.insert(pc);
-        resolve_plan_pkg_configs(plan, runtime_dir, pc);
+        (void)resolve_plan_pkg_configs(plan, runtime_dir, pc, false);
     };
 
     auto request_sqlite3_dep = [&]() {
@@ -1062,7 +1101,9 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
     }
 
     // Resolve build.cf + subpackage + --pkg-config / --define settings BEFORE Sema & header inspection
-    resolve_plan_pkg_configs(plan, runtime_dir);
+    if (auto pcr = resolve_plan_pkg_configs(plan, runtime_dir, "", true); !pcr) {
+        return std::unexpected(pcr.error());
+    }
     if (auto dr = resolve_plan_defines(plan); !dr) {
         return std::unexpected(dr.error());
     }
@@ -1759,7 +1800,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
     const bool dev_debug = is_dev_debug_profile();
     std::string opt_flags = sanitize
         ? sanitizer_opt_flags()
-        : (dev_debug ? "-O0 -g" : "-O2");
+        : (dev_debug ? "-O0 -g" : (test_mode ? "-O2 -g" : "-O2"));
 
     std::string linker_flag;
     if (!is_wasm && !plan.is_ios && plan.target_triple.empty()) {

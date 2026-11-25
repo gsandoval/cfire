@@ -1,5 +1,11 @@
 #include "cfire_prelude.hpp"
 #include "core/sync.hpp"
+#if defined(_WIN32)
+#include "detail/win32_clean_macros.hpp"
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 [[nodiscard]] inline auto run_tasks() -> std::int64_t;
 [[nodiscard]] inline auto apply_op(std::int32_t val, const std::function<std::int32_t(std::int32_t)>& op) -> std::int32_t;

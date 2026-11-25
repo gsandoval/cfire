@@ -407,7 +407,7 @@ struct ScopedDevDebugGuard {
                 local_plan.cflags.push_back(std::move(iflag));
             }
         }
-        cfire::build::resolve_plan_pkg_configs(local_plan, rt_dir);
+        (void)cfire::build::resolve_plan_pkg_configs(local_plan, rt_dir);
         if (auto dr = cfire::build::resolve_plan_defines(local_plan); !dr) {
             cfire::diag::Diagnostic d;
             d.file = std::string(file_path);

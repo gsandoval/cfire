@@ -1,0 +1,52 @@
+// expect: stdout
+// | 0:a,1:b
+// | 0:c,1:d
+// | a:1,b:2
+// | c:3,d:4
+// | nested:0:x,1:y
+package main
+
+fn main() {
+    xs := ["a", "b"]
+    ys := ["c", "d"]
+    mut s1 := ""
+    for i, x in xs {
+        if i > 0 {
+            s1 += ","
+        }
+        s1 += format("{}:{}", i, x)
+    }
+    println("{}", s1)
+
+    mut s2 := ""
+    for i, y in ys {
+        if i > 0 {
+            s2 += ","
+        }
+        s2 += format("{}:{}", i, y)
+    }
+    println("{}", s2)
+
+    mut m1: map[str]i64 = {}
+    m1["a"] = 1
+    mut m2: map[str]i64 = {}
+    m2["c"] = 3
+    for k, v in m1 {
+        println("{}:{},b:{}", k, v, 2)
+    }
+    for k, v in m2 {
+        println("{}:{},d:{}", k, v, 4)
+    }
+
+    rows := [["x", "y"]]
+    for _, row in rows {
+        mut out := "nested:"
+        for i, cell in row {
+            if i > 0 {
+                out += ","
+            }
+            out += format("{}:{}", i, cell)
+        }
+        println("{}", out)
+    }
+}

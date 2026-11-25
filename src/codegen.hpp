@@ -714,7 +714,7 @@ public:
 
     // Decodes a raw cfire string literal snippet when it contains embedded NUL, `\u{...}`, or `\xHH` escapes
     // that could truncate at `\0` or greedily consume trailing hex digits in C++. Returns `{bytes, has_nul, reencode}`.
-    [[nodiscard]] static auto decode_cfire_string_escapes(std::string_view raw) -> std::tuple<std::string, bool, bool> {
+    [[nodiscard]] static auto decode_cfire_string_escapes(std::string_view raw, bool for_format = false) -> std::tuple<std::string, bool, bool> {
         std::string decoded;
         decoded.reserve(raw.size());
         bool has_nul = false;
@@ -741,6 +741,11 @@ public:
             else if (esc == '\\') { decoded.push_back('\\'); i += 2; }
             else if (esc == '"') { decoded.push_back('"'); i += 2; }
             else if (esc == '\'') { decoded.push_back('\''); i += 2; }
+            else if (esc == '{' || esc == '}') {
+                decoded.push_back(esc);
+                if (for_format) decoded.push_back(esc);
+                i += 2;
+            }
             else if (esc == 'x' && i + 3 < raw.size() &&
                      std::isxdigit(static_cast<unsigned char>(raw[i + 2])) &&
                      std::isxdigit(static_cast<unsigned char>(raw[i + 3]))) {
@@ -789,23 +794,54 @@ public:
         return {std::move(decoded), has_nul, needs_reencode};
     }
 
+    [[nodiscard]] static auto rewrite_brace_escapes_preserving_escapes(std::string_view raw, bool for_format) -> std::string {
+        std::string out;
+        out.reserve(raw.size());
+        for (std::size_t i = 0; i < raw.size();) {
+            if (raw[i] == '\\' && i + 1 < raw.size()) {
+                char esc = raw[i + 1];
+                if (esc == '{' || esc == '}') {
+                    out.push_back(esc);
+                    if (for_format) out.push_back(esc);
+                    i += 2;
+                    continue;
+                }
+                out.push_back(raw[i]);
+                out.push_back(esc);
+                if (esc == 'u' && i + 2 < raw.size() && raw[i + 2] == '{') {
+                    std::size_t k = i + 2;
+                    while (k < raw.size() && raw[k] != '}') {
+                        out.push_back(raw[k++]);
+                    }
+                    if (k < raw.size()) out.push_back(raw[k++]);
+                    i = k;
+                } else {
+                    i += 2;
+                }
+                continue;
+            }
+            out.push_back(raw[i++]);
+        }
+        return out;
+    }
+
     [[nodiscard]] static auto lower_string_literal_cpp(std::string_view raw) -> std::string {
-        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw);
+        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw, false);
         if (has_nul) {
             return std::format("cfire::str_ref(\"{}\", {})", encode_cpp_octal_bytes(decoded), decoded.size());
         }
         if (needs_reencode) {
             return std::format("\"{}\"", encode_cpp_octal_bytes(decoded));
         }
-        return std::format("\"{}\"", escape_unescaped_quotes(raw));
+        return std::format("\"{}\"", escape_unescaped_quotes(rewrite_brace_escapes_preserving_escapes(raw, false)));
     }
 
     [[nodiscard]] static auto escape_format_literal_segment(std::string_view raw) -> std::string {
-        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw);
+        auto [decoded, has_nul, needs_reencode] = decode_cfire_string_escapes(raw, true);
         if (needs_reencode) {
             return encode_cpp_octal_bytes(decoded);
         }
-        return escape_unescaped_quotes(raw);
+        return escape_unescaped_quotes(rewrite_brace_escapes_preserving_escapes(raw, true));
     }
 
     [[nodiscard]] auto infer_elem_cpp_type(const ExprPtr& e) const -> std::string {

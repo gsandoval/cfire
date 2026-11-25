@@ -17,9 +17,19 @@
 #include <filesystem>
 #if defined(_WIN32)
 #include <io.h>
+extern "C" __declspec(dllimport) unsigned short __stdcall RtlCaptureStackBackTrace(
+    unsigned long FramesToSkip,
+    unsigned long FramesToCapture,
+    void** BackTrace,
+    unsigned long* BackTraceHash
+);
 #else
 #include <signal.h>
 #include <unistd.h>
+#if !defined(__EMSCRIPTEN__) && __has_include(<execinfo.h>) && (defined(__APPLE__) || defined(__GLIBC__))
+#include <execinfo.h>
+#define CFIRE_HAS_EXECINFO_BACKTRACE 1
+#endif
 #endif
 #include <format>
 #include <limits>
@@ -47,8 +57,9 @@ struct TestAssertionFailure {};
 
 // --- Crash & sanitizer-trap reporting ---
 // A UBSan trap (-fsanitize-trap), segfault or abort inside a test used to kill the runner with no output.
-// begin_test() records the running test and flushes stdout; the signal handler then reports it with
-// async-signal-safe write(2) calls only, and exits with status 1 like an ordinary test failure.
+// begin_test() records the running test and flushes stdout; the signal handler then reports it + an
+// async-signal-safe backtrace via write(2) / _write(), restores SIG_DFL, and re-raises the signal
+// so core dumps and signal exit statuses are preserved.
 inline char crash_report_line[512] = {0};
 inline std::size_t crash_report_len = 0;
 
@@ -89,10 +100,56 @@ inline void crash_signal_handler(int sig) {
         put(crash_report_line, crash_report_len);
         const char* reason = crash_signal_reason(sig);
         put(reason, std::strlen(reason));
+#if defined(CFIRE_HAS_EXECINFO_BACKTRACE)
+        void* frames[32] = {nullptr};
+        int frame_count = ::backtrace(frames, 32);
+        if (frame_count > 0) {
+            static constexpr char bt_hdr[] = "backtrace:\n";
+            put(bt_hdr, sizeof(bt_hdr) - 1);
+            ::backtrace_symbols_fd(frames, frame_count, 1);
+        }
+#elif defined(_WIN32)
+        void* frames[32] = {nullptr};
+        unsigned short frame_count = ::RtlCaptureStackBackTrace(0, 32, frames, nullptr);
+        if (frame_count > 0) {
+            static constexpr char bt_hdr[] = "backtrace:\n";
+            put(bt_hdr, sizeof(bt_hdr) - 1);
+            static constexpr char kHex[] = "0123456789abcdef";
+            for (unsigned short i = 0; i < frame_count; ++i) {
+                char line[48];
+                std::size_t pos = 0;
+                line[pos++] = ' ';
+                line[pos++] = ' ';
+                line[pos++] = '#';
+                if (i >= 10) line[pos++] = static_cast<char>('0' + (i / 10));
+                line[pos++] = static_cast<char>('0' + (i % 10));
+                line[pos++] = ' ';
+                line[pos++] = '0';
+                line[pos++] = 'x';
+                auto addr = reinterpret_cast<std::uintptr_t>(frames[i]);
+                for (int nib = static_cast<int>(sizeof(std::uintptr_t) * 2) - 1; nib >= 0; --nib) {
+                    line[pos++] = kHex[(addr >> (nib * 4)) & 0xFU];
+                }
+                line[pos++] = '\n';
+                put(line, pos);
+            }
+        }
+#endif
         static constexpr char tail[] = "FAIL (test runner crashed; remaining tests were not run)\n";
         put(tail, sizeof(tail) - 1);
     }
-    std::_Exit(1);
+#if defined(_WIN32)
+    std::signal(sig, SIG_DFL);
+    std::raise(sig);
+    std::_Exit(3);
+#else
+    struct sigaction sa{};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    ::sigaction(sig, &sa, nullptr);
+    ::raise(sig);
+    std::_Exit(128 + sig);
+#endif
 }
 
 inline void install_crash_handlers() {

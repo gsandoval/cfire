@@ -1,0 +1,15 @@
+// expect: stdout
+// | x
+package main
+
+import "core:json"
+import cpp "<chrono>"
+
+type Req struct {
+    tab: str `json:"tab"`
+}
+
+fn main() {
+    r := json.parse[Req](`{"tab":"x"}`) or Req{ tab: "none" }
+    println(r.tab)
+}

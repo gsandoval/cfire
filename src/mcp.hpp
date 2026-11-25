@@ -846,11 +846,11 @@ struct McpOptions {
                         if (auto parsed = cfire::build::parse_build_cf(bcf)) {
                             cfire::build::apply_manifest_pkg_fields(
                                 insp_plan, search_d, parsed->pkg_config, parsed->libraries,
-                                parsed->frameworks, parsed->includes, parsed->defines);
+                                parsed->frameworks, parsed->includes, parsed->defines, parsed->cflags, parsed->ldflags);
                             for (const auto& ex : parsed->executables) {
                                 cfire::build::apply_manifest_pkg_fields(
                                     insp_plan, search_d, ex.pkg_config, ex.libraries,
-                                    ex.frameworks, ex.includes, ex.defines);
+                                    ex.frameworks, ex.includes, ex.defines, ex.cflags, ex.ldflags);
                             }
                         }
                         break;
@@ -858,7 +858,7 @@ struct McpOptions {
                     if (search_d == search_d.parent_path()) break;
                     search_d = search_d.parent_path();
                 }
-                cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
+                (void)cfire::build::resolve_plan_pkg_configs(insp_plan, runtime_dir);
                 if (!ws_root.empty()) {
                     insp_plan.cflags.push_back("-I" + ws_root.string());
                 }

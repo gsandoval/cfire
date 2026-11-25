@@ -4,15 +4,19 @@
 #include "cache_paths.hpp"
 #include "toolchain_config.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <map>
 #include <mutex>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #if !defined(_WIN32)
@@ -35,6 +39,7 @@ struct PkgConfigProbeResult {
     std::string libs;
     std::string pc_path;
     std::string modversion;
+    std::string error;
 };
 
 namespace detail {
@@ -167,53 +172,23 @@ inline int parse_major_version_prefix(std::string_view dv) {
     return any ? val : 0;
 }
 
-inline std::string pkg_search_dir_stamps(
-    const std::filesystem::path& install_root,
-    const std::vector<std::string>& extra_pc_dirs,
-    const char* env_pkg_path,
-    const char* env_pkg_libdir
-) {
-    std::vector<std::filesystem::path> dirs;
-    if (!install_root.empty()) {
-        dirs.push_back(install_root / "lib" / "pkgconfig");
-        dirs.push_back(install_root / "share" / "pkgconfig");
-    }
-    for (const auto& d : extra_pc_dirs) {
-        if (!d.empty()) dirs.emplace_back(d);
-    }
+inline std::vector<std::string> split_pc_search_paths(std::string_view sv) {
+    std::vector<std::string> out;
 #if defined(_WIN32)
     constexpr char kSep = ';';
 #else
     constexpr char kSep = ':';
 #endif
-    auto push_env_dirs = [&](const char* ev) {
-        if (!ev || !*ev) return;
-        std::string_view sv(ev);
-        size_t start = 0;
-        while (start <= sv.size()) {
-            size_t sep = sv.find(kSep, start);
-            std::string_view part = (sep == std::string_view::npos) ? sv.substr(start) : sv.substr(start, sep - start);
-            if (!part.empty()) dirs.emplace_back(part);
-            if (sep == std::string_view::npos) break;
-            start = sep + 1;
-        }
-    };
-    push_env_dirs(env_pkg_path);
-    push_env_dirs(env_pkg_libdir);
-#if !defined(_WIN32)
-    dirs.emplace_back("/opt/homebrew/lib/pkgconfig");
-    dirs.emplace_back("/usr/local/lib/pkgconfig");
-    dirs.emplace_back("/usr/lib/pkgconfig");
-#endif
-    std::string stamp;
-    for (const auto& d : dirs) {
-        std::error_code ec;
-        if (std::filesystem::exists(d, ec) && !ec) {
-            stamp += file_fingerprint_string(d);
-            stamp.push_back(';');
-        }
+    size_t start = 0;
+    while (start <= sv.size()) {
+        size_t sep = sv.find(kSep, start);
+        std::string_view part = (sep == std::string_view::npos) ? sv.substr(start) : sv.substr(start, sep - start);
+        std::string trimmed = trim_ws(part);
+        if (!trimmed.empty()) out.push_back(std::move(trimmed));
+        if (sep == std::string_view::npos) break;
+        start = sep + 1;
     }
-    return sha256_hex(stamp);
+    return out;
 }
 
 inline std::string null_stderr_redirect() {
@@ -230,6 +205,205 @@ inline std::string null_all_redirect() {
 #else
     return " >/dev/null 2>&1";
 #endif
+}
+
+inline std::vector<std::string> query_pkg_config_pc_path_dirs(
+    const std::string& pkg_bin,
+    const char* env_pkg_path,
+    const char* env_pkg_libdir
+) {
+    static std::mutex mu;
+    static std::map<std::string, std::vector<std::string>> cache;
+    std::string key = std::format("{}|{}|{}", pkg_bin, env_pkg_path ? env_pkg_path : "", env_pkg_libdir ? env_pkg_libdir : "");
+    {
+        std::lock_guard<std::mutex> lk(mu);
+        if (auto it = cache.find(key); it != cache.end()) {
+            return it->second;
+        }
+    }
+    std::string out;
+    int rc = -1;
+    run_probe_cmd_capture(std::format("{} --variable pc_path pkg-config{}", pkg_bin, null_stderr_redirect()), out, rc);
+    std::vector<std::string> dirs = (rc == 0) ? split_pc_search_paths(out) : std::vector<std::string>{};
+    {
+        std::lock_guard<std::mutex> lk(mu);
+        cache[key] = dirs;
+    }
+    return dirs;
+}
+
+inline std::vector<std::string> parse_pc_requires_names(const std::filesystem::path& pc_file) {
+    std::vector<std::string> deps;
+    std::ifstream in(pc_file);
+    if (!in.is_open()) return deps;
+    std::string line;
+    while (std::getline(in, line)) {
+        std::string trimmed = trim_ws(line);
+        std::string_view rest;
+        if (trimmed.starts_with("Requires:")) {
+            rest = std::string_view(trimmed).substr(9);
+        } else if (trimmed.starts_with("Requires.private:")) {
+            rest = std::string_view(trimmed).substr(17);
+        } else {
+            continue;
+        }
+        // Tokenize on whitespace and commas; skip relational operators and version tokens.
+        std::vector<std::string> toks;
+        std::string cur;
+        auto flush_cur = [&]() {
+            if (!cur.empty()) {
+                toks.push_back(cur);
+                cur.clear();
+            }
+        };
+        for (char c : rest) {
+            if (c == ',' || c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                flush_cur();
+            } else if (c == '=' || c == '<' || c == '>') {
+                flush_cur();
+                toks.emplace_back(1, c);
+            } else {
+                cur.push_back(c);
+            }
+        }
+        flush_cur();
+        bool skip_next = false;
+        for (const auto& tok : toks) {
+            if (tok == "=" || tok == "<" || tok == ">" || tok == "!") {
+                skip_next = true;
+                continue;
+            }
+            if (skip_next) {
+                skip_next = false;
+                continue;
+            }
+            if (!tok.empty() && tok.find('$') == std::string::npos) {
+                deps.push_back(tok);
+            }
+        }
+    }
+    return deps;
+}
+
+inline std::vector<std::string> collect_transitive_pc_files(
+    const std::string& pkg_bin,
+    const std::string& pc_args,
+    const std::string& root_pc_path
+) {
+    std::vector<std::string> result;
+    if (root_pc_path.empty()) return result;
+    std::unordered_set<std::string> seen;
+    std::queue<std::string> q;
+    auto push_path = [&](const std::string& p) {
+        if (p.empty()) return;
+        std::error_code ec;
+        std::filesystem::path fp(p);
+        auto can = std::filesystem::weakly_canonical(fp, ec);
+        std::string norm = (ec ? fp.lexically_normal() : can).string();
+        if (seen.insert(norm).second) {
+            result.push_back(p);
+            q.push(p);
+        }
+    };
+    push_path(root_pc_path);
+    while (!q.empty()) {
+        std::string cur_pc = std::move(q.front());
+        q.pop();
+        for (const auto& dep_pkg : parse_pc_requires_names(cur_pc)) {
+            std::string dep_out;
+            int rc = -1;
+            std::string qdep = quote_shell_arg_simple(dep_pkg);
+            run_probe_cmd_capture(
+                std::format("{}{} --path {}{}", pkg_bin, pc_args, qdep, null_stderr_redirect()),
+                dep_out, rc
+            );
+            if (rc == 0) {
+                std::string dep_pc = trim_ws(dep_out);
+                if (!dep_pc.empty()) {
+                    push_path(dep_pc);
+                }
+            }
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+inline std::string encode_pc_stamps(const std::vector<std::string>& pc_paths) {
+    std::string out;
+    for (const auto& p : pc_paths) {
+        std::error_code ec;
+        if (!std::filesystem::exists(p, ec) || ec) continue;
+        if (!out.empty()) out.push_back('\n');
+        out += p;
+        out.push_back('\t');
+        out += file_fingerprint_string(p);
+    }
+    return out;
+}
+
+inline bool verify_pc_stamps(std::string_view encoded) {
+    if (encoded.empty()) return false;
+    size_t start = 0;
+    bool any = false;
+    while (start <= encoded.size()) {
+        size_t nl = encoded.find('\n', start);
+        std::string_view line = (nl == std::string_view::npos) ? encoded.substr(start) : encoded.substr(start, nl - start);
+        if (!line.empty()) {
+            size_t tab = line.find('\t');
+            if (tab == std::string_view::npos) return false;
+            std::string_view p_sv = line.substr(0, tab);
+            std::string_view stamp_sv = line.substr(tab + 1);
+            std::filesystem::path p(p_sv);
+            std::error_code ec;
+            if (!std::filesystem::exists(p, ec) || ec) return false;
+            if (file_fingerprint_string(p) != stamp_sv) return false;
+            any = true;
+        }
+        if (nl == std::string_view::npos) break;
+        start = nl + 1;
+    }
+    return any;
+}
+
+inline std::string pkg_search_dir_stamps(
+    const std::filesystem::path& install_root,
+    const std::vector<std::string>& extra_pc_dirs,
+    const char* env_pkg_path,
+    const char* env_pkg_libdir,
+    const std::string& pkg_bin = "pkg-config"
+) {
+    std::vector<std::filesystem::path> dirs;
+    if (!install_root.empty()) {
+        dirs.push_back(install_root / "lib" / "pkgconfig");
+        dirs.push_back(install_root / "share" / "pkgconfig");
+    }
+    for (const auto& d : extra_pc_dirs) {
+        if (!d.empty()) dirs.emplace_back(d);
+    }
+    for (const auto& d : split_pc_search_paths(env_pkg_path ? env_pkg_path : "")) {
+        dirs.emplace_back(d);
+    }
+    for (const auto& d : split_pc_search_paths(env_pkg_libdir ? env_pkg_libdir : "")) {
+        dirs.emplace_back(d);
+    }
+    for (const auto& d : query_pkg_config_pc_path_dirs(pkg_bin, env_pkg_path, env_pkg_libdir)) {
+        dirs.emplace_back(d);
+    }
+#if !defined(_WIN32)
+    dirs.emplace_back("/opt/homebrew/lib/pkgconfig");
+    dirs.emplace_back("/usr/local/lib/pkgconfig");
+    dirs.emplace_back("/usr/lib/pkgconfig");
+#endif
+    std::string stamp;
+    for (const auto& d : dirs) {
+        std::error_code ec;
+        if (std::filesystem::exists(d, ec) && !ec) {
+            stamp += file_fingerprint_string(d);
+            stamp.push_back(';');
+        }
+    }
+    return sha256_hex(stamp);
 }
 
 inline std::string probe_fast_linker_uncached(const std::string& cxx_cmd) {
@@ -290,13 +464,22 @@ public:
         std::filesystem::remove(file_path(), ec);
     }
 
+    void set_bypass_cache(bool bypass) noexcept {
+        bypass_cache_.store(bypass, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] bool bypass_cache() const noexcept {
+        return bypass_cache_.load(std::memory_order_relaxed);
+    }
+
     CompilerProbeResult probe_compiler(const std::string& cxx_cmd_in = "") {
         std::string cxx_cmd = cxx_cmd_in.empty() ? resolve_cxx_compiler() : cxx_cmd_in;
         if (cxx_cmd.empty()) return {};
         std::string fp = compiler_binary_fingerprint(cxx_cmd);
         std::string cache_key = "compiler|" + fp;
+        const bool bypass = bypass_cache_.load(std::memory_order_relaxed);
 
-        {
+        if (!bypass) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             auto it = entries_.find(cache_key);
@@ -339,7 +522,7 @@ public:
             res.auto_fast_ld_flag = detail::probe_fast_linker_uncached(cxx_cmd);
         }
 
-        {
+        if (!bypass && res.ok) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             entries_[cache_key] = detail::encode_record_fields({
@@ -366,8 +549,9 @@ public:
         const char* env_pc_libdir = std::getenv("PKG_CONFIG_LIBDIR");
         const char* env_sysroot = std::getenv("PKG_CONFIG_SYSROOT_DIR");
         const char* env_path = std::getenv("PATH");
+        std::string pkg_bin = (env_pc && *env_pc) ? detail::quote_shell_arg_simple(env_pc) : "pkg-config";
         std::string dir_stamp = detail::pkg_search_dir_stamps(
-            install_root, extra_pc_dirs, env_pc_path, env_pc_libdir
+            install_root, extra_pc_dirs, env_pc_path, env_pc_libdir, pkg_bin
         );
 
         std::string extra_joined;
@@ -387,9 +571,10 @@ public:
             env_sysroot ? env_sysroot : "",
             env_path ? env_path : ""
         );
-        std::string cache_key = "pkg|" + sha256_hex(env_key);
+        std::string cache_key = "pkg2|" + sha256_hex(env_key);
+        const bool bypass = bypass_cache_.load(std::memory_order_relaxed);
 
-        {
+        if (!bypass) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             auto it = entries_.find(cache_key);
@@ -398,24 +583,19 @@ public:
                 if (fields.size() >= 7) {
                     bool found = (fields[0] == "1");
                     const std::string& cached_pc_path = fields[3];
-                    const std::string& cached_pc_stamp = fields[4];
+                    const std::string& cached_pc_stamps = fields[4];
                     const std::string& cached_dir_stamp = fields[5];
                     bool valid = false;
+                    // Never trust a negative cache entry; only positive hits with verified transitive `.pc` stamps apply.
                     if (found) {
-                        if (!cached_pc_path.empty()) {
-                            std::error_code ec;
-                            if (std::filesystem::exists(cached_pc_path, ec) && !ec &&
-                                file_fingerprint_string(cached_pc_path) == cached_pc_stamp) {
-                                valid = true;
-                            }
-                        } else if (cached_dir_stamp == dir_stamp) {
+                        if (!cached_pc_stamps.empty()) {
+                            valid = detail::verify_pc_stamps(cached_pc_stamps);
+                        } else if (cached_pc_path.empty() && cached_dir_stamp == dir_stamp) {
                             valid = true;
                         }
-                    } else if (cached_dir_stamp == dir_stamp) {
-                        valid = true;
                     }
                     if (valid) {
-                        return PkgConfigProbeResult{found, fields[1], fields[2], cached_pc_path, fields[6]};
+                        return PkgConfigProbeResult{found, fields[1], fields[2], cached_pc_path, fields[6], ""};
                     }
                 }
             }
@@ -437,53 +617,77 @@ public:
             }
         }
 
-        std::string pkg_bin = (env_pc && *env_pc) ? detail::quote_shell_arg_simple(env_pc) : "pkg-config";
         std::string qpkg = detail::quote_shell_arg_simple(pkg);
         std::string static_flag = static_link ? " --static" : "";
 
         PkgConfigProbeResult res;
         int exist_rc = -1;
-        std::string dummy;
+        std::string exist_out;
         detail::run_probe_cmd_capture(
-            std::format("{}{} --exists {}{}", pkg_bin, pc_args, qpkg, detail::null_all_redirect()),
-            dummy, exist_rc
+            std::format("{}{} --exists --print-errors {} 2>&1", pkg_bin, pc_args, qpkg),
+            exist_out, exist_rc
         );
-        if (exist_rc == 0) {
-            res.found = true;
-            std::string out_cf, out_lb, out_path, out_ver;
-            int rc1 = -1, rc2 = -1, rc3 = -1, rc4 = -1;
-            detail::run_probe_cmd_capture(
-                std::format("{}{}{} --cflags {}{}", pkg_bin, pc_args, static_flag, qpkg, detail::null_stderr_redirect()),
-                out_cf, rc1
-            );
-            detail::run_probe_cmd_capture(
-                std::format("{}{}{} --libs {}{}", pkg_bin, pc_args, static_flag, qpkg, detail::null_stderr_redirect()),
-                out_lb, rc2
-            );
-            detail::run_probe_cmd_capture(
-                std::format("{}{} --path {}{}", pkg_bin, pc_args, qpkg, detail::null_stderr_redirect()),
-                out_path, rc3
-            );
-            detail::run_probe_cmd_capture(
-                std::format("{}{} --modversion {}{}", pkg_bin, pc_args, qpkg, detail::null_stderr_redirect()),
-                out_ver, rc4
-            );
-            if (rc1 == 0) res.cflags = detail::trim_ws(out_cf);
-            if (rc2 == 0) res.libs = detail::trim_ws(out_lb);
-            if (rc3 == 0) res.pc_path = detail::trim_ws(out_path);
-            if (rc4 == 0) res.modversion = detail::trim_ws(out_ver);
+        if (exist_rc != 0) {
+            res.found = false;
+            res.error = detail::trim_ws(exist_out);
+            if (!bypass) {
+                std::lock_guard<std::mutex> lk(mu_);
+                ensure_loaded_locked();
+                if (entries_.erase(cache_key) > 0) {
+                    persist_locked();
+                }
+            }
+            return res;
         }
 
-        std::string pc_stamp = res.pc_path.empty() ? "" : file_fingerprint_string(res.pc_path);
-        {
+        std::string out_cf, out_lb, out_path, out_ver;
+        int rc1 = -1, rc2 = -1, rc3 = -1, rc4 = -1;
+        detail::run_probe_cmd_capture(
+            std::format("{}{}{} --cflags --print-errors {} 2>&1", pkg_bin, pc_args, static_flag, qpkg),
+            out_cf, rc1
+        );
+        detail::run_probe_cmd_capture(
+            std::format("{}{}{} --libs --print-errors {} 2>&1", pkg_bin, pc_args, static_flag, qpkg),
+            out_lb, rc2
+        );
+        if (rc1 != 0 || rc2 != 0) {
+            res.found = false;
+            res.error = detail::trim_ws(rc1 != 0 ? out_cf : out_lb);
+            if (!bypass) {
+                std::lock_guard<std::mutex> lk(mu_);
+                ensure_loaded_locked();
+                if (entries_.erase(cache_key) > 0) {
+                    persist_locked();
+                }
+            }
+            return res;
+        }
+
+        detail::run_probe_cmd_capture(
+            std::format("{}{} --path {}{}", pkg_bin, pc_args, qpkg, detail::null_stderr_redirect()),
+            out_path, rc3
+        );
+        detail::run_probe_cmd_capture(
+            std::format("{}{} --modversion {}{}", pkg_bin, pc_args, qpkg, detail::null_stderr_redirect()),
+            out_ver, rc4
+        );
+        res.found = true;
+        res.cflags = detail::trim_ws(out_cf);
+        res.libs = detail::trim_ws(out_lb);
+        if (rc3 == 0) res.pc_path = detail::trim_ws(out_path);
+        if (rc4 == 0) res.modversion = detail::trim_ws(out_ver);
+
+        auto transitive_pcs = detail::collect_transitive_pc_files(pkg_bin, pc_args, res.pc_path);
+        std::string pc_stamps = detail::encode_pc_stamps(transitive_pcs);
+        if (!bypass) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             entries_[cache_key] = detail::encode_record_fields({
-                res.found ? "1" : "0",
+                "1",
                 res.cflags,
                 res.libs,
                 res.pc_path,
-                pc_stamp,
+                pc_stamps,
                 dir_stamp,
                 res.modversion
             });
@@ -498,8 +702,9 @@ public:
         std::string cache_key = "ios_sdk|" + sha256_hex(
             sdk_name + "|" + (dev_dir ? dev_dir : "")
         );
+        const bool bypass = bypass_cache_.load(std::memory_order_relaxed);
 
-        {
+        if (!bypass) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             auto it = entries_.find(cache_key);
@@ -521,7 +726,7 @@ public:
             sdk_out, rc
         );
         std::string resolved = (rc == 0) ? detail::trim_ws(sdk_out) : "";
-        if (!resolved.empty()) {
+        if (!bypass && !resolved.empty()) {
             std::lock_guard<std::mutex> lk(mu_);
             ensure_loaded_locked();
             entries_[cache_key] = detail::encode_record_fields({resolved});
@@ -532,6 +737,8 @@ public:
 
 private:
     ProbeCache() = default;
+
+    std::atomic<bool> bypass_cache_{false};
 
     void ensure_loaded_locked() {
         auto p = file_path();

@@ -1061,6 +1061,8 @@ Functions & Methods:
 - `fn (app: App) devtools_enabled() -> bool`: Returns whether native Web Inspector / DevTools are currently enabled for this application.
 - `fn (mut app: App) set_context_menu(enabled: bool)`: Explicitly enables or disables the default browser right-click context menu (`WKWebView`, `WebKitGTK`, `WebView2`). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).
 - `fn (app: App) context_menu_enabled() -> bool`: Returns whether the default browser context menu is currently enabled for this application.
+- `fn (mut app: App) set_browser_keys(enabled: bool)`: Explicitly enables or disables built-in browser accelerator keys (`F5`, `Ctrl+R`, `Ctrl+W`, zoom shortcuts on Windows WebView2). Defaults to `true` in debug builds (`cfire run`/`cfire test`) and `false` in release builds (`cfire build`).
+- `fn (app: App) browser_keys_enabled() -> bool`: Returns whether browser accelerator keys are currently enabled for this application.
 - `fn (mut app: App) set_autofill(enabled: bool)`: Enables or disables browser form autofill and password autosave (WebView2 `ICoreWebView2Settings4` plus WebKit DOM `autocomplete="off"` enforcement for secret fields).
 - `fn (app: App) autofill_enabled() -> bool`: Returns whether browser form autofill / password autosave is currently enabled.
 - `fn (mut app: App) fullscreen()`: Toggles native fullscreen window mode.
@@ -1109,6 +1111,7 @@ Functions & Methods:
 - `cfire/INDEX-OUT-OF-BOUNDS` (Detailed rule): Compile-Time Out-of-Bounds or Negative Constant Sequence Index
 - `cfire/INTERNAL-BACKEND-ERROR` (Tooling): Internal compiler error: the C++ backend rejected generated code for a pure .cf program that Sema accepted (please report).
 - `cfire/INVALID-ATTRIBUTE` (Attributes): An attribute on a declaration is unknown, misplaced, or has invalid arguments.
+- `cfire/INVALID-BUILD-VALUE` (Build manifest): A field or argument in `build.cf` cannot be evaluated as a compile-time constant manifest value.
 - `cfire/INVALID-CONSTRUCTOR` (Detailed rule): Associated Function Other Than `make`
 - `cfire/INVALID-IMPORT` (Imports): A module imported under a non-canonical path or wrong tier prefix (`core:` vs `ext:`).
 - `cfire/INVALID-INDEX` (Types): Indexing a value that is not a string, slice, array or map.

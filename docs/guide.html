@@ -2868,7 +2868,7 @@ App := build.Executable(&quot;service-app&quot;, {
       <tr><td><code>cfire clean [path|build.cf]</code></td><td><code>--cache</code>, <code>--all</code>, <code>--dry-run</code>, <code>--json</code></td><td>Removes nested project <code>.cfire/</code> directories and manifest outputs (<code>--cache</code> safely cleans the marker-guarded OS/XDG user cache and owned legacy caches).</td></tr>
       <tr><td><code>cfire check [file.cf|dir]</code></td><td><code>--json</code>, <code>--fix</code></td><td>Workspace-aware lexer, parser, Clang header bridge, and semantic/loan/intent analyzer (with optional auto-fix via <code>--fix</code>).</td></tr>
       <tr><td><code>cfire fix [file.cf|dir]</code></td><td><code>--dry-run</code>, <code>--json</code></td><td>Automatically inserts missing <code>core:*</code> imports, missing call-site <code>mut</code> markers, and missing <code>match</code> arms.</td></tr>
-      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code>, <code>--bench</code>, <code>--fuzz-runs &lt;N&gt;</code>, <code>--seed &lt;S&gt;</code>, <code>--bench-time &lt;ms&gt;</code></td><td>Compiles and executes <code>test</code>, <code>fuzz</code> (with counterexample shrinking), <code>///</code> doc-tests, and <code>[auto] json round-trip</code> checks.</td></tr>
+      <tr><td><code>cfire test [file.cf|dir]</code></td><td><code>--release</code>, <code>--debug</code>, <code>--sanitize</code>, <code>--json</code>, <code>--filter &lt;pattern&gt;</code>, <code>--bench</code>, <code>--fuzz-runs &lt;N&gt;</code>, <code>--seed &lt;S&gt;</code>, <code>--bench-time &lt;ms&gt;</code></td><td>Compiles and executes <code>test</code>, <code>fuzz</code> (with counterexample shrinking), <code>///</code> doc-tests, and <code>[auto] json round-trip</code> checks (defaults to <code>-O0 -g</code>; <code>--release</code> uses <code>-O2 -g</code>).</td></tr>
       <tr><td><code>cfire bench [file.cf|dir]</code></td><td><code>--json</code>, <code>--filter &lt;pattern&gt;</code>, <code>--bench-time &lt;ms&gt;</code></td><td>Runs parameterized statistical micro-benchmarks (<code>bench &quot;name&quot; |size in [...]| { ... }</code>).</td></tr>
       <tr><td><code>cfire eval &lt;code|-e expr&gt;</code></td><td><code>-e &lt;expr&gt;</code></td><td>Evaluates a one-shot expression or statement block from CLI arguments or <code>stdin</code>.</td></tr>
       <tr><td><code>cfire serve [target|dir]</code></td><td><code>--port &lt;n&gt;</code>, <code>--no-open</code></td><td>Builds WebAssembly targets and serves static/WASM assets with COOP/COEP headers.</td></tr>
@@ -2923,7 +2923,7 @@ App := build.Executable(&quot;service-app&quot;, {
 <ol>
   <li><strong>Immutable by Default (<code>:=</code>)</strong>: Declaring <code>count := 42</code> emits <code>const std::int64_t count = 42;</code>. You only mark a variable <code>mut</code> when its state genuinely changes over time.</li>
   <li><strong>Explicit Numeric Conversions (<code>i32(x)</code>, <code>f64(x)</code>)</strong>: Mixed-width arithmetic never narrows behind your back. You can convert between scalar types using clean constructor-style calls (<code>f64(count)</code>, <code>f32(x)</code>, <code>i32(y)</code>, <code>u8(b)</code>, <code>byte(b)</code>, <code>usize(n)</code>).</li>
-  <li><strong>Native String Interpolation</strong>: Every double-quoted string (<code>&quot;...&quot;</code>) supports <code>{expr}</code> interpolation directly—including arbitrary expressions and format specifiers like <code>&quot;{scaled:.2f}&quot;</code> or <code>&quot;{mask:04x}&quot;</code>—without needing a <code>f&quot;...&quot;</code> prefix.</li>
+  <li><strong>Native String Interpolation &amp; Brace Escaping</strong>: Every double-quoted string (<code>&quot;...&quot;</code>) supports <code>{expr}</code> interpolation directly—including arbitrary expressions and format specifiers like <code>&quot;{scaled:.2f}&quot;</code> or <code>&quot;{mask:04x}&quot;</code>—without needing a <code>f&quot;...&quot;</code> prefix. Use <code>\{</code> and <code>\}</code> to produce literal <code>{</code> and <code>}</code> consistently in every double-quoted string (plain, interpolated, and <code>println</code>/<code>format</code>), or use raw backtick strings (<code></code> <code>...</code> <code></code>) where escapes, interpolation, and formatting are never applied. Double braces (<code>{{</code> / <code>}}</code>) are rejected as brace escapes inside interpolated and format strings (<code>cfire/INVALID-INTERPOLATION</code>).</li>
 </ol>
 <div class="code-header"><span class="tag-cf">cfire (.cf)</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code>package main
@@ -3143,7 +3143,8 @@ fn main() {
 </div>
 <p>There are no raw pointers in <code>cfire</code> code: no <code>*T</code> type, no <code>&amp;x</code>, no <code>*p</code>, and no <code>&amp;T</code> reference type. Each job a pointer does in C++ has a direct form:</p>
 <ul>
-  <li><strong>Read a value without copying it</strong>: parameters are read-only views by default (<code>fn f(s: str)</code> takes a <code>std::string_view</code>); write <code>mut</code> when the callee changes the argument (<code>fn f(mut xs: []i32)</code>, called as <code>f(mut xs)</code>).</li>
+  <li><strong>Read a value without copying it</strong>: parameters are read-only views by default (<code>fn f(s: str)</code> takes a <code>cfire::str_ref</code> view; <code>s[a..b]</code> slices UTF-8 boundaries safely, and <code>s.bytes()[a..b]</code> slices raw bytes zero-copy on a named <code>str</code>); write <code>mut</code> when the callee changes the argument (<code>fn f(mut xs: []i32)</code>, called as <code>f(mut xs)</code>).</li>
+  <li><strong>Views in, copies out</strong>: returning or assigning a view into an owned <code>str</code> or <code>[]T</code> destination (e.g., <code>return s[1..]</code> or <code>tail: str = s[1..]</code>) copies into the owned value automatically.</li>
   <li><strong>Point at an element</strong>: keep its index (<code>cursor := 2</code>, then <code>xs[cursor] += 1</code>).</li>
   <li><strong>Let parallel tasks write results</strong>: return them from the task (<code>results := async.scope ...</code>), or give each task its own element with <code>scope.spawn |mut xs[i]| { ... }</code> (Chapter 10).</li>
   <li><strong>Share or own heap data</strong>: <code>own[T]</code> / <code>shared[T]</code>, reached through their fields (<code>pkt.sequence</code>).</li>
@@ -4722,7 +4723,7 @@ fn main() {
     <tbody>
       <tr><td><code>i8</code>..<code>i64</code>, <code>u8</code>..<code>u64</code>, <code>f32</code>, <code>f64</code>, <code>bool</code></td><td><code>int8_t</code>..<code>int64_t</code>, <code>uint8_t</code>..<code>uint64_t</code>, <code>float</code>, <code>double</code>, <code>bool</code></td><td>Identical C++23 scalar type (0-cost pass-through)</td></tr>
       <tr><td><code>str</code> passed to <code>const char*</code></td><td><code>const char*</code></td><td>Automatic <code>cfire::c_arg(s)</code> (<code>.c_str()</code>, 0 allocation)</td></tr>
-      <tr><td>read-only <code>str</code> parameter, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view; converts to <code>std::string</code> where an owned <code>str</code> is needed</td></tr>
+      <tr><td>read-only <code>str</code> parameter, <code>s[a..b]</code></td><td><code>cfire::str_ref</code> (derives from <code>std::string_view</code>)</td><td>0-copy pointer + length view (no <code>.c_str()</code> member inside <code>cpp {}</code> blocks; pass <code>cfire::c_str(s)</code> which wipes its temporary buffer on destruction)</td></tr>
       <tr><td><code>[]T</code> / <code>[N]T</code> / <code>str</code> passed to a pointer parameter (<code>T*</code>, <code>const T*</code>, <code>void*</code>)</td><td><code>T*</code></td><td>The buffer pointer (<code>cfire::c_ptr</code>); byte-sized element types convert (<code>[]byte</code> to <code>char*</code>)</td></tr>
       <tr><td><code>mut x: T</code> parameter</td><td><code>T&amp;</code></td><td>A mutable reference; C out-pointers (<code>int*</code> written by the callee) go through a <code>cpp { ... }</code> block</td></tr>
       <tr><td><code>own[T]</code></td><td><code>T*</code> via <code>.release()</code>, back with <code>own[T].from_raw(p)</code></td><td>Hands ownership across the boundary</td></tr>
@@ -5016,6 +5017,7 @@ test &quot;fibonacci sequence progression&quot; {
 <div class="code-header"><span class="tag-cf">terminal</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
 <pre><code># Run all test, fuzz, doc-test, and [auto] invariant blocks in the workspace
 cfire test
+cfire test --release
 cfire test --filter &quot;base cases&quot;
 cfire test --json
 </code></pre>
@@ -5125,6 +5127,7 @@ cfire fix src/main.cf
       <tr><td><code>cfire/INDEX-OUT-OF-BOUNDS</code></td><td>Detailed rule</td><td>Compile-Time Out-of-Bounds or Negative Constant Sequence Index</td></tr>
       <tr><td><code>cfire/INTERNAL-BACKEND-ERROR</code></td><td>Tooling</td><td>Internal compiler error: the C++ backend rejected generated code for a pure .cf program that Sema accepted (please report).</td></tr>
       <tr><td><code>cfire/INVALID-ATTRIBUTE</code></td><td>Attributes</td><td>An attribute on a declaration is unknown, misplaced, or has invalid arguments.</td></tr>
+      <tr><td><code>cfire/INVALID-BUILD-VALUE</code></td><td>Build manifest</td><td>A field or argument in <code>build.cf</code> cannot be evaluated as a compile-time constant manifest value.</td></tr>
       <tr><td><code>cfire/INVALID-CONSTRUCTOR</code></td><td>Detailed rule</td><td>Associated Function Other Than <code>make</code></td></tr>
       <tr><td><code>cfire/INVALID-IMPORT</code></td><td>Imports</td><td>A module imported under a non-canonical path or wrong tier prefix (<code>core:</code> vs <code>ext:</code>).</td></tr>
       <tr><td><code>cfire/INVALID-INDEX</code></td><td>Types</td><td>Indexing a value that is not a string, slice, array or map.</td></tr>
@@ -5995,7 +5998,7 @@ fn main() {
     mut mcp := make(ai.McpServer, &quot;cfire-kb-server&quot;, &quot;1.0.0&quot;)
 
     mcp.register_tool[SearchArgs](&quot;search_kb&quot;, &quot;Searches the internal knowledge base&quot;, |args: SearchArgs| -&gt; str! {
-        return &quot;[{{\&quot;query\&quot;:\&quot;{args.query}\&quot;,\&quot;limit\&quot;:{args.limit}}}]&quot;
+        return &quot;[\{\&quot;query\&quot;:\&quot;{args.query}\&quot;,\&quot;limit\&quot;:{args.limit}\}]&quot;
     })
 
     // Test JSON-RPC 2.0 dispatch in memory (call mcp.serve_stdio() in production)
@@ -6333,6 +6336,7 @@ fn main() {
     <tbody>
       <tr><td><code>app.set_devtools(enabled)</code> / <code>devtools_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Toggles Web Inspector / DevTools across <code>WKWebView</code>, <code>WebKitGTK</code>, and <code>WebView2</code>. Defaults to <code>false</code> in <code>Release</code> (<code>cfire build</code>) and <code>true</code> in debug/test runs unless overridden.</td></tr>
       <tr><td><code>app.set_context_menu(enabled)</code> / <code>context_menu_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Toggles the browser's default right-click context menu. Defaults to <code>false</code> in <code>Release</code> (<code>cfire build</code>) and <code>true</code> in debug/test runs unless overridden.</td></tr>
+      <tr><td><code>app.set_browser_keys(enabled)</code> / <code>browser_keys_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Toggles built-in browser accelerator keys (<code>F5</code>, <code>Ctrl+R</code>, <code>Ctrl+W</code>, zoom shortcuts on Windows WebView2). Defaults to <code>false</code> in <code>Release</code> (<code>cfire build</code>) and <code>true</code> in debug/test runs unless overridden.</td></tr>
       <tr><td><code>app.set_autofill(enabled)</code> / <code>autofill_enabled()</code></td><td><code>fn(bool)</code> / <code>fn() -&gt; bool</code></td><td>Opts windows and sensitive secret inputs out of password autosave and form autofill (<code>ICoreWebView2Settings4</code> on Windows plus preload <code>autocomplete=&quot;off&quot;</code> enforcement on WebKit).</td></tr>
       <tr><td><code>app.on(&quot;app:active&quot;)</code> / <code>app.on(&quot;app:inactive&quot;)</code></td><td><code>{}</code></td><td>Emitted on focus/activation transitions across all 4 OSes (iOS <code>UISceneDelegate</code>, macOS <code>NSApplicationDelegate</code>, Linux GTK <code>focus-in-event</code>/<code>focus-out-event</code>, Windows <code>WM_ACTIVATE</code>).</td></tr>
       <tr><td><code>app.on(&quot;app:foreground&quot;)</code> / <code>app.on(&quot;app:background&quot;)</code></td><td><code>{}</code></td><td>Emitted on iOS foreground/background scene lifecycle transitions.</td></tr>
@@ -6341,7 +6345,7 @@ fn main() {
       <tr><td><code>app.on(&quot;keyboard:change&quot;)</code></td><td><code>{&quot;visible&quot;:bool,&quot;height&quot;:px}</code></td><td>Emitted on iOS software keyboard show/hide transitions with end-frame pixel height.</td></tr>
       <tr><td><code>app.on(&quot;window:fullscreen&quot;)</code></td><td><code>{&quot;fullscreen&quot;:true}</code> / <code>{&quot;fullscreen&quot;:false}</code></td><td>Emitted on native fullscreen entry and exit transitions across macOS, Linux GTK3, Windows, and headless tests.</td></tr>
       <tr><td><code>app.on(&quot;window:file_drop&quot;)</code></td><td><code>{&quot;paths&quot;:[&quot;/path/to/file&quot;]}</code></td><td>Emitted when files are dropped onto the window, carrying native OS filesystem paths (macOS <code>NSDraggingDestination</code>, Linux GTK URI drops, Windows <code>WM_DROPFILES</code> &amp; WebView2 <code>ICoreWebView2File</code>).</td></tr>
-      <tr><td>iOS Safe Areas &amp; Native Escape Hatch</td><td><code>viewport-fit=cover</code> / C++ interop</td><td>Include <code>&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1, viewport-fit=cover&quot;&gt;</code> and style against <code>env(safe-area-inset-top)</code> / <code>env(safe-area-inset-bottom)</code> on iOS; use <code>native_window_handle()</code>, <code>native_webview_handle()</code>, and <code>native_view_controller_handle()</code> in C++/ObjC++ plugins for direct SDK customization.</td></tr>
+      <tr><td>iOS Safe Areas &amp; Native Escape Hatch</td><td><code>viewport-fit=cover</code> / C++ interop</td><td>Include <code>&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1, viewport-fit=cover&quot;&gt;</code> and style against <code>env(safe-area-inset-top)</code> / <code>env(safe-area-inset-bottom)</code> on iOS; use <code>native_window_handle()</code>, <code>native_webview_handle()</code>, <code>native_controller_handle()</code>, and <code>native_view_controller_handle()</code> in C++/ObjC++ plugins for direct SDK customization.</td></tr>
       <tr><td>Desktop OS Integrations</td><td>Automatic</td><td>Clicking the macOS Dock icon reopens a hidden or miniaturized window (<code>&quot;window:reopen&quot;</code>), and Windows enables Per-Monitor-V2 HiDPI scaling automatically (<code>SetProcessDpiAwarenessContext</code> + <code>WM_DPICHANGED</code>).</td></tr>
     </tbody>
   </table>

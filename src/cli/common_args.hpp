@@ -96,6 +96,7 @@ struct CommonCliArgs {
     cfire::build::g_no_trap = false;
     cfire::build::g_emit_dsym = false;
     cfire::build::g_no_binary_cache = false;
+    cfire::build::ProbeCache::instance().set_bypass_cache(false);
     cfire::build::g_no_shard = false;
     cfire::build::g_verbose_mode = false;
     cfire::build::g_portable_mode = false;
@@ -145,6 +146,7 @@ struct CommonCliArgs {
         }
         if (arg == "--no-cache") {
             cfire::build::g_no_binary_cache = true;
+            cfire::build::ProbeCache::instance().set_bypass_cache(true);
             continue;
         }
         if (arg == "--no-shard") {

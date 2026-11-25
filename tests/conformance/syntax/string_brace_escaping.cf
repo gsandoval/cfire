@@ -1,0 +1,34 @@
+// expect: stdout
+// | {hello}
+// | a {b} c
+// | {}
+// | 42 {hello}
+// | {42}
+// | {ok}
+// | {"raw":1}
+// | {{raw}}
+// | {
+// | {"a":{"b":1}}}
+package main
+
+fn main() {
+    plain := "\{hello\}"
+    mid := "a \{b\} c"
+    empty := "\{\}"
+    x := 42
+    interp := "{x} \{hello\}"
+    nested := "\{{x}\}"
+    raw := `{{raw}}`
+    uni := "\u{007B}"
+    json_str := "{\"a\":{\"b\":1}}}"
+    println("{}", plain)
+    println("{}", mid)
+    println("{}", empty)
+    println("{}", interp)
+    println("{}", nested)
+    println("\{ok\}")
+    println(`{"raw":1}`)
+    println("{}", raw)
+    println("{}", uni)
+    println("{}", json_str)
+}

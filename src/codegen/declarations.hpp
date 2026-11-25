@@ -475,7 +475,7 @@ namespace cfire::frontend {
             while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
             pre << std::format("#include <{}>\n", clean);
         }
-        pre << "\n";
+        pre << "#if defined(_WIN32)\n#include \"detail/win32_clean_macros.hpp\"\n#ifdef interface\n#undef interface\n#endif\n#endif\n\n";
 
         sharded.decls_hpp = pre.str() + decls_body;
         return sharded;
@@ -512,6 +512,12 @@ namespace cfire::frontend {
             while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
             writeln(std::format("#include <{}>", clean));
         }
+        writeln("#if defined(_WIN32)");
+        writeln("#include \"detail/win32_clean_macros.hpp\"");
+        writeln("#ifdef interface");
+        writeln("#undef interface");
+        writeln("#endif");
+        writeln("#endif");
         writeln();
 
         emit_decls_types_and_globals(*this);

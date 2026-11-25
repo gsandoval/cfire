@@ -1,4 +1,10 @@
 #include "cfire_prelude.hpp"
+#if defined(_WIN32)
+#include "detail/win32_clean_macros.hpp"
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 [[nodiscard]] inline auto divide_mod(std::int64_t a, std::int64_t b) -> std::tuple<std::int64_t, std::int64_t>;
 inline auto append_value(std::vector<std::int32_t>& list, std::int32_t val) -> void;

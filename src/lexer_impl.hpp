@@ -310,11 +310,6 @@ namespace cfire::frontend {
                     break;
                 }
                 if (cur_ch == '{') {
-                    if (peek(1) == '{') {
-                        s.push_back(advance());
-                        s.push_back(advance());
-                        continue;
-                    }
                     char next_c = peek(1);
                     if (interp_depth > 0 || std::isalnum(static_cast<unsigned char>(next_c)) ||
                         next_c == '_' || next_c == '(' || next_c == '*' || next_c == '&' || next_c == '!') {

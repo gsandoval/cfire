@@ -1,0 +1,11 @@
+// expect: stdout
+// | 2
+// | 97 226
+package main
+
+fn main() {
+    s := "a€b"
+    b := s.bytes()[0..2]
+    println("{b.len()}")
+    println("{u8(b[0])} {u8(b[1])}")
+}

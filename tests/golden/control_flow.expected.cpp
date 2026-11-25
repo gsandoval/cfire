@@ -1,4 +1,10 @@
 #include "cfire_prelude.hpp"
+#if defined(_WIN32)
+#include "detail/win32_clean_macros.hpp"
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 [[nodiscard]] inline auto test_branches(std::int32_t x) -> std::string;
 [[nodiscard]] inline auto test_loops() -> std::int64_t;

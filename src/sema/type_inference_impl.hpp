@@ -134,7 +134,7 @@
         for (const auto& gv : cf_.ast.global_vars) {
             TypeId gt = TypeId::Unknown();
             if (gv.type) {
-                gt = resolve_typeref(*gv.type);
+                gt = resolve_typeref_in_pkg(*gv.type, gv.package_name);
             } else if (gv.value && gv.value->resolved_type_id != 0) {
                 gt = TypeId{gv.value->resolved_type_id};
             }
@@ -311,7 +311,17 @@
                 }
                 return false;  // unknown stdlib member: don't guess
             }
-            // Builtin view-returning members borrow from their receiver, not from a temporary.
+            // Builtin view-returning members borrow from their receiver, not from a temporary;
+            // `.bytes()` on an rvalue `str` materializes an owned `[]byte` temporary.
+            if (mem->field == "bytes" && call.args.empty()) {
+                if (mem->object) {
+                    if (const auto* oc = std::get_if<CallExpr>(&mem->object->node)) {
+                        return call_returns_owned_temporary(*oc);
+                    }
+                    if (std::holds_alternative<BinaryExpr>(mem->object->node)) return true;
+                }
+                return false;
+            }
             if (mem->field == "data" || mem->field == "data_ptr" || mem->field == "byte_ptr" || mem->field == "byte_ptr_at") return false;
             return false;
         }
@@ -399,8 +409,22 @@
                 for (const auto& a : call->args) from_arg(a.value);
             }
         } else if (const auto* st = std::get_if<StructLitExpr>(&e->node)) {
+            auto sdit = cf_.struct_defs.find(st->type_name);
             for (const auto& f : st->fields) {
-                for (auto& o : extract_borrow_sources(f.value)) add(o);
+                bool field_is_owned = false;
+                if (sdit != cf_.struct_defs.end()) {
+                    for (const auto& fd : sdit->second.fields) {
+                        if (fd.name == f.name) {
+                            if (!fd.type.is_ptr && !fd.type.is_mut_ptr && !fd.type.is_borrow && !fd.type.is_mut_borrow) {
+                                field_is_owned = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (!field_is_owned) {
+                    for (auto& o : extract_borrow_sources(f.value)) add(o);
+                }
             }
         }
         return out;
@@ -906,7 +930,7 @@
     CFIRE_SEMA_INLINE auto SemaFnChecker::infer_named_type_id_(const ExprPtr& e) const -> TypeId {
         if (!e) return TypeId::Unknown();
         if (e->resolved_type_id != 0) return TypeId{e->resolved_type_id};
-        auto resolve_fn_ret = [&](const TypeRef& rt) -> TypeId {
+        auto resolve_fn_ret = [&](const TypeRef& rt, std::string_view owner_pkg) -> TypeId {
             if (rt.name.empty() && !rt.is_slice && !rt.is_array && !rt.is_map &&
                 !rt.is_tuple && !rt.is_fn && rt.smart_wrap.empty() &&
                 !rt.is_borrow && !rt.is_mut_borrow && !rt.is_ptr && !rt.is_mut_ptr) {
@@ -915,7 +939,7 @@
                 if (rt.is_fallible) v = cf_.type_table.make_fallible(v);
                 return v;
             }
-            return resolve_typeref(rt);
+            return resolve_typeref_in_pkg(rt, owner_pkg);
         };
         auto lookup_struct_def = [&](std::string_view name) -> const StructDecl* {
             if (auto it = cf_.struct_defs.find(std::string(name)); it != cf_.struct_defs.end()) return &it->second;
@@ -971,8 +995,9 @@
                     return fb_t;
                 }
             }
-            inner_t = cf_.type_table.unwrap_fallible(inner_t);
-            return cf_.type_table.unwrap_optional(inner_t);
+            if (cf_.type_table.is_fallible(inner_t)) return cf_.type_table.unwrap_fallible(inner_t);
+            if (cf_.type_table.is_optional(inner_t)) return cf_.type_table.unwrap_optional(inner_t);
+            return inner_t;
         }
         if (const auto* tup = std::get_if<TupleExpr>(&e->node)) {
             std::vector<TypeId> elem_ids;
@@ -1016,8 +1041,8 @@
                 if (fdecl && fdecl->type_params.empty()) {
                     std::vector<TypeId> ptypes;
                     ptypes.reserve(fdecl->params.size());
-                    for (const auto& p : fdecl->params) ptypes.push_back(resolve_typeref(p.type));
-                    return cf_.type_table.make_function(std::move(ptypes), resolve_fn_ret(fdecl->return_type));
+                    for (const auto& p : fdecl->params) ptypes.push_back(resolve_typeref_in_pkg(p.type, fdecl->package_name));
+                    return cf_.type_table.make_function(std::move(ptypes), resolve_fn_ret(fdecl->return_type, fdecl->package_name));
                 }
             }
         }
@@ -1052,22 +1077,22 @@
                         }
                         for (const auto& f : sdef->fields) {
                             if (f.name == mem->field) {
-                                TypeRef ftr = canonical_typeref_sema(f.type);
+                                TypeRef ftr = canonical_typeref_in_pkg_sema(f.type, sdef->package_name);
                                 return cf_.type_table.from_typeref(ftr, &env);
                             }
                         }
                     }
                 } else if (od.kind == TypeKind::NominalStruct && !od.name.empty()) {
+                    if (const StructDecl* sdef = lookup_struct_def(od.name)) {
+                        for (const auto& f : sdef->fields) {
+                            if (f.name == mem->field) return resolve_typeref_in_pkg(f.type, sdef->package_name);
+                        }
+                    }
                     if (auto sit = cf_.struct_tags.find(od.name); sit != cf_.struct_tags.end()) {
                         for (const auto& f : sit->second) {
                             if (f.field_name == mem->field) {
                                 return resolve_typeref(f.field_type);
                             }
-                        }
-                    }
-                    if (const StructDecl* sdef = lookup_struct_def(od.name)) {
-                        for (const auto& f : sdef->fields) {
-                            if (f.name == mem->field) return resolve_typeref(f.type);
                         }
                     }
                 }
@@ -1092,18 +1117,18 @@
                             auto lit = std::find_if(decl.params.begin(), decl.params.end(), [&](const ParamDecl& pd) { return pd.name == call->args[idx].label; });
                             if (lit != decl.params.end()) param = &*lit;
                         }
-                        TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+                        TypeId pat = cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(param->type, decl.package_name), &pat_env);
                         TypeId got = infer_expr_type_id_sema(call->args[idx].value);
                         (void)cf_.type_table.unify(pat, got, inst_env);
                     }
-                    TypeRef ret_tr = canonical_typeref_sema(decl.return_type);
+                    TypeRef ret_tr = canonical_typeref_in_pkg_sema(decl.return_type, decl.package_name);
                     if (ret_tr.name.empty() && !ret_tr.is_slice && !ret_tr.is_array && !ret_tr.is_map &&
                         !ret_tr.is_tuple && !ret_tr.is_fn && ret_tr.smart_wrap.empty()) {
-                        return resolve_fn_ret(decl.return_type);
+                        return resolve_fn_ret(decl.return_type, decl.package_name);
                     }
                     return cf_.type_table.from_typeref(ret_tr, &inst_env);
                 }
-                return resolve_fn_ret(decl.return_type);
+                return resolve_fn_ret(decl.return_type, decl.package_name);
             };
             if (const auto* cm = std::get_if<MemberExpr>(&call->callee->node);
                 cm && call->type_args.size() == 1 &&
@@ -1192,16 +1217,6 @@
                     if (cid->name == "char") return TypeId::Byte();
                     return type_id_of(cid->name);
                 }
-                if (auto rtit = cf_.cpp_fn_returns.find(cid->name); rtit != cf_.cpp_fn_returns.end()) {
-                    return map_cpp_qualtype_to_type_id(rtit->second);
-                }
-                if (cf_.cpp_fn_params.contains(cid->name) || is_cpp_qualifier_sema(cid->name) || foreign_vars_.contains(cid->name)) {
-                    return TypeId::Foreign();
-                }
-                if (auto vit = var_type_ids_.find(cid->name); vit != var_type_ids_.end()) {
-                    const auto& vd = cf_.type_table.get(vit->second);
-                    if (vd.kind == TypeKind::Function) return vd.ret_type;
-                }
                 const FnDecl* fdecl = nullptr;
                 if (!pkg_name_.empty()) {
                     if (auto pit = cf_.fn_sigs.find(pkg_name_ + "." + cid->name); pit != cf_.fn_sigs.end()) {
@@ -1213,6 +1228,16 @@
                 }
                 if (fdecl) {
                     return infer_fn_decl_ret(*fdecl);
+                }
+                if (auto rtit = cf_.cpp_fn_returns.find(cid->name); rtit != cf_.cpp_fn_returns.end()) {
+                    return map_cpp_qualtype_to_type_id(rtit->second);
+                }
+                if (cf_.cpp_fn_params.contains(cid->name) || is_cpp_qualifier_sema(cid->name) || foreign_vars_.contains(cid->name)) {
+                    return TypeId::Foreign();
+                }
+                if (auto vit = var_type_ids_.find(cid->name); vit != var_type_ids_.end()) {
+                    const auto& vd = cf_.type_table.get(vit->second);
+                    if (vd.kind == TypeKind::Function) return vd.ret_type;
                 }
             } else if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (mem->object) {
@@ -1343,23 +1368,23 @@
                             }
                         }
                         for (std::size_t idx = 0; idx < call->args.size() && idx < sig->params.size(); ++idx) {
-                            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(sig->params[idx].type), &pat_env);
+                            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(sig->params[idx].type, sig->package_name), &pat_env);
                             TypeId got = infer_expr_type_id_sema(call->args[idx].value);
                             (void)cf_.type_table.unify(pat, got, env);
                         }
                     }
-                    TypeRef ret_tr = canonical_typeref_sema(sig->return_type);
+                    TypeRef ret_tr = canonical_typeref_in_pkg_sema(sig->return_type, sig->package_name);
                     if (ret_tr.name.empty() && !ret_tr.is_slice && !ret_tr.is_array && !ret_tr.is_map &&
                         !ret_tr.is_tuple && !ret_tr.is_fn && ret_tr.smart_wrap.empty()) {
-                        return resolve_fn_ret(sig->return_type);
+                        return resolve_fn_ret(sig->return_type, sig->package_name);
                     }
                     if (!env.empty()) {
                         return cf_.type_table.from_typeref(ret_tr, &env);
                     }
-                    return resolve_typeref(ret_tr);
+                    return resolve_typeref_in_pkg(ret_tr, sig->package_name);
                 }
                 if (const auto* im = resolve_interface_method_sig_sema(*mem)) {
-                    return resolve_fn_ret(im->return_type);
+                    return resolve_fn_ret(im->return_type, pkg_name_);
                 }
                 if (mem->object) {
                     TypeId raw_recv = infer_expr_type_id_sema(mem->object);
@@ -1841,20 +1866,24 @@
 
 
     CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_typeref(const TypeRef& tr) const -> TypeId {
+        return resolve_typeref_in_pkg(tr, pkg_name_);
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::resolve_typeref_in_pkg(const TypeRef& tr, std::string_view owner_pkg) const -> TypeId {
         if (tr.is_fallible) {
             TypeRef inner = tr;
             inner.is_fallible = false;
-            return cf_.type_table.make_fallible(resolve_typeref(inner));
+            return cf_.type_table.make_fallible(resolve_typeref_in_pkg(inner, owner_pkg));
         }
         if (tr.is_optional) {
             TypeRef inner = tr;
             inner.is_optional = false;
-            return cf_.type_table.make_optional(resolve_typeref(inner));
+            return cf_.type_table.make_optional(resolve_typeref_in_pkg(inner, owner_pkg));
         }
         if (tr.is_fn) {
             std::vector<TypeId> params;
             params.reserve(tr.fn_params.size());
-            for (const auto& pt : tr.fn_params) params.push_back(resolve_typeref(pt));
+            for (const auto& pt : tr.fn_params) params.push_back(resolve_typeref_in_pkg(pt, owner_pkg));
             TypeId ret = TypeId::Void();
             if (tr.fn_ret) {
                 if (tr.fn_ret->name.empty() && !tr.fn_ret->is_slice && !tr.fn_ret->is_array && !tr.fn_ret->is_map &&
@@ -1863,7 +1892,7 @@
                     if (tr.fn_ret->is_optional) ret = cf_.type_table.make_optional(ret);
                     if (tr.fn_ret->is_fallible) ret = cf_.type_table.make_fallible(ret);
                 } else {
-                    ret = resolve_typeref(*tr.fn_ret);
+                    ret = resolve_typeref_in_pkg(*tr.fn_ret, owner_pkg);
                 }
             }
             return cf_.type_table.make_function(std::move(params), ret);
@@ -1871,17 +1900,17 @@
         if (tr.is_tuple) {
             std::vector<TypeId> elems;
             elems.reserve(tr.tuple_types.size());
-            for (const auto& tt : tr.tuple_types) elems.push_back(resolve_typeref(tt));
+            for (const auto& tt : tr.tuple_types) elems.push_back(resolve_typeref_in_pkg(tt, owner_pkg));
             return cf_.type_table.make_tuple(std::move(elems));
         }
         if (tr.is_slice) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name.starts_with("[]") ? std::string_view(tr.name).substr(2) : std::string_view(tr.name), &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name.starts_with("[]") ? std::string_view(tr.name).substr(2) : std::string_view(tr.name), owner_pkg), &fn_type_param_ids_);
             return cf_.type_table.make_slice(elem);
         }
         if (tr.is_array) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             std::size_t len = 0;
             if (!tr.array_len.empty()) {
                 len = parse_int_literal<std::size_t>(tr.array_len).value_or(0);
@@ -1889,38 +1918,38 @@
             return cf_.type_table.make_array(elem, len);
         }
         if (tr.is_map) {
-            TypeId k = tr.key_type ? resolve_typeref(*tr.key_type) : TypeId::Str();
-            TypeId v = tr.elem_type ? resolve_typeref(*tr.elem_type) : TypeId::Unknown();
+            TypeId k = tr.key_type ? resolve_typeref_in_pkg(*tr.key_type, owner_pkg) : TypeId::Str();
+            TypeId v = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg) : TypeId::Unknown();
             return cf_.type_table.make_map(k, v);
         }
         if (!tr.smart_wrap.empty()) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             if (tr.smart_wrap == "own") return cf_.type_table.make_own(elem);
             if (tr.smart_wrap == "shared") return cf_.type_table.make_shared(elem);
         }
         if (tr.is_borrow) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             return cf_.type_table.make_borrow(elem);
         }
         if (tr.is_mut_borrow) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             return cf_.type_table.make_mut_borrow(elem);
         }
         if (tr.is_ptr) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             return cf_.type_table.make_raw_ptr(elem);
         }
         if (tr.is_mut_ptr) {
-            TypeId elem = tr.elem_type ? resolve_typeref(*tr.elem_type)
-                : cf_.type_table.from_name(tr.name, &fn_type_param_ids_);
+            TypeId elem = tr.elem_type ? resolve_typeref_in_pkg(*tr.elem_type, owner_pkg)
+                : cf_.type_table.from_name(canonical_type_name_in_pkg_sema(tr.name, owner_pkg), &fn_type_param_ids_);
             return cf_.type_table.make_mut_ptr(elem);
         }
         if (!tr.type_args.empty()) {
-            std::string canon_base = canonical_nominal_path_sema(tr.name);
+            std::string canon_base = canonical_nominal_path_in_pkg_sema(tr.name, owner_pkg);
             if (canon_base == "cpp" || canon_base.starts_with("cpp.") || canon_base.starts_with("cpp::")) {
                 return TypeId::Foreign();
             }
@@ -1935,7 +1964,7 @@
             }
             std::vector<TypeId> args;
             args.reserve(tr.type_args.size());
-            for (const auto& ta : tr.type_args) args.push_back(resolve_typeref(ta));
+            for (const auto& ta : tr.type_args) args.push_back(resolve_typeref_in_pkg(ta, owner_pkg));
             return cf_.type_table.make_generic_inst(canon_base, std::move(args));
         }
         if (tr.name.empty()) return TypeId::Unknown();
@@ -1943,7 +1972,7 @@
         if (auto tpit = fn_type_param_ids_.find(tr.name); tpit != fn_type_param_ids_.end()) {
             return tpit->second;
         }
-        std::string canon_name = canonical_type_name_sema(tr.name);
+        std::string canon_name = canonical_type_name_in_pkg_sema(tr.name, owner_pkg);
         if (cf_.cpp_qualifiers.contains(canon_name) || canon_name.starts_with("cpp.")) {
             return TypeId::Foreign();
         }
@@ -2061,7 +2090,7 @@
                                canon == "fs.FileInfo" || canon == "ipc.PeerCred";
                     }
                     for (const auto& f : sit->second.fields) {
-                        if (!self(self, resolve_typeref(f.type))) return false;
+                        if (!self(self, resolve_typeref_in_pkg(f.type, sit->second.package_name))) return false;
                     }
                     return true;
                 }
@@ -2073,7 +2102,7 @@
                         env[sit->second.type_params[i].name] = d.type_args[i];
                     }
                     for (const auto& f : sit->second.fields) {
-                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_sema(f.type), &env))) return false;
+                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(f.type, sit->second.package_name), &env))) return false;
                     }
                     return true;
                 }
@@ -2115,7 +2144,7 @@
                         return canon == "time.Time" || canon == "time.Duration";
                     }
                     for (const auto& f : sit->second.fields) {
-                        if (!self(self, resolve_typeref(f.type))) return false;
+                        if (!self(self, resolve_typeref_in_pkg(f.type, sit->second.package_name))) return false;
                     }
                     return true;
                 }
@@ -2127,7 +2156,7 @@
                         env[sit->second.type_params[i].name] = d.type_args[i];
                     }
                     for (const auto& f : sit->second.fields) {
-                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_sema(f.type), &env))) return false;
+                        if (!self(self, cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(f.type, sit->second.package_name), &env))) return false;
                     }
                     return true;
                 }
@@ -2618,7 +2647,7 @@
                 if (it == sig.params.end()) continue;
                 param = &*it;
             }
-            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+            TypeId pat = cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(param->type, sig.package_name), &pat_env);
             if (!cf_.type_table.contains_type_param(pat)) continue;
             TypeId got = infer_expr_type_id_sema(arg.value);
             if (pat.is_unknown() || got.is_unknown() || got.is_error() || got.is_never() || got.is_foreign()) continue;
@@ -3040,7 +3069,7 @@
                     if (it == sig.params.end()) continue;
                     param = &*it;
                 }
-                TypeId pat = cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env);
+                TypeId pat = cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(param->type, sig.package_name), &pat_env);
                 TypeId got = infer_expr_type_id_sema(call.args[i].value);
                 (void)cf_.type_table.unify(pat, got, bindings);
             }
@@ -3054,8 +3083,8 @@
                 param = &*it;
             }
             TypeId want = !bindings.empty() || !pat_env.empty()
-                ? cf_.type_table.substitute(cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &pat_env), bindings)
-                : resolve_typeref(param->type);
+                ? cf_.type_table.substitute(cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(param->type, sig.package_name), &pat_env), bindings)
+                : resolve_typeref_in_pkg(param->type, sig.package_name);
             if (cf_.type_table.contains_type_param(want)) {
                 // Unsubstituted generic param inside a generic body or handled by check_interface_constraints
                 bool still_unsubstituted = false;

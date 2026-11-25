@@ -1246,6 +1246,12 @@ fn main() {
       <div class="rosetta-pane-cpp">
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct Box;
 
@@ -1311,7 +1317,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1350,6 +1356,12 @@ fn main() {
       <div class="rosetta-pane-cpp">
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct Token;
 
@@ -1481,7 +1493,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1518,6 +1530,12 @@ fn main() {
 #include &quot;core/net.hpp&quot;
 #include &quot;core/sync.hpp&quot;
 #include &quot;core/time.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 
 #line 7 &quot;snippet_net.cf&quot;
@@ -1565,7 +1583,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1601,6 +1619,12 @@ fn main() {
 #define CFIRE_USE_SIMDJSON 1
 #include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/json.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct Metric;
 
@@ -1706,7 +1730,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1736,6 +1760,12 @@ fn main() {
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
 #include &lt;fast_hash.h&gt;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 
 #line 6 &quot;snippet_interop.cf&quot;
@@ -1761,7 +1791,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1798,6 +1828,12 @@ fn main() {
         <div class="code-header"><span class="tag-cpp">Emitted ISO C++23</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
         <pre><code>#include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/audio.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 
 #line 5 &quot;snippet_audio.cf&quot;
@@ -1842,7 +1878,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1909,6 +1945,12 @@ fn main() {
 #include &quot;core/ai.hpp&quot;
 #include &quot;core/json.hpp&quot;
 #include &quot;core/sqlite.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct QueryPlan;
 struct DocEntry;
@@ -2139,7 +2181,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2191,6 +2233,12 @@ fn main() {
 #include &quot;cfire_prelude.hpp&quot;
 #include &quot;core/json.hpp&quot;
 #include &quot;core/webui.hpp&quot;
+#if defined(_WIN32)
+#include &quot;detail/win32_clean_macros.hpp&quot;
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct GreetReq;
 struct GreetRes;
@@ -2369,7 +2417,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">92/92 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
       </div>
     </div>
   </div>

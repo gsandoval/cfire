@@ -32,6 +32,8 @@ fn compile_gui_webui_surface(mut app: webui.App) {
     _ = app.devtools_enabled()
     app.set_context_menu(false)
     _ = app.context_menu_enabled()
+    app.set_browser_keys(false)
+    _ = app.browser_keys_enabled()
     app.set_autofill(false)
     _ = app.autofill_enabled()
     app.fullscreen()

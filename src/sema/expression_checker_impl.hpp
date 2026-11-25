@@ -408,10 +408,10 @@
 
     /// Canonicalizes a bare (unwrapped) nominal path: `rl::Rectangle` -> `rl.Rectangle`,
     /// `webui.App` -> `webui.App`, `Enum::Variant` / local `App` unchanged.
-    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_nominal_path_sema(std::string_view name) const -> std::string {
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_nominal_path_in_pkg_sema(std::string_view name, std::string_view owner_pkg) const -> std::string {
         // Generic application `pkg.Box[T]`: canonicalize the head and each argument.
         if (auto br = name.find('['); br != std::string_view::npos && name.ends_with(']') && br > 0) {
-            std::string out = canonical_nominal_path_sema(name.substr(0, br)) + "[";
+            std::string out = canonical_nominal_path_in_pkg_sema(name.substr(0, br), owner_pkg) + "[";
             std::string_view args = name.substr(br + 1, name.size() - br - 2);
             int depth = 0;
             std::size_t start = 0;
@@ -422,7 +422,7 @@
                     std::string_view a = args.substr(start, i - start);
                     while (!a.empty() && a.front() == ' ') a.remove_prefix(1);
                     if (start > 0) out += ", ";
-                    out += canonical_type_name_sema(a);
+                    out += canonical_type_name_in_pkg_sema(a, owner_pkg);
                     start = i + 1;
                 }
             }
@@ -430,13 +430,13 @@
         }
         auto sep = name.find_first_of(".:");
         if (sep == std::string_view::npos) {
-            // Bare name declared in the current (non-main) package is that package's type.
-            if (!pkg_name_.empty() && pkg_name_ != "main") {
+            // Bare name declared in the owning (non-main) package is that package's type.
+            if (!owner_pkg.empty() && owner_pkg != "main" && !name.starts_with("cfire_pkg_")) {
                 for (const auto& st : cf_.ast.structs) {
-                    if (st.name == name && st.package_name == pkg_name_) return std::format("{}.{}", pkg_name_, name);
+                    if (st.name == name && st.package_name == owner_pkg) return std::format("{}.{}", owner_pkg, name);
                 }
                 for (const auto& en : cf_.ast.enums) {
-                    if (en.name == name && en.package_name == pkg_name_) return std::format("{}.{}", pkg_name_, name);
+                    if (en.name == name && en.package_name == owner_pkg) return std::format("{}.{}", owner_pkg, name);
                 }
             }
             return std::string(name);
@@ -449,24 +449,28 @@
         return std::string(name);
     }
 
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_nominal_path_sema(std::string_view name) const -> std::string {
+        return canonical_nominal_path_in_pkg_sema(name, pkg_name_);
+    }
+
 
     /// Canonicalizes a full type spelling, recursing through the same wrappers that
     /// `TypeTable::from_name` decomposes.
-    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_type_name_sema(std::string_view name) const -> std::string {
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_type_name_in_pkg_sema(std::string_view name, std::string_view owner_pkg) const -> std::string {
         if (name.empty()) return {};
-        if (name.ends_with('?')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "?";
-        if (name.ends_with('!')) return canonical_type_name_sema(name.substr(0, name.size() - 1)) + "!";
-        if (name.starts_with("[]")) return "[]" + canonical_type_name_sema(name.substr(2));
-        if (name.starts_with("&mut ")) return "&mut " + canonical_type_name_sema(name.substr(5));
-        if (name.starts_with('&')) return "&" + canonical_type_name_sema(name.substr(1));
-        if (name.starts_with("*mut ")) return "*mut " + canonical_type_name_sema(name.substr(5));
-        if (name.starts_with('*')) return "*" + canonical_type_name_sema(name.substr(1));
-        if (name.starts_with("own[") && name.ends_with(']')) return "own[" + canonical_type_name_sema(name.substr(4, name.size() - 5)) + "]";
-        if (name.starts_with("shared[") && name.ends_with(']')) return "shared[" + canonical_type_name_sema(name.substr(7, name.size() - 8)) + "]";
+        if (name.ends_with('?')) return canonical_type_name_in_pkg_sema(name.substr(0, name.size() - 1), owner_pkg) + "?";
+        if (name.ends_with('!')) return canonical_type_name_in_pkg_sema(name.substr(0, name.size() - 1), owner_pkg) + "!";
+        if (name.starts_with("[]")) return "[]" + canonical_type_name_in_pkg_sema(name.substr(2), owner_pkg);
+        if (name.starts_with("&mut ")) return "&mut " + canonical_type_name_in_pkg_sema(name.substr(5), owner_pkg);
+        if (name.starts_with('&')) return "&" + canonical_type_name_in_pkg_sema(name.substr(1), owner_pkg);
+        if (name.starts_with("*mut ")) return "*mut " + canonical_type_name_in_pkg_sema(name.substr(5), owner_pkg);
+        if (name.starts_with('*')) return "*" + canonical_type_name_in_pkg_sema(name.substr(1), owner_pkg);
+        if (name.starts_with("own[") && name.ends_with(']')) return "own[" + canonical_type_name_in_pkg_sema(name.substr(4, name.size() - 5), owner_pkg) + "]";
+        if (name.starts_with("shared[") && name.ends_with(']')) return "shared[" + canonical_type_name_in_pkg_sema(name.substr(7, name.size() - 8), owner_pkg) + "]";
         if (name.starts_with('[')) {
             // Fixed array `[N]T`
             if (auto rb = name.find(']'); rb != std::string_view::npos) {
-                return std::string(name.substr(0, rb + 1)) + canonical_type_name_sema(name.substr(rb + 1));
+                return std::string(name.substr(0, rb + 1)) + canonical_type_name_in_pkg_sema(name.substr(rb + 1), owner_pkg);
             }
         }
         if (name.starts_with("map[")) {
@@ -474,7 +478,7 @@
             for (std::size_t i = 3; i < name.size(); ++i) {
                 if (name[i] == '[') ++depth;
                 else if (name[i] == ']' && --depth == 0) {
-                    return "map[" + canonical_type_name_sema(name.substr(4, i - 4)) + "]" + canonical_type_name_sema(name.substr(i + 1));
+                    return "map[" + canonical_type_name_in_pkg_sema(name.substr(4, i - 4), owner_pkg) + "]" + canonical_type_name_in_pkg_sema(name.substr(i + 1), owner_pkg);
                 }
             }
         }
@@ -499,7 +503,7 @@
                     while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front()))) part.remove_prefix(1);
                     while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back()))) part.remove_suffix(1);
                     if (out.size() > 1) out += ", ";
-                    out += canonical_type_name_sema(part);
+                    out += canonical_type_name_in_pkg_sema(part, owner_pkg);
                     start = i + 1;
                 }
             }
@@ -508,24 +512,34 @@
                 while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.front()))) last_part.remove_prefix(1);
                 while (!last_part.empty() && std::isspace(static_cast<unsigned char>(last_part.back()))) last_part.remove_suffix(1);
                 if (out.size() > 1) out += ", ";
-                out += canonical_type_name_sema(last_part);
+                out += canonical_type_name_in_pkg_sema(last_part, owner_pkg);
                 out += ")";
                 return out;
             }
         }
         if (name.starts_with('(') || name.starts_with("fn")) return std::string(name); // fn types
-        return canonical_nominal_path_sema(name);
+        return canonical_nominal_path_in_pkg_sema(name, owner_pkg);
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_type_name_sema(std::string_view name) const -> std::string {
+        return canonical_type_name_in_pkg_sema(name, pkg_name_);
     }
 
 
     /// Canonicalizes every nominal leaf of a parsed TypeRef (annotations, fields, params).
-    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_typeref_sema(TypeRef tr) const -> TypeRef {
-        if (!tr.name.empty() && !tr.is_fn && !tr.is_tuple) tr.name = canonical_type_name_sema(tr.name);
-        if (tr.elem_type) tr.elem_type = std::make_shared<TypeRef>(canonical_typeref_sema(*tr.elem_type));
-        if (tr.key_type) tr.key_type = std::make_shared<TypeRef>(canonical_typeref_sema(*tr.key_type));
-        for (auto& a : tr.type_args) a = canonical_typeref_sema(a);
-        for (auto& t : tr.tuple_types) t = canonical_typeref_sema(t);
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_typeref_in_pkg_sema(TypeRef tr, std::string_view owner_pkg) const -> TypeRef {
+        if (!tr.name.empty() && !tr.is_fn && !tr.is_tuple) tr.name = canonical_type_name_in_pkg_sema(tr.name, owner_pkg);
+        if (tr.elem_type) tr.elem_type = std::make_shared<TypeRef>(canonical_typeref_in_pkg_sema(*tr.elem_type, owner_pkg));
+        if (tr.key_type) tr.key_type = std::make_shared<TypeRef>(canonical_typeref_in_pkg_sema(*tr.key_type, owner_pkg));
+        for (auto& a : tr.type_args) a = canonical_typeref_in_pkg_sema(a, owner_pkg);
+        for (auto& t : tr.tuple_types) t = canonical_typeref_in_pkg_sema(t, owner_pkg);
+        for (auto& p : tr.fn_params) p = canonical_typeref_in_pkg_sema(p, owner_pkg);
+        if (tr.fn_ret) tr.fn_ret = std::make_shared<TypeRef>(canonical_typeref_in_pkg_sema(*tr.fn_ret, owner_pkg));
         return tr;
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::canonical_typeref_sema(TypeRef tr) const -> TypeRef {
+        return canonical_typeref_in_pkg_sema(std::move(tr), pkg_name_);
     }
 
 
@@ -1164,9 +1178,11 @@
                 if (fn_ret_fallible_vars_.contains(cid->name)) {
                     return true;
                 }
+                const bool is_cfire_fn = cf_.fn_sigs.contains(cid->name) ||
+                    (!pkg_name_.empty() && cf_.fn_sigs.contains(pkg_name_ + "." + cid->name));
                 if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") ||
                     cid->name.starts_with("rl::") || cid->name.starts_with("rg::") ||
-                    cf_.cpp_fn_params.contains(cid->name)) {
+                    (!is_cfire_fn && cf_.cpp_fn_params.contains(cid->name))) {
                     return true;
                 }
                 return false;
@@ -1249,9 +1265,11 @@
         if (expr_returns_optional_sema(e)) return true;
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* cid = std::get_if<IdentExpr>(&call->callee->node)) {
+                const bool is_cfire_fn = cf_.fn_sigs.contains(cid->name) ||
+                    (!pkg_name_.empty() && cf_.fn_sigs.contains(pkg_name_ + "." + cid->name));
                 if (cid->name.starts_with("cpp::") || cid->name.starts_with("cpp.") ||
                     cid->name.starts_with("rl::") || cid->name.starts_with("rg::") ||
-                    cf_.cpp_fn_params.contains(cid->name)) {
+                    (!is_cfire_fn && cf_.cpp_fn_params.contains(cid->name))) {
                     return true;
                 }
                 return false;
@@ -1844,12 +1862,48 @@
     }
 
 
+    CFIRE_SEMA_INLINE auto SemaFnChecker::has_double_brace_outside_placeholders(
+        std::string_view sv,
+        const std::vector<InterpPlaceholder>& phs
+    ) -> bool {
+        auto seg_has_double_brace = [](std::string_view seg) -> bool {
+            for (std::size_t i = 0; i < seg.size();) {
+                if (seg[i] == '\\' && i + 1 < seg.size()) {
+                    if (seg[i + 1] == 'u' && i + 2 < seg.size() && seg[i + 2] == '{') {
+                        std::size_t k = i + 3;
+                        while (k < seg.size() && seg[k] != '}') ++k;
+                        i = (k < seg.size()) ? (k + 1) : (i + 2);
+                    } else {
+                        i += 2;
+                    }
+                    continue;
+                }
+                if ((seg[i] == '{' || seg[i] == '}') && i + 1 < seg.size() && seg[i + 1] == seg[i]) {
+                    return true;
+                }
+                ++i;
+            }
+            return false;
+        };
+        std::size_t cursor = 0;
+        for (const auto& ph : phs) {
+            if (ph.start_pos > cursor && seg_has_double_brace(sv.substr(cursor, ph.start_pos - cursor))) {
+                return true;
+            }
+            cursor = std::max(cursor, ph.end_pos + 1);
+        }
+        return cursor < sv.size() && seg_has_double_brace(sv.substr(cursor));
+    }
+
+
     CFIRE_SEMA_INLINE auto SemaFnChecker::check_literal_expr(const LiteralExpr& lit, int line, int col) -> std::expected<void, std::string> {
         if (lit.kind == TokenKind::String && lit.value.contains('{')) {
             lit.interp_snippets.clear();
             auto placeholders = scan_interpolation_placeholders(lit.value);
+            std::vector<InterpPlaceholder> active_phs;
             for (const auto& ph : placeholders) {
                 if (!is_likely_interpolation_placeholder(lit.value, ph)) continue;
+                active_phs.push_back(ph);
                 int expr_col = std::max(1, col) + 1 + static_cast<int>(ph.expr_offset);
                 auto parsed = parse_expr_snippet(path_, ph.expr_text, line, expr_col);
                 if (!parsed) {
@@ -1877,6 +1931,10 @@
                             "cannot interpolate 'void' expression in string"));
                     }
                 }
+            }
+            if (!lit.interp_snippets.empty() && has_double_brace_outside_placeholders(lit.value, active_phs)) {
+                return emit_error(diag_at(line, col, "cfire/INVALID-INTERPOLATION",
+                    "double braces '{{' / '}}' are not brace escapes in cfire; use '\\{' and '\\}' for literal braces, or a raw backtick string `...`"));
             }
         }
         return {};
@@ -2200,6 +2258,7 @@
         }
         if (cf_.methods.contains(owner + "::" + mem.field) || cf_.methods.contains(owner + "." + mem.field)) return {};
         if (auto oit = cf_.method_owners.find(mem.field); oit != cf_.method_owners.end() && oit->second.contains(owner)) return {};
+        if (resolve_member_call_sig(mem) != nullptr) return {};
         std::string known;
         for (const auto& f : sit->second) known += (known.empty() ? "" : ", ") + f.field_name;
         return emit_error(diag_at(line, col > 0 ? col + (mem.is_namespace ? 2 : 1) : col, "cfire/UNKNOWN-FIELD", std::format("struct '{}' has no field or method '{}' (fields: {})", owner, mem.field, known.empty() ? "none" : known)));
@@ -2337,7 +2396,32 @@
                     continue;
                 }
                 if (!f.value) continue;
-                TypeId want = cf_.type_table.from_typeref(canonical_typeref_sema(fit->type), &env);
+                TypeId want = cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(fit->type, sdef.package_name), &env);
+                TypeId got = infer_expr_type_id_sema(f.value);
+                if (auto r = check_type_compatible(want, got, f.value,
+                        std::format("field '{}.{}'", st.type_name, f.name), f.value->line, f.value->col); !r) {
+                    return r;
+                }
+            }
+            return {};
+        }
+        auto sdit = cf_.struct_defs.find(st.type_name);
+        if (sdit == cf_.struct_defs.end()) sdit = cf_.struct_defs.find(canonical_nominal_path_sema(st.type_name));
+        if (sdit != cf_.struct_defs.end()) {
+            const auto& sdef = sdit->second;
+            for (const auto& f : st.fields) {
+                auto fit = std::find_if(sdef.fields.begin(), sdef.fields.end(), [&](const StructField& sf) { return sf.name == f.name; });
+                if (fit == sdef.fields.end()) {
+                    if (auto r = emit_error(diag_at(f.value ? f.value->line : line, f.value ? f.value->col : col, "cfire/UNKNOWN-FIELD", std::format("struct '{}' has no field '{}'", st.type_name, f.name))); !r) return r;
+                    continue;
+                }
+                if (!f.value) continue;
+                TypeId want = resolve_typeref_in_pkg(fit->type, sdef.package_name);
+                if (std::holds_alternative<ArrayLitExpr>(f.value->node)) {
+                    bool handled = false;
+                    if (auto r = check_value_for(want, f.value, handled); !r) return r;
+                    continue;
+                }
                 TypeId got = infer_expr_type_id_sema(f.value);
                 if (auto r = check_type_compatible(want, got, f.value,
                         std::format("field '{}.{}'", st.type_name, f.name), f.value->line, f.value->col); !r) {
@@ -2658,23 +2742,41 @@
         }
         if (or_ex.fallback_val) {
             TypeId raw_inner_t = infer_expr_type_id_sema(or_ex.inner);
-            TypeId unwrapped_t = cf_.type_table.unwrap_optional(cf_.type_table.unwrap_fallible(raw_inner_t));
             bool inner_is_opt = cf_.type_table.is_optional(raw_inner_t);
             bool inner_is_fall = cf_.type_table.is_fallible(raw_inner_t);
-            if (auto r = check_expr(or_ex.fallback_val, unwrapped_t); !r) return r;
+            TypeId one_unwrap = inner_is_fall ? cf_.type_table.unwrap_fallible(raw_inner_t)
+                              : (inner_is_opt ? cf_.type_table.unwrap_optional(raw_inner_t) : raw_inner_t);
+            if (auto r = check_expr(or_ex.fallback_val, one_unwrap); !r) return r;
+            if (const auto* lit = std::get_if<LiteralExpr>(&or_ex.fallback_val->node);
+                lit && lit->kind == TokenKind::KwNone) {
+                if (one_unwrap.is_valid() && !one_unwrap.is_unknown() &&
+                    !one_unwrap.is_error() && !one_unwrap.is_foreign()) {
+                    const auto& ud = cf_.type_table.get(one_unwrap);
+                    if (ud.kind == TypeKind::Optional || ud.kind == TypeKind::RawPtr || ud.kind == TypeKind::MutPtr) {
+                        or_ex.resolved_type_id = one_unwrap.index;
+                        return {};
+                    }
+                    std::string msg = inner_is_fall
+                        ? std::format("'or' fallback expects '{}', got 'none'; to convert '{}' to '{}?', use '.ignore_error()' or 'or {{ return none }}'",
+                            cf_.type_table.to_string(one_unwrap), cf_.type_table.to_string(raw_inner_t), cf_.type_table.to_string(one_unwrap))
+                        : std::format("'or' fallback expects '{}', got 'none'; '{}' is already optional (remove 'or none' or provide a '{}' fallback)",
+                            cf_.type_table.to_string(one_unwrap), cf_.type_table.to_string(raw_inner_t), cf_.type_table.to_string(one_unwrap));
+                    return emit_error(diag_at(or_ex.fallback_val->line, or_ex.fallback_val->col, "cfire/TYPE-MISMATCH", std::move(msg)));
+                }
+            }
             TypeId fb_t = infer_expr_type_id_sema(or_ex.fallback_val);
             const bool chained_fall = inner_is_fall && cf_.type_table.is_fallible(fb_t);
             const bool chained_opt = inner_is_opt && cf_.type_table.is_optional(fb_t);
-            if (unwrapped_t.is_valid() && !unwrapped_t.is_unknown() && !fb_t.is_unknown()) {
+            if (one_unwrap.is_valid() && !one_unwrap.is_unknown() && !fb_t.is_unknown()) {
                 if ((chained_fall || chained_opt) && self_expr && unwrapped_exprs_.contains(self_expr)) {
                     TypeId fb_unwrapped = cf_.type_table.unwrap_optional(cf_.type_table.unwrap_fallible(fb_t));
-                    if (auto r = check_type_compatible(unwrapped_t, fb_unwrapped, or_ex.fallback_val, "'or' fallback", or_ex.fallback_val->line, or_ex.fallback_val->col); !r) {
+                    if (auto r = check_type_compatible(one_unwrap, fb_unwrapped, or_ex.fallback_val, "'or' fallback", or_ex.fallback_val->line, or_ex.fallback_val->col); !r) {
                         return r;
                     }
                     or_ex.resolved_type_id = fb_t.index;
                     return {};
                 }
-                if (auto r = check_type_compatible(unwrapped_t, fb_t, or_ex.fallback_val, "'or' fallback", or_ex.fallback_val->line, or_ex.fallback_val->col); !r) {
+                if (auto r = check_type_compatible(one_unwrap, fb_t, or_ex.fallback_val, "'or' fallback", or_ex.fallback_val->line, or_ex.fallback_val->col); !r) {
                     return r;
                 }
             }
@@ -2694,7 +2796,9 @@
             }
             if (auto r = check_block_stmts(or_ex.handler_body); !r) return r;
         }
-        TypeId un_t = cf_.type_table.unwrap_optional(cf_.type_table.unwrap_fallible(infer_expr_type_id_sema(or_ex.inner)));
+        TypeId raw_inner_t = infer_expr_type_id_sema(or_ex.inner);
+        TypeId un_t = cf_.type_table.is_fallible(raw_inner_t) ? cf_.type_table.unwrap_fallible(raw_inner_t)
+                    : (cf_.type_table.is_optional(raw_inner_t) ? cf_.type_table.unwrap_optional(raw_inner_t) : raw_inner_t);
         if (un_t.is_valid()) or_ex.resolved_type_id = un_t.index;
         return {};
     }

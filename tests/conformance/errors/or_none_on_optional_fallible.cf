@@ -1,0 +1,41 @@
+// expect: stdout
+// | none
+// | 42
+// | none
+// | 7
+// | none
+// | 9
+package main
+
+fn lookup(ok: bool, v: i64) -> i64?! {
+    if !ok {
+        return error("boom")
+    }
+    if v < 0 {
+        return none
+    }
+    return v
+}
+
+fn parse_with_block(s: str) -> i64? {
+    n := i64.parse(s) or {
+        return none
+    }
+    return n
+}
+
+fn main() {
+    a := lookup(false, 10) or none
+    b := lookup(true, 42) or none
+    c := i64.parse("nope").ignore_error()
+    d := i64.parse("7").ignore_error()
+    e := parse_with_block("nope")
+    f := parse_with_block("9")
+    for v in [a, b, c, d, e, f] {
+        if val := v {
+            println("{}", val)
+        } else {
+            println("none")
+        }
+    }
+}

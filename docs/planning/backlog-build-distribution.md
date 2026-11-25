@@ -4,7 +4,7 @@ This topic-focused backlog tracks compiler/build performance optimizations, prog
 
 It extends the main project backlog in [`backlog.md`](./backlog.md) (`CF-001` – `CF-197`, `Q1` – `Q54`) as of `main` @ `2786f66` (2026-11-14) and `71adeb7` (2026-11-18). All items obey the operating workflow and three quality gates in [`README.md`](./README.md) (`make check`, `make check-deep`, `make check-platforms`).
 
-> **ID Allocation**: Waves B1–B5 use **`CF-198` – `CF-210`** (`Q55` – `Q61`), [`flint.md`](./flint.md) uses **`CF-211` – `CF-239`** (`Q62` – `Q69`), Wave B6 uses **`CF-240` – `CF-245`** (`Q70` – `Q73`), and Wave B7 uses **`CF-246`** (`Q74`). Future items anywhere in `docs/planning/` should start at **`CF-247`** and **`Q75`**.
+> **ID Allocation**: Waves B1–B5 use **`CF-198` – `CF-210`** (`Q55` – `Q61`), [`flint.md`](./flint.md) uses **`CF-211` – `CF-239`** (`Q62` – `Q69`) and **`CF-262` – `CF-272`** (`Q95` – `Q99`), Wave B6 uses **`CF-240` – `CF-245`** (`Q70` – `Q73`), Wave B7 uses **`CF-246`** (`Q74`), and Wave B8 below uses **`CF-273`**. Future items anywhere in `docs/planning/` start at **`CF-274`** and **`Q100`**.
 
 ---
 
@@ -689,3 +689,21 @@ flowchart TD
   - `.cfire_test_runner` runs suites in parallel across `default_jobs()` worker processes with zero drop in coverage (`209/211` macOS, `211/211` Linux & Windows, `45/45` GUIDE, `14/14` stdlib suite, `0` C++ warnings).
   - `make check-deep` builds incrementally in parallel (`%.asan.o`, `.cfire_test_asan.pch`, `.fuzz_replay_%`) and persists sanitizer/fuzz artifacts between runs.
   - `make check-platforms` drives Linux and Windows concurrently via `.vmtest both` with incremental guest trees and unified `GIT_SHA=vm` PCHs, passing `make check-all`.
+
+---
+
+## Wave B8: 1:1 Per-File Translation Units & Incremental Testing (`CF-273`)
+
+#### `CF-273` — 1:1 Per-`.cf`-File TU Sharding & Incremental / Cached `cfire test` `[TODO]`
+- **Motivation**: `emit_sharded_cpp` (`src/codegen.hpp:17`, `src/buildsys.hpp:1811-1874`) currently shards 1:1 **per package** rather than 1:1 per `.cf` source file, and emits one shared monolithic `decls.hpp` whose `decls_hash` invalidates every shard when any package declaration changes. Meanwhile, `cfire test` re-runs unchanged test packages even when neither their `.cf` sources nor their transitive dependencies changed.
+- **In Scope**:
+  1. **Phase 1 — 1:1 Per-`.cf`-File TU Sharding & Per-Package Public Headers**:
+     - Track originating `.cf` source file (`source_path`) on emitted definitions in `emit_sharded_cpp` so each `.cf` file lowers to its own `.cpp` + content-hashed `.o` (`shard-obj-v2`).
+     - Split the monolithic `decls.hpp` into per-package public headers (`pkg_<name>.hpp`) plus an internal header per package when needed, so editing a function body or private symbol in `a.cf` recompiles **only** `a.o` without invalidating sibling `.cf` files or unrelated packages.
+  2. **Phase 2 — Incremental & Cached `cfire test`**:
+     - Cache each test package's `PASS` result keyed on the SHA-256 of its own `.cf` files, transitive imported package headers/units (from `resolve_local_cf_imports`), referenced `import cpp` headers, compiler fingerprint, and build flags; print `(cached) PASS` for unchanged suites (bypassed automatically by `--no-cache` or `--fuzz`).
+     - Add `cfire test --changed` to compute modified `.cf` files (via content hash / git status), walk reverse edges of the package import graph, and build+run **only** test packages whose own TU or transitive dependency changed.
+- **Verification Plan**:
+  - Unit tests verifying per-file `.cpp`/`.o` shard generation, non-invalidation of sibling `.o`s on body-only edits, and ODR-clean cross-file linking within multi-file packages.
+  - Integration tests verifying `cfire test` cache hit (`(cached) PASS`), cache invalidation on transitive dependency / header edit, `--no-cache` bypass, and `cfire test --changed` filtering.
+  - Full `make check-all` gate (including Linux and Windows VMs).

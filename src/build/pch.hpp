@@ -758,7 +758,7 @@ CFIRE_INFRA_INLINE void evict_pch_cache_to_budget(
 
     std::string opt_flags = sanitize
         ? sanitizer_opt_flags()
-        : (is_dev_debug_profile() ? "-O0 -g" : "-O2");
+        : (is_dev_debug_profile() ? "-O0 -g" : (test_mode ? "-O2 -g" : "-O2"));
     return {std::move(opt_flags), std::move(cflags)};
 }
 

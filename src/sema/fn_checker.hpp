@@ -174,7 +174,9 @@ public:
 
     [[nodiscard]] auto infer_expr_type_id_sema(const ExprPtr& e) const -> TypeId;
 
-    // Resolves a parsed TypeRef into an interned TypeId, resolving active generic type parameters.
+    // Resolves a parsed TypeRef into an interned TypeId, resolving active generic type parameters
+    // and qualifying bare nominal names from the specified owning package.
+    [[nodiscard]] auto resolve_typeref_in_pkg(const TypeRef& tr, std::string_view owner_pkg) const -> TypeId;
     [[nodiscard]] auto resolve_typeref(const TypeRef& tr) const -> TypeId;
 
     // Unwraps borrows/pointers/smart pointers (and optionally `?`) to reach the underlying receiver type.
@@ -343,13 +345,16 @@ public:
 
     /// Canonicalizes a bare (unwrapped) nominal path: `rl::Rectangle` -> `rl.Rectangle`,
     /// `webui.App` -> `webui.App`, `Enum::Variant` / local `App` unchanged.
+    [[nodiscard]] auto canonical_nominal_path_in_pkg_sema(std::string_view name, std::string_view owner_pkg) const -> std::string;
     [[nodiscard]] auto canonical_nominal_path_sema(std::string_view name) const -> std::string;
 
     /// Canonicalizes a full type spelling, recursing through the same wrappers that
     /// `TypeTable::from_name` decomposes.
+    [[nodiscard]] auto canonical_type_name_in_pkg_sema(std::string_view name, std::string_view owner_pkg) const -> std::string;
     [[nodiscard]] auto canonical_type_name_sema(std::string_view name) const -> std::string;
 
     /// Canonicalizes every nominal leaf of a parsed TypeRef (annotations, fields, params).
+    [[nodiscard]] auto canonical_typeref_in_pkg_sema(TypeRef tr, std::string_view owner_pkg) const -> TypeRef;
     [[nodiscard]] auto canonical_typeref_sema(TypeRef tr) const -> TypeRef;
 
     /// Single entry point for converting a type spelling into an interned TypeId.
@@ -405,6 +410,11 @@ public:
     [[nodiscard]] auto check_try_expr(const TryExpr& tr, int line, int col) -> std::expected<void, std::string>;
 
     [[nodiscard]] static auto is_likely_interpolation_placeholder(std::string_view sv, const InterpPlaceholder& ph) -> bool;
+
+    [[nodiscard]] static auto has_double_brace_outside_placeholders(
+        std::string_view sv,
+        const std::vector<InterpPlaceholder>& phs
+    ) -> bool;
 
     [[nodiscard]] auto check_literal_expr(const LiteralExpr& lit, int line, int col = 1) -> std::expected<void, std::string>;
 

@@ -47,7 +47,9 @@ struct is_std_array : std::false_type {};
 template <typename T, std::size_t N>
 struct is_std_array<std::array<T, N>> : std::true_type {};
 template <typename T>
-concept Seq = is_vector<std::remove_cvref_t<T>>::value || is_std_array<std::remove_cvref_t<T>>::value;
+concept MutableSeq = is_vector<std::remove_cvref_t<T>>::value || is_std_array<std::remove_cvref_t<T>>::value;
+template <typename T>
+concept Seq = MutableSeq<T> || cfire::is_span_like<std::remove_cvref_t<T>>::value;
 template <typename T>
 concept Vec = is_vector<std::remove_cvref_t<T>>::value;
 
@@ -586,11 +588,11 @@ template <detail::Seq C>
     if (c.size() == 0) return std::nullopt;
     return *(c.end() - 1);
 }
-template <detail::Seq C>
+template <detail::MutableSeq C>
 constexpr void reverse(C& c) { std::reverse(c.begin(), c.end()); }
-template <detail::Seq C>
+template <detail::MutableSeq C>
 constexpr void sort(C& c) { std::sort(c.begin(), c.end()); }
-template <detail::Seq C, typename Less>
+template <detail::MutableSeq C, typename Less>
 constexpr void sort_by(C& c, Less&& less) { std::sort(c.begin(), c.end(), std::forward<Less>(less)); }
 template <detail::Seq C>
 [[nodiscard]] constexpr auto is_sorted(const C& c) -> bool { return std::is_sorted(c.begin(), c.end()); }

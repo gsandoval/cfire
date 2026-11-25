@@ -1,0 +1,15 @@
+// expect: stdout
+// | 5
+// | true
+// | false
+// | 2
+// | false
+package main
+
+fn main() {
+    println("{}", " — ".len())
+    println("{}", "".is_empty())
+    println("{}", "abc".is_empty())
+    println("{}", `hi`.len())
+    println("{}", `hi`.is_empty())
+}

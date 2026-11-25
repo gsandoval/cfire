@@ -72,7 +72,7 @@ struct HeaderIndex {
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto win32_quote_cmd(std::string full_cmd) -> std::string;
 
-[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string;
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code, bool merge_stderr = true) -> std::string;
 
 [[nodiscard]] CFIRE_INFRA_INLINE auto run_argv_capture(const std::vector<std::string>& argv, int& exit_code) -> std::string;
 
@@ -155,9 +155,12 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
     return full_cmd;
 }
 
-[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code) -> std::string {
+[[nodiscard]] CFIRE_INFRA_INLINE auto run_command_capture(const std::string& cmd, int& exit_code, bool merge_stderr) -> std::string {
     std::string out;
-    std::string full_cmd = normalize_command_for_capture(cmd) + " 2>&1";
+    std::string full_cmd = normalize_command_for_capture(cmd);
+    if (merge_stderr) {
+        full_cmd += " 2>&1";
+    }
 #if defined(_WIN32)
     std::string popen_cmd = win32_quote_cmd(std::move(full_cmd));
     FILE* pipe = ::_popen(popen_cmd.c_str(), "r");
@@ -385,13 +388,29 @@ public:
         if (root_brace != std::string_view::npos) {
             pos_ = root_brace;
             parse_node(out);
+        } else if (!json_.empty()) {
+            mark_malformed();
         }
     }
+
+    [[nodiscard]] auto malformed() const noexcept -> bool { return malformed_; }
+    [[nodiscard]] auto error_pos() const noexcept -> std::size_t { return error_pos_; }
 
 private:
     std::string_view json_;
     std::size_t pos_ = 0;
     std::vector<std::string> scope_stack_;
+    int template_depth_ = 0;
+    bool malformed_ = false;
+    std::size_t error_pos_ = 0;
+
+    void mark_malformed() noexcept {
+        if (!malformed_) {
+            malformed_ = true;
+            error_pos_ = pos_;
+            pos_ = json_.size();
+        }
+    }
 
     void skip_ws() {
         while (pos_ < json_.size()) {
@@ -405,11 +424,19 @@ private:
     }
 
     auto parse_string() -> std::string_view {
-        if (pos_ >= json_.size() || json_[pos_] != '"') return "";
+        skip_ws();
+        if (pos_ >= json_.size() || json_[pos_] != '"') {
+            mark_malformed();
+            return "";
+        }
         ++pos_;
         std::size_t start = pos_;
         while (pos_ < json_.size()) {
             if (json_[pos_] == '\\') {
+                if (pos_ + 1 >= json_.size()) {
+                    mark_malformed();
+                    return "";
+                }
                 pos_ += 2;
                 continue;
             }
@@ -420,110 +447,77 @@ private:
             }
             ++pos_;
         }
+        mark_malformed();
         return "";
     }
 
     void skip_value() {
         skip_ws();
-        if (pos_ >= json_.size()) return;
+        if (pos_ >= json_.size()) {
+            mark_malformed();
+            return;
+        }
         char c = json_[pos_];
         if (c == '"') {
             (void)parse_string();
         } else if (c == '{') {
             ++pos_;
             int depth = 1;
-            while (pos_ < json_.size() && depth > 0) {
-                if (json_[pos_] == '"') (void)parse_string();
-                else if (json_[pos_] == '{') { ++depth; ++pos_; }
-                else if (json_[pos_] == '}') { --depth; ++pos_; }
-                else ++pos_;
+            while (pos_ < json_.size() && depth > 0 && !malformed_) {
+                if (json_[pos_] == '"') {
+                    (void)parse_string();
+                } else if (json_[pos_] == '{') {
+                    ++depth;
+                    ++pos_;
+                } else if (json_[pos_] == '}') {
+                    --depth;
+                    ++pos_;
+                } else {
+                    ++pos_;
+                }
             }
+            if (depth != 0) mark_malformed();
         } else if (c == '[') {
             ++pos_;
             int depth = 1;
-            while (pos_ < json_.size() && depth > 0) {
-                if (json_[pos_] == '"') (void)parse_string();
-                else if (json_[pos_] == '[') { ++depth; ++pos_; }
-                else if (json_[pos_] == ']') { --depth; ++pos_; }
-                else ++pos_;
+            while (pos_ < json_.size() && depth > 0 && !malformed_) {
+                if (json_[pos_] == '"') {
+                    (void)parse_string();
+                } else if (json_[pos_] == '[') {
+                    ++depth;
+                    ++pos_;
+                } else if (json_[pos_] == ']') {
+                    --depth;
+                    ++pos_;
+                } else {
+                    ++pos_;
+                }
             }
+            if (depth != 0) mark_malformed();
+        } else if (c == ',' || c == '}' || c == ']' || c == ':') {
+            mark_malformed();
         } else {
-            while (pos_ < json_.size() && json_[pos_] != ',' && json_[pos_] != '}' && json_[pos_] != ']') {
+            std::size_t start = pos_;
+            while (pos_ < json_.size()) {
+                char ch = json_[pos_];
+                if (ch == ',' || ch == '}' || ch == ']' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+                    break;
+                }
                 ++pos_;
             }
+            if (pos_ == start) mark_malformed();
         }
     }
 
-    void parse_node(std::unordered_map<std::string, CppSymbol>& out) {
-        if (pos_ >= json_.size() || json_[pos_] != '{') return;
-        ++pos_; // consume '{'
-
-        std::string_view kind;
-        std::string_view name;
-        std::string_view qual_type;
-        std::size_t inner_array_start = std::string_view::npos;
-
-        while (pos_ < json_.size()) {
-            skip_ws();
-            if (pos_ >= json_.size() || json_[pos_] == '}') {
-                if (pos_ < json_.size()) ++pos_;
-                break;
-            }
-
-            auto key = parse_string();
-            skip_ws();
-            if (pos_ < json_.size() && json_[pos_] == ':') ++pos_;
-            skip_ws();
-
-            if (key == "kind") {
-                kind = parse_string();
-            } else if (key == "name") {
-                name = parse_string();
-            } else if (key == "type") {
-                if (pos_ < json_.size() && json_[pos_] == '{') {
-                    ++pos_;
-                    while (pos_ < json_.size() && json_[pos_] != '}') {
-                        skip_ws();
-                        auto sub_key = parse_string();
-                        skip_ws();
-                        if (pos_ < json_.size() && json_[pos_] == ':') ++pos_;
-                        skip_ws();
-                        if (sub_key == "qualType") {
-                            qual_type = parse_string();
-                        } else {
-                            skip_value();
-                        }
-                        skip_ws();
-                        if (pos_ < json_.size() && json_[pos_] == ',') ++pos_;
-                    }
-                    if (pos_ < json_.size() && json_[pos_] == '}') ++pos_;
-                } else {
-                    skip_value();
-                }
-            } else if (key == "inner") {
-                skip_ws();
-                if (pos_ < json_.size() && json_[pos_] == '[') {
-                    inner_array_start = pos_;
-                    int depth = 1;
-                    ++pos_;
-                    while (pos_ < json_.size() && depth > 0) {
-                        if (json_[pos_] == '"') (void)parse_string();
-                        else if (json_[pos_] == '[') { ++depth; ++pos_; }
-                        else if (json_[pos_] == ']') { --depth; ++pos_; }
-                        else ++pos_;
-                    }
-                } else {
-                    skip_value();
-                }
-            } else {
-                skip_value();
-            }
-
-            skip_ws();
-            if (pos_ < json_.size() && json_[pos_] == ',') ++pos_;
-        }
-
-        if (kind == "FunctionDecl" && !name.empty() && !name.starts_with("__")) {
+    void emit_symbol_if_decl(
+        std::string_view kind,
+        std::string_view name,
+        std::string_view qual_type,
+        std::unordered_map<std::string, CppSymbol>& out
+    ) const {
+        if (name.empty() || name.starts_with("__")) return;
+        if (kind == "FunctionDecl") {
+            if (template_depth_ > 0) return;
             CppSymbol sym;
             sym.name = std::string(name);
             sym.kind = "FunctionDecl";
@@ -541,17 +535,8 @@ private:
             } else {
                 it->second.overloads.push_back(sym);
             }
-            if (!scope_stack_.empty()) {
-                auto sit = out.find(sym.name);
-                if (sit == out.end()) {
-                    out[sym.name] = sym;
-                } else {
-                    sit->second.overloads.push_back(sym);
-                }
-            }
-        } else if (!name.empty() && !name.starts_with("__") &&
-                   (kind == "TypedefDecl" || kind == "RecordDecl" || kind == "CXXRecordDecl" ||
-                    kind == "VarDecl" || kind == "EnumConstantDecl" || kind == "EnumDecl")) {
+        } else if (kind == "TypedefDecl" || kind == "RecordDecl" || kind == "CXXRecordDecl" ||
+                   kind == "VarDecl" || kind == "EnumConstantDecl" || kind == "EnumDecl") {
             std::string qname;
             for (const auto& s : scope_stack_) {
                 qname += s + "::";
@@ -562,31 +547,183 @@ private:
                 out.try_emplace(std::string(name), CppSymbol{std::string(name), std::string(kind), "", {}, {}});
             }
         }
+    }
 
-        bool is_scope = (kind == "NamespaceDecl" || kind == "CXXRecordDecl" || kind == "RecordDecl");
-        if (is_scope && !name.empty() && !name.starts_with("__")) {
-            scope_stack_.emplace_back(name);
-        }
-
-        if (inner_array_start != std::string_view::npos) {
-            std::size_t saved_pos = pos_;
-            pos_ = inner_array_start + 1;
-            while (pos_ < json_.size()) {
-                skip_ws();
-                if (pos_ >= json_.size() || json_[pos_] == ']') break;
-                if (json_[pos_] == '{') {
-                    parse_node(out);
-                } else {
-                    skip_value();
-                }
-                skip_ws();
-                if (pos_ < json_.size() && json_[pos_] == ',') ++pos_;
+    void parse_inner_elements(std::unordered_map<std::string, CppSymbol>& out) {
+        while (pos_ < json_.size() && !malformed_) {
+            skip_ws();
+            if (pos_ >= json_.size()) {
+                mark_malformed();
+                return;
             }
-            pos_ = saved_pos;
+            if (json_[pos_] == ']') {
+                ++pos_;
+                return;
+            }
+            std::size_t elem_start = pos_;
+            if (json_[pos_] == '{') {
+                parse_node(out);
+            } else {
+                skip_value();
+            }
+            if (malformed_ || pos_ == elem_start) {
+                mark_malformed();
+                return;
+            }
+            skip_ws();
+            if (pos_ >= json_.size()) {
+                mark_malformed();
+                return;
+            }
+            if (json_[pos_] == ',') {
+                ++pos_;
+            } else if (json_[pos_] != ']') {
+                mark_malformed();
+                return;
+            }
+        }
+        if (pos_ >= json_.size() && !malformed_) mark_malformed();
+    }
+
+    void parse_node(std::unordered_map<std::string, CppSymbol>& out) {
+        skip_ws();
+        if (pos_ >= json_.size() || json_[pos_] != '{') {
+            mark_malformed();
+            return;
+        }
+        ++pos_; // consume '{'
+
+        std::string_view kind;
+        std::string_view name;
+        std::string_view qual_type;
+        std::size_t deferred_inner_start = std::string_view::npos;
+        bool inner_parsed = false;
+
+        while (pos_ < json_.size() && !malformed_) {
+            skip_ws();
+            if (pos_ >= json_.size()) {
+                mark_malformed();
+                return;
+            }
+            if (json_[pos_] == '}') {
+                ++pos_;
+                break;
+            }
+            if (json_[pos_] != '"') {
+                mark_malformed();
+                return;
+            }
+
+            std::size_t field_start = pos_;
+            auto key = parse_string();
+            if (malformed_) return;
+            skip_ws();
+            if (pos_ >= json_.size() || json_[pos_] != ':') {
+                mark_malformed();
+                return;
+            }
+            ++pos_;
+            skip_ws();
+
+            if (key == "kind") {
+                kind = parse_string();
+            } else if (key == "name") {
+                name = parse_string();
+            } else if (key == "type") {
+                if (pos_ < json_.size() && json_[pos_] == '{') {
+                    ++pos_;
+                    while (pos_ < json_.size() && !malformed_) {
+                        skip_ws();
+                        if (pos_ >= json_.size()) { mark_malformed(); return; }
+                        if (json_[pos_] == '}') { ++pos_; break; }
+                        if (json_[pos_] != '"') { mark_malformed(); return; }
+                        auto sub_key = parse_string();
+                        if (malformed_) return;
+                        skip_ws();
+                        if (pos_ >= json_.size() || json_[pos_] != ':') { mark_malformed(); return; }
+                        ++pos_;
+                        skip_ws();
+                        if (sub_key == "qualType") {
+                            qual_type = parse_string();
+                        } else {
+                            std::size_t before = pos_;
+                            skip_value();
+                            if (malformed_ || pos_ == before) { mark_malformed(); return; }
+                        }
+                        if (malformed_) return;
+                        skip_ws();
+                        if (pos_ >= json_.size()) { mark_malformed(); return; }
+                        if (json_[pos_] == ',') ++pos_;
+                        else if (json_[pos_] != '}') { mark_malformed(); return; }
+                    }
+                } else {
+                    std::size_t before = pos_;
+                    skip_value();
+                    if (malformed_ || pos_ == before) { mark_malformed(); return; }
+                }
+            } else if (key == "inner") {
+                if (pos_ < json_.size() && json_[pos_] == '[') {
+                    if (!kind.empty()) {
+                        const bool is_scope = (kind == "NamespaceDecl" || kind == "CXXRecordDecl" || kind == "RecordDecl");
+                        const bool pushed_scope = is_scope && !name.empty() && !name.starts_with("__");
+                        const bool is_tmpl = (kind == "FunctionTemplateDecl" || kind == "ClassTemplateDecl");
+                        if (pushed_scope) scope_stack_.emplace_back(name);
+                        if (is_tmpl) ++template_depth_;
+                        ++pos_; // consume '['
+                        parse_inner_elements(out);
+                        if (is_tmpl) --template_depth_;
+                        if (pushed_scope) scope_stack_.pop_back();
+                        inner_parsed = true;
+                    } else {
+                        deferred_inner_start = pos_;
+                        std::size_t before = pos_;
+                        skip_value();
+                        if (malformed_ || pos_ == before) { mark_malformed(); return; }
+                    }
+                } else {
+                    std::size_t before = pos_;
+                    skip_value();
+                    if (malformed_ || pos_ == before) { mark_malformed(); return; }
+                }
+            } else {
+                std::size_t before = pos_;
+                skip_value();
+                if (malformed_ || pos_ == before) { mark_malformed(); return; }
+            }
+
+            if (malformed_ || pos_ == field_start) {
+                mark_malformed();
+                return;
+            }
+            skip_ws();
+            if (pos_ >= json_.size()) {
+                mark_malformed();
+                return;
+            }
+            if (json_[pos_] == ',') {
+                ++pos_;
+            } else if (json_[pos_] != '}') {
+                mark_malformed();
+                return;
+            }
         }
 
-        if (is_scope && !name.empty() && !name.starts_with("__")) {
-            scope_stack_.pop_back();
+        if (malformed_) return;
+
+        emit_symbol_if_decl(kind, name, qual_type, out);
+
+        if (!inner_parsed && deferred_inner_start != std::string_view::npos) {
+            const bool is_scope = (kind == "NamespaceDecl" || kind == "CXXRecordDecl" || kind == "RecordDecl");
+            const bool pushed_scope = is_scope && !name.empty() && !name.starts_with("__");
+            const bool is_tmpl = (kind == "FunctionTemplateDecl" || kind == "ClassTemplateDecl");
+            if (pushed_scope) scope_stack_.emplace_back(name);
+            if (is_tmpl) ++template_depth_;
+            std::size_t saved_pos = pos_;
+            pos_ = deferred_inner_start + 1;
+            parse_inner_elements(out);
+            if (!malformed_) pos_ = saved_pos;
+            if (is_tmpl) --template_depth_;
+            if (pushed_scope) scope_stack_.pop_back();
         }
     }
 };
@@ -697,7 +834,7 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
         clang_bin = discovered_clang.empty() ? std::string("clang++") : discovered_clang.string();
     }
 
-    std::string key_str = "v4:" + clean_hdr + "|cc:" + cfire::build::compiler_binary_fingerprint(clang_bin);
+    std::string key_str = "v5:" + clean_hdr + "|cc:" + cfire::build::compiler_binary_fingerprint(clang_bin);
     for (const auto& f : cflags) {
         key_str += "|" + f;
         // Include mtime if local -I directory contains this header
@@ -723,6 +860,7 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
         return std::unexpected("failed to create private temporary directory for Clang AST inspection");
     }
     auto tu_path = ast_tmp.file("tu.cpp");
+    auto stderr_path = ast_tmp.file("stderr.log");
 
     {
         std::ofstream out(tu_path);
@@ -738,49 +876,71 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
             c += " " + shell_quote(f);
         }
         c += " " + shell_quote(tu_path.string());
+        c += " 2>" + shell_quote(stderr_path.string());
         return c;
     };
 
     int code = 0;
-    std::string json_dump = run_command_capture(build_ast_cmd(clang_bin), code);
+    std::string json_dump = run_command_capture(build_ast_cmd(clang_bin), code, false);
     if (code != 0 && clang_bin != "clang++") {
         int fallback_code = 0;
-        std::string fallback_dump = run_command_capture(build_ast_cmd("clang++"), fallback_code);
+        std::string fallback_dump = run_command_capture(build_ast_cmd("clang++"), fallback_code, false);
         if (fallback_code == 0) {
             code = 0;
             json_dump = std::move(fallback_dump);
         }
     }
 
+    auto read_stderr_log = [&]() -> std::string {
+        std::ifstream err_in(stderr_path, std::ios::in | std::ios::binary);
+        if (!err_in.is_open()) return "";
+        std::ostringstream ss;
+        ss << err_in.rdbuf();
+        std::string s = ss.str();
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) s.pop_back();
+        return s;
+    };
+
     if (code != 0) {
-        std::string filtered;
-        std::size_t pos = 0;
-        while (pos < json_dump.size()) {
-            std::size_t nl = json_dump.find('\n', pos);
-            std::string_view line = (nl == std::string::npos)
-                ? std::string_view(json_dump).substr(pos)
-                : std::string_view(json_dump).substr(pos, nl - pos);
-            pos = (nl == std::string::npos) ? json_dump.size() : nl + 1;
-            std::string_view trimmed = line;
-            while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t' || trimmed.front() == '\r')) {
-                trimmed.remove_prefix(1);
+        std::string filtered = read_stderr_log();
+        if (filtered.empty()) {
+            std::size_t pos = 0;
+            while (pos < json_dump.size()) {
+                std::size_t nl = json_dump.find('\n', pos);
+                std::string_view line = (nl == std::string::npos)
+                    ? std::string_view(json_dump).substr(pos)
+                    : std::string_view(json_dump).substr(pos, nl - pos);
+                pos = (nl == std::string::npos) ? json_dump.size() : nl + 1;
+                std::string_view trimmed = line;
+                while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t' || trimmed.front() == '\r')) {
+                    trimmed.remove_prefix(1);
+                }
+                if (trimmed.empty()) continue;
+                char first = trimmed.front();
+                if (first == '{' || first == '[' || first == '}' || first == ']' || first == '"') {
+                    continue;
+                }
+                if (!filtered.empty()) filtered += '\n';
+                filtered += line;
             }
-            if (trimmed.empty()) continue;
-            char first = trimmed.front();
-            if (first == '{' || first == '[' || first == '}' || first == ']' || first == '"') {
-                continue;
-            }
-            if (!filtered.empty()) filtered += '\n';
-            filtered += line;
+            if (filtered.empty()) filtered = json_dump;
         }
-        if (filtered.empty()) filtered = json_dump;
         return std::unexpected(std::format("clang AST ingestion failed for {}: {}", header, filtered));
     }
 
     HeaderIndex idx;
     idx.header = std::string(header);
     idx.from_cache = false;
-    extract_clang_json_symbols(json_dump, idx.symbols);
+    ClangAstParser parser(json_dump);
+    parser.parse(idx.symbols);
+    if (parser.malformed()) {
+        std::string err_note = read_stderr_log();
+        return std::unexpected(std::format(
+            "clang AST ingestion produced malformed JSON for {} at byte offset {}{}",
+            header,
+            parser.error_pos(),
+            err_note.empty() ? std::string("") : std::format(" ({})", err_note)));
+    }
 
     if (!cache_file.empty()) {
         save_cached_index(cache_file, idx);

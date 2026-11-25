@@ -1,0 +1,22 @@
+// expect: stdout
+// | local:2
+// | shadowed:3
+package main
+
+import cpp "<string>"
+
+// Emulates a header-imported C++ namespaced function `std::distance` / `hns::greet` vs `.cf` function `greet`.
+// Even with `<string>` imported (which defines many C++ overloads), `.cf` functions named `to_string` or `greet`
+// must never be coerced via unrelated C/C++ parameter signatures.
+fn to_string(name: str, xs: []str) -> str {
+    return "{name}:{xs.len()}"
+}
+
+fn greet(name: str, xs: []str) -> str {
+    return "{name}:{xs.len()}"
+}
+
+fn main() {
+    println(to_string("local", ["a", "b"]))
+    println(greet("shadowed", ["x", "y", "z"]))
+}

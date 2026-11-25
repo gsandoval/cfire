@@ -157,11 +157,106 @@ void test_toolchain_pch_and_binary_caching([[maybe_unused]] const std::filesyste
                 "cf_probe_dummy", false, {}, {pc_dir.string()});
             require(p2.found && p2.modversion == "1.0.1" && p2.cflags.contains("-DCF_DUMMY_V22"),
                     "ProbeCache invalidates stale entry when .pc fingerprint changes");
+
+            // Negative probe is NEVER cached: probing a absent package then creating its .pc succeeds immediately.
+            auto neg1 = cfire::build::ProbeCache::instance().probe_pkg_config(
+                "cf_neg_late", false, {}, {pc_dir.string()});
+            require(!neg1.found, "CF-268: absent pkg-config returns found=false");
+            test_build_cache_detail::write_file_str(
+                pc_dir / "cf_neg_late.pc",
+                "Name: cf_neg_late\nDescription: Late appeared\nVersion: 1.0.0\nCflags: -DCF_LATE_OK\nLibs:\n"
+            );
+            auto neg2 = cfire::build::ProbeCache::instance().probe_pkg_config(
+                "cf_neg_late", false, {}, {pc_dir.string()});
+            require(neg2.found && neg2.cflags.contains("-DCF_LATE_OK"),
+                    "CF-268: negative pkg-config result was not cached");
+
+            // Transitive Requires .pc fingerprint invalidates parent probe
+            auto leaf_pc = pc_dir / "cf_leaf.pc";
+            auto top_pc = pc_dir / "cf_top.pc";
+            test_build_cache_detail::write_file_str(
+                leaf_pc,
+                "Name: cf_leaf\nDescription: Leaf\nVersion: 1.0.0\nCflags: -DCF_LEAF_V1\nLibs:\n"
+            );
+            test_build_cache_detail::write_file_str(
+                top_pc,
+                "Name: cf_top\nDescription: Top\nVersion: 1.0.0\nRequires: cf_leaf\nCflags: -DCF_TOP\nLibs:\n"
+            );
+            auto t1 = cfire::build::ProbeCache::instance().probe_pkg_config(
+                "cf_top", false, {}, {pc_dir.string()});
+            require(t1.found && t1.cflags.contains("-DCF_LEAF_V1"),
+                    "CF-268: transitive Requires .pc flags loaded");
+            test_build_cache_detail::write_file_str(
+                leaf_pc,
+                "Name: cf_leaf\nDescription: Leaf v2\nVersion: 1.0.1\nCflags: -DCF_LEAF_V2\nLibs:\n"
+            );
+            std::filesystem::last_write_time(
+                leaf_pc, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(4), tec);
+            auto t2 = cfire::build::ProbeCache::instance().probe_pkg_config(
+                "cf_top", false, {}, {pc_dir.string()});
+            require(t2.found && t2.cflags.contains("-DCF_LEAF_V2"),
+                    "CF-268: transitive Requires .pc edit invalidates parent cache entry");
+
+            // --no-cache bypass avoids reading/writing probes.json
+            cfire::build::ProbeCache::instance().clear_memory_and_disk();
+            cfire::build::ProbeCache::instance().set_bypass_cache(true);
+            auto nb = cfire::build::ProbeCache::instance().probe_pkg_config(
+                "cf_top", false, {}, {pc_dir.string()});
+            require(nb.found && !std::filesystem::exists(cache_dir / "probes.json"),
+                    "CF-268: bypass_cache skips reading and persisting probes.json");
+            cfire::build::ProbeCache::instance().set_bypass_cache(false);
+
+            // Fail-loud strict resolution on unknown PkgConfig or unresolved Requires
+            {
+                cfire::build::BuildPlan bad_plan;
+                bad_plan.pkg_config_deps.push_back("cf_nonexistent_pkg_99999");
+                auto sr = cfire::build::resolve_plan_pkg_configs(bad_plan, rt_dir, "", true);
+                require(!sr.has_value() && sr.error().contains("cf_nonexistent_pkg_99999"),
+                        "CF-268: strict resolve_plan_pkg_configs fails loud on missing package");
+            }
+            {
+                test_build_cache_detail::write_file_str(
+                    pc_dir / "cf_broken_req.pc",
+                    "Name: cf_broken_req\nDescription: Broken req\nVersion: 1.0.0\nRequires: cf_missing_dep_999\nLibs:\n"
+                );
+                test_build_cache_detail::ScopedEnvVar pc_path_env("PKG_CONFIG_PATH", pc_dir.string());
+                cfire::build::BuildPlan brk_plan;
+                brk_plan.pkg_config_deps.push_back("cf_broken_req");
+                auto br = cfire::build::resolve_plan_pkg_configs(brk_plan, rt_dir, "", true);
+                require(!br.has_value() && br.error().contains("cf_missing_dep_999"),
+                        std::format("CF-268: broken Requires fails loud with pkg-config stderr, got: {}",
+                                    br ? "<ok>" : br.error()));
+            }
         }
     }
 
     // 3.: BuildProfile defaults (`run` traps overflow in DevDebug, `--no-trap`/`--release` wrap, conflict error)
     {
+        // CF-269: `cfire test --help` documents `--release` and `test --release` builds with `-O2 -g`
+        {
+            int hrc = 0;
+            auto help_out = cfire::bridge::run_command_capture(cfire_exe() + " test --help 2>&1", hrc);
+            require(hrc == 0 && help_out.contains("--release"),
+                    "CF-269: cfire test --help documents --release");
+
+            cfire::build::set_build_profile(cfire::build::BuildProfile::Release);
+            auto [rel_test_opt, rel_test_flags] = cfire::build::build_default_pch_cflags(rt_dir, false, true, false);
+            (void)rel_test_flags;
+            require(rel_test_opt == "-O2 -g",
+                    std::format("CF-269: test Release profile uses '-O2 -g', got '{}'", rel_test_opt));
+
+            cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
+            auto [dbg_test_opt, dbg_test_flags] = cfire::build::build_default_pch_cflags(rt_dir, false, true, false);
+            (void)dbg_test_flags;
+            require(dbg_test_opt == "-O0 -g",
+                    std::format("CF-269: default test profile stays '-O0 -g', got '{}'", dbg_test_opt));
+
+            cfire::build::set_build_profile(cfire::build::BuildProfile::Release);
+            auto [rel_build_opt, rel_build_flags] = cfire::build::build_default_pch_cflags(rt_dir, false, false, false);
+            (void)rel_build_flags;
+            require(rel_build_opt == "-O2",
+                    std::format("CF-269: non-test Release profile stays '-O2', got '{}'", rel_build_opt));
+        }
         auto proj = root.dir / "proj_prof";
         auto ov_cf = proj / "main.cf";
         test_build_cache_detail::write_file_str(ov_cf,
@@ -194,6 +289,28 @@ void test_toolchain_pch_and_binary_caching([[maybe_unused]] const std::filesyste
             cfire_exe() + " build --debug --release " + cfire::bridge::shell_quote(ov_cf.string()) + " 2>&1", rc);
         require(rc != 0 && out_conflict.contains("conflicting profile flags"),
                 "`--debug --release` together fails with explicit conflict diagnostic");
+
+        // CF-269: Crash in `cfire test` prints backtrace and re-raises signal
+        {
+            auto bt_cf = proj / "crash_bt_test.cf";
+            test_build_cache_detail::write_file_str(bt_cf,
+                "package main\n"
+                "fn boom(x: i32) -> i32 { return x + 1 }\n"
+                "test \"bt crash\" {\n"
+                "    v := boom(2147483647)\n"
+                "    println(\"{}\", v)\n"
+                "}\n"
+            );
+            int bt_rc = 0;
+            auto bt_out = cfire::bridge::run_command_capture(
+                cfire_exe() + " test " + cfire::bridge::shell_quote(bt_cf.string()) + " 2>&1", bt_rc);
+            require(bt_rc != 0 && bt_out.contains("test crashed:") && bt_out.contains("backtrace:"),
+                    std::format("CF-269: cfire test crash prints backtrace (rc={}):\n{}", bt_rc, bt_out));
+#if !defined(_WIN32)
+            require(bt_rc >= 128,
+                    std::format("CF-269: POSIX cfire test crash preserves signal exit status (>=128), got {}", bt_rc));
+#endif
+        }
     }
 
     // 4.: Composite PCH (Debug + Release), persistent.cfire/obj/*.o, BinaryCache restore & LRU eviction, clean

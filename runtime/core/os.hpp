@@ -54,6 +54,9 @@ extern "C" char** environ;
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>

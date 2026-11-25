@@ -359,5 +359,109 @@ fn main() {
         require(saw_hint, "expected cfire/UNKNOWN-METHOD on .clone() to hint \"mut copy := xs\"");
     }
 
+    // 5. CF-156: Cross-package structs, slices of imported structs, for-in loop vars, params & returns
+    {
+        ScopedTempDir ws("cfire_cf156_cross_pkg");
+        ws.file("lib/lib.cf", R"(package lib
+
+type Item struct {
+    id:   str
+    tags: []str
+}
+
+type Book struct {
+    pending: []Item
+}
+
+fn find_item(book: Book, id: str) -> Item? {
+    for it in book.pending {
+        if it.id == id {
+            return it
+        }
+    }
+    return none
+}
+
+fn summarize(book: Book) -> str {
+    mut parts: []str = []
+    for it in book.pending {
+        parts.push(it.id + ":" + it.tags.join(","))
+    }
+    return parts.join("|")
+}
+)");
+        auto main_cf = ws.file("main.cf", R"(package main
+
+import "./lib"
+
+fn main() {
+    b := lib.Book{
+        pending: [
+            lib.Item{id: "1", tags: ["urgent", "ops"]},
+            lib.Item{id: "2", tags: ["docs"]},
+        ],
+    }
+    mut seen_tags: []str = []
+    for it in b.pending {
+        seen_tags.push(it.tags.join("+"))
+    }
+    if found := lib.find_item(b, "1") {
+        println("found={}|summary={}|main={}", found.tags.join(","), lib.summarize(b), seen_tags.join(";"))
+    }
+}
+)");
+        auto chk = run_cfire(std::format("check --verify-cpp \"{}\"", main_cf.string()));
+        require(chk.ok(), std::format("CF-156 cross-pkg check --verify-cpp failed:\n{}", chk.output));
+
+        auto run = run_cfire(std::format("run \"{}\"", main_cf.string()));
+        require(run.ok() && run.output.contains("found=urgent,ops|summary=1:urgent,ops|2:docs|main=urgent+ops;docs"),
+            std::format("CF-156 cross-pkg run mismatch:\n{}", run.output));
+    }
+
+    // 6. CF-151: `cfire fix` rewrites retired `str.replace(s, from, to)` -> `s.replace_all(from, to)`
+    {
+        ScopedTempDir ws("cfire_cf151_str_replace_fix");
+        auto f = ws.file("main.cf", R"(package main
+
+import "core:str"
+
+fn main() {
+    s := str.replace("a-b-c", "-", "_")
+    println("{}", s)
+}
+)");
+        auto fix_res = run_cfire(std::format("fix \"{}\"", f.string()));
+        require(fix_res.ok(), std::format("CF-151 cfire fix failed:\n{}", fix_res.output));
+        std::string fixed = cfire::fs::read_text(f).value_or("");
+        require(fixed.contains("\"a-b-c\".replace_all(\"-\", \"_\")") && !fixed.contains("str.replace("),
+            std::format("CF-151 expected .replace_all rewrite, got:\n{}", fixed));
+    }
+
+    // 7. CF-267 / CF-159 (Q98): Unified \{ / \} brace escaping + rejection of {{ / }} in interpolated/format strings
+    {
+        auto tok_esc = cfire::frontend::tokenize("esc_braces.cf", R"(package main
+fn main() { s := "\{x\}"; println("\{y\}") }
+)");
+        require(tok_esc.has_value(), "expected '\\{' and '\\}' to tokenize cleanly");
+        cfire::analysis::CheckOptions opts;
+        opts.verify_cpp_backend = false;
+        opts.resolve_sibling_packages = false;
+        auto diags_interp = cfire::analysis::check_source("dbl_interp.cf",
+            "package main\nfn main() { x := 1; s := \"{x} {{lit}}\"; _ = s }\n", opts);
+        bool saw_interp = false;
+        for (const auto& d : diags_interp) {
+            if (d.code == "cfire/INVALID-INTERPOLATION") saw_interp = true;
+        }
+        require(saw_interp, "expected cfire/INVALID-INTERPOLATION for '{{' in interpolated string");
+
+        auto diags_fmt = cfire::analysis::check_source("dbl_fmt.cf",
+            "package main\nfn main() { println(\"{{lit}}\") }\n", opts);
+        bool saw_fmt = false;
+        for (const auto& d : diags_fmt) {
+            if (d.code == "cfire/INVALID-INTERPOLATION") saw_fmt = true;
+        }
+        require(saw_fmt, "expected cfire/INVALID-INTERPOLATION for '{{' in println format string");
+    }
+
     std::println("--- PASS: test_package_fixes_and_generics");
 }

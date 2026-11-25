@@ -2048,7 +2048,9 @@ private:
                         }
                         if (ok && cur().kind == TokenKind::RBracket && !type_args.empty()) {
                             advance(); // ']'
-                            if (cur().kind == TokenKind::LParen && !is_destructure_lookahead(0).first) {
+                            if (cur().kind == TokenKind::LParen &&
+                                !(pos_ > 0 && cur().line > tokens_[pos_ - 1].line) &&
+                                !is_destructure_lookahead(0).first) {
                                 auto call = parse_call_with_callee(std::move(*expr), std::move(type_args));
                                 if (!call) return std::unexpected(call.error());
                                 expr = std::move(*call);
@@ -2091,7 +2093,7 @@ private:
                         break;
                     }
                 case TokenKind::LParen: {
-                    if (is_destructure_lookahead(0).first) {
+                    if ((pos_ > 0 && cur().line > tokens_[pos_ - 1].line) || is_destructure_lookahead(0).first) {
                         return expr;
                     }
                     auto call = parse_call_with_callee(std::move(*expr), {});
@@ -2679,10 +2681,6 @@ CFIRE_PARSER_IMPL_INLINE void append_doctests(std::string_view path, std::string
             continue;
         }
         if (sv[i] == '{') {
-            if (i + 1 < sv.size() && sv[i + 1] == '{') {
-                i += 2; // escaped '{{'
-                continue;
-            }
             std::size_t open_idx = i;
             ++i;
             int depth = 1;

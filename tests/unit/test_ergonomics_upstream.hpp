@@ -56,7 +56,7 @@ fn compute_range_sum(limit: i64) -> i64 {
 
 fn format_summary(a: i64, b: i64) -> str {
     mut items: []str = ["alpha", "beta"]
-    return "sum={a + b} first={items[0]} literal={{ok}}"
+    return "sum={a + b} first={items[0]} literal=\{ok\}"
 }
 )CF");
 

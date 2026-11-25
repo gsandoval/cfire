@@ -1,6 +1,6 @@
 // expect: stdout
 // | --- FAIL: overflow traps (main_test.cf:8: test crashed: sanitizer trap: signed integer overflow, out-of-range shift, or integer division by zero)
-// expect: exit 1
+// expect: exit signal
 package main
 fn bump(a: i32) -> i32 {
     return a + 1

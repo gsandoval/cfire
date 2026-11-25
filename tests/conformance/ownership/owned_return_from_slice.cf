@@ -1,0 +1,44 @@
+// expect: stdout
+// | bc!
+// | bc!
+// | bc!
+// | hi
+package main
+
+type Ask struct {
+    msg: str
+}
+
+fn tail_direct(p: str) -> str {
+    s := p + "!"
+    return s[1..]
+}
+
+fn tail_typed_local(p: str) -> str {
+    s := p + "!"
+    tail: str = s[1..]
+    return tail
+}
+
+fn tail_reassigned(p: str) -> str {
+    mut s := p + "!"
+    s = s[1..]
+    return s
+}
+
+fn build_ask_from_inner(flag: bool) -> Ask {
+    mut out := Ask{ msg: "" }
+    if flag {
+        treq := "  hi  "
+        out = Ask{ msg: treq.trim() }
+    }
+    return out
+}
+
+fn main() {
+    println(tail_direct("abc"))
+    println(tail_typed_local("abc"))
+    println(tail_reassigned("abc"))
+    ask := build_ask_from_inner(true)
+    println(ask.msg)
+}

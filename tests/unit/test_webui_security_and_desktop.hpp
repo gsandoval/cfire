@@ -184,8 +184,13 @@ inline void verify_shared_bridge_helpers(const std::filesystem::path& rt_dir) {
     require(!h_app.initial_url().has_value(), "initial_url() starts empty");
     require(h_app.native_window_handle() == nullptr &&
             h_app.native_webview_handle() == nullptr &&
+            h_app.native_controller_handle() == nullptr &&
             h_app.native_view_controller_handle() == nullptr,
             "native handles start nullptr before platform loop mounts");
+    require(h_app.browser_keys_enabled() == cfire::webui::detail::kDefaultWebUIDevExtras,
+            "browser_keys_enabled() matches kDefaultWebUIDevExtras before override");
+    h_app.set_browser_keys(false);
+    require(!h_app.browser_keys_enabled(), "set_browser_keys(false) toggles browser_keys_enabled()");
 
     // Verify Release build plan flag & eject_cmake generator expression
     const auto prev_profile = cfire::build::current_build_profile();
@@ -917,11 +922,14 @@ struct MockSettings4 final : ICoreWebView2Settings4 {
     std::atomic<ULONG> refs{1};
     BOOL devtools{TRUE};
     BOOL ctx_menu{TRUE};
+    BOOL browser_keys{TRUE};
     BOOL pw_autosave{TRUE};
     BOOL general_autofill{TRUE};
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
         if (!out) return E_POINTER;
-        if (IsEqualIID(r, IID_IUnknown) || IsEqualIID(r, cfire::webui::detail::wv2_iid(cfire::webui::detail::kIidSettings4))) {
+        if (IsEqualIID(r, IID_IUnknown) ||
+            IsEqualIID(r, cfire::webui::detail::wv2_iid(cfire::webui::detail::kIidSettings3)) ||
+            IsEqualIID(r, cfire::webui::detail::wv2_iid(cfire::webui::detail::kIidSettings4))) {
             *out = static_cast<ICoreWebView2Settings4*>(this);
             AddRef();
             return S_OK;
@@ -951,8 +959,8 @@ struct MockSettings4 final : ICoreWebView2Settings4 {
     HRESULT STDMETHODCALLTYPE put_IsBuiltInErrorPageEnabled(BOOL) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE get_UserAgent(LPWSTR*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE put_UserAgent(LPCWSTR) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE get_AreBrowserAcceleratorKeysEnabled(BOOL* v) override { *v = TRUE; return S_OK; }
-    HRESULT STDMETHODCALLTYPE put_AreBrowserAcceleratorKeysEnabled(BOOL) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_AreBrowserAcceleratorKeysEnabled(BOOL* v) override { *v = browser_keys; return S_OK; }
+    HRESULT STDMETHODCALLTYPE put_AreBrowserAcceleratorKeysEnabled(BOOL v) override { browser_keys = v; return S_OK; }
     HRESULT STDMETHODCALLTYPE get_IsPasswordAutosaveEnabled(BOOL* v) override { *v = pw_autosave; return S_OK; }
     HRESULT STDMETHODCALLTYPE put_IsPasswordAutosaveEnabled(BOOL v) override { pw_autosave = v; return S_OK; }
     HRESULT STDMETHODCALLTYPE get_IsGeneralAutofillEnabled(BOOL* v) override { *v = general_autofill; return S_OK; }
@@ -1126,8 +1134,20 @@ int main() {
     if (!g_drag_accepted || !g_drag_finished) return 4;
     if (g_last_pos.left != 40 || g_last_pos.top != 50 || (g_last_pos.right - g_last_pos.left) != 1200) return 5;
     if (drop_payload.find("id_ed25519") == std::string::npos || drop_payload.find("my notes.txt") == std::string::npos) return 6;
-    if (app.native_window_handle() != nullptr) return 12;
+    if (app.native_window_handle() != nullptr || app.native_controller_handle() != nullptr) return 12;
     if (active_count != 1 || inactive_count != 1) return 13;
+
+    // Verify WM_SETFOCUS invokes on_set_focus callback (MoveFocus restoration hook)
+    {
+        bool focus_called = false;
+        cfire::webui::detail::Win32WindowContext focus_ctx{};
+        focus_ctx.on_set_focus = [&]() { focus_called = true; };
+        LONG_PTR saved_ud = GetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA);
+        SetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&focus_ctx));
+        (void)cfire::webui::detail::cfire_win32_wndproc(&g_dummy_obj, 0x0007 /* WM_SETFOCUS */, 0, 0);
+        SetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA, saved_ud);
+        if (!focus_called) return 17;
+    }
 
     // WebView2 source origin gate + navigation interception COM helpers
     cfire::webui::detail::AppState sec_st;
@@ -1166,15 +1186,24 @@ int main() {
 #else
     const BOOL expected_dev_default = TRUE;
 #endif
-    cfire::webui::detail::apply_webview2_settings(s4, app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled());
-    if (s4->devtools != expected_dev_default || s4->ctx_menu != expected_dev_default) return 7;
+    cfire::webui::detail::apply_webview2_settings(
+        s4, app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled(), app.browser_keys_enabled());
+    if (s4->devtools != expected_dev_default || s4->ctx_menu != expected_dev_default ||
+        s4->browser_keys != expected_dev_default) return 7;
     if (s4->pw_autosave != TRUE || s4->general_autofill != TRUE) return 8;
 
     app.set_autofill(false);
     app.set_devtools(true);
     app.set_context_menu(true);
-    cfire::webui::detail::apply_webview2_settings(s4, app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled());
-    if (s4->devtools != TRUE || s4->ctx_menu != TRUE || s4->pw_autosave != FALSE || s4->general_autofill != FALSE) return 9;
+    app.set_browser_keys(true);
+    cfire::webui::detail::apply_webview2_settings(
+        s4, app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled(), app.browser_keys_enabled());
+    if (s4->devtools != TRUE || s4->ctx_menu != TRUE || s4->browser_keys != TRUE ||
+        s4->pw_autosave != FALSE || s4->general_autofill != FALSE) return 9;
+    app.set_browser_keys(false);
+    cfire::webui::detail::apply_webview2_settings(
+        s4, app.devtools_enabled(), app.context_menu_enabled(), app.autofill_enabled(), app.browser_keys_enabled());
+    if (s4->browser_keys != FALSE) return 18;
     s4->Release();
 
     auto* f1 = new MockWv2File(L"C:\\Users\\op\\dropped.bin");
@@ -1540,9 +1569,10 @@ int main(int argc, char** argv) {
 inline void verify_native_win32_and_com() {
     (void)cfire::webui::detail::win32_enable_per_monitor_dpi_v2();
 
-    // 1. Test real Win32 HWND + cfire_win32_wndproc WM_DPICHANGED handling
+    // 1. Test real Win32 HWND + cfire_win32_wndproc WM_DPICHANGED & WM_SETFOCUS handling
     auto state = std::make_shared<cfire::webui::detail::AppState>();
-    cfire::webui::detail::Win32WindowContext ctx{state, nullptr, nullptr, nullptr, nullptr};
+    bool focus_called = false;
+    cfire::webui::detail::Win32WindowContext ctx{state, nullptr, nullptr, nullptr, nullptr, [&]() { focus_called = true; }};
     HWND hwnd = ::CreateWindowExW(
         0, L"STATIC", L"DpiTest", WS_POPUP, 10, 10, 400, 300, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
     require(hwnd != nullptr, "native Win32 test window created");
@@ -1555,6 +1585,8 @@ inline void verify_native_win32_and_com() {
     require(actual.left == 50 && actual.top == 60 && (actual.right - actual.left) == 600 &&
                 (actual.bottom - actual.top) == 500,
             "WM_DPICHANGED resizes real Win32 HWND to suggested rect");
+    cfire::webui::detail::cfire_win32_wndproc(hwnd, 0x0007 /* WM_SETFOCUS */, 0, 0);
+    require(focus_called, "WM_SETFOCUS invokes on_set_focus callback on real Win32 HWND");
     ::DestroyWindow(hwnd);
 
     // 2. Test apply_webview2_settings & extract_webview2_dropped_files with real Win32 CoTaskMemAlloc
@@ -1571,11 +1603,13 @@ inline void verify_native_win32_and_com() {
         std::atomic<ULONG> refs{1};
         BOOL devtools{TRUE};
         BOOL ctx_menu{TRUE};
+        BOOL browser_keys{TRUE};
         BOOL pw_autosave{TRUE};
         BOOL general_autofill{TRUE};
         HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** out) override {
             if (!out) return E_POINTER;
             if (IsEqualIID(r, kIidUnknown) ||
+                IsEqualIID(r, cfire::webui::detail::wv2_iid(cfire::webui::detail::kIidSettings3)) ||
                 IsEqualIID(r, cfire::webui::detail::wv2_iid(cfire::webui::detail::kIidSettings4))) {
                 *out = static_cast<ICoreWebView2Settings4*>(this);
                 AddRef();
@@ -1606,8 +1640,8 @@ inline void verify_native_win32_and_com() {
         HRESULT STDMETHODCALLTYPE put_IsBuiltInErrorPageEnabled(BOOL) override { return S_OK; }
         HRESULT STDMETHODCALLTYPE get_UserAgent(LPWSTR*) override { return S_OK; }
         HRESULT STDMETHODCALLTYPE put_UserAgent(LPCWSTR) override { return S_OK; }
-        HRESULT STDMETHODCALLTYPE get_AreBrowserAcceleratorKeysEnabled(BOOL* v) override { *v = TRUE; return S_OK; }
-        HRESULT STDMETHODCALLTYPE put_AreBrowserAcceleratorKeysEnabled(BOOL) override { return S_OK; }
+        HRESULT STDMETHODCALLTYPE get_AreBrowserAcceleratorKeysEnabled(BOOL* v) override { *v = browser_keys; return S_OK; }
+        HRESULT STDMETHODCALLTYPE put_AreBrowserAcceleratorKeysEnabled(BOOL v) override { browser_keys = v; return S_OK; }
         HRESULT STDMETHODCALLTYPE get_IsPasswordAutosaveEnabled(BOOL* v) override { *v = pw_autosave; return S_OK; }
         HRESULT STDMETHODCALLTYPE put_IsPasswordAutosaveEnabled(BOOL v) override { pw_autosave = v; return S_OK; }
         HRESULT STDMETHODCALLTYPE get_IsGeneralAutofillEnabled(BOOL* v) override { *v = general_autofill; return S_OK; }
@@ -1615,12 +1649,12 @@ inline void verify_native_win32_and_com() {
     };
 
     auto* s4 = new NativeSettings4();
-    cfire::webui::detail::apply_webview2_settings(s4, false, false, false);
-    require(s4->devtools == FALSE && s4->ctx_menu == FALSE &&
+    cfire::webui::detail::apply_webview2_settings(s4, false, false, false, false);
+    require(s4->devtools == FALSE && s4->ctx_menu == FALSE && s4->browser_keys == FALSE &&
                 s4->pw_autosave == FALSE && s4->general_autofill == FALSE,
-            "native Windows WebView2 apply_webview2_settings disables devtools, context menu, and autofill");
-    cfire::webui::detail::apply_webview2_settings(s4, true, true, true);
-    require(s4->devtools == TRUE && s4->ctx_menu == TRUE &&
+            "native Windows WebView2 apply_webview2_settings disables devtools, context menu, browser keys, and autofill");
+    cfire::webui::detail::apply_webview2_settings(s4, true, true, true, true);
+    require(s4->devtools == TRUE && s4->ctx_menu == TRUE && s4->browser_keys == TRUE &&
                 s4->pw_autosave == TRUE && s4->general_autofill == TRUE,
             "native Windows WebView2 apply_webview2_settings enables settings cleanly");
     s4->Release();

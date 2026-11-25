@@ -20,7 +20,24 @@ CFIRE_CG_INLINE auto Emitter::lower_var_decl_cpp_type(const VarDeclStmt& st) con
                     if (const auto* c = std::get_if<CallExpr>(&st.init->node)) {
                         if (const auto* m = c->callee ? std::get_if<MemberExpr>(&c->callee->node) : nullptr;
                             m && m->field == "bytes" && c->args.empty()) {
-                            is_slice_view_init = true;
+                            auto is_persistent_lvalue = [](const ExprPtr& obj, const auto& self_fn) -> bool {
+                                if (!obj) return false;
+                                if (std::holds_alternative<IdentExpr>(obj->node)) return true;
+                                if (const auto* lit = std::get_if<LiteralExpr>(&obj->node);
+                                    lit && (lit->kind == TokenKind::String || lit->kind == TokenKind::RawString)) {
+                                    return true;
+                                }
+                                if (const auto* mem = std::get_if<MemberExpr>(&obj->node); mem && !mem->is_namespace) {
+                                    return self_fn(mem->object, self_fn);
+                                }
+                                if (const auto* idx = std::get_if<IndexExpr>(&obj->node)) {
+                                    return self_fn(idx->object, self_fn);
+                                }
+                                return false;
+                            };
+                            if (is_persistent_lvalue(m->object, is_persistent_lvalue)) {
+                                is_slice_view_init = true;
+                            }
                         }
                     } else if (const auto* id = std::get_if<IdentExpr>(&st.init->node)) {
                         for (const auto& [vn, _] : view_params_) {
@@ -430,10 +447,14 @@ CFIRE_CG_INLINE void Emitter::emit_stmt(const StmtPtr& s, bool in_main) {
                     local_vars_.insert(st.item_var);
                     std::string col = emit_expr(st.iter_expr);
                     loop_index_to_col_[st.index_var] = col;
+                    writeln("{");
+                    ++indent_;
                     writeln(std::format("auto&& _col_{0} = {1};", st.index_var, col));
                     writeln(std::format("for (auto&& [{0}, {1}] : cfire::detail::iter_pairs(_col_{0})) {{", st.index_var, st.item_var));
                     ++indent_;
                     for (const auto& b : st.body) emit_stmt(b, in_main);
+                    --indent_;
+                    writeln("}");
                     --indent_;
                     writeln("}");
                     loop_index_to_col_.erase(st.index_var);

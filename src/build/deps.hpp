@@ -361,6 +361,9 @@ inline auto resolve_external_dep_source(
         eff_min,
         dep_is_shared_build(dep) ? 1 : 0
     );
+    for (const auto& cf : dep.extra_cflags) {
+        raw += "|cf=" + cf;
+    }
     return sha256_hex(raw).substr(0, 12);
 }
 
@@ -485,6 +488,11 @@ inline auto resolve_external_dep_source(
             cmd += std::format(" -D{}=1", k);
         } else if (v != "false") {
             cmd += std::format(" -D{}={}", k, v);
+        }
+    }
+    for (const auto& cf : dep.extra_cflags) {
+        if (!cf.empty()) {
+            cmd += " " + cf;
         }
     }
     return cmd;

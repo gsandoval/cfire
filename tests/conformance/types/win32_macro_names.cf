@@ -1,0 +1,43 @@
+// expect: stdout
+// | 10|20|30|40|50|60|70
+package main
+
+import "core:os"
+
+type Boxed struct {
+    near:  i64
+    far:   i64
+    small: i64
+}
+
+fn near(a: i64) -> i64 {
+    return a
+}
+
+fn far(b: i64) -> i64 {
+    return b
+}
+
+fn min(x: i64, y: i64) -> i64 {
+    if x < y {
+        return x
+    }
+    return y
+}
+
+fn max(x: i64, y: i64) -> i64 {
+    if x > y {
+        return x
+    }
+    return y
+}
+
+fn main() {
+    _ = os.getpid()
+    bx := Boxed{near: 10, far: 20, small: 30}
+    IN := 40
+    OUT := 50
+    Yield := 60
+    DELETE := max(60, 70)
+    println("{}|{}|{}|{}|{}|{}|{}", near(bx.near), far(bx.far), min(bx.small, 99), IN, OUT, Yield, DELETE)
+}

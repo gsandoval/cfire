@@ -592,3 +592,57 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
         check-deep       PASS (114/114 ASan+UBSan, 229/231 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
         check-platforms  PASS (Linux 649.9s [check 231/231 + check-deep], Windows 429.3s [63/63 suites + 231/231 conformance, rc=0])
       ```
+
+- [x] **Wave F6: Flint Upstream P0 Data Loss, Memory Safety, Hang & C-Collision (`CF-262` – `CF-265`, `Q95`, `Q97`)**. Source: [`flint.md`](./flint.md); Decisions `Q95`, `Q97`.
+  - *In scope*:
+    - `CF-262` (`Flint CF-157, CF-154`): `json.stringify` / `schema` and `cfire::bm::detail::Seq` support for `slice_ref<T>` and `std::span<T>` (keeping mutating `reverse`/`sort`/`sort_by` and `Vec` restricted to mutable owning containers).
+    - `CF-263` (`Flint CF-184, CF-176`): `clang_bridge.hpp` stderr isolation (`stderr.log` in `SecureTempDir`), fail-fast advance-or-fail `ClangAstParser`, and single-pass `O(N)` `"inner"` parsing.
+    - `CF-264` (`Flint CF-158, CF-164, CF-128, CF-193`): Scoped qualified C-signature lookup in `ClangAstParser` (skipping template params like `_CharT`), Sema, and `src/codegen/expr.hpp` (never applying C coercions to `cfire::*` stdlib or `.cf` functions).
+    - `CF-265` (`Flint CF-152, CF-185, CF-161, CF-155`, `Q97`): Full `Q36` view-to-owned materialization (`return s[1..]`, typed `str`/`[]T` locals, struct literal fields, owned `mut` reassignments), safe rvalue `to_bytes(std::string&&)` + `cfire/DANGLING-TEMPORARY`, `~CStrViewHolder()` secure wipe, and `GUIDE.md` Ch5/Ch11 updates (`s.bytes()[a..b]` + `cpp {}` `str_ref`).
+  - *Exit gate*: `make check-fast`, `make check`, `make check-deep`, and `make check-platforms` (`make check-all`) green with zero changes to existing test expectations.
+  - [x] `CF-262`: `json.stringify` & `detail::Seq` builtins for `slice_ref<T>` / `std::span`
+  - [x] `CF-263`: `clang_bridge.hpp` stderr isolation, fail-fast JSON parser & single-pass `O(N)` AST ingestion
+  - [x] `CF-264`: Scoped qualified C-signature lookup
+  - [x] `CF-265`: Full `Q36` view-to-owned materialization, safe rvalue `.bytes()`, `DANGLING-TEMPORARY` & `CStrViewHolder` wipe (`Q97`)
+  - [x] `make check-all` verification & sign-off:
+    - **Results (2026-11-25, uncommitted working tree on `f21f514-dirty`, verified across all 3 tiers + `make check-fast` on the identical codebase)**:
+      ```text
+      === Wave F6 verification summary: f21f514-dirty, 2026-11-25, Darwin
+        check-fast       PASS (0 warnings, fmt/doc clean, 89/89 offline suites)
+        check            PASS (0 warnings; 114/114 suites, 14/14 stdlib, 46/46 GUIDE, 237/239 conformance [2 skipped, 0 fail])
+        check-deep       PASS (114/114 ASan+UBSan, 237/239 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 677.9s [check 239/239 + check-deep], Windows 459.8s [63/63 suites + 239/239 conformance, 0 warnings single-TU])
+      ```
+
+- [x] **Wave F7: Flint Upstream P1 Frontend, Sema, Codegen & Windows Hygiene (`CF-266` – `CF-267`, `Q98`)**. Source: [`flint.md`](./flint.md); Decision `Q98`.
+  - *In scope*:
+    - `CF-266`:
+      - `CF-153` / `CF-182`: Wrap indexed/map `for` loop emission (`auto&& _col_<var> = ...; for (auto&& [...] : cfire::detail::iter_pairs(_col_<var>)) { ... }`) in `{ ... }` so sequential/nested loops never redeclare `_col_<var>` (`src/codegen/stmt.hpp`).
+      - `CF-156`: Package-owner-aware nominal canonicalization (`canonical_nominal_path_in_pkg_sema`, `canonical_type_name_in_pkg_sema`, `canonical_typeref_in_pkg_sema`, `resolve_typeref_in_pkg`, `pkg.Struct` struct-tag indexing) across cross-package params, returns, struct fields, struct literals, `for-in`, and `.join` (`src/sema/*`).
+      - `CF-172`: Single-layer `one_unwrap` in `check_or_expr` rejecting non-optional `T! or none` and `T? or none` (`cfire/TYPE-MISMATCH` hinting `.ignore_error()` or `or { return none }`) while preserving all `Q92`/`Q93` `T?! or none` / `T?? or none` / `or error(...)` usage.
+      - `CF-173`: Wrap string literal receivers in `std::string_view(...)` for `.len()`, `.is_empty()`, `.data()`, `.data_ptr()` (`src/codegen/expr.hpp`).
+      - `CF-147`: Stop postfix `(` call chaining across newlines in `src/parser_impl.hpp`.
+      - `CF-151`: Map retired `str.replace` -> `.replace_all` in `kApiMigrations` (`src/sema/builtin_methods.hpp`).
+      - `CF-181`: Unconditional post-include `#if defined(_WIN32)` macro cleanup (`runtime/detail/win32_clean_macros.hpp` + `#undef interface`) emitted in `src/codegen/declarations.hpp` (single-TU & sharded), plus `NOMINMAX`/`WIN32_LEAN_AND_MEAN` guards in Win32 runtime headers and updated 5 `tests/golden/*.expected.cpp` snapshots.
+    - `CF-267` (`CF-159`, `Q98`): Single canonical literal brace escape `\{`/`\}` in all double-quoted strings, reject `{{`/`}}` brace escapes in interpolated & format strings (`cfire/INVALID-INTERPOLATION`), keep raw backticks verbatim even in `println(`...`)`/`format(`...`)`, update `docs/GUIDE.md` + `./cfire doc`.
+  - [x] `CF-266`: Core frontend, sema, codegen & Windows header hygiene fixes
+  - [x] `CF-267`: Unified `\{`/`\}` literal brace escaping & verbatim backticks (`Q98`) + GUIDE docs
+  - [x] `make check-all` verification & sign-off:
+    - **Results (2026-11-25, uncommitted working tree on `f21f514-dirty`, verified across all 4 tiers on the identical codebase)**:
+      ```text
+      === Wave F7 verification summary: f21f514-dirty, 2026-11-25, Darwin
+        check-fast       PASS (0 warnings, fmt/doc clean, 89/89 offline suites)
+        check            PASS (0 warnings; 114/114 suites, 14/14 stdlib, 46/46 GUIDE, 245/247 conformance [2 skipped, 0 fail])
+        check-deep       PASS (114/114 ASan+UBSan, 245/247 --sanitize [2 skipped, 0 fail], TSan + 13/13 TSan conformance, 8 fuzz-replay)
+        check-platforms  PASS (Linux 652.1s [check 247/247 + check-deep], Windows 423.6s [63/63 suites + 247/247 conformance, 0 warnings single-TU])
+      ```
+
+- [x] **Wave F8: Flint Upstream P1 Build Manifest, ProbeCache, `cfire test` & Windows WebView2 (`CF-268` – `CF-270`, `Q96`, `Q99`)**. Source: [`flint.md`](./flint.md); Decisions `Q96`, `Q99`. Verified across all 4 tiers (`check-fast` 89/89; `check` 114/114 unit, 14/14 stdlib, 46/46 GUIDE, 245/247 conformance w/ 2 optional skips; `check-deep` 114/114 ASan+UBSan, 245/247 `--sanitize` conformance, 9 TSan runtime + 13/13 TSan concurrency, 8 fuzz-replay; `check-platforms` Linux `rc=0` + Windows `rc=0` w/ 0 warnings, 63/63 unit, 247/247 conformance).
+  - *In scope*:
+    - `CF-268` (`Flint CF-031, CF-123, CF-166, CF-169, CF-170`, `Q96`): Wire `build.Step` identically to `build.Command`, evaluate constant `build.os()`/`build.arch()` conditionals and top-level bindings in `build.cf`, wire `CFlags`/`LDFlags`/`Sources`, emit hard `cfire/INVALID-BUILD-VALUE`, fail loud on missing `PkgConfig` or unresolved `Requires`, and fix `ProbeCache` (no negative caching, transitive `Requires`/`Requires.private` `.pc` fingerprinting, `pkg-config --variable pc_path pkg-config`, `--no-cache` bypass).
+    - `CF-269` (`Flint CF-163, CF-167`, `Q99`): Document `cfire test --release` in CLI help and `GUIDE.md`, pass `-g` on `--release` test TUs, print async-signal-safe crash backtraces (`backtrace_symbols_fd` on POSIX; `RtlCaptureStackBackTrace` on Windows) + restore `SIG_DFL` and `raise(sig)`, and update `overflow_trap_in_test_test.cf` to `// expect: exit signal`.
+    - `CF-270` (`Flint CF-186, CF-188`): Add Windows WebView2 `WM_SETFOCUS` focus restoration (`MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`), C++-only `native_controller_handle()`, and `app.set_browser_keys(bool)` / `browser_keys_enabled()` (`ICoreWebView2Settings3::put_AreBrowserAcceleratorKeysEnabled`, OFF in Release / ON in DevDebug).
+  - [x] `CF-268`: `build.cf` conditionals, `build.Step`, `INVALID-BUILD-VALUE`, fail-loud `PkgConfig` & `ProbeCache`
+  - [x] `CF-269`: `cfire test --release` docs/symbols & async-signal-safe crash backtrace + signal re-raise
+  - [x] `CF-270`: Windows WebView2 `WM_SETFOCUS` restoration, `native_controller_handle` & `set_browser_keys`
+  - [x] `make check-all` verification & sign-off

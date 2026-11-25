@@ -339,7 +339,20 @@
             }
         }
 
-        if (auto r = check_view_of_temporary(vd.init, std::format("'{}'", vd.name), vd.line, vd.col); !r) return r;
+        const bool explicit_owned_dest = vd.type && !vd.type->is_borrow && !vd.type->is_mut_borrow &&
+            !vd.type->is_ptr && !vd.type->is_mut_ptr && !decl_tid.is_foreign();
+        if (explicit_owned_dest) {
+            if (decl_tid == TypeId::Str()) cf_.owned_text_decls.insert(&vd);
+            if (cf_.type_table.get(decl_tid).kind == TypeKind::Slice &&
+                vd.init && !std::holds_alternative<ArrayLitExpr>(vd.init->node)) {
+                cf_.owned_slice_decls.insert(&vd);
+            }
+        }
+        const bool is_owned_var_decl = explicit_owned_dest || (vd.is_mut && !vd.type);
+
+        if (!is_owned_var_decl) {
+            if (auto r = check_view_of_temporary(vd.init, std::format("'{}'", vd.name), vd.line, vd.col); !r) return r;
+        }
         if (vd.init && is_constant_string_expr(vd.init)) const_string_vars_.insert(vd.name);
         else const_string_vars_.erase(vd.name);
         disjoint_slot_ptrs_.erase(vd.name);
@@ -353,11 +366,16 @@
                 }
             }
         }
-        std::optional<std::string> src = extract_borrow_source(vd.init);
-        if (!src) {
-            if (auto owners = extract_borrow_sources(vd.init); !owners.empty()) src = owners.front();
+        std::optional<std::string> src;
+        if (!is_owned_var_decl) {
+            src = extract_borrow_source(vd.init);
+            if (!src) {
+                if (auto owners = extract_borrow_sources(vd.init); !owners.empty()) src = owners.front();
+            }
+            record_borrow_origins(vd.name, vd.init);
+        } else {
+            extra_borrow_origins_.erase(vd.name);
         }
-        record_borrow_origins(vd.name, vd.init);
         std::string inferred_t;
         if (vd.type && !vd.type->smart_wrap.empty() && vd.type->elem_type && !vd.type->elem_type->name.empty()) {
             inferred_t = vd.type->elem_type->name;
@@ -739,24 +757,34 @@
                     id->name,
                     std::format("underlying owner '{}' was reassigned at line {}", id->name, as.line),
                     as.line);
-                if (auto r = check_view_of_temporary(as.value, std::format("'{}'", id->name), as.line, 1); !r) return r;
-                std::optional<std::string> src = extract_borrow_source(as.value);
-                if (!src) {
-                    if (auto owners = extract_borrow_sources(as.value); !owners.empty()) src = owners.front();
-                }
-                record_borrow_origins(id->name, as.value);
-                if (src) {
-                    auto d_target = var_scope_depth_.find(id->name);
-                    auto d_src = var_scope_depth_.find(*src);
-                    if (d_target != var_scope_depth_.end() && d_src != var_scope_depth_.end()) {
-                        if (d_src->second > d_target->second) {
-                            if (auto r = emit_error(diag_at(as.line, 0, "cfire/DANGLING-POINTER", std::format("pointer/view '{}' cannot borrow '{}' from an inner scope", id->name, *src))); !r) return r;
-                        }
+                const bool target_is_view_or_ptr =
+                    borrow_origin_.contains(id->name) ||
+                    extra_borrow_origins_.contains(id->name) ||
+                    raw_or_smart_ptr_vars_.contains(id->name);
+                if (target_is_view_or_ptr) {
+                    if (auto r = check_view_of_temporary(as.value, std::format("'{}'", id->name), as.line, 1); !r) return r;
+                    std::optional<std::string> src = extract_borrow_source(as.value);
+                    if (!src) {
+                        if (auto owners = extract_borrow_sources(as.value); !owners.empty()) src = owners.front();
                     }
-                    borrow_origin_[id->name] = *src;
-                    invalidated_loans_.erase(id->name);
+                    record_borrow_origins(id->name, as.value);
+                    if (src) {
+                        auto d_target = var_scope_depth_.find(id->name);
+                        auto d_src = var_scope_depth_.find(*src);
+                        if (d_target != var_scope_depth_.end() && d_src != var_scope_depth_.end()) {
+                            if (d_src->second > d_target->second) {
+                                if (auto r = emit_error(diag_at(as.line, 0, "cfire/DANGLING-POINTER", std::format("pointer/view '{}' cannot borrow '{}' from an inner scope", id->name, *src))); !r) return r;
+                            }
+                        }
+                        borrow_origin_[id->name] = *src;
+                        invalidated_loans_.erase(id->name);
+                    } else {
+                        borrow_origin_.erase(id->name);
+                        invalidated_loans_.erase(id->name);
+                    }
                 } else {
                     borrow_origin_.erase(id->name);
+                    extra_borrow_origins_.erase(id->name);
                     invalidated_loans_.erase(id->name);
                 }
                 if (is_ptr_or_smart_init(as.value)) {
@@ -904,20 +932,30 @@
             }
         }
         if (rt.value) {
-            bool is_direct = false;
-            if (auto r = check_view_of_temporary(rt.value, "returned value", rt.line, 1); !r) return r;
-            if (!extract_borrow_source(rt.value)) {
-                // a call returning a view of a local (e.g. `return head(local)`) dangles too.
-                for (const auto& owner : extract_borrow_sources(rt.value)) {
-                    if (local_defined_vars_.contains(owner) || move_params_.contains(owner)) {
-                        if (auto r = emit_error(diag_at(rt.line, 0, "cfire/DANGLING-RETURN", std::format("cannot return pointer/view borrowing local variable '{}'", owner))); !r) return r;
-                        break;
+            bool returns_borrow_or_ptr = false;
+            if (fn_ret_tid_.is_valid() && !fn_ret_tid_.is_unknown() && in_closure_depth_ == 0) {
+                TypeId want_t = fn_is_fallible_ ? cf_.type_table.unwrap_fallible(fn_ret_tid_) : fn_ret_tid_;
+                const TypeDesc& wd = cf_.type_table.get(want_t);
+                returns_borrow_or_ptr = (wd.kind == TypeKind::Borrow || wd.kind == TypeKind::MutBorrow ||
+                                         wd.kind == TypeKind::RawPtr || wd.kind == TypeKind::MutPtr ||
+                                         want_t.is_foreign());
+            }
+            if (returns_borrow_or_ptr || !fn_ret_tid_.is_valid() || fn_ret_tid_.is_unknown()) {
+                bool is_direct = false;
+                if (auto r = check_view_of_temporary(rt.value, "returned value", rt.line, 1); !r) return r;
+                if (!extract_borrow_source(rt.value)) {
+                    // a call returning a view of a local (e.g. `return head(local)`) dangles too.
+                    for (const auto& owner : extract_borrow_sources(rt.value)) {
+                        if (local_defined_vars_.contains(owner) || move_params_.contains(owner)) {
+                            if (auto r = emit_error(diag_at(rt.line, 0, "cfire/DANGLING-RETURN", std::format("cannot return pointer/view borrowing local variable '{}'", owner))); !r) return r;
+                            break;
+                        }
                     }
                 }
-            }
-            if (auto src = extract_borrow_source(rt.value, &is_direct)) {
-                if (local_defined_vars_.contains(*src) || move_params_.contains(*src)) {
-                    if (auto r = emit_error(diag_at(rt.line, 0, "cfire/DANGLING-RETURN", std::format("cannot return pointer/view borrowing local variable '{}'", *src))); !r) return r;
+                if (auto src = extract_borrow_source(rt.value, &is_direct)) {
+                    if (local_defined_vars_.contains(*src) || move_params_.contains(*src)) {
+                        if (auto r = emit_error(diag_at(rt.line, 0, "cfire/DANGLING-RETURN", std::format("cannot return pointer/view borrowing local variable '{}'", *src))); !r) return r;
+                    }
                 }
             }
         }

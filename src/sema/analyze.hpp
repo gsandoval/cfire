@@ -826,6 +826,7 @@ namespace cfire::frontend {
                     orig_name = orig_name.substr(sep + 2);
                 }
             }
+            cf.struct_tags[st.package_name + "." + orig_name] = cf.struct_tags[st.name];
             cf.struct_defs[st.package_name + "." + orig_name] = st;
         }
     }

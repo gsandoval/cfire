@@ -1063,6 +1063,18 @@ template <typename Container, typename Key>
 // --- String / Path / C-String Boundary Coercions ---
 // Safely converts `std::string_view` (including non-null-terminated slices `s[0..4]`)
 // into a null-terminated `const char*` valid for the duration of the full C call expression.
+// Buffers are wiped on destruction so transient secrets handed to C APIs do not linger.
+namespace detail {
+inline void secure_wipe_bytes(void* ptr, std::size_t n) noexcept {
+    if (!ptr || n == 0) return;
+    volatile unsigned char* vp = static_cast<volatile unsigned char*>(ptr);
+    for (std::size_t i = 0; i < n; ++i) {
+        vp[i] = 0;
+    }
+    std::atomic_signal_fence(std::memory_order_seq_cst);
+}
+} // namespace detail
+
 class CStrViewHolder {
 public:
     explicit CStrViewHolder(std::string_view sv) noexcept {
@@ -1075,6 +1087,9 @@ public:
             ptr_ = heap_str_.c_str();
         }
     }
+    ~CStrViewHolder() noexcept {
+        wipe();
+    }
     CStrViewHolder(const CStrViewHolder& other)
         : small_buf_(other.small_buf_), heap_str_(other.heap_str_) {
         ptr_ = heap_str_.empty() ? small_buf_.data() : heap_str_.c_str();
@@ -1082,9 +1097,11 @@ public:
     CStrViewHolder(CStrViewHolder&& other) noexcept
         : small_buf_(other.small_buf_), heap_str_(std::move(other.heap_str_)) {
         ptr_ = heap_str_.empty() ? small_buf_.data() : heap_str_.c_str();
+        other.wipe();
     }
     auto operator=(const CStrViewHolder& other) -> CStrViewHolder& {
         if (this != &other) {
+            wipe();
             small_buf_ = other.small_buf_;
             heap_str_ = other.heap_str_;
             ptr_ = heap_str_.empty() ? small_buf_.data() : heap_str_.c_str();
@@ -1093,9 +1110,11 @@ public:
     }
     auto operator=(CStrViewHolder&& other) noexcept -> CStrViewHolder& {
         if (this != &other) {
+            wipe();
             small_buf_ = other.small_buf_;
             heap_str_ = std::move(other.heap_str_);
             ptr_ = heap_str_.empty() ? small_buf_.data() : heap_str_.c_str();
+            other.wipe();
         }
         return *this;
     }
@@ -1104,6 +1123,15 @@ public:
     [[nodiscard]] auto get() const noexcept CFIRE_LIFETIMEBOUND -> const char* { return ptr_; }
 
 private:
+    void wipe() noexcept {
+        detail::secure_wipe_bytes(small_buf_.data(), small_buf_.size());
+        if (!heap_str_.empty()) {
+            detail::secure_wipe_bytes(heap_str_.data(), heap_str_.size());
+            heap_str_.clear();
+        }
+        ptr_ = nullptr;
+    }
+
     std::array<char, 256> small_buf_{};
     std::string heap_str_{};
     const char* ptr_ = nullptr;
@@ -1194,11 +1222,12 @@ template <typename T, std::size_t E>
 [[nodiscard]] inline auto as_writable_u8(std::span<T, E> sp) noexcept -> std::span<std::uint8_t> {
     return {reinterpret_cast<std::uint8_t*>(sp.data()), sp.size_bytes()};
 }
-[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> slice_ref<std::uint8_t> {
-    return slice_ref<std::uint8_t>(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(sv.data()), sv.size()));
-}
-[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> slice_ref<std::uint8_t> {
-    return slice_ref<std::uint8_t>(sp);
+[[nodiscard]] inline auto to_u8_vec(std::string_view sv) -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> out(sv.size());
+    if (!sv.empty()) {
+        std::memcpy(out.data(), sv.data(), sv.size());
+    }
+    return out;
 }
 [[nodiscard]] inline auto to_u8_vec(std::span<const std::uint8_t> sp) -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> out(sp.size());
@@ -1207,12 +1236,20 @@ template <typename T, std::size_t E>
     }
     return out;
 }
-[[nodiscard]] inline auto to_u8_vec(std::string_view sv) -> std::vector<std::uint8_t> {
-    std::vector<std::uint8_t> out(sv.size());
-    if (!sv.empty()) {
-        std::memcpy(out.data(), sv.data(), sv.size());
-    }
-    return out;
+[[nodiscard]] inline auto to_bytes(std::string_view sv CFIRE_LIFETIMEBOUND) noexcept -> slice_ref<std::uint8_t> {
+    return slice_ref<std::uint8_t>(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(sv.data()), sv.size()));
+}
+[[nodiscard]] inline auto to_bytes(const std::string& s CFIRE_LIFETIMEBOUND) noexcept -> slice_ref<std::uint8_t> {
+    return to_bytes(std::string_view(s));
+}
+[[nodiscard]] inline auto to_bytes(const char* s) noexcept -> slice_ref<std::uint8_t> {
+    return to_bytes(std::string_view(s ? s : ""));
+}
+[[nodiscard]] inline auto to_bytes(std::string&& s) -> std::vector<std::uint8_t> {
+    return to_u8_vec(std::string_view(s));
+}
+[[nodiscard]] inline auto to_bytes(std::span<const std::uint8_t> sp) noexcept -> slice_ref<std::uint8_t> {
+    return slice_ref<std::uint8_t>(sp);
 }
 [[nodiscard]] inline auto to_u8_vec(std::initializer_list<std::uint8_t> init) -> std::vector<std::uint8_t> {
     return std::vector<std::uint8_t>(init.begin(), init.end());

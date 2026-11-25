@@ -111,7 +111,7 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
 
     if (sub == "build") {
         if (args.target.filename() == "build.cf") {
-            auto parsed = cfire::build::parse_build_cf(args.target);
+            auto parsed = cfire::build::parse_build_cf(args.target, args.target_triple);
             if (!parsed) {
                 std::println(stderr, "error parsing build.cf: {}", parsed.error());
                 return 1;

@@ -175,6 +175,22 @@
                 }
             }
         }
+        if (const auto* id = std::get_if<IdentExpr>(&call.callee->node);
+            id && (id->name == "println" || id->name == "print" || id->name == "eprintln" || id->name == "eprint" || id->name == "format") &&
+            !is_ident_in_scope_sema(id->name) && !call.args.empty() && call.args[0].value) {
+            if (const auto* first_lit = std::get_if<LiteralExpr>(&call.args[0].value->node);
+                first_lit && first_lit->kind == TokenKind::String && first_lit->value.contains('{')) {
+                auto phs = scan_interpolation_placeholders(first_lit->value);
+                std::vector<InterpPlaceholder> likely;
+                for (const auto& ph : phs) {
+                    if (is_likely_interpolation_placeholder(first_lit->value, ph)) likely.push_back(ph);
+                }
+                if (has_double_brace_outside_placeholders(first_lit->value, likely)) {
+                    if (auto r = emit_error(diag_at(call.args[0].line, call.args[0].col, "cfire/INVALID-INTERPOLATION",
+                        "double braces '{{' / '}}' are not brace escapes in cfire; use '\\{' and '\\}' for literal braces, or a raw backtick string `...`")); !r) return r;
+                }
+            }
+        }
         // `println(a, b)`: with more than one argument the first is the format string (clang used to report this).
         if (const auto* id = std::get_if<IdentExpr>(&call.callee->node);
             id && (id->name == "println" || id->name == "print" || id->name == "eprintln") && !is_ident_in_scope_sema(id->name) && call.args.size() > 1) {
@@ -830,8 +846,8 @@
                         }
                     }
                     TypeId want = !tp_map.empty()
-                        ? cf_.type_table.substitute(cf_.type_table.from_typeref(canonical_typeref_sema(param->type), &tp_map), sub_map)
-                        : resolve_typeref(param->type);
+                        ? cf_.type_table.substitute(cf_.type_table.from_typeref(canonical_typeref_in_pkg_sema(param->type, target_sig->package_name), &tp_map), sub_map)
+                        : resolve_typeref_in_pkg(param->type, target_sig->package_name);
                     return cf_.type_table.contains_type_param(want) ? TypeId{} : want;
                 }
             } else if (iface_sig && idx < iface_sig->param_types.size()) {
@@ -1018,7 +1034,10 @@
         }
         bool is_foreign_call = false;
         if (const auto* cid = std::get_if<IdentExpr>(&call.callee->node)) {
-            if (cid->name.starts_with("cpp.") || is_cpp_qualifier_sema(cid->name) || is_vendor_alias_sema(cid->name) || cf_.cpp_fn_params.contains(cid->name)) {
+            const bool is_cfire_fn = cf_.fn_sigs.contains(cid->name) ||
+                (!pkg_name_.empty() && cf_.fn_sigs.contains(pkg_name_ + "." + cid->name));
+            if (cid->name.starts_with("cpp.") || is_cpp_qualifier_sema(cid->name) || is_vendor_alias_sema(cid->name) ||
+                (!is_cfire_fn && cf_.cpp_fn_params.contains(cid->name))) {
                 is_foreign_call = true;
             }
         } else if (const auto* cmem = std::get_if<MemberExpr>(&call.callee->node)) {

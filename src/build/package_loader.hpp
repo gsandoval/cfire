@@ -210,8 +210,42 @@ namespace cfire::build {
                 std::string sub_bcf_canon = std::filesystem::weakly_canonical(sub_build_cf).string();
                 if (std::filesystem::exists(sub_build_cf) && !visited_build_cfs.contains(sub_bcf_canon)) {
                     visited_build_cfs.insert(sub_bcf_canon);
-                    auto parsed = parse_build_cf(sub_build_cf);
+                    auto parsed = parse_build_cf(sub_build_cf, plan.target_triple);
                     if (!parsed) return std::unexpected(parsed.error());
+                    auto add_sub_sources_dep = [&](const std::string& dep_name,
+                                                   const std::vector<std::string>& srcs,
+                                                   const std::vector<std::string>& incs,
+                                                   const std::vector<std::string>& defs,
+                                                   const std::vector<std::string>& cfs) {
+                        if (srcs.empty()) return;
+                        for (const auto& ed : plan.external_deps) {
+                            if (ed.name == dep_name) return;
+                        }
+                        ExternalDepSpec dep;
+                        dep.name = dep_name;
+                        dep.driver = "CC";
+                        dep.source = ".";
+                        dep.base_dir = candidate_dir;
+                        dep.sources = srcs;
+                        dep.includes = incs;
+                        for (const auto& d : parsed->defines) {
+                            auto eq = d.find('=');
+                            if (eq == std::string::npos) dep.defines[d] = "1";
+                            else dep.defines[d.substr(0, eq)] = d.substr(eq + 1);
+                        }
+                        for (const auto& d : defs) {
+                            auto eq = d.find('=');
+                            if (eq == std::string::npos) dep.defines[d] = "1";
+                            else dep.defines[d.substr(0, eq)] = d.substr(eq + 1);
+                        }
+                        for (const auto& c : parsed->cflags) {
+                            for (auto& tok : split_ws(c)) dep.extra_cflags.push_back(std::move(tok));
+                        }
+                        for (const auto& c : cfs) {
+                            for (auto& tok : split_ws(c)) dep.extra_cflags.push_back(std::move(tok));
+                        }
+                        plan.external_deps.push_back(std::move(dep));
+                    };
                     apply_manifest_pkg_fields(
                         plan,
                         candidate_dir,
@@ -219,8 +253,11 @@ namespace cfire::build {
                         parsed->libraries,
                         parsed->frameworks,
                         parsed->includes,
-                        parsed->defines
+                        parsed->defines,
+                        parsed->cflags,
+                        parsed->ldflags
                     );
+                    add_sub_sources_dep("__bcf_sub_pkg_sources_" + candidate_dir.filename().string(), parsed->sources, parsed->includes, {}, {});
                     for (const auto& ex : parsed->executables) {
                         apply_manifest_pkg_fields(
                             plan,
@@ -229,8 +266,11 @@ namespace cfire::build {
                             ex.libraries,
                             ex.frameworks,
                             ex.includes,
-                            ex.defines
+                            ex.defines,
+                            ex.cflags,
+                            ex.ldflags
                         );
+                        add_sub_sources_dep("__bcf_sub_exe_" + ex.name + "_sources", ex.sources, ex.includes, ex.defines, ex.cflags);
                     }
                     for (auto& dep : parsed->external_deps) {
                         bool exists_already = false;

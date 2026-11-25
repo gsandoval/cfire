@@ -2,7 +2,7 @@
 
 Topic-focused backlog (like [`backlog-build-distribution.md`](./backlog-build-distribution.md)) for the work `cfire` needs so that Flint (`github.com/samaniegoluis/flint`) can move off its 0.10.0 pin (`c5b1d4b`, which is `2d9daec` in today's history). Every item has been evaluated against `cfire`'s core design pillars, settled `Q1`–`Q61` decisions, and `main` @ `14a1a51` (2026-11-15), with owner design decisions resolved interactively as **`Q62` – `Q69`**.
 
-- **IDs**: this file tracks **`CF-211` – `CF-239`** and ADRs **`Q62` – `Q69`**. **Future items anywhere in `docs/planning/` start at `CF-240` and `Q70`.** Where an item matches an entry in Flint's `docs/cfire-upstream.md`, it says so as *Flint ref*. Flint's own numbers from `CF-086` up collide with `cfire`'s, so cite this file's IDs.
+- **IDs**: Wave 1 tracks **`CF-211` – `CF-239`** (`Q62` – `Q69`), and Wave 2 tracks **`CF-262` – `CF-272`** (`Q95` – `Q99`). Combined with `CF-273` in [`backlog-build-distribution.md`](./backlog-build-distribution.md), **future items anywhere in `docs/planning/` start at `CF-274` and `Q100`.** Where an item matches an entry in Flint's `docs/cfire-upstream.md`, it says so as *Flint ref*. Flint's own numbers from `CF-086` up collide with `cfire`'s, so cite this file's IDs.
 - **Workflow**: as [`README.md`](./README.md) describes. An item moves to [`active.md`](./active.md) before work starts and is signed off there with the `make check-all` summary.
 - **Checked at**: `main` @ `14a1a51` (2026-11-15), on Ubuntu 24.04, clang 18, libsodium, libssh 0.10.6, sqlcipher, webkit2gtk-4.1. Evidence tags: **[ran]** a program was built and run; **[read]** read in the source.
 - **Hashes**: history was rewritten twice between 2026-11-09 and 2026-11-15. Hashes below are for today's `main`; each commit is also named by date and subject so it can be found again.
@@ -539,7 +539,154 @@ Things that no longer exist are **deleted**. Before each deletion, confirm with 
 | Multi-window and a screen list (`126`) | A large API driven by a single app; Flint's shim stays until a second user needs it. | Q5 |
 | `@pkg` on `import cpp` (Flint has 33 uses) | Retired in `597fd87` in favour of `build.cf` `PkgConfig`. Flint moves its `flint-native` pkg-config shim into `build.cf`, which also settles Flint `CF-031`. | `CF-207` |
 | `[]T.clone()` (`CF-224` part) | `cfire` uses single-way value semantics (`mut copy := xs`) and automatic view-to-owner promotion; `UNKNOWN-METHOD` prints an idiomatic copy hint. | Q14, Q36, Q53, Q64 |
-| `fs.sync_dir`, `fs.symlink`, `fs.read_link` (`CF-226` part) | POSIX directory `fsync` and Windows `CreateSymbolicLinkW` privilege semantics diverge across OSes; `core:fs` keeps portable `File.sync`, `create_new`, `stat`, `realpath`, and `ERR_*`. | Q68 |
+| `fs.sync_dir`, `fs.symlink`, `fs.read_link` (`CF-226` part, Flint `CF-168`, `CF-171`) | POSIX directory `fsync` (and Windows NTFS unprivileged `ERROR_ACCESS_DENIED` on directory `FlushFileBuffers`) and Windows `CreateSymbolicLinkW` privilege semantics diverge across OSes; `core:fs` keeps portable `File.sync`, `create_new`, `stat`, `realpath`, and `ERR_*`, while Windows `fs.rename` hardens durability transparently via `MOVEFILE_WRITE_THROUGH` (`CF-271`). | Q68, Q95 |
 | Multi-socket `net.wait_readable` (`CF-231`) | `TcpConn` is move-only, TLS `SSL_pending` can hold unread bytes in user space, and `async.scope` structured concurrency handles stream relays. | Q2, Q26, Q43, Q66 |
 | `cfire test` FD-canary warm-up hook on `import cpp` (`CF-233`) | Reaffirms `CF-018` / `CF-080` automatic exemption for `import cpp` without adding test lifecycle hooks or CLI flags. | CF-018, Q67 |
 | Downstream-coupled Flint CI canary, `legacy-flint-pin` tag & Flint impact in `feat!` commits (`CF-238`) | `cfire` publishes SemVer release tags only, keeps commits downstream-agnostic (`AGENTS.md` §3), and verifies regressions via `tests/conformance/` + `CF-214`. | Q69 |
+| Detached self-updater processes, OS process-table/port scraping, Windows Registry, Restart Manager file holders & `openat`/`getpwuid` root helpers (`CF-175`, `CF-178`, `CF-180` privileged, `CF-190`, `CF-092`, `CF-114`) | Heavily OS-divergent updater, installer, and privileged root-helper primitives that do not generalize cleanly across macOS/Linux/Windows; thin `import cpp` adapters remain the sanctioned boundary (`os.command` gains `cwd` + `timeout_ms` in `CF-271`). | Q68, Q95 |
+| Clipboard image read (`CF-053` part), non-webui font enumeration (`CF-045` part), macOS fullscreen top-edge inset (`CF-125` part) & non-Apple biometric/polkit presence (`CF-093` part) | Platform-specific GUI/desktop policy or heavy native dependencies kept in Flint's adapters (`core:keychain` stays Apple `LAContext` per `Q76`; `ext:webui` keeps `CF-045` honest empty fallback, `CF-053` Linux clipboard `owner-change` guard, and `CF-125` `set_fullscreen`/`is_fullscreen` in `CF-272`). | Q76, Q80, Q95 |
+
+---
+
+## Wave 2 (`CF-262` – `CF-272`, `Q95` – `Q99`, audited against `v0.12.3` @ `f21f514`)
+
+- **Audit Baseline**: Evaluated against Flint's `docs/cfire-upstream.md` (entries through `CF-193`) on `cfire v0.12.3` (`f21f514`, 2026-11-24). Evidence tags: **[ran]** built and executed against `v0.12.3`; **[read]** verified in `v0.12.3` source.
+
+### Verified Already Resolved in `v0.12.3` (No New Work Needed)
+- `CF-113` (`[]T!` generic call typed as `[][]T!`) — **[ran]** builds cleanly.
+- `CF-134` (generic methods `fn (b: Box) add[T](x: T) -> T`) — **[ran]** builds cleanly.
+- `CF-162` (`try f[T](...)` keeping type `T`) — **[ran]** builds and prints `x`.
+- `CF-165` (`sync.MutexGuard.value` + `with_lock` returning `R`) — **[ran]** both compile and print `1`.
+- `CF-183` (macOS `Info.plist` custom keys) — **[read]** `InfoPlist` supported in `src/build/manifest.hpp` and `src/build/apple_bundle.hpp`.
+- `CF-179` *(part 2)* (Windows `VERSIONINFO` resource) — **[read]** `Version` emits `FileDescription`/`FileVersion`/`ProductName`/`ProductVersion` in `src/build/windows_resources.hpp`.
+- `CF-077` *(part)* (file dialog cancel vs. error distinction) — **[read]** file dialogs return `str?!` / `[]str?!` (`Ok(none)` vs `Err`) per `Q79`.
+- `CF-093` *(part)* (macOS/iOS biometric auth) — **[read]** `keychain.authenticate_biometric` shipped in `runtime/core/keychain.hpp` (`Q76`); Linux/Windows presence checks remain native adapters.
+
+### Summary (`CF-262` – `CF-272`) & Wave Sequencing (`Waves F6 – F9`)
+
+| ID | P | Wave | Target | Title | Flint ref | Status |
+| :--- | :---: | :---: | :---: | :--- | :--- | :--- |
+| `CF-262` | **P0** | `F6` | `v0.12.4` | `json.stringify` & `detail::Seq` builtins for `slice_ref<T>` / `std::span` | `CF-157`, `CF-154` | `[DONE]` |
+| `CF-263` | **P0** | `F6` | `v0.12.4` | `clang_bridge.hpp` stderr isolation, fail-fast JSON parser & single-pass `O(N)` AST ingestion | `CF-184`, `CF-176` | `[DONE]` |
+| `CF-264` | **P0** | `F6` | `v0.12.4` | Scoped qualified C-signature lookup (stop hijacking stdlib / `.cf` calls & template `_CharT`) | `CF-158`, `CF-164`, `CF-128`, `CF-193` | `[DONE]` |
+| `CF-265` | **P0** | `F6` | `v0.12.4` | Full `Q36` view-to-owned materialization, safe rvalue `.bytes()`, `DANGLING-TEMPORARY` & `CStrViewHolder` wipe (`Q97`) | `CF-152`, `CF-185`, `CF-161`, `CF-155` | `[DONE]` |
+| `CF-266` | **P1** | `F7` | `v0.12.4` | Compiler & codegen correctness cluster (loops, cross-pkg fields, `T! or none`, str-lit methods, newline `(`, `str.replace` fix-it, Win32 `#undef`) | `CF-153`/`182`, `CF-156`, `CF-172`, `CF-173`, `CF-147`, `CF-151`, `CF-181` | `[DONE]` |
+| `CF-267` | **P1** | `F7` | `v0.12.4` | Single canonical literal brace escape `\{` / `\}` + verbatim backticks (`Q98`) | `CF-159` | `[DONE]` |
+| `CF-268` | **P1** | `F8` | `v0.12.4` | Declarative `build.cf` `build.os()`/`arch()` conditionals, `INVALID-BUILD-VALUE`, `build.Step` & `probe_pkg_config` cache (`Q96`) | `CF-031`, `CF-123`, `CF-166`, `CF-169`, `CF-170` | `[DONE]` |
+| `CF-269` | **P1** | `F8` | `v0.12.4` | Document `cfire test --release` (with `-g`) & print crash backtrace + re-raise signal (`Q99`) | `CF-163`, `CF-167` | `[DONE]` |
+| `CF-270` | **P1** | `F8` | `v0.12.4` | Windows WebView2 `WM_SETFOCUS` focus restoration (+ C++-only `native_controller_handle`) & release accelerator key lockout | `CF-186`, `CF-188` | `[DONE]` |
+| `CF-271` | **P2** | `F9` | `v0.13.0` | Lean `core:os` / `core:fs` ergonomics (`arch`, `name`, `chdir`, `command` `cwd`/`timeout_ms`, `preferred_languages`, `mkdtemp`), `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe | `CF-174`, `CF-187`, `CF-191`, `CF-180` (part), `CF-160`, `CF-168` (hardening), `CF-042` (safety) | `[TODO]` |
+| `CF-272` | **P2** | `F9` | `v0.13.0` | `ext:webui` tray & fullscreen parity (`tray_shown`, `set_tray_item_title`, `runtime_version`, `set_fullscreen`/`is_fullscreen`, Linux clipboard guard, honest `monospace_fonts`, GTK parent) & macOS `NSURLSession` HTTPS headers | `CF-189`, `CF-192`, `CF-179` (part 1), `CF-077` (GTK), `CF-146`, `CF-053` (guard), `CF-045`, `CF-125` | `[TODO]` |
+
+### Architectural Decision Record (`Q95` – `Q99`, resolved interactively 2026-11-24 / 2026-11-25)
+
+95. **Wave 2 Scope, Zero New `.cf` Pointers & Historical Exclusion Reaffirmation (`Q95`)**:
+    - Accept Tier 1 confirmed bugs (`Waves F6–F8`, `v0.12.4`) and Tier 2 lean cross-platform stdlib/WebUI ergonomics plus four small runtime safety/quality fixes (`CF-042` async-signal-safe `on_signal` + `SIGTERM`/`SIGHUP` raw-mode restore, `CF-053` Linux GTK clipboard `owner-change` guard, `CF-045` remove fake font fallback, `CF-125` `set_fullscreen`/`is_fullscreen`) (`Wave F9`, `v0.13.0`).
+    - **Zero pointers beyond `own[T]` / `shared[T]` in `.cf`**: `own[T]` and `shared[T]` remain the sole `.cf` heap ownership types (auto-dereferenced on `.field`/`.method()` without `*`). `native_controller_handle()` in `CF-270` stays strictly a C++-only method on `cfire::webui::App` (for `cpp {}` blocks, matching `native_webview_handle()`), never registered in `stdlib_catalog_entries.hpp`; `CF-160` adds only a `GUIDE.md` Ch11 documentation recipe for C++ `using` pointer aliases behind `import cpp`.
+    - Reaffirm all exclusions in `backlog.md` §3 and `Q68` (including `CF-168` `fs.sync_dir`/`fs.write_atomic` and `CF-171` `fs.lstat`/`readlink`/`symlink`), hardening Windows `fs.rename` transparently with `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` and clarifying in `fs.open` docs that it targets regular files. Keep OS-divergent updater/installer/privileged/multi-window APIs (`CF-175`, `CF-178`, `CF-180` privileged ops, `CF-190`, `CF-092`, `CF-114`, `CF-126`, `CF-053` image paste, `CF-045` non-webui fonts, `CF-125` macOS fullscreen top inset) out of `Waves F6–F9`.
+
+96. **Declarative `build.cf` Platform Conditionals & Fail-Loud Validation (`Q96`, `CF-268`)**:
+    - Keep `build.cf` as the primary declarative manifest. Accept `build.Step` identically to `build.Command` (`src/build/manifest.hpp:610`).
+    - Evaluate constant `if build.os() == "..."` / `build.arch() == "..."` expressions and top-level manifest bindings deterministically for the target OS/arch across `Defines`, `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `CFlags`, `LDFlags`, and `Sources`. Emit hard `cfire/INVALID-BUILD-VALUE` for any other unevaluable manifest value, and fail immediately with `pkg-config` stderr when any `PkgConfig` entry is unknown or has unresolved `Requires:`.
+    - In `src/build/probe_cache.hpp`, stop caching negative `pkg-config` probes, fingerprint transitive `Requires`/`Requires.private` `.pc` files plus `pkg-config --variable pc_path pkg-config` directories, and bypass `probes.json` under `--no-cache`.
+
+97. **Full `Q36` Views-In / Copies-Out, Safe Rvalue `.bytes()` & `Q12` Byte Slicing (`Q97`, `CF-265`)**:
+    - Materialize owned copies whenever borrowed views (`s[a..b]`, `s.trim()`, `xs[a..b]`) flow into owned destinations (`-> str`, `-> []T`, typed locals, owned struct fields, owned `mut` reassignments), suppressing `DANGLING-RETURN` / `DANGLING-POINTER` there while keeping both active for true view/pointer escapes.
+    - Add `cfire::to_bytes(std::string&&) -> std::vector<std::uint8_t>` and lower `body := text().bytes()` as owned `[]byte`, backed by Sema `cfire/DANGLING-TEMPORARY` for any remaining temporary-view local binding. Keep lvalue `s.bytes()` as zero-copy `slice_ref<u8>` so `s.bytes()[a..b]` is zero-copy while `str[a..b]` keeps its `Q12` UTF-8 boundary panic.
+    - Securely wipe `CStrViewHolder`'s active buffer in `~CStrViewHolder() noexcept` and document `str_ref` in `cpp {}` blocks.
+
+98. **Single Canonical Literal Brace Escape `\{` / `\}` & Verbatim Backticks (`Q98`, `CF-267`)**:
+    - Standardize on `\{` / `\}` as the single literal brace escape across **every** double-quoted string (plain, `{expr}`-interpolated, and `println`/`format` format strings); reject `{{` / `}}` as a brace escape in interpolated and format strings (`cfire/INVALID-INTERPOLATION`) while keeping plain non-interpolated JSON strings verbatim; ensure raw backtick strings `` `...` `` never undergo escape processing, interpolation, or formatting (even as 1-arg `println(`...`)` / `format(`...`)`). Document in `GUIDE.md`.
+
+99. **2-Tier Test Profile & Signal-Preserving Crash Backtraces (`Q99`, `CF-269`)**:
+    - Keep `cfire test` default at `DevDebug` (`-O0 -g`, preserving the 2-tier PCH cache), document `cfire test --release` in `src/cli/usage.hpp` and `GUIDE.md`, and pass `-g` on test TUs under `--release`.
+    - In `runtime/cfire_test_runtime.hpp` (`install_crash_handlers`), print an async-signal-safe backtrace (`backtrace_symbols_fd` on POSIX; `CaptureStackBackTrace` on Windows) before restoring `SIG_DFL` and `raise(sig)` so core dumps and signal exit statuses work.
+
+### Wave F6 (`v0.12.4`, P0): Data Loss, Memory Safety, Hang & C-Collision
+
+#### `CF-262` — `json.stringify` & `detail::Seq` builtins for `slice_ref<T>` / `std::span` `[DONE]`
+- *Flint ref*: `CF-157`, `CF-154`.
+- **Problem & Evidence** [ran]: `fn dump(list: []L) -> str { return json.stringify(list) }` lowers `list` to `cfire::slice_ref<L>`, which falls through `json::stringify` (`runtime/core/json.hpp:611`) and silently outputs `{}`. Similarly, `fn j(parts: []str) -> str { return parts.join(",") }` fails in Clang because `detail::Seq` (`runtime/core/builtin_methods.hpp:50`) accepts only `std::vector` and `std::array`.
+- **Implementation**:
+  - Add `detail::is_slice_ref<T>` and `detail::is_std_span<T>` traits in `runtime/core/json.hpp` and serialize both through the JSON array branch alongside `std::vector<T>`.
+  - Extend `concept Seq` in `runtime/core/builtin_methods.hpp` to accept `cfire::slice_ref<T>` and `std::span<T>` (keeping mutating methods constrained to `concept Vec`), and audit all read-only `Seq` helpers (`join`, `contains`, `index_of`, `last_index_of`, `binary_search`, etc.).
+- **Tests**: Conformance tests for `json.stringify` on `[]Struct`, `[]i64`, `[]str`, and `[][]T` read-only parameters, plus `.join()`, `.contains()`, `.binary_search()` on read-only slice parameters.
+
+#### `CF-263` — `clang_bridge.hpp` stderr isolation, fail-fast JSON parser & single-pass `O(N)` AST ingestion `[DONE]`
+- *Flint ref*: `CF-184`, `CF-176`.
+- **Problem & Evidence** [read]: `inspect_header` (`src/clang_bridge.hpp:160`) captures `2>&1`, letting Clang warning summaries (`1 warning generated.`) splice into the JSON AST at 16 KB boundaries (or warning braces mislead root detection), while `ClangAstParser::skip_value` can loop indefinitely without advancing `pos_`, and skipping/rewinding `"inner"` makes AST parsing `O(N * depth)`.
+- **Implementation**:
+  - Add `bool merge_stderr = true` to `run_command_capture`; pass `false` in `inspect_header`, redirecting stderr to a file inside the AST `SecureTempDir` and reading it back on diagnostics.
+  - Enforce a strict advance-or-fail invariant (`malformed_ = true` + offset) across every loop in `ClangAstParser` (`parse_node`, `skip_value`, array/object loops) so non-JSON input terminates immediately.
+  - Parse `"inner"` arrays in a single `O(N)` pass (buffering minimal node fields if any Clang version emits `"inner"` before `"kind"`/`"name"`), and log the header name under `--verbose`.
+- **Tests**: Unit tests alongside `test_cpp_ast_ingestion_and_overloads` for spliced non-JSON inside `"inner"`, warning text containing `{ ... }` braces, and 200-level deep nesting performance.
+
+#### `CF-264` — Scoped qualified C-signature lookup `[DONE]`
+- *Flint ref*: `CF-158`, `CF-164`, `CF-128`, `CF-193`.
+- **Problem & Evidence** [ran]: `src/codegen/expr.hpp:1097-1104` strips `callee` to its last `::` segment and looks it up in program-wide `cf_.cpp_fn_params`, hijacking `cfire::fs::rename` (via `<stdio.h>` `rename`), Linux `cfire::json::parse` (via `<chrono>`'s `std::chrono::parse(const _CharT*, ...)` emitting `cfire::c_ptr<const _CharT *>`), and `.cf` functions sharing a name with C++ functions.
+- **Implementation**:
+  - Key `cpp_fn_params` by qualified C++ name (`ns::name`, or bare `name` strictly for global-namespace non-template C/C++ functions) and skip function templates with dependent parameter types.
+  - Consult `cpp_fn_params` **only** when Sema/AST resolution marks the callee as a foreign C/C++ function (never for `cfire::*` stdlib calls or `.cf`-defined functions).
+- **Tests**: Conformance tests for `fs.rename` + `<stdio.h>`, unlabeled `json.parse[Req]` + `<chrono>` (verified on Linux VM `libstdc++` and macOS), and `.cf` function shadowing a namespaced `import cpp` function.
+
+#### `CF-265` — Full `Q36` view-to-owned materialization, safe rvalue `.bytes()`, `DANGLING-TEMPORARY` & `CStrViewHolder` wipe (`Q97`) `[DONE]`
+- *Flint ref*: `CF-152`, `CF-185`, `CF-161`, `CF-155`.
+- **Problem & Evidence** [ran]: `fn f(p: str) -> str { s := p + "!"; return s[1..] }` triggers `cfire/DANGLING-RETURN` (`src/sema/statement_checker_impl.hpp:906-923`), `body := text().bytes()` compiles to a dangling `slice_ref<u8>` over a destroyed temporary `std::string` (UAF), and `CStrViewHolder` (`runtime/cfire_prelude.hpp:1066`) does not wipe its buffer on destruction.
+- **Implementation**:
+  - Implement `Q97`: materialize owned copies when views flow into owned destinations (`-> str`, `-> []T`, typed locals, owned struct fields, owned `mut` reassignments), add `to_bytes(std::string&&) -> std::vector<std::uint8_t>` + owned lowering for `body := text().bytes()`, emit `cfire/DANGLING-TEMPORARY` for any remaining temp-view local binding, wipe `~CStrViewHolder()` via volatile/barrier zeroing, and document zero-copy `s.bytes()[a..b]` + `cpp {}` `str_ref` in `GUIDE.md`.
+- **Tests**: Conformance tests for owned slice returns/fields/loops, `body := text().bytes()` under ASan, `s.bytes()[a..b]` zero-copy slicing, and unit test checking `CStrViewHolder` destruction wipe.
+
+### Wave F7 (`v0.12.4`, P1): Compiler Correctness & Brace Escaping
+
+#### `CF-266` — Compiler & codegen correctness cluster `[DONE]`
+- *Flint ref*: `CF-153`/`CF-182`, `CF-156`, `CF-172`, `CF-173`, `CF-147`, `CF-151`, `CF-181`.
+- **Implementation**:
+  - `CF-153`/`182` (`src/codegen/stmt.hpp`): wrap indexed/map `for` loop emission (`auto&& _col_<var> = ...; for (auto&& [...] : cfire::detail::iter_pairs(_col_<var>)) { ... }`) in `{ ... }` so sequential/nested loops never redeclare `_col_<var>`.
+  - `CF-156` (`src/sema/*`): preserve package qualification (`canonical_nominal_path_in_pkg_sema`, `canonical_type_name_in_pkg_sema`, `canonical_typeref_in_pkg_sema`, `resolve_typeref_in_pkg`, `pkg.Struct` struct-tag indexing) on imported parameter/field/global types across `for-in` loops and field builtin dispatch.
+  - `CF-172` (`src/sema/expression_checker_impl.hpp`, `src/sema/type_inference_impl.hpp`): single-layer `one_unwrap` in `check_or_expr`; preserve **all** working `or none` (`T?! or none`, `T?? or none`) and `or error(...)` usage under `Q92`/`Q93`; reject non-optional `T! or none` and `T? or none` with `cfire/TYPE-MISMATCH` and an actionable hint pointing to `.ignore_error()` or `or { return none }`.
+  - `CF-173` (`src/codegen/expr.hpp`): wrap non-interpolated/raw string-literal receivers in `std::string_view(...)` for `.len()`, `.is_empty()`, `.data()`, and `.data_ptr()`.
+  - `CF-147` (`src/parser_impl.hpp`): stop postfix `(` call continuation across newlines.
+  - `CF-151` (`src/sema/builtin_methods.hpp:277`): fix `ApiMigration` for `str.replace` to `"replace_all"`.
+  - `CF-181` (`runtime/detail/win32_clean_macros.hpp`, `src/codegen/declarations.hpp`): emit unconditional post-include `#if defined(_WIN32)` cleanup (`#include "detail/win32_clean_macros.hpp"` + `#undef interface`) after all `#include`s in both single-TU and sharded C++ output, plus `NOMINMAX`/`WIN32_LEAN_AND_MEAN` guards in the 7 Windows runtime headers.
+- **Tests**: Conformance and unit tests for each item (including Windows VM `win32_macro_names.cf` with `fn near(a: f64) -> bool`).
+
+#### `CF-267` — Single canonical literal brace escape `\{` / `\}` & verbatim backticks (`Q98`) `[DONE]`
+- *Flint ref*: `CF-159`.
+- **Implementation**: Support `\{` / `\}` uniformly as the single brace escape in `src/lexer_impl.hpp`, `src/parser_impl.hpp`, and `src/codegen{.hpp,/expr.hpp}` across all double-quoted strings (plain, `{expr}`-interpolated, and `println`/`format`); reject `{{` / `}}` as brace escapes in interpolated and format strings (`cfire/INVALID-INTERPOLATION`); ensure 1-arg `println(`...`)`/`format(`...`)` treats raw backtick strings completely verbatim with zero formatting; update `GUIDE.md`.
+- **Tests**: `tests/conformance/syntax/string_brace_escaping.cf` + `tests/conformance/syntax/string_double_brace_escape_rejected.cf`.
+
+### Wave F8 (`v0.12.4`, P1): Build Manifest, Cache, Test Runner & Desktop WebView2
+
+#### `CF-268` — Declarative `build.cf` conditionals, validation, `build.Step` & `probe_pkg_config` cache (`Q96`) `[DONE]`
+- *Flint ref*: `CF-031`, `CF-123`, `CF-166`, `CF-169`, `CF-170`.
+- **Implementation**: Implemented `Q96` across `src/build/manifest.hpp`, `src/build/deps.hpp`, `src/build/package_loader.hpp`, `src/build/toolchain_layout.hpp`, `src/build/probe_cache.hpp`, `src/buildsys.hpp`, `src/cli/common_args.hpp`, `src/sema/builtin_methods.hpp`, and `src/docgen/stdlib_catalog_entries.hpp` (`build.Step`, constant `if`/`else`/`match` over `build.os()`/`build.arch()` + top-level bindings, `CFlags`/`LDFlags`/`Sources`, `cfire/INVALID-BUILD-VALUE`, fail loud on missing `PkgConfig`/`Requires`, no negative probe caching, transitive `Requires`/`Requires.private` + `pc_path` fingerprinting, `--no-cache` bypass).
+- **Tests**: Unit tests in `tests/unit/test_build_manifest_ios.hpp` (`check_wave_f8_manifest_conditionals_and_step`) and `tests/unit/test_toolchain_pch_and_bincache.hpp`.
+
+#### `CF-269` — `cfire test --release` docs/symbols & crash backtrace + signal re-raise (`Q99`) `[DONE]`
+- *Flint ref*: `CF-163`, `CF-167`.
+- **Implementation**: Implemented `Q99` in `src/cli/usage.hpp`, `src/buildsys.hpp`, `src/build/pch.hpp`, `docs/GUIDE.md`, and `runtime/cfire_test_runtime.hpp` (`-O2 -g` on `cfire test --release`, async-signal-safe `backtrace_symbols_fd`/`RtlCaptureStackBackTrace` + `SIG_DFL` + `raise(sig)`), and updated `tests/conformance_runner.hpp` + `tests/conformance/arith/overflow_trap_in_test_test.cf` to `// expect: exit signal` (Option A).
+- **Tests**: CLI usage/doc checks + crash-handler backtrace & signal exit status tests in `tests/unit/test_toolchain_pch_and_bincache.hpp` and `tests/conformance/arith/overflow_trap_in_test_test.cf`.
+
+#### `CF-270` — Windows WebView2 `WM_SETFOCUS` restoration & release accelerator lockout `[DONE]`
+- *Flint ref*: `CF-186`, `CF-188`.
+- **Implementation**:
+  - `CF-186`: Added `case 0x0007` (`WM_SETFOCUS`) in `cfire_win32_wndproc` (`runtime/core/webui/windows_webview2.hpp`) calling `controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`, and C++-only `native_controller_handle()` on `cfire::webui::App` (`runtime/core/webui.hpp`, never exposed in `.cf`).
+  - `CF-188`: Called `ICoreWebView2Settings3::put_AreBrowserAcceleratorKeysEnabled(browser_keys_enabled ? TRUE : FALSE)` in `apply_webview2_settings` (default `OFF` in Release, `ON` in DevDebug) and exposed `app.set_browser_keys(bool)` / `browser_keys_enabled()` (`runtime/core/webui/bridge.hpp`, `runtime/core/webui.hpp`, `src/docgen/stdlib_catalog_entries.hpp`, `docs/GUIDE.md`).
+- **Tests**: Updated `tests/unit/test_webui_security_and_desktop.hpp` (including native Win32/COM `verify_native_win32_and_com`) and `tests/conformance/ext_smoke/webui.cf`.
+
+### Wave F9 (`v0.13.0`, P2): Lean Stdlib, Signal Safety, Desktop WebUI & macOS HTTPS Headers
+
+#### `CF-271` — `core:os` / `core:fs` ergonomics, `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe `[TODO]`
+- *Flint ref*: `CF-174`, `CF-187`, `CF-191`, `CF-180` (portable subset), `CF-160`, `CF-168` (hardening), `CF-042` (signal safety).
+- **Implementation**:
+  - Add `os.arch() -> str`, `os.name() -> str`, `os.chdir(path: str) -> void!`, optional `cwd` & `timeout_ms` on `os.command`, `os.preferred_languages() -> []str` (CoreFoundation / `GetUserPreferredUILanguages` / POSIX locale env), and `fs.mkdtemp(prefix: str = "cfire-") -> str!`.
+  - `CF-042` runtime safety: route `os.on_signal` through an async-signal-safe self-pipe / `sig_atomic_t` dispatcher thread (removing direct `std::function` calls inside signal handlers) and restore `RawTerminal` `termios` on `SIGTERM`/`SIGHUP` (keeping `os.term_size()` signature non-breaking).
+  - Win32 `fs.rename`: pass `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` to `MoveFileExW` (`CF-168` zero-API hardening), document `fs.open` as regular-file-only, and add the non-owning C++ pointer `using` alias recipe to `GUIDE.md` Ch11 (`CF-160`).
+- **Tests**: Unit/conformance + Windows/Linux VM tests for `os.{arch,name,chdir,command timeout,preferred_languages,on_signal}` and `fs.mkdtemp`.
+
+#### `CF-272` — `ext:webui` tray, fullscreen & GTK fixes + macOS `NSURLSession` HTTPS headers `[TODO]`
+- *Flint ref*: `CF-189`, `CF-192`, `CF-179` (part 1), `CF-077` (GTK), `CF-146`, `CF-053` (Linux guard), `CF-045` (fallback), `CF-125` (set/is_fullscreen).
+- **Implementation**:
+  - `ext:webui`: add `app.tray_shown() -> bool`, UI-thread-marshaled `app.set_tray_item_title(event, title)`, `webui.runtime_version() -> str?`, `app.set_fullscreen(on: bool)` & `app.is_fullscreen() -> bool` (`CF-125`); pass active `GtkWindow*` parent to `GtkFileChooserDialog` (`CF-077`); connect GTK `owner-change` so timed clipboard clearing never wipes external copies (`CF-053`); return `[]` instead of fabricated fonts in `monospace_fonts()` (`CF-045`).
+  - `core:net/http` (`runtime/core/net/http.hpp:717`): replace legacy `NSURLConnection` on macOS HTTPS requests with `NSURLSession` / `NSHTTPURLResponse.allHeaderFields` so response headers are populated identically to Linux/Windows, and add optional `max_response_bytes` (`Q30`).
+- **Tests**: `tests/unit/test_webui_security_and_desktop.hpp`, macOS HTTPS header conformance test, TSan coverage for tray relabeling marshaling, and `cfire doc --check`.

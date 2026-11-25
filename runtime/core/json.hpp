@@ -464,8 +464,8 @@ template <typename T>
         return R"({"type":"integer"})";
     } else if constexpr (std::is_floating_point_v<D>) {
         return R"({"type":"number"})";
-    } else if constexpr (detail::is_std_vector<D>::value) {
-        using Elem = typename D::value_type;
+    } else if constexpr (detail::is_std_vector<D>::value || cfire::is_span_like<D>::value) {
+        using Elem = std::remove_const_t<typename D::value_type>;
         return std::format(R"({{"type":"array","items":{}}})", schema<Elem>());
     } else {
         return schema_struct<D>();
@@ -620,7 +620,7 @@ template <typename T>
         return val ? "true" : "false";
     } else if constexpr (std::is_arithmetic_v<D>) {
         return std::format("{}", val);
-    } else if constexpr (detail::is_std_vector<D>::value) {
+    } else if constexpr (detail::is_std_vector<D>::value || cfire::is_span_like<D>::value) {
         std::string out = "[";
         for (std::size_t i = 0; i < val.size(); ++i) {
             if (i > 0) out += ",";

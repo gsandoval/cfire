@@ -249,6 +249,108 @@ void test_cpp_ast_ingestion_and_overloads([[maybe_unused]] const std::filesystem
         }
     }
     std::filesystem::remove(cache_tmp);
+
+    // CF-263: ClangAstParser terminates cleanly on spliced non-JSON inside `inner`, handles
+    // 200+ nested `inner` arrays in single-pass O(N), and inspect_header isolates stderr warnings.
+    {
+        std::string_view spliced_ast =
+            "{\"kind\":\"TranslationUnitDecl\",\"inner\":[\n1 warning generated.\n{\"kind\":\"VarDecl\",\"name\":\"x\"}]}";
+        std::unordered_map<std::string, cfire::bridge::CppSymbol> bad_syms;
+        cfire::bridge::ClangAstParser bad_parser(spliced_ast);
+        bad_parser.parse(bad_syms);
+        require(bad_parser.malformed(), "CF-263: spliced non-JSON inside inner sets malformed() without hanging");
+
+        std::string deep_ast = "{\"kind\":\"TranslationUnitDecl\",\"inner\":[";
+        for (int d = 0; d < 200; ++d) {
+            deep_ast += "{\"kind\":\"CompoundStmt\",\"inner\":[";
+        }
+        deep_ast += "{\"kind\":\"NullStmt\"}";
+        for (int d = 0; d < 200; ++d) {
+            deep_ast += "]}";
+        }
+        deep_ast += ",{\"kind\":\"NamespaceDecl\",\"name\":\"DeepNS\",\"inner\":[{\"kind\":\"FunctionDecl\",\"name\":\"after_deep\",\"type\":{\"qualType\":\"int (int)\"}}]}]}";
+        std::unordered_map<std::string, cfire::bridge::CppSymbol> deep_syms;
+        cfire::bridge::ClangAstParser deep_parser(deep_ast);
+        deep_parser.parse(deep_syms);
+        require(!deep_parser.malformed(), "CF-263: 200-level deep nested inner parses cleanly");
+        require(deep_syms.contains("DeepNS::after_deep"), "CF-263: symbol after deep nesting is extracted");
+        require(!deep_syms.contains("after_deep"), "CF-264: namespaced C++ function is not registered unqualified");
+
+        // Template FunctionDecl inside FunctionTemplateDecl must not pollute cpp_fn_params with _CharT.
+        std::string_view tmpl_ast = R"json({
+  "kind": "TranslationUnitDecl",
+  "inner": [
+    {
+      "kind": "NamespaceDecl",
+      "name": "std",
+      "inner": [
+        {
+          "kind": "FunctionTemplateDecl",
+          "name": "parse",
+          "inner": [
+            {
+              "kind": "FunctionDecl",
+              "name": "parse",
+              "type": { "qualType": "void (const _CharT *)" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+})json";
+        std::unordered_map<std::string, cfire::bridge::CppSymbol> tmpl_syms;
+        cfire::bridge::extract_clang_json_symbols(tmpl_ast, tmpl_syms);
+        require(!tmpl_syms.contains("parse") && !tmpl_syms.contains("std::parse"),
+                "CF-264: template FunctionDecl does not pollute cpp_fn_params");
+
+        // Live inspect_header with a [[deprecated]] warning quoting braces `{ ... }` isolates stderr cleanly.
+        ScopedTempDir hdr_scope("cfire_cf263_hdr");
+        auto hdr_path = hdr_scope.path / "warn_braces.hpp";
+        auto cache_dir = hdr_scope.path / "cache";
+        {
+            std::ofstream out(hdr_path);
+            out << "#pragma once\n"
+                << "[[deprecated]] inline int old_helper() { return 41; }\n"
+                << "inline int use_old_helper() { return old_helper(); }\n"
+                << "inline int clean_after_warn(int x) { return x + 1; }\n";
+        }
+        auto live_idx = cfire::bridge::inspect_header(
+            "warn_braces.hpp",
+            {"-I" + hdr_scope.path.string()},
+            cache_dir,
+            "");
+        require(live_idx.has_value(), "CF-263: inspect_header succeeds when header emits brace warning");
+        if (live_idx) {
+            require(live_idx->symbols.contains("clean_after_warn"),
+                    "CF-263: symbols extracted cleanly despite clang warning quoting braces");
+        }
+    }
+
+    // CF-265 / CF-161: CStrViewHolder wipes its internal buffer on destruction.
+    {
+        std::string s = "top_secret_passphrase_value_for_wipe_check";
+        {
+            cfire::CStrViewHolder holder{std::string_view(s)};
+            require(std::string_view(holder.get()) == s, "CStrViewHolder holds expected NUL-terminated text");
+        }
+        // Check zeroing via a placement-new buffer so reading after destruction has well-defined storage lifetime.
+        alignas(cfire::CStrViewHolder) unsigned char storage[sizeof(cfire::CStrViewHolder)];
+        auto* p = new (storage) cfire::CStrViewHolder(std::string_view("secret_123456"));
+        const unsigned char* small_ptr = reinterpret_cast<const unsigned char*>(p->get());
+        std::ptrdiff_t off = small_ptr - storage;
+        require(off >= 0 && static_cast<std::size_t>(off) < sizeof(storage), "small buffer resides inside holder storage");
+        p->~CStrViewHolder();
+        bool all_zero = true;
+        for (std::size_t i = 0; i < 13; ++i) {
+            if (static_cast<const volatile unsigned char*>(storage)[off + i] != 0) {
+                all_zero = false;
+                break;
+            }
+        }
+        require(all_zero, "CF-265 / CF-161: CStrViewHolder wipes small buffer on destruction");
+    }
+
     std::println("--- PASS: test_cpp_ast_ingestion_and_overloads");
 }
 

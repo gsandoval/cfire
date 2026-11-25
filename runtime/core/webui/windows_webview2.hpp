@@ -275,6 +275,7 @@ struct Win32WindowContext {
     std::function<void(RECT)> on_resize;
     std::function<void(const std::string&)> on_eval;
     std::function<void()> on_sync_settings;
+    std::function<void()> on_set_focus;
 };
 
 // Posted by platform_eval with a heap std::string* in lParam; the WndProc owns and frees it.
@@ -353,6 +354,12 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
             if (ctx && ctx->state) {
                 const bool active = ((wParam & 0xFFFFU) != 0U);
                 ctx->state->emit_system_event(active ? "app:active" : "app:inactive", "{}");
+            }
+            return ::DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+        case 0x0007: { // WM_SETFOCUS
+            if (ctx && ctx->on_set_focus) {
+                ctx->on_set_focus();
             }
             return ::DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -452,6 +459,12 @@ struct COREWEBVIEW2_COLOR {
 
 enum COREWEBVIEW2_WEB_RESOURCE_CONTEXT {
     COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL = 0
+};
+
+enum COREWEBVIEW2_MOVE_FOCUS_REASON {
+    COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC = 0,
+    COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT = 1,
+    COREWEBVIEW2_MOVE_FOCUS_REASON_PREVIOUS = 2
 };
 #endif // defined(_WIN32) && __has_include(<WebView2.h>)
 
@@ -615,6 +628,7 @@ constexpr auto wv2_iid(const char (&u)[37]) -> IID {
     return g;
 }
 
+inline constexpr char kIidSettings3[] = "fdb5ab74-af33-4854-84f0-0a631deb5eba";
 inline constexpr char kIidSettings4[] = "cb56846c-4168-4d53-b04f-03b6d6796ff2";
 inline constexpr char kIidWebMessageReceivedArgs2[] = "06fc7ab7-c90c-4297-9389-33ca01cf6d5e";
 inline constexpr char kIidFile[] = "f2c19559-6bc1-4583-a757-90021be9afec";
@@ -640,16 +654,28 @@ inline void apply_webview2_settings(
     ICoreWebView2Settings* settings,
     bool devtools_enabled,
     bool context_menu_enabled,
-    bool autofill_enabled
+    bool autofill_enabled,
+    bool browser_keys_enabled = kDefaultWebUIDevExtras
 ) {
     if (!settings) return;
     (void)settings->put_IsStatusBarEnabled(FALSE);
     (void)settings->put_IsWebMessageEnabled(TRUE);
     (void)settings->put_AreDevToolsEnabled(devtools_enabled ? TRUE : FALSE);
     (void)settings->put_AreDefaultContextMenusEnabled(context_menu_enabled ? TRUE : FALSE);
+    bool applied_browser_keys = false;
+    ICoreWebView2Settings3* settings3 = nullptr;
+    IID iid_s3 = wv2_iid(kIidSettings3);
+    if (SUCCEEDED(settings->QueryInterface(iid_s3, reinterpret_cast<void**>(&settings3))) && settings3) {
+        (void)settings3->put_AreBrowserAcceleratorKeysEnabled(browser_keys_enabled ? TRUE : FALSE);
+        settings3->Release();
+        applied_browser_keys = true;
+    }
     ICoreWebView2Settings4* settings4 = nullptr;
     IID iid_s4 = wv2_iid(kIidSettings4);
     if (SUCCEEDED(settings->QueryInterface(iid_s4, reinterpret_cast<void**>(&settings4))) && settings4) {
+        if (!applied_browser_keys) {
+            (void)settings4->put_AreBrowserAcceleratorKeysEnabled(browser_keys_enabled ? TRUE : FALSE);
+        }
         (void)settings4->put_IsPasswordAutosaveEnabled(autofill_enabled ? TRUE : FALSE);
         (void)settings4->put_IsGeneralAutofillEnabled(autofill_enabled ? TRUE : FALSE);
         settings4->Release();
@@ -1066,6 +1092,7 @@ struct Wv2Host {
         if (state) {
             std::lock_guard<std::recursive_mutex> lock(state->mtx);
             state->native_webview_handle = nullptr;
+            state->native_controller_handle = nullptr;
         }
         if (webview) webview->Release();
         if (controller) {
@@ -1088,20 +1115,28 @@ struct Wv2Host {
         if (controller) controller->put_Bounds(rc);
     }
 
+    void focus() {
+        if (controller) {
+            (void)controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        }
+    }
+
     void sync_settings() {
         if (!webview || !state) return;
         bool dev = kDefaultWebUIDevExtras;
         bool ctx_menu = kDefaultWebUIDevExtras;
+        bool browser_keys = kDefaultWebUIDevExtras;
         bool autofill = true;
         {
             std::lock_guard<std::recursive_mutex> lock(state->mtx);
             dev = state->devtools_enabled;
             ctx_menu = state->context_menu_enabled;
+            browser_keys = state->browser_keys_enabled;
             autofill = state->autofill_enabled;
         }
         ICoreWebView2Settings* settings = nullptr;
         if (SUCCEEDED(webview->get_Settings(&settings)) && settings) {
-            apply_webview2_settings(settings, dev, ctx_menu, autofill);
+            apply_webview2_settings(settings, dev, ctx_menu, autofill, browser_keys);
             settings->Release();
         }
     }
@@ -1152,6 +1187,7 @@ struct Wv2Host {
         {
             std::lock_guard<std::recursive_mutex> lock(state->mtx);
             state->native_webview_handle = webview;
+            state->native_controller_handle = controller;
         }
 
         if (state->transparent) {
@@ -1282,7 +1318,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     wc.lpszClassName = kClassName;
     ::RegisterClassExW(&wc);
 
-    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr, nullptr};
+    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr, nullptr, nullptr};
     DWORD style = state_->frameless ? WS_POPUP : WS_OVERLAPPEDWINDOW;
     DWORD exStyle = state_->always_on_top ? WS_EX_TOPMOST : 0;
 
@@ -1378,6 +1414,9 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
             (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
         };
         state_->platform_set_context_menu = [hwnd](bool) {
+            (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
+        };
+        state_->platform_set_browser_keys = [hwnd](bool) {
             (void)::PostMessageW(hwnd, kWmCfireSyncSettings, 0, 0);
         };
         state_->platform_set_autofill = [hwnd, st = state_](bool enabled) {
@@ -1482,6 +1521,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     ctx.on_resize = [&wv2](RECT rc) { if (wv2) wv2->resize(rc); };
     ctx.on_eval = [&wv2](const std::string& js) { if (wv2) wv2->eval(js); };
     ctx.on_sync_settings = [&wv2]() { if (wv2) wv2->sync_settings(); };
+    ctx.on_set_focus = [&wv2]() { if (wv2) wv2->focus(); };
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         state_->platform_eval = [hwnd](const std::string& js) {
@@ -1529,12 +1569,14 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->win32_hwnd = nullptr;
         state_->native_window_handle = nullptr;
         state_->native_webview_handle = nullptr;
+        state_->native_controller_handle = nullptr;
         state_->platform_eval = nullptr;
         state_->platform_set_title = nullptr;
         state_->platform_set_size = nullptr;
         state_->platform_set_dark_mode = nullptr;
         state_->platform_set_devtools = nullptr;
         state_->platform_set_context_menu = nullptr;
+        state_->platform_set_browser_keys = nullptr;
         state_->platform_set_autofill = nullptr;
         state_->platform_center = nullptr;
         state_->platform_fullscreen = nullptr;
@@ -1546,6 +1588,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_quit = nullptr;
     }
 #if defined(_WIN32)
+    ctx.on_set_focus = nullptr;
     ctx.on_sync_settings = nullptr;
     ctx.on_eval = nullptr;
     ctx.on_resize = nullptr;

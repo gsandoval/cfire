@@ -1,0 +1,31 @@
+// expect: stdout
+// | a,b,c
+// | true
+// | 1
+// | 1
+// | a
+// | c
+// | true
+package main
+
+fn join_parts(parts: []str) -> str {
+    return parts.join(",")
+}
+
+fn check_str_slice(xs: []str) {
+    println(join_parts(xs))
+    println("{xs.contains(\"b\")}")
+    idx := xs.index_of("b") or 999
+    println("{idx}")
+    bidx := xs.binary_search("b") or 999
+    println("{bidx}")
+    fst := xs.first() or ""
+    lst := xs.last() or ""
+    println(fst)
+    println(lst)
+    println("{xs.is_sorted()}")
+}
+
+fn main() {
+    check_str_slice(["a", "b", "c"])
+}

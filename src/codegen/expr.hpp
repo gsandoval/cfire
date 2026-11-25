@@ -559,6 +559,9 @@ namespace cfire::frontend {
             const auto* first_lit = (call.args[0].value) ? std::get_if<LiteralExpr>(&call.args[0].value->node) : nullptr;
             if (first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
                 if (first_lit->kind == TokenKind::RawString) {
+                    if (call.args.size() == 1) {
+                        return std::format("{}({}\"{{}}\", R\"({})\")", fn, stream_prefix, first_lit->value);
+                    }
                     std::string trailing;
                     for (std::size_t i = 1; i < call.args.size(); ++i) {
                         trailing += ", " + emit_call_arg(call.args[i]);
@@ -608,6 +611,9 @@ namespace cfire::frontend {
             const auto* first_lit = (call.args[0].value) ? std::get_if<LiteralExpr>(&call.args[0].value->node) : nullptr;
             if (first_lit && (first_lit->kind == TokenKind::String || first_lit->kind == TokenKind::RawString)) {
                 if (first_lit->kind == TokenKind::RawString) {
+                    if (call.args.size() == 1) {
+                        return std::format("std::string(R\"({})\")", first_lit->value);
+                    }
                     std::string trailing;
                     for (std::size_t i = 1; i < call.args.size(); ++i) {
                         trailing += ", " + emit_call_arg(call.args[i]);
@@ -848,11 +854,21 @@ namespace cfire::frontend {
             return std::format("{}({})", mem->resolution->canonical_name, args);
         }
         bool is_user_method = cf_.method_owners.contains(mem->field) || cf_.method_owner.contains(mem->field);
+        auto emit_str_lit_view = [&](const ExprPtr& obj) -> std::string {
+            std::string expr_cpp = emit_expr(obj);
+            if (const auto* lit = obj ? std::get_if<LiteralExpr>(&obj->node) : nullptr) {
+                if (lit->kind == TokenKind::RawString ||
+                    (lit->kind == TokenKind::String && !extract_interpolation(*lit, obj->line).has_value())) {
+                    return std::format("std::string_view({})", expr_cpp);
+                }
+            }
+            return expr_cpp;
+        };
         if (!is_user_method && mem->field == "len" && call.args.empty()) {
-            return std::format("{}.size()", emit_expr(mem->object));
+            return std::format("{}.size()", emit_str_lit_view(mem->object));
         }
         if (!is_user_method && mem->field == "is_empty" && call.args.empty()) {
-            return std::format("{}.empty()", emit_expr(mem->object));
+            return std::format("{}.empty()", emit_str_lit_view(mem->object));
         }
         if (!is_user_method && mem->field == "byte_ptr" && call.args.empty()) {
             used_core_.insert("str");
@@ -863,7 +879,7 @@ namespace cfire::frontend {
             return std::format("cfire::str::byte_ptr_at({}, {})", emit_expr(mem->object), emit_call_arg(call.args[0]));
         }
         if (!is_user_method && (mem->field == "data" || mem->field == "data_ptr") && call.args.empty()) {
-            return std::format("({}).data()", emit_expr(mem->object));
+            return std::format("({}).data()", emit_str_lit_view(mem->object));
         }
         // Check if this is an Enum Variant constructor e.g. `Shape.Circle(2.0)` or `p.Shape.Circle(2.0)`
         if (const auto* sub_mem = std::get_if<MemberExpr>(&mem->object->node)) {
@@ -1072,6 +1088,7 @@ namespace cfire::frontend {
     }
 
     bool is_vendor_call = false;
+    bool is_cfire_fn_call = false;
     if (const auto* mem = std::get_if<MemberExpr>(&call.callee->node)) {
         if (const auto* id = std::get_if<IdentExpr>(&mem->object->node); id && (is_cpp_qualifier(id->name) || is_vendor_alias(id->name))) {
             is_vendor_call = true;
@@ -1079,6 +1096,8 @@ namespace cfire::frontend {
     } else if (const auto* id = std::get_if<IdentExpr>(&call.callee->node)) {
         if (id->name.starts_with("cpp.") || id->name.starts_with("cpp::") || is_cpp_qualifier(id->name.substr(0, id->name.find('.'))) || is_vendor_alias(id->name.substr(0, id->name.find("::")))) {
             is_vendor_call = true;
+        } else if (cf_.fn_sigs.contains(id->name) || (!cur_pkg_.empty() && cf_.fn_sigs.contains(cur_pkg_ + "." + id->name))) {
+            is_cfire_fn_call = true;
         }
     }
 
@@ -1094,13 +1113,21 @@ namespace cfire::frontend {
             break;
         }
     }
-    std::string lookup_name = callee;
-    if (auto colon_pos = lookup_name.rfind("::"); colon_pos != std::string::npos) {
-        lookup_name = lookup_name.substr(colon_pos + 2);
-    }
+    const bool is_stdlib_call = callee.starts_with("cfire::") || callee.starts_with("cfire_pkg_");
+    const bool allow_cpp_sig_lookup = !is_stdlib_call && !is_cfire_fn_call &&
+        (is_vendor_call || std::holds_alternative<IdentExpr>(call.callee->node));
     const std::vector<std::string>* cpp_params = nullptr;
-    if (auto it = cf_.cpp_fn_params.find(lookup_name); it != cf_.cpp_fn_params.end()) {
-        cpp_params = &it->second;
+    if (allow_cpp_sig_lookup) {
+        if (auto it = cf_.cpp_fn_params.find(callee); it != cf_.cpp_fn_params.end()) {
+            cpp_params = &it->second;
+        } else if (is_vendor_call && callee.find("::") == std::string::npos) {
+            if (auto dot_pos = callee.rfind('.'); dot_pos != std::string::npos) {
+                std::string stripped = callee.substr(dot_pos + 1);
+                if (auto sit = cf_.cpp_fn_params.find(stripped); sit != cf_.cpp_fn_params.end()) {
+                    cpp_params = &sit->second;
+                }
+            }
+        }
     }
 
     if (!call.type_args.empty()) {

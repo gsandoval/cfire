@@ -60,6 +60,9 @@ extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif
 #include <windows.h>
 #include <commdlg.h>
 #include <dwmapi.h>
@@ -531,6 +534,7 @@ struct AppState {
     bool always_on_top{false};
     bool devtools_enabled{kDefaultWebUIDevExtras};
     bool context_menu_enabled{kDefaultWebUIDevExtras};
+    bool browser_keys_enabled{kDefaultWebUIDevExtras};
     bool autofill_enabled{true};
     bool is_fullscreen{false};
     bool is_minimized{false};
@@ -577,6 +581,7 @@ struct AppState {
     std::function<void(bool)> platform_set_dark_mode{};
     std::function<void(bool)> platform_set_devtools{};
     std::function<void(bool)> platform_set_context_menu{};
+    std::function<void(bool)> platform_set_browser_keys{};
     std::function<void(bool)> platform_set_autofill{};
     std::function<void()> platform_fullscreen{};
     std::function<void()> platform_minimize{};
@@ -600,6 +605,7 @@ struct AppState {
 
     void* native_window_handle{nullptr};
     void* native_webview_handle{nullptr};
+    void* native_controller_handle{nullptr};
     void* native_view_controller_handle{nullptr};
 #if defined(CFIRE_HAS_WIN32_BACKEND)
     HWND win32_hwnd{nullptr};
@@ -1019,12 +1025,14 @@ struct AppState {
 [[nodiscard]] inline auto build_preload_script(const AppState& st, bool include_ipc_token = false) -> std::string {
     bool dev = kDefaultWebUIDevExtras;
     bool ctx = kDefaultWebUIDevExtras;
+    bool browser_keys = kDefaultWebUIDevExtras;
     bool autofill = true;
     std::string tok;
     {
         std::lock_guard<std::recursive_mutex> lock(st.mtx);
         dev = st.devtools_enabled;
         ctx = st.context_menu_enabled;
+        browser_keys = st.browser_keys_enabled;
         autofill = st.autofill_enabled;
         if (include_ipc_token) {
             tok = st.ipc_session_token;
@@ -1032,16 +1040,18 @@ struct AppState {
     }
     if (!tok.empty()) {
         return std::format(
-            "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"autofill\":{},\"ipcToken\":\"{}\"}};\n",
+            "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"browserKeys\":{},\"autofill\":{},\"ipcToken\":\"{}\"}};\n",
             dev ? "true" : "false",
             ctx ? "true" : "false",
+            browser_keys ? "true" : "false",
             autofill ? "true" : "false",
             cfire::json::escape_string(tok)) + std::string(kPreloadBridgeJs);
     }
     return std::format(
-        "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"autofill\":{}}};\n",
+        "window.__cfire_initial_config = {{\"devtools\":{},\"contextMenu\":{},\"browserKeys\":{},\"autofill\":{}}};\n",
         dev ? "true" : "false",
         ctx ? "true" : "false",
+        browser_keys ? "true" : "false",
         autofill ? "true" : "false") + std::string(kPreloadBridgeJs);
 }
 

@@ -1856,6 +1856,7 @@ To prevent re-introducing previously rejected designs or violating language orth
 - **`CF-231` (`net.wait_readable` multi-socket readiness wait)**: Excluded (`Q66`). `net::detail::Poller` remains internal to `http.Server`; `TcpConn` is move-only, TLS streams buffer decrypted bytes in `SSL_pending`, and `async.scope` structured concurrency handles multi-stream relays.
 - **`CF-233` (`cfire test` FD-leak canary warm-up hook for `import cpp`)**: Excluded (`Q67`). Reaffirms `CF-018` / `CF-080`: `import cpp` test suites remain automatically exempt from per-test FD-leak checks without adding test lifecycle syntax or extra CLI flags.
 - **`CF-238` (Downstream-coupled Flint CI canary, `legacy-flint-pin` tag & Flint impact in `feat!` commits)**: Excluded (`Q69`). `cfire` remains downstream-agnostic: SemVer release tags (`vX.Y.Z`) are the sole pin contract, regressions are captured as hermetic `tests/conformance/` and `CF-214` `ext_smoke` tests, and commit messages follow `AGENTS.md` §3.
+- **`Q95` Reaffirmations (`CF-168`, `CF-171`) & Wave 2 OS-Specific Exclusions**: Reaffirmed `Q68` exclusions for `fs.sync_dir`/`fs.write_atomic` (Windows NTFS returns `ERROR_ACCESS_DENIED` on unprivileged directory `FlushFileBuffers`; Windows `fs.rename` instead passes `MOVEFILE_WRITE_THROUGH` transparently in `CF-271`) and `fs.lstat`/`fs.readlink`/`fs.symlink` (Windows Developer Mode/Admin divergence). Excluded from stdlib in favor of `import cpp` adapters: detached self-updater processes & OS process-table/port scraping (`CF-175`, `CF-092`, `CF-114`), Windows Registry (`CF-178`), privileged `openat`/`O_NOFOLLOW`/`getpwuid` (`CF-180`), Windows Restart Manager file holders (`CF-190`), clipboard image read (`CF-053` part), non-webui font enumeration (`CF-045` part), and macOS fullscreen top-edge inset (`CF-125` part). See [`flint.md`](./flint.md).
 
 ---
 
@@ -1972,3 +1973,11 @@ To prevent re-introducing previously rejected designs or violating language orth
 
 ### `CF-260` — Fallible Line Streaming (`read_line() -> str?!`) `[DEFERRED]`
 - **Revisit Criteria**: When stream I/O lines distinguish EOF `none` from `read()`/`recv()` `Error` (`File.read_line`, `TcpConn.read_line`, `ipc.Conn.read_line`) and `for line := try f.read_line()` / `cli.prompt` composition ergonomics are designed.
+
+---
+
+## E. Flint Upstream Wave 2 & Incremental Compilation/Testing (`CF-262` – `CF-273`, `Q95` – `Q99`)
+
+- **Flint Upstream Wave 2 (`CF-262` – `CF-272`, `Q95` – `Q99`)**: Tracked in [`flint.md`](./flint.md) across Waves `F6`–`F8` (`v0.12.4` P0/P1 compiler, AST bridge, C-lookup, views/copies, `build.cf`, test crash backtraces, Windows WebView2 fixes) and Wave `F9` (`v0.13.0` lean `core:os`/`core:fs` ergonomics, `CF-042` signal safety, `ext:webui` tray/fullscreen parity, macOS `NSURLSession` HTTPS headers).
+- **1:1 Per-File TU Sharding & Incremental Testing (`CF-273`)**: Tracked in [`backlog-build-distribution.md`](./backlog-build-distribution.md) (Wave `B8`).
+- **Next Free IDs**: Future items anywhere in `docs/planning/` start at **`CF-274`** and **`Q100`**.

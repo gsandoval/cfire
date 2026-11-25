@@ -1,0 +1,8 @@
+package main
+
+fn main() {
+    x := 42
+    a := "{x} {{hello}}" //~ error cfire/INVALID-INTERPOLATION
+    println("{{ok}}") //~ error cfire/INVALID-INTERPOLATION
+    _ = a
+}

@@ -371,6 +371,21 @@ public:
         return state_->context_menu_enabled;
     }
 
+    void set_browser_keys(bool enabled) {
+        std::function<void(bool)> fn;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->browser_keys_enabled = enabled;
+            fn = state_->platform_set_browser_keys;
+        }
+        if (fn) fn(enabled);
+    }
+
+    [[nodiscard]] auto browser_keys_enabled() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->browser_keys_enabled;
+    }
+
     void set_autofill(bool enabled) {
         std::function<void(bool)> fn;
         {
@@ -449,6 +464,11 @@ public:
     [[nodiscard]] auto native_webview_handle() const -> void* {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         return state_->native_webview_handle;
+    }
+
+    [[nodiscard]] auto native_controller_handle() const -> void* {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->native_controller_handle;
     }
 
     [[nodiscard]] auto native_view_controller_handle() const -> void* {

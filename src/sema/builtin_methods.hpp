@@ -274,7 +274,7 @@ inline constexpr std::array kApiMigrations = {
     ApiMigration{"str", "join", ApiMigrationKind::CallToMethod, "join"},
     ApiMigration{"str", "to_upper", ApiMigrationKind::CallToMethod, "to_upper"},
     ApiMigration{"str", "to_lower", ApiMigrationKind::CallToMethod, "to_lower"},
-    ApiMigration{"str", "replace", ApiMigrationKind::CallToMethod, "replace"},
+    ApiMigration{"str", "replace", ApiMigrationKind::CallToMethod, "replace_all"},
     ApiMigration{"str", "replace_all", ApiMigrationKind::CallToMethod, "replace_all"},
     ApiMigration{"str", "starts_with", ApiMigrationKind::CallToMethod, "starts_with"},
     ApiMigration{"str", "ends_with", ApiMigrationKind::CallToMethod, "ends_with"},
@@ -399,8 +399,9 @@ inline constexpr std::array kStdlibStructs = {
         "Name: str = \"\"; name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; "
         "Libs: any = \"\"; libs: any = \"\"; Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Defines: any = \"\"; defines: any = \"\"",
-        "Package-level manifest metadata and default native `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, and `Defines` in `build.cf`."},
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; "
+        "Flags: any = \"\"; CFlags: any = \"\"; cflags: any = \"\"; LDFlags: any = \"\"; ldflags: any = \"\"",
+        "Package-level manifest metadata and default native `PkgConfig`, `Libraries`, `Frameworks`, `Includes`, `Sources`, `Defines`, `CFlags`, and `LDFlags` in `build.cf`."},
     StdlibStruct{"build", "Executable", "cfire::build::ExecutableSpec",
         "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
         "Subsystem: str = \"\"; subsystem: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; "
@@ -411,7 +412,8 @@ inline constexpr std::array kStdlibStructs = {
         "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; "
+        "Flags: any = \"\"; CFlags: any = \"\"; cflags: any = \"\"; LDFlags: any = \"\"; ldflags: any = \"\"",
         "Executable target configuration in `build.cf` (`build.Executable(...)` / `build.Executable{...}`)."},
     StdlibStruct{"build", "App", "cfire::build::ExecutableSpec",
         "Name: str = \"\"; name: str = \"\"; AppName: str = \"\"; app_name: str = \"\"; Entry: str = \"\"; entry: str = \"\"; "
@@ -423,13 +425,15 @@ inline constexpr std::array kStdlibStructs = {
         "Universal: bool = false; universal: bool = false; MacosMin: str = \"\"; macos_min: str = \"\"; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; "
+        "Flags: any = \"\"; CFlags: any = \"\"; cflags: any = \"\"; LDFlags: any = \"\"; ldflags: any = \"\"",
         "Alias for `build.Executable` configuration in `build.cf`."},
     StdlibStruct{"build", "Library", "cfire::build::LibrarySpec",
         "Name: str = \"\"; name: str = \"\"; OutDir: str = \"\"; out_dir: str = \"\"; Static: bool = false; static: bool = false; "
         "PkgConfig: any = \"\"; pkg_config: any = \"\"; Libraries: any = \"\"; libraries: any = \"\"; Libs: any = \"\"; libs: any = \"\"; "
         "Frameworks: any = \"\"; frameworks: any = \"\"; Includes: any = \"\"; includes: any = \"\"; "
-        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; Flags: any = \"\"",
+        "Sources: any = \"\"; sources: any = \"\"; Defines: any = \"\"; defines: any = \"\"; "
+        "Flags: any = \"\"; CFlags: any = \"\"; cflags: any = \"\"; LDFlags: any = \"\"; ldflags: any = \"\"",
         "Library target configuration in `build.cf`."},
     StdlibStruct{"build", "Step", "cfire::build::CommandHook",
         "Command: str = \"\"; command: str = \"\"; Args: any = \"\"; args: any = \"\"; "

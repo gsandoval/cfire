@@ -3,6 +3,12 @@
 #include "cfire_prelude.hpp"
 #include "core/cli.hpp"
 #include "core/json.hpp"
+#if defined(_WIN32)
+#include "detail/win32_clean_macros.hpp"
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 struct Shape;
 struct Config;

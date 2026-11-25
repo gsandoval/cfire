@@ -1086,6 +1086,149 @@ app := build.Executable{
 #endif
 }
 
+inline void check_wave_f8_manifest_conditionals_and_step([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    ScopedTempDir tmp("cfire_f8_manifest");
+    auto bcf = tmp.file("build.cf", R"CF(package build
+
+import "core:build"
+
+is_mac := build.os() == "macos"
+is_linux := build.os() == "linux"
+is_win := build.os() == "windows"
+is_arm := build.arch() == "arm64"
+
+os_tag := match build.os() {
+    "macos" => "MAC_TARGET=1",
+    "linux" => "LIN_TARGET=1",
+    _ => "WIN_TARGET=1",
+}
+
+extra_libs := if is_linux && !is_win { ["m"] } else { [] }
+plat_cflags := if is_mac && is_arm { ["-DARCH_MAC_ARM=1"] } else { ["-DARCH_OTHER=1"] }
+
+GenStep := build.Step("gen_hdr", {
+    Command: "sh",
+    Args: ["-c", "echo '#define STEP_GENERATED 77' > step_gen.h"],
+    Outputs: ["step_gen.h"]
+})
+
+App := build.Executable("condapp", {
+    Entry: "main.cf",
+    Includes: ["csrc"],
+    Sources: ["csrc/helper.c"],
+    Defines: [os_tag],
+    Frameworks: if is_mac { ["Foundation"] } else { [] },
+    Libraries: extra_libs + if is_win { ["ws2_32"] } else { [] },
+    CFlags: plat_cflags,
+    LDFlags: if is_linux { ["-Wl,--as-needed"] } else { [] },
+})
+)CF");
+
+    // 1. Target-triple conditional evaluation across macOS/Linux/Windows
+    {
+        auto pm = cfire::build::parse_build_cf(bcf, "arm64-apple-macos");
+        require(pm.has_value() && pm->executables.size() == 1 && pm->pre_build_commands.size() == 1,
+            std::format("CF-268: parse_build_cf(arm64-apple-macos) ok: {}", pm ? "" : pm.error()));
+        if (pm && !pm->executables.empty() && !pm->pre_build_commands.empty()) {
+            const auto& st = pm->pre_build_commands[0];
+            require(st.command == "sh" && st.outputs.size() == 1 && st.outputs[0] == "step_gen.h",
+                "CF-268: build.Step parses Command/Args/Outputs identically to build.Command");
+            const auto& ex = pm->executables[0];
+            require(ex.defines.size() == 1 && ex.defines[0] == "MAC_TARGET=1",
+                "CF-268: match build.os() evaluates arm64-apple-macos");
+            require(ex.frameworks.size() == 1 && ex.frameworks[0] == "Foundation",
+                "CF-268: if is_mac evaluates Frameworks on macOS");
+            require(ex.libraries.empty() && ex.ldflags.empty(),
+                "CF-268: false OS branches omit Linux/Windows libs");
+            require(ex.cflags.size() == 1 && ex.cflags[0] == "-DARCH_MAC_ARM=1",
+                "CF-268: build.os() && build.arch() evaluates CFlags");
+            require(ex.sources.size() == 1 && ex.sources[0] == "csrc/helper.c",
+                "CF-268: Sources evaluated on Executable");
+        }
+
+        auto pl = cfire::build::parse_build_cf(bcf, "x86_64-unknown-linux-gnu");
+        require(pl.has_value() && !pl->executables.empty(),
+            "CF-268: parse_build_cf(x86_64-unknown-linux-gnu) ok");
+        if (pl && !pl->executables.empty()) {
+            const auto& ex = pl->executables[0];
+            require(ex.defines.size() == 1 && ex.defines[0] == "LIN_TARGET=1", "CF-268: LIN_TARGET=1 on Linux");
+            require(ex.libraries.size() == 1 && ex.libraries[0] == "m", "CF-268: Libraries evaluates on Linux");
+            require(ex.ldflags.size() == 1 && ex.ldflags[0] == "-Wl,--as-needed", "CF-268: LDFlags evaluates on Linux");
+            require(ex.cflags.size() == 1 && ex.cflags[0] == "-DARCH_OTHER=1", "CF-268: non-arm64 branch CFlags");
+        }
+
+        auto pw = cfire::build::parse_build_cf(bcf, "x86_64-w64-mingw32");
+        require(pw.has_value() && !pw->executables.empty(),
+            "CF-268: parse_build_cf(x86_64-w64-mingw32) ok");
+        if (pw && !pw->executables.empty()) {
+            const auto& ex = pw->executables[0];
+            require(ex.defines.size() == 1 && ex.defines[0] == "WIN_TARGET=1", "CF-268: WIN_TARGET=1 on Windows");
+            require(ex.libraries.size() == 1 && ex.libraries[0] == "ws2_32", "CF-268: Windows branch Libraries");
+        }
+    }
+
+    // 2. Non-constant expression in build.cf fails with cfire/INVALID-BUILD-VALUE
+    {
+        auto bad_bcf = tmp.file("bad/build.cf", R"CF(package build
+import "core:build"
+App := build.Executable("bad", {
+    Entry: "main.cf",
+    Libraries: [unknown_helper()],
+})
+)CF");
+        auto bad_res = cfire::build::parse_build_cf(bad_bcf);
+        require(!bad_res.has_value() && bad_res.error().contains("cfire/INVALID-BUILD-VALUE"),
+            std::format("CF-268: non-constant build.cf fails with INVALID-BUILD-VALUE, got: {}",
+                        bad_res ? "<ok>" : bad_res.error()));
+    }
+
+#if !defined(_WIN32)
+    // 3. End-to-end build with build.Step + Sources + CFlags + conditional Defines (host POSIX sh)
+    {
+        (void)tmp.file("csrc/helper.c", "#include \"../step_gen.h\"\nint helper_val(void) { return STEP_GENERATED + ARCH_NUM; }\n");
+        (void)tmp.file("csrc/helper.h", "int helper_val(void);\n");
+        auto bcf_e2e = tmp.file("e2e/build.cf", R"CF(package build
+import "core:build"
+Gen := build.Step("gen_hdr", {
+    Command: "/bin/sh",
+    Args: ["-c", "echo '#define STEP_GENERATED 77' > step_gen.h"],
+    Outputs: ["step_gen.h"]
+})
+App := build.Executable("cond_e2e", {
+    Entry: "main.cf",
+    Includes: ["csrc"],
+    Sources: ["csrc/helper.c"],
+    Defines: {"ARCH_NUM": if build.os() == "macos" || build.os() == "linux" { 10 } else { 0 }},
+    CFlags: ["-DCF_COND_CFLAG=3"],
+})
+)CF");
+        (void)tmp.file("e2e/csrc/helper.h", "#ifdef __cplusplus\nextern \"C\" {\n#endif\nint helper_val(void);\n#ifdef __cplusplus\n}\n#endif\n");
+        (void)tmp.file("e2e/csrc/helper.c", "#include \"../step_gen.h\"\nint helper_val(void) { return STEP_GENERATED + ARCH_NUM + CF_COND_CFLAG; }\n");
+        auto main_cf = tmp.file("e2e/main.cf", R"CF(package main
+import cpp "helper.h"
+fn main() {
+    println("step={}", cpp.helper_val())
+}
+)CF");
+        auto cache_dir = tmp.subpath("e2e_cache");
+        ScopedEnvGuard cache_guard("CFIRE_CACHE_DIR", cache_dir.string());
+        auto out_bin = tmp.path / "e2e_bin";
+        auto plan = cfire::build::build_native(main_cf, rt_dir, out_bin);
+        require(plan.has_value(),
+            std::format("CF-268: build_native with build.Step + Sources + CFlags ok: {}", plan ? "" : plan.error()));
+        if (plan) {
+            require(std::filesystem::exists(tmp.path / "e2e" / "step_gen.h"),
+                "CF-268: build.Step materialized step_gen.h");
+            int rc = 0;
+            std::string run_out = cfire::bridge::run_command_capture(
+                cfire::bridge::shell_quote(out_bin.string()) + " 2>&1", rc);
+            require(rc == 0 && run_out.contains("step=90"),
+                std::format("CF-268: build.cf Sources + CFlags linked cleanly, got rc={} out={}", rc, run_out));
+        }
+    }
+#endif
+}
+
 } // namespace test_build_manifest_ios_detail
 
 void test_build_manifest_ios(const std::filesystem::path& rt_dir) {
@@ -1097,5 +1240,6 @@ void test_build_manifest_ios(const std::filesystem::path& rt_dir) {
     test_build_manifest_ios_detail::check_cli_packaging_flags();
     test_build_manifest_ios_detail::check_apple_bundle_packaging_and_signing(rt_dir);
     test_build_manifest_ios_detail::check_windows_versioninfo_packaging(rt_dir);
+    test_build_manifest_ios_detail::check_wave_f8_manifest_conditionals_and_step(rt_dir);
     std::println("--- PASS: test_build_manifest_ios");
 }

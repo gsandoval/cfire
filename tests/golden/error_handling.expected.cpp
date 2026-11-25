@@ -1,4 +1,10 @@
 #include "cfire_prelude.hpp"
+#if defined(_WIN32)
+#include "detail/win32_clean_macros.hpp"
+#ifdef interface
+#undef interface
+#endif
+#endif
 
 [[nodiscard]] inline auto parse_even(cfire::str_ref s) -> std::expected<std::int64_t, cfire::Error>;
 [[nodiscard]] inline auto find_name(std::int32_t id) -> std::optional<std::string>;

@@ -37,6 +37,7 @@ struct Spec {
     std::set<std::pair<std::string, int>> warnings{};
     std::optional<std::pair<std::string, int>> panic{};    // (substring, line or 0 = any)
     std::optional<int> exit{};
+    bool exit_signal = false;
     std::string xfail{};
     std::vector<std::string> flags{};
     std::vector<std::string> requires_libs{};
@@ -117,10 +118,14 @@ struct DirectiveError {
                 if (!std::regex_match(arg, m, kPanic)) return bad(std::format("bad panic directive: '{}'", body));
                 spec.panic = std::pair{m[1].str(), m[2].matched ? std::stoi(m[2].str()) : 0};
             } else if (kind == "exit") {
-                try {
-                    spec.exit = std::stoi(arg);
-                } catch (...) {
-                    return bad(std::format("bad exit directive: '{}'", body));
+                if (arg == "signal") {
+                    spec.exit_signal = true;
+                } else {
+                    try {
+                        spec.exit = std::stoi(arg);
+                    } catch (...) {
+                        return bad(std::format("bad exit directive: '{}'", body));
+                    }
                 }
             } else if (kind == "xfail") {
                 if (!std::regex_match(arg, kXfailTopic)) return bad(std::format("xfail must specify '<topic>: <reason>': '{}'", body));
@@ -159,7 +164,7 @@ struct DirectiveError {
             return bad(std::format("bad inline annotation on line {}: '{}'", lineno, trim(lines[n])));
         }
     }
-    if (!spec.stdout_lines && spec.errors.empty() && !spec.panic && !spec.exit && spec.warnings.empty()) {
+    if (!spec.stdout_lines && spec.errors.empty() && !spec.panic && !spec.exit && !spec.exit_signal && spec.warnings.empty()) {
         return bad("file declares no expectation");
     }
     return spec;
@@ -292,7 +297,7 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     std::error_code ec;
     std::filesystem::copy_file(path, work.path / name, std::filesystem::copy_options::overwrite_existing, ec);
 
-    const bool needs_run = static_cast<bool>(spec.stdout_lines || spec.panic || spec.exit);
+    const bool needs_run = static_cast<bool>(spec.stdout_lines || spec.panic || spec.exit || spec.exit_signal);
     const bool verify_cpp_in_check = !(needs_run && spec.errors.empty());
     std::vector<std::string> chk_argv{opt.cfire, "check"};
     if (verify_cpp_in_check) chk_argv.push_back("--verify-cpp");
@@ -379,6 +384,12 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
             } else if (line != 0 && !std::regex_search(combined, std::regex(std::format(R"(\.cf:{}\b)", line)))) {
                 reasons.push_back(std::format("panic not attributed to line {}: '{}'", line, tail(combined, 160)));
             }
+        } else if (spec.exit_signal) {
+#if defined(_WIN32)
+            if (r.exit_code == 0) reasons.push_back("expected non-zero signal exit, got 0");
+#else
+            if (r.exit_code < 128) reasons.push_back(std::format("expected signal exit (>=128), got {}", r.exit_code));
+#endif
         } else if (spec.exit) {
             if (r.exit_code != *spec.exit) reasons.push_back(std::format("expected exit {}, got {}", *spec.exit, r.exit_code));
         } else if (r.exit_code != 0) {
