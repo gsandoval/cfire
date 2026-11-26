@@ -1707,7 +1707,7 @@ window.addEventListener('hashchange', updateChapterFromHash);
   - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|cli] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
   - `cfire clean [--cache] [--all] [--dry-run] [--json] [path|build.cf]`: Remove project `.cfire/` & manifest outputs (and marker-guarded OS/XDG user cache with `--cache`)
   - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
-  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
+  - `cfire test [--sanitize] [--changed] [--no-cache] [--fuzz] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner (caches unchanged suites and filters by changed dependency graph with `--changed`)
   - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
   - `cfire fix [--only <code,...>] [--dry-run] [--json] [file|dir]`: Auto-fixer applying `MachineApplicable` fixes by default (`EditorOnly` assists such as `cfire/PREFER-ENUM` apply with `--only`)
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers

@@ -1447,9 +1447,9 @@ Whether your code runs on a Linux server, macOS desktop, or inside the iOS Simul
 | `core:fs` | `fs.read_bytes` / `write_bytes` / `append_bytes` | `fn(path: str) -> []byte!` / `fn(path: str, data: []byte) -> void!` | One-shot binary file read, write, and append. |
 | `core:fs` | `fs.open(path, mode)` / `fs.create_new(path, mode)` | `fn(path: str, mode: OpenMode) -> File!` / `fn(path: str, mode: u32 = 0o600) -> File!` | Opens or exclusively creates (`O_CREAT\|O_EXCL` / `CREATE_NEW`) a streaming `File` handle supporting `.read_text()`, `.read_bytes()`, `.read_into()`, `.read_exact()`, `.read_text_until()`, `.read_bytes_until()`, `.read_line()`, `.read_lines()`, `.write_text()`, `.write_bytes()`, `.seek()`, `.tell()`, `.flush()`, `.sync()`, and `.close()`. |
 | `core:fs` | `fs.stat` / `realpath` / `ERR_EXISTS` / `ERR_NOT_FOUND` / `ERR_PERMISSION` | `fn(path: str) -> FileInfo!` / `str!` / `const i32` | Metadata inspection (`FileInfo{size, mtime_ms, mode, is_dir, is_symlink}`), canonical real path resolution, and portable error codes via `err.code()`. |
-| `core:fs` | `fs.exists` / `is_dir` / `is_file` / `file_size` / `copy_file` / `mkdir_all` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, file copying, recursive directory creation, removal, and directory listing. |
+| `core:fs` | `fs.exists` / `is_dir` / `is_file` / `file_size` / `copy_file` / `mkdir_all` / `mkdtemp` / `remove` / `list_dir` | `fn(path: str) -> ...` | Path inspection, file copying, recursive directory creation, unique temp directory creation (`fs.mkdtemp`), removal, and directory listing. |
 | `core:os` | `os.stdin` / `os.stdout` / `os.stderr` / `os.pipe` | `fn() -> fs.File` / `fn() -> (fs.File, fs.File)!` | Non-owning `fs.File` stream handles for stdio (`0`, `1`, `2`) and owning `(reader, writer)` OS pipe pairs. |
-| `core:os` | `os.getenv` / `os.setenv` / `os.cwd` | `fn(key: str) -> str?` | Reads (`none` if unset) or sets process environment variables and queries the working directory. |
+| `core:os` | `os.getenv` / `os.setenv` / `os.cwd` / `os.chdir` / `os.name` / `os.arch` / `os.preferred_languages` | `fn(...) -> ...` | Reads/sets environment variables, queries or changes working directory (`chdir`), identifies OS/arch (`name`/`arch`), and reads ordered OS UI locales. |
 | `core:time` | `time.now_ms` / `now` / `parse_rfc3339` / `sleep_ms` | `fn() -> i64` / `Time` / `Time!` | Monotonic millisecond clock, wall-clock `Time` with `.local()`, `.utc()`, `.format(pattern)`, offset-aware `.format_rfc3339()`, and thread sleep. |
 | `core:rand` | `rand.u64` / `range_i64` / `f64_unit` / `bytes` | `fn(n: usize) -> []byte` | Thread-local `MT19937_64` draws and OS-entropy CSPRNG byte slices (`rand.bytes`). |
 | `core:math` | `math.PI` / `E` / `TAU` / `SQRT_2` and `math.atan2` / `hypot` / `gcd` / `lcm` | `f64` constants / multi-input functions | Constants and functions with no natural receiver; single-value math is a method (`x.sqrt()`, `x.sin()`, `x.clamp(lo, hi)`, `a.checked_add(b)`). |
@@ -1877,6 +1877,18 @@ mut handle := cpp.open_cipher(7)
 // Held by value with zero heap wrapper allocation; `~CipherHandle()` runs `demo_session_free`
 // deterministically when `handle` leaves scope.
 ```
+
+### Non-Owning C/C++ Pointer Aliases (Opaque Handle Pattern)
+When a C/C++ library API exposes a non-owning pointer token (`T*`) that `.cf` only needs to store and pass back to other C functions—such as a handle returned by `app.native_webview_handle()`, an audio device token, or a database cursor—do **not** spell `*T` in `.cf` (`cfire/RAW-POINTER`). Instead, define a `using` type alias or thin opaque struct inside your C++ interop header:
+
+```cpp
+// csrc/opaque_handle.hpp
+#pragma once
+struct ForeignContext;
+using ContextHandle = ForeignContext*;
+```
+
+Because `import cpp "opaque_handle.hpp"` imports `ContextHandle` as a nominal value handle, `.cf` code can hold and pass `h: cpp.ContextHandle` directly without introducing raw pointer syntax into `.cf`.
 
 ### Orchestrating C, CMake & Make Libraries in `build.cf`
 When your project combines `.cf` code with local C files (`build.CC`), a CMake subproject (`build.CMake`), or a Makefile archive (`build.Make`), declare them in `build.cf`. The build driver compiles each native dependency into `.cfire/cache/deps/`, forwards its `Includes` and `Defines` to the Clang AST bridge, and links the resulting static archives automatically:
@@ -2833,7 +2845,9 @@ To make a hybrid app feel like a native macOS or Linux tool rather than a browse
 | `app.set_min_size(w, h)` / `set_max_size(w, h)` | `fn(i32, i32)` | Constrains user window resizing bounds. |
 | `app.set_frameless(true)` / `set_transparent(true)` | `fn(bool)` | Hides the OS titlebar (`NSWindowStyleMaskFullSizeContentView` on macOS) or enables transparent WebView backgrounds. |
 | `app.set_dark_mode(true)` / `set_always_on_top(true)` | `fn(bool)` | Forces `NSAppearanceNameDarkAqua` (macOS) / dark GTK theme or floats the window above other apps. |
-| `app.center()` / `fullscreen()` / `minimize()` / `maximize()` | `fn()` | Controls window placement (also callable from JS via `window.runtime.WindowCenter()`, `WindowMinimise()`, `WindowMaximise()`, `WindowFullscreen()`, `Quit()`). |
+| `app.center()` / `fullscreen()` / `set_fullscreen(on)` / `is_fullscreen()` / `minimize()` / `maximize()` | `fn()` / `fn(bool)` | Controls window placement and native fullscreen state (also callable from JS via `window.runtime.WindowCenter()`, `WindowMinimise()`, `WindowMaximise()`, `WindowFullscreen()`, `Quit()`). |
+| `app.set_tray(icon, tip)` / `add_tray_item(title, ev)` / `tray_shown()` / `set_tray_item_title(ev, title)` | `fn(...)` | Configures a desktop tray item, checks whether it embedded/displayed cleanly (`tray_shown()`), and relabels items safely on the UI thread. |
+| `webui.runtime_version()` | `fn() -> str?` | Returns the host WebView runtime version string (`WKWebView`, `WebKitGTK`, or `WebView2`), or `none` if unavailable. |
 | **CSS / HTML Drag Regions** | `data-webui-drag-region` or `--wails-draggable: drag` | Add `data-webui-drag-region` (or CSS `-webkit-app-region: drag`) to your custom HTML header bar to initiate native OS window dragging (`performWindowDragWithEvent:` on macOS, `begin_move_drag` on GTK); interactive `<button>` and `<input>` children remain clickable automatically. |
 | `app.open_file_dialog(title, dir, filter)` | `fn(str, str = "", str = "") -> str` | Opens a native `NSOpenPanel` (macOS) or `GtkFileChooser` / `GetOpenFileNameW` file picker and returns the selected path. |
 | `app.save_file_dialog(title, default_name)` | `fn(str, str = "") -> str` | Opens a native `NSSavePanel` / OS save dialog and returns the target path. |

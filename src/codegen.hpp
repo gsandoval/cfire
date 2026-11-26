@@ -7,15 +7,27 @@
 
 namespace cfire::frontend {
 
-struct CppUnit {
+struct CppHeader {
     std::string id;
     std::string pkg_name;
     std::string filename;
+    std::string hpp;
+};
+
+struct CppUnit {
+    std::string id;
+    std::string pkg_name;
+    std::string source_path;
+    std::string filename;
+    std::string header_file;
+    std::vector<std::string> dep_headers;
     std::string cpp;
 };
 
 struct ShardedEmission {
+    std::string preamble_hpp;
     std::string decls_hpp;
+    std::vector<CppHeader> headers;
     std::vector<CppUnit> units;
     bool has_cpp_impl_define = false;
 };

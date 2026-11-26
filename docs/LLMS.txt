@@ -79,7 +79,7 @@
   - `cfire build [--target wasm|ios-sim|ios] [--portable] [--static] [--universal] [--pkg-config <name>] [--web-profile canvas|cli] [--subsystem gui|cli] [-o <out>] [target]`: Compile native binary, macOS/iOS `.app` bundle, or WebAssembly
   - `cfire clean [--cache] [--all] [--dry-run] [--json] [path|build.cf]`: Remove project `.cfire/` & manifest outputs (and marker-guarded OS/XDG user cache with `--cache`)
   - `cfire check [--json] [--fix] [--verify-cpp] [file|dir]`: Workspace-aware type & safety checker with fix-its
-  - `cfire test [--sanitize] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner
+  - `cfire test [--sanitize] [--changed] [--no-cache] [--fuzz] [--json] [--filter <pat>] [--bench] [--fuzz-runs <N>] [--seed <S>] [--bench-time <ms>] [file|dir]`: Unit, fuzz, doc-test, and benchmark runner (caches unchanged suites and filters by changed dependency graph with `--changed`)
   - `cfire bench [--json] [--filter <pat>] [--bench-time <ms>] [file|dir]`: Statistical benchmark runner
   - `cfire fix [--only <code,...>] [--dry-run] [--json] [file|dir]`: Auto-fixer applying `MachineApplicable` fixes by default (`EditorOnly` assists such as `cfire/PREFER-ENUM` apply with `--only`)
   - `cfire serve [--port <n>] [--no-open] [target|path]`: Built-in static server with WASM MIME & COOP/COEP headers
@@ -435,10 +435,11 @@ Functions & Methods:
 - `fn read_text(path: str) -> str!` (call: `fs.read_text`): Reads an entire UTF-8 text file into a `str`.
 - `fn write_text(path: str, text: str) -> void!` (call: `fs.write_text`): Writes a UTF-8 string to disk.
 - `fn append_text(path: str, text: str) -> void!` (call: `fs.append_text`): Appends a UTF-8 string to a file on disk.
-- `fn rename(from: str, to: str) -> void!` (call: `fs.rename`): Renames or moves a file or directory.
+- `fn rename(from: str, to: str) -> void!` (call: `fs.rename`): Renames or moves a file or directory (uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` on Windows).
+- `fn mkdtemp(prefix: str = "cfire-") -> str!` (call: `fs.mkdtemp`): Creates a unique temporary directory with the given filename `prefix` under the OS temp directory and returns its path.
 - `fn copy_file(from: str, to: str) -> void!` (call: `fs.copy_file`): Copies a file from `from` to `to` (overwriting `to` if it exists).
 - `fn file_size(path: str) -> u64!` (call: `fs.file_size`): Returns the size of a file in bytes.
-- `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` (call: `fs.open`): Opens a file with specified mode (Read, Write, Append, ReadWrite) returning an unbuffered OS descriptor `File` handle.
+- `fn open(path: str, mode: OpenMode = OpenMode::Read) -> File!` (call: `fs.open`): Opens a regular file (never directories) with specified mode (Read, Write, Append, ReadWrite) returning an unbuffered OS descriptor `File` handle.
 - `fn create_new(path: str, mode: u32 = 0o600) -> File!` (call: `fs.create_new`): Atomically creates a new file with `O_CREAT | O_EXCL` (`CREATE_NEW`), failing with `ERR_EXISTS` if it already exists.
 - `fn stat(path: str) -> FileInfo!` (call: `fs.stat`): Inspects metadata (`size`, `mtime_ms`, `mode`, `is_dir`, `is_symlink`) for a file, directory, or symlink.
 - `fn realpath(path: str) -> str!` (call: `fs.realpath`): Resolves `.` / `..` segments and symbolic links to an existing canonical path.
@@ -562,9 +563,9 @@ Types:
 - `ServerLimits`: Per-connection limits for `http.Server` (with keep-alive and event-loop limits); pass to `server.set_limits(...)`. The server waits on idle and slow connections in an event loop, so `workers` is only how many handlers run at once; `workers = 0` keeps the default (twice the core count, at least 4). An idle keep-alive connection closes after `keepalive_timeout_ms` (0 turns keep-alive off) or after `max_requests_per_conn` requests. Each WebSocket session runs on its own thread, up to `max_websockets`. Over `max_connections` open connections or `max_pending` requests waiting for a worker, a client gets 503.
 - `TlsConfig`: Server certificate for `make(http.Server, port, tls: ...)`: set `cert_file`/`key_file`, or `cert_pem`/`key_pem` for in-memory PEM.
 Functions & Methods:
-- `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables).
-- `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables).
-- `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> Response!` (call: `http.request`): Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables).
+- `fn get(url: str, headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000, max_response_bytes: usize = 0) -> Response!` (call: `http.get`): Executes an HTTP or HTTPS GET request against a target URL within the end-to-end `timeout_ms` deadline (`0` disables) and optional `max_response_bytes` cap (`0` disables).
+- `fn post(url: str, body: str, content_type: str = "application/json", headers: map[str]str = {}, verify_peer: bool = true, timeout_ms: i64 = 30000, max_response_bytes: usize = 0) -> Response!` (call: `http.post`): Executes an HTTP or HTTPS POST request with payload body within `timeout_ms` (`0` disables) and optional `max_response_bytes` cap (`0` disables).
+- `fn request(method: str, url: str, body: str = "", content_type: str = "", headers: map[str]str = {}, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000, max_response_bytes: usize = 0) -> Response!` (call: `http.request`): Executes an arbitrary HTTP or HTTPS request (PUT, DELETE, PATCH, etc.) within `timeout_ms` (`0` disables) and optional `max_response_bytes` cap (`0` disables).
 - `fn post_sse(url: str, body: str, headers: map[str]str = {}, on_event: fn(SseEvent) -> bool, verify_peer: bool = true, ca_file: str = "", timeout_ms: i64 = 30000) -> Response!` (call: `http.post_sse`): Streams an HTTP/HTTPS POST response using Server-Sent Events (`text/event-stream`) and chunked transfer encoding, invoking `on_event` for each event.
 - `fn serve_in_background(port: u16, handler: fn(Request) -> Response | Router, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!` (call: `http.serve_in_background`): Binds a server on `host:port`, starts its background event loop, and returns the live `HttpServer` handle.
 - `fn make(port: u16 = 0, tls: TlsConfig = {}, host: str = "0.0.0.0") -> HttpServer!`: `make(http.Server, port)` creates an HTTP server listening on `host:port` (`0` picks an ephemeral port); `make(http.Server, port, tls: http.TlsConfig{cert_file: c, key_file: k})` serves HTTPS, and `host: "127.0.0.1"` restricts binding to loopback.
@@ -686,6 +687,10 @@ Functions & Methods:
 - `fn getenv(key: str) -> str?` (call: `os.getenv`): Reads environment variable `key`, returning `none` if unset.
 - `fn setenv(key: str, value: str)` (call: `os.setenv`): Sets environment variable `key` to `value` in the current process.
 - `fn cwd() -> str` (call: `os.cwd`): Returns the current working directory path.
+- `fn chdir(path: str) -> void!` (call: `os.chdir`): Changes the process current working directory to `path`.
+- `fn name() -> str` (call: `os.name`): Returns the host operating system name (`"macos"`, `"linux"`, `"windows"`, `"ios"`, `"wasm"`).
+- `fn arch() -> str` (call: `os.arch`): Returns the host CPU architecture (`"arm64"`, `"x86_64"`, `"wasm32"`, etc.).
+- `fn preferred_languages() -> []str` (call: `os.preferred_languages`): Returns the user's ordered OS preferred UI locale/language tags (`"en-US"`, etc.).
 - `fn data_dir(app: str = "") -> str!` (call: `os.data_dir`): Returns (and creates with `0700` permissions if missing) the OS-standard persistent application data directory (`Application Support` on Apple, `XDG_DATA_HOME` on Linux, `FOLDERID_RoamingAppData` on Windows).
 - `fn cache_dir(app: str = "") -> str!` (call: `os.cache_dir`): Returns (and creates with `0700` permissions if missing) the OS-standard cache directory (`Library/Caches` on Apple, `XDG_CACHE_HOME` on Linux, `FOLDERID_LocalAppData\\Cache` on Windows).
 - `fn documents_dir() -> str!` (call: `os.documents_dir`): Returns (and creates with `0700` permissions if missing) the user's OS-standard Documents directory (`~/Documents` on Apple, `XDG_DOCUMENTS_DIR` on Linux, `FOLDERID_Documents` on Windows).
@@ -698,10 +703,10 @@ Functions & Methods:
 - `fn is_tty() -> bool` (call: `os.is_tty`): Returns `true` if standard input refers to an interactive terminal (or call `.is_tty()` on any `fs.File`).
 - `fn term_size() -> TermSize` (call: `os.term_size`): Queries terminal dimensions (`cols`, `rows`) via `TIOCGWINSZ`, defaulting to 80x24 if not a TTY.
 - `fn make() -> RawTerminal!`: `make(os.RawTerminal)` puts standard input into raw terminal mode (`cfmakeraw`) and returns an RAII guard that restores `termios` when it goes out of scope.
-- `fn on_signal(sig: i32, handler: fn(i32))` (call: `os.on_signal`): Registers a callback handler for POSIX signal `sig` (e.g., `SIGINT`, `SIGTERM`, `SIGWINCH`).
+- `fn on_signal(sig: i32, handler: fn(i32))` (call: `os.on_signal`): Registers a callback handler for signal `sig` (dispatched outside signal-handler context via an async-signal-safe pipe/event wakeup).
 - `fn exec_output(cmd: str) -> str!` (call: `os.exec_output`): Executes a shell command via `popen` and returns its captured stdout.
 - `fn exec(cmd: str) -> str!` (call: `os.exec`): Executes a shell command via `popen` and returns its captured stdout.
-- `fn command(binary: str, args: []str) -> ExecResult!` (call: `os.command`): Spawns a subprocess with explicit argument list via `posix_spawnp` (zero shell injection risk) and captures stdout/stderr.
+- `fn command(binary: str, args: []str = [], cwd: str = "", timeout_ms: i64 = 0) -> ExecResult!` (call: `os.command`): Spawns a subprocess with explicit argument list, optional working directory `cwd`, and optional `timeout_ms` deadline (`0` disables) with zero shell injection risk, capturing stdout/stderr.
 
 ### `import "core:rand"` (alias: `rand`)
 Fast, thread-safe pseudo-random and OS-entropy CSPRNG random generation.
@@ -1035,10 +1040,12 @@ Functions & Methods:
 - `fn (app: App) clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)`: Copies a sensitive secret to the OS clipboard marked as concealed/transient and automatically clears it after `clear_after_ms` if the clipboard has not been overwritten.
 - `fn (app: App) is_clipboard_concealed() -> bool`: Returns `true` if the most recent clipboard write was marked as concealed/secret.
 - `fn (app: App) clipboard_get() -> str`: Reads current plain text from the native OS system clipboard (triggers iOS 16+ OS paste permission prompt when reading external apps' pasteboard contents).
-- `fn (app: App) monospace_fonts() -> []str`: Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows).
+- `fn (app: App) monospace_fonts() -> []str`: Enumerates installed system monospace font families (`NSFontManager` on macOS, `fc-list :spacing=mono` on Linux, `EnumFontFamiliesExW` on Windows); returns an empty slice when none can be enumerated.
 - `fn (mut app: App) set_icon(icon_path: str)`: Sets the application window and dock/taskbar icon from a `.png`, `.icns`, or `.ico` file.
 - `fn (mut app: App) set_tray(icon_path: str, tooltip: str = "")`: Configures a system tray / menu-bar status item (`NSStatusItem` on macOS, `GtkStatusIcon` on Linux, `Shell_NotifyIconW` on Windows).
 - `fn (mut app: App) add_tray_item(title: str, event: str)`: Appends a menu item to the system tray context menu that emits `event` to `app.on(event)` when clicked (or `"-"` for a separator).
+- `fn (app: App) tray_shown() -> bool`: Returns `true` when the OS system tray / status item was successfully displayed/embedded.
+- `fn (mut app: App) set_tray_item_title(event: str, title: str)`: Updates the displayed label of the tray menu item registered for `event` cleanly on the UI thread.
 - `fn (mut app: App) hide_window()`: Hides the native application window without terminating the process or system tray.
 - `fn (mut app: App) show_window()`: Restores and focuses a hidden or minimized native application window.
 - `fn (mut app: App) set_hide_on_close(enabled: bool)`: Intercepts the window close button (`windowShouldClose:` / `delete-event` / `WM_CLOSE`) to hide the window to the system tray instead of exiting.
@@ -1066,6 +1073,8 @@ Functions & Methods:
 - `fn (mut app: App) set_autofill(enabled: bool)`: Enables or disables browser form autofill and password autosave (WebView2 `ICoreWebView2Settings4` plus WebKit DOM `autocomplete="off"` enforcement for secret fields).
 - `fn (app: App) autofill_enabled() -> bool`: Returns whether browser form autofill / password autosave is currently enabled.
 - `fn (mut app: App) fullscreen()`: Toggles native fullscreen window mode.
+- `fn (mut app: App) set_fullscreen(on: bool)`: Sets native fullscreen window mode explicitly to `on`.
+- `fn (app: App) is_fullscreen() -> bool`: Returns `true` if the application window is currently in fullscreen mode.
 - `fn (mut app: App) minimize()`: Minimizes the native window to the dock or taskbar.
 - `fn (mut app: App) maximize()`: Zooms or maximizes the native window.
 - `fn (mut app: App) center()`: Centers the native window on the active screen.
@@ -1085,7 +1094,8 @@ Functions & Methods:
 - `fn clipboard_get() -> str` (call: `webui.clipboard_get`): Reads plaintext from the system clipboard.
 - `fn clipboard_set(text: str, concealed: bool = false, clear_after_ms: i64 = 0)` (call: `webui.clipboard_set`): Writes plaintext to the system clipboard with optional auto-clear timeout.
 - `fn clipboard_set_secret(text: str, clear_after_ms: i64 = 30000)` (call: `webui.clipboard_set_secret`): Writes sensitive secret to the clipboard and schedules automatic clearing.
-- `fn monospace_fonts() -> []str` (call: `webui.monospace_fonts`): Returns a list of platform-installed monospaced font family names.
+- `fn monospace_fonts() -> []str` (call: `webui.monospace_fonts`): Returns a list of platform-installed monospaced font family names (or empty slice when none can be enumerated).
+- `fn runtime_version() -> str?` (call: `webui.runtime_version`): Returns the version of the host WebView runtime (`WKWebView`, `WebKitGTK`, or `WebView2`), or `none` when unavailable.
 
 ## Compiler Diagnostic Codes
 - `cfire/AMBIGUOUS-INTERPOLATION` (Syntax): An interpolation `{...}` that starts with a number literal must be parenthesized.

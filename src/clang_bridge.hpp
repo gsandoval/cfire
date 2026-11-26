@@ -179,7 +179,7 @@ CFIRE_INFRA_INLINE void save_cached_index(const std::filesystem::path& cache_fil
     exit_code = ::_pclose(pipe);
 #else
     int status = ::pclose(pipe);
-    exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
+    exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? (128 + WTERMSIG(status)) : status);
 #endif
     return out;
 }

@@ -347,6 +347,194 @@ namespace cfire::frontend {
         emit_line(def);
     }
 
+    inline void emit_pkg_decls_types_and_globals(Emitter& em, const std::string& target_pkg, const std::string& default_pkg) {
+        const auto& ast = em.cf_.ast;
+        auto item_pkg = [&](const std::string& p) -> std::string {
+            return p.empty() ? default_pkg : p;
+        };
+
+        // 1. Interfaces as C++20 `concept`s
+        for (const auto& iface : ast.interfaces) {
+            if (item_pkg(iface.package_name) != target_pkg) continue;
+            em.emit_interface(iface);
+            em.writeln();
+        }
+
+        // 2. Forward declare structs & enums in this package
+        bool any_fwd = false;
+        for (const auto& en : ast.enums) {
+            if (item_pkg(en.package_name) != target_pkg) continue;
+            any_fwd = true;
+            if (!en.type_params.empty()) {
+                em.writeln(std::format("{} struct {};", em.format_template_clause(en.type_params), en.name));
+            } else {
+                em.writeln(std::format("struct {};", en.name));
+            }
+        }
+        for (const auto& st : ast.structs) {
+            if (item_pkg(st.package_name) != target_pkg) continue;
+            any_fwd = true;
+            if (!st.type_params.empty()) {
+                em.writeln(std::format("{} struct {};", em.format_template_clause(st.type_params), st.name));
+            } else {
+                em.writeln(std::format("struct {};", st.name));
+            }
+        }
+        if (any_fwd) em.writeln();
+
+        // 3. Emit structs & enums in dependency-resolved topological order within this package
+        struct TypeItem {
+            int line;
+            bool is_enum;
+            std::size_t idx;
+            std::string name;
+        };
+        std::vector<TypeItem> items;
+        for (std::size_t i = 0; i < ast.enums.size(); ++i) {
+            if (item_pkg(ast.enums[i].package_name) != target_pkg) continue;
+            items.push_back(TypeItem{ast.enums[i].line, true, i, ast.enums[i].name});
+        }
+        for (std::size_t i = 0; i < ast.structs.size(); ++i) {
+            if (item_pkg(ast.structs[i].package_name) != target_pkg) continue;
+            items.push_back(TypeItem{ast.structs[i].line, false, i, ast.structs[i].name});
+        }
+        std::stable_sort(items.begin(), items.end(), [](const auto& a, const auto& b) {
+            return a.line < b.line;
+        });
+
+        std::unordered_map<std::string, std::size_t> name_to_item;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            name_to_item[items[i].name] = i;
+        }
+        auto collect_type_deps = [&](const auto& self, const TypeRef& tr, std::vector<std::size_t>& deps) -> void {
+            if (tr.is_ptr || tr.is_mut_ptr || !tr.smart_wrap.empty()) {
+                return;
+            }
+            std::string clean = tr.name;
+            if (auto dot_pos = clean.rfind('.'); dot_pos != std::string::npos) clean = clean.substr(dot_pos + 1);
+            if (auto col_pos = clean.rfind("::"); col_pos != std::string::npos) clean = clean.substr(col_pos + 2);
+            if (auto it = name_to_item.find(clean); it != name_to_item.end()) {
+                deps.push_back(it->second);
+            }
+            if (tr.elem_type) self(self, *tr.elem_type, deps);
+            if (tr.key_type) self(self, *tr.key_type, deps);
+            for (const auto& ta : tr.type_args) self(self, ta, deps);
+            for (const auto& tt : tr.tuple_types) self(self, tt, deps);
+        };
+
+        std::vector<int> visit_state(items.size(), 0);
+        auto emit_item_dfs = [&](const auto& self, std::size_t k) -> void {
+            if (visit_state[k] != 0) return;
+            visit_state[k] = 1;
+            std::vector<std::size_t> deps;
+            if (items[k].is_enum) {
+                for (const auto& v : ast.enums[items[k].idx].variants) {
+                    for (const auto& pt : v.payload_types) collect_type_deps(collect_type_deps, pt, deps);
+                }
+            } else {
+                for (const auto& fld : ast.structs[items[k].idx].fields) {
+                    collect_type_deps(collect_type_deps, fld.type, deps);
+                }
+            }
+            for (std::size_t d : deps) {
+                if (d != k && visit_state[d] == 0) {
+                    self(self, d);
+                }
+            }
+            visit_state[k] = 2;
+            if (items[k].is_enum) {
+                em.emit_enum(ast.enums[items[k].idx]);
+            } else {
+                em.emit_struct(ast.structs[items[k].idx]);
+            }
+            em.writeln();
+        };
+
+        for (std::size_t k = 0; k < items.size(); ++k) {
+            emit_item_dfs(emit_item_dfs, k);
+        }
+
+        // 4. Forward declarations for functions & receiver methods in this package (ODR-guarded fallbacks)
+        std::set<std::string> emitted_method_fallbacks;
+        bool any_fn = false;
+        for (const auto& fn : ast.functions) {
+            if (item_pkg(fn.package_name) != target_pkg) continue;
+            any_fn = true;
+            if (fn.receiver && !emitted_method_fallbacks.contains(fn.name)) {
+                emitted_method_fallbacks.insert(fn.name);
+                const std::string fb_guard = "CFIRE_METHOD_FALLBACK_" + sanitize_pkg_unit_id(fn.name);
+                em.writeln(std::format("#ifndef {}", fb_guard));
+                em.writeln(std::format("#define {} 1", fb_guard));
+                em.writeln(std::format(
+                    "template <typename Self, typename... Args> requires requires(Self&& s, Args&&... a) {{ std::forward<Self>(s).{0}(std::forward<Args>(a)...); }} inline auto cfire_method_{0}(Self&& s, Args&&... a) -> decltype(auto) {{ return std::forward<Self>(s).{0}(std::forward<Args>(a)...); }}",
+                    fn.name));
+                if (fn.name == "push") {
+                    em.writeln("template <typename T, typename Arg> inline void cfire_method_push(std::vector<T>& s, Arg&& a) { cfire::vec_push(s, std::forward<Arg>(a)); }");
+                } else if (fn.name == "pop") {
+                    em.writeln("template <typename T> inline void cfire_method_pop(std::vector<T>& s) { s.pop_back(); }");
+                }
+                em.writeln("#endif");
+            }
+            em.emit_function_forward_decl(fn);
+        }
+        for (const auto& mname : emitted_method_fallbacks) {
+            const std::string ptr_guard = "CFIRE_METHOD_PTR_FALLBACK_" + sanitize_pkg_unit_id(mname);
+            em.writeln(std::format("#ifndef {}", ptr_guard));
+            em.writeln(std::format("#define {} 1", ptr_guard));
+            em.writeln(std::format(
+                "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::shared_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
+                mname));
+            em.writeln(std::format(
+                "template <typename T, typename... Args> inline auto cfire_method_{0}(const std::unique_ptr<T>& s, Args&&... a) -> decltype(auto) {{ return cfire_method_{0}(*s, std::forward<Args>(a)...); }}",
+                mname));
+            em.writeln("#endif");
+        }
+        if (any_fn) em.writeln();
+
+        // 5. Global / Package-level variables in this package
+        bool any_gv = false;
+        for (const auto& gv : ast.global_vars) {
+            if (item_pkg(gv.package_name) != target_pkg) continue;
+            any_gv = true;
+            em.set_source_path(gv.source_path);
+            if (gv.line > 0) em.emit_line_directive(gv.line);
+            em.cur_pkg_ = gv.package_name;
+            std::string type_str = gv.type ? em.lower_owning_type(*gv.type) : "";
+            if (type_str.empty() && (!gv.value || !std::holds_alternative<ClosureExpr>(gv.value->node))) {
+                if (auto lowered = em.lower_type_id(TypeId{gv.resolved_type_id}, Emitter::LowerContext::Value)) {
+                    type_str = std::move(*lowered);
+                }
+            }
+            if (type_str.empty() && gv.value) {
+                if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&gv.value->node); arr_lit && !arr_lit->elements.empty()) {
+                    std::string inferred = em.infer_array_lit_cpp_type(*arr_lit);
+                    if (!inferred.empty()) type_str = std::move(inferred);
+                }
+            }
+            if (type_str.empty()) type_str = "auto";
+            std::string mut_str = gv.is_mut ? "" : "const ";
+            std::string gname = (!gv.package_name.empty() && em.colliding_gv_names_.contains(gv.name))
+                ? std::format("cfire_pkg_{}__{}", gv.package_name, em.sanitize_cpp_ident(gv.name))
+                : em.sanitize_cpp_ident(gv.name);
+            if (gv.value) {
+                em.writeln(std::format("inline {}{} {} = {};", mut_str, type_str, gname, em.emit_expr(gv.value)));
+            } else {
+                em.writeln(std::format("inline {}{} {}{{}};", mut_str, type_str, gname));
+            }
+            em.cur_pkg_.clear();
+        }
+        if (any_gv) em.writeln();
+
+        // 6. Generic function & generic method bodies in this package
+        for (const auto& fn : ast.functions) {
+            if (item_pkg(fn.package_name) != target_pkg) continue;
+            if (!em.effective_type_params(fn).empty()) {
+                em.emit_function(fn);
+                em.writeln();
+            }
+        }
+    }
+
     CFIRE_CG_INLINE auto Emitter::emit_sharded() -> ShardedEmission {
         const auto& ast = cf_.ast;
         ShardedEmission sharded;
@@ -354,23 +542,72 @@ namespace cfire::frontend {
         sharded.has_cpp_impl_define = meta.has_cpp_impl_define;
 
         const std::string default_pkg = ast.package_name.empty() ? std::string("main") : ast.package_name;
+        auto item_pkg = [&](const std::string& p) -> std::string {
+            return p.empty() ? default_pkg : p;
+        };
+        auto item_src = [&](const std::string& s) -> std::string {
+            return s.empty() ? ast.path : s;
+        };
+        auto norm_src = [&](const std::string& s) -> std::string {
+            std::string raw = item_src(s);
+            if (raw.empty()) return {};
+            return std::filesystem::path(raw).lexically_normal().generic_string();
+        };
+
         bool has_user_main = false;
         std::string entry_pkg = default_pkg;
+        std::string entry_src = norm_src(ast.path);
         for (const auto& fn : ast.functions) {
             if (fn.name == "main" && !fn.receiver) {
                 has_user_main = true;
-                entry_pkg = fn.package_name.empty() ? default_pkg : fn.package_name;
+                entry_pkg = item_pkg(fn.package_name);
+                entry_src = norm_src(fn.source_path);
                 break;
             }
         }
 
-        std::vector<std::string> pkg_order;
-        std::unordered_map<std::string, std::vector<std::size_t>> pkg_fn_indices;
-        auto ensure_pkg = [&](const std::string& p) {
-            if (!pkg_fn_indices.contains(p)) {
-                pkg_order.push_back(p);
-                pkg_fn_indices[p] = {};
+        // Discover all packages in topological import order (dependencies first)
+        std::vector<std::string> pkg_header_order;
+        std::unordered_set<std::string> seen_pkgs;
+        auto add_pkg_dfs = [&](const auto& self, const std::string& p) -> void {
+            if (p.empty() || seen_pkgs.contains(p)) return;
+            seen_pkgs.insert(p);
+            if (auto it = ast.pkg_imports.find(p); it != ast.pkg_imports.end()) {
+                for (const auto& dep : it->second) {
+                    self(self, dep);
+                }
             }
+            pkg_header_order.push_back(p);
+        };
+        for (const auto& [p, _] : ast.pkg_imports) add_pkg_dfs(add_pkg_dfs, p);
+        for (const auto& st : ast.structs) add_pkg_dfs(add_pkg_dfs, item_pkg(st.package_name));
+        for (const auto& en : ast.enums) add_pkg_dfs(add_pkg_dfs, item_pkg(en.package_name));
+        for (const auto& ifc : ast.interfaces) add_pkg_dfs(add_pkg_dfs, item_pkg(ifc.package_name));
+        for (const auto& gv : ast.global_vars) add_pkg_dfs(add_pkg_dfs, item_pkg(gv.package_name));
+        for (const auto& fn : ast.functions) add_pkg_dfs(add_pkg_dfs, item_pkg(fn.package_name));
+        for (const auto& td : ast.tests) add_pkg_dfs(add_pkg_dfs, item_pkg(td.package_name));
+        if (test_mode_ || !ast.tests.empty() || has_user_main) add_pkg_dfs(add_pkg_dfs, entry_pkg);
+        if (pkg_header_order.empty()) add_pkg_dfs(add_pkg_dfs, default_pkg);
+
+        // Group concrete functions 1:1 by (package, normalized source file path)
+        struct UnitGroup {
+            std::string pkg;
+            std::string norm_source;
+            std::string raw_source;
+            std::vector<std::size_t> fn_indices;
+        };
+        std::vector<UnitGroup> unit_groups;
+        std::unordered_map<std::string, std::size_t> unit_group_map;
+        auto ensure_unit_group = [&](const std::string& p, const std::string& src_raw) -> std::size_t {
+            std::string src_n = norm_src(src_raw);
+            std::string key = p + "\n" + src_n;
+            if (auto it = unit_group_map.find(key); it != unit_group_map.end()) {
+                return it->second;
+            }
+            std::size_t idx = unit_groups.size();
+            unit_group_map[key] = idx;
+            unit_groups.push_back(UnitGroup{p, std::move(src_n), item_src(src_raw), {}});
+            return idx;
         };
 
         for (std::size_t i = 0; i < ast.functions.size(); ++i) {
@@ -379,14 +616,14 @@ namespace cfire::frontend {
                 continue;
             }
             if (!effective_type_params(fn).empty()) {
-                continue; // Generic functions & methods live inline in decls.hpp.
+                continue; // Generic functions & methods live inline in pkg_<id>.hpp
             }
-            std::string upkg = fn.package_name.empty() ? default_pkg : fn.package_name;
-            ensure_pkg(upkg);
-            pkg_fn_indices[upkg].push_back(i);
+            std::size_t gidx = ensure_unit_group(item_pkg(fn.package_name), fn.source_path);
+            unit_groups[gidx].fn_indices.push_back(i);
         }
-        if (test_mode_ || !ast.tests.empty()) {
-            ensure_pkg(entry_pkg);
+        std::size_t entry_group_idx = std::string::npos;
+        if (test_mode_ || !ast.tests.empty() || has_user_main) {
+            entry_group_idx = ensure_unit_group(entry_pkg, entry_src);
         }
 
         auto reset_buffer = [&]() {
@@ -400,47 +637,109 @@ namespace cfire::frontend {
             hoisted_tries_.clear();
         };
 
+        auto collect_pkg_dep_headers = [&](const std::string& upkg) -> std::vector<std::string> {
+            std::vector<std::string> deps_out;
+            deps_out.push_back("preamble.hpp");
+            std::unordered_set<std::string> visited_deps;
+            std::vector<std::string> dep_pkgs;
+            auto dfs = [&](const auto& self, const std::string& p) -> void {
+                if (p.empty() || !visited_deps.insert(p).second) return;
+                if (auto it = ast.pkg_imports.find(p); it != ast.pkg_imports.end()) {
+                    for (const auto& d : it->second) {
+                        self(self, d);
+                    }
+                }
+                dep_pkgs.push_back(p);
+            };
+            dfs(dfs, upkg);
+            for (const auto& p : dep_pkgs) {
+                deps_out.push_back(std::format("pkg_{}.hpp", sanitize_pkg_unit_id(p)));
+            }
+            return deps_out;
+        };
+
+        auto short_path_hash = [](std::string_view s) -> std::string {
+            std::uint64_t h = 0xcbf29ce484222325ULL;
+            for (unsigned char c : s) {
+                h ^= c;
+                h *= 0x100000001b3ULL;
+            }
+            return std::format("{:08x}", static_cast<std::uint32_t>(h ^ (h >> 32)));
+        };
+
         sharded_non_inline_ = true;
 
-        // Step 2: Emit concrete package units first so `used_core_` is completely populated before `decls.hpp`.
-        for (const auto& upkg : pkg_order) {
+        // Step 2: Emit 1:1 per-file concrete translation units first so `used_core_` is completely populated before `preamble.hpp`.
+        std::unordered_set<std::string> used_unit_ids;
+        for (std::size_t gidx = 0; gidx < unit_groups.size(); ++gidx) {
+            const auto& ug = unit_groups[gidx];
+            const std::string pkg_id = sanitize_pkg_unit_id(ug.pkg);
+            const std::string pkg_hdr = std::format("pkg_{}.hpp", pkg_id);
+            std::string file_stem = ug.norm_source.empty()
+                ? std::string("unit")
+                : std::filesystem::path(ug.norm_source).stem().string();
+            std::string uid = pkg_id + "__" + sanitize_pkg_unit_id(file_stem);
+            if (!used_unit_ids.insert(uid).second) {
+                uid = uid + "_" + short_path_hash(ug.norm_source);
+                used_unit_ids.insert(uid);
+            }
+
+            const bool emit_tests_here = (gidx == entry_group_idx);
             reset_buffer();
-            writeln("// Generated by cfire sharded codegen");
-            writeln("#include \"decls.hpp\"");
+            writeln("// Generated by cfire sharded codegen (1:1 per-file TU)");
+            writeln(std::format("#include \"{}\"", pkg_hdr));
             writeln();
-            const auto& idxs = pkg_fn_indices[upkg];
+            const auto& idxs = ug.fn_indices;
             for (std::size_t k = 0; k < idxs.size(); ++k) {
                 emit_function(ast.functions[idxs[k]]);
-                if (k + 1 < idxs.size() || (upkg == entry_pkg && (!ast.tests.empty() || test_mode_))) {
+                if (k + 1 < idxs.size() || (emit_tests_here && (!ast.tests.empty() || test_mode_))) {
                     writeln();
                 }
             }
-            if (upkg == entry_pkg) {
+            if (emit_tests_here) {
                 emit_test_runner(ast, has_user_main);
             }
-            std::string uid = sanitize_pkg_unit_id(upkg);
+
             sharded.units.push_back(CppUnit{
                 .id = uid,
-                .pkg_name = upkg,
-                .filename = std::format("pkg_{}.cpp", uid),
+                .pkg_name = ug.pkg,
+                .source_path = ug.raw_source,
+                .filename = std::format("unit_{}.cpp", uid),
+                .header_file = pkg_hdr,
+                .dep_headers = collect_pkg_dep_headers(ug.pkg),
                 .cpp = buf_.str(),
             });
         }
 
-        // Step 3: Emit shared declarations, reflection templates, globals, and generic bodies.
-        reset_buffer();
-        emit_decls_types_and_globals(*this);
-        for (std::size_t i = 0; i < ast.functions.size(); ++i) {
-            if (!effective_type_params(ast.functions[i]).empty()) {
-                emit_function(ast.functions[i]);
-                writeln();
+        // Step 3: Emit per-package public headers (`pkg_<id>.hpp`).
+        std::vector<CppHeader> pkg_headers;
+        pkg_headers.reserve(pkg_header_order.size());
+        for (const auto& pkg : pkg_header_order) {
+            const std::string pkg_id = sanitize_pkg_unit_id(pkg);
+            const std::string hdr_name = std::format("pkg_{}.hpp", pkg_id);
+            reset_buffer();
+            writeln("#pragma once");
+            writeln("#include \"preamble.hpp\"");
+            if (auto it = ast.pkg_imports.find(pkg); it != ast.pkg_imports.end()) {
+                for (const auto& dep : it->second) {
+                    if (dep == pkg) continue;
+                    writeln(std::format("#include \"pkg_{}.hpp\"", sanitize_pkg_unit_id(dep)));
+                }
             }
+            writeln();
+            emit_pkg_decls_types_and_globals(*this, pkg, default_pkg);
+            pkg_headers.push_back(CppHeader{
+                .id = "pkg_" + pkg_id,
+                .pkg_name = pkg,
+                .filename = hdr_name,
+                .hpp = buf_.str(),
+            });
         }
-        std::string decls_body = buf_.str();
+
         sharded_non_inline_ = false;
         reset_buffer();
 
-        // Step 4: Build stable preamble for decls.hpp with `#ifndef`-guarded defines and unconditional `str`/`bm`.
+        // Step 4: Build stable `preamble.hpp` with `#ifndef`-guarded defines and unconditional `str`/`bm`.
         std::ostringstream pre;
         if (!meta.link_tags.empty()) {
             std::string joined;
@@ -475,9 +774,22 @@ namespace cfire::frontend {
             while (!clean.empty() && (clean.back() == '>' || clean.back() == '"')) clean.pop_back();
             pre << std::format("#include <{}>\n", clean);
         }
-        pre << "#if defined(_WIN32)\n#include \"detail/win32_clean_macros.hpp\"\n#ifdef interface\n#undef interface\n#endif\n#endif\n\n";
+        pre << "#if defined(_WIN32)\n#include \"detail/win32_clean_macros.hpp\"\n#ifdef interface\n#undef interface\n#endif\n#endif\n";
 
-        sharded.decls_hpp = pre.str() + decls_body;
+        sharded.preamble_hpp = pre.str();
+        sharded.headers.push_back(CppHeader{
+            .id = "preamble",
+            .pkg_name = "",
+            .filename = "preamble.hpp",
+            .hpp = sharded.preamble_hpp,
+        });
+        std::ostringstream umbrella;
+        umbrella << "#pragma once\n#include \"preamble.hpp\"\n";
+        for (auto& ph : pkg_headers) {
+            umbrella << std::format("#include \"{}\"\n", ph.filename);
+            sharded.headers.push_back(std::move(ph));
+        }
+        sharded.decls_hpp = umbrella.str();
         return sharded;
     }
 

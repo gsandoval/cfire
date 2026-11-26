@@ -27,6 +27,8 @@ struct CommonCliArgs {
     bool dry_run = false;
     bool verify_cpp = false;
     bool explicit_release = false;
+    bool changed_only = false;
+    bool force_fuzz = false;
     bool portable = false;
     bool static_link = false;
     bool universal = false;
@@ -316,6 +318,14 @@ struct CommonCliArgs {
             out.bench_mode = true;
             continue;
         }
+        if (arg == "--changed") {
+            out.changed_only = true;
+            continue;
+        }
+        if (arg == "--fuzz") {
+            out.force_fuzz = true;
+            continue;
+        }
         if ((arg == "--fuzz-runs" || arg == "-fuzz-runs") && i + 1 < argc) {
             out.fuzz_runs_arg = argv[++i];
             continue;
@@ -542,7 +552,7 @@ struct CommonCliArgs {
             static const std::vector<std::string_view> kKnownFlags = {
                 "--release", "-r", "--debug", "-g", "--no-trap", "--dsym", "--no-cache",
                 "--profile", "--sanitize", "--sanitize=address", "--sanitize=thread",
-                "--bench", "--fuzz-runs", "--seed", "--bench-time", "--filter",
+                "--bench", "--changed", "--fuzz", "--fuzz-runs", "--seed", "--bench-time", "--filter",
                 "--output", "-o", "--icon", "--name", "--app-name", "--bundle-id", "--device",
                 "--ios", "--ios-sim", "--ios-device", "--ios-min", "--ipa",
                 "--sign", "--provisioning-profile", "--entitlements",

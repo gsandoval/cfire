@@ -191,6 +191,24 @@ inline void verify_shared_bridge_helpers(const std::filesystem::path& rt_dir) {
             "browser_keys_enabled() matches kDefaultWebUIDevExtras before override");
     h_app.set_browser_keys(false);
     require(!h_app.browser_keys_enabled(), "set_browser_keys(false) toggles browser_keys_enabled()");
+    require(!h_app.tray_shown(), "tray_shown() starts false before run");
+    require(!h_app.is_fullscreen(), "is_fullscreen() starts false");
+    h_app.set_tray("assets/tray.png", "F9");
+    h_app.add_tray_item("Connect", "tray:connect");
+    h_app.set_tray_item_title("tray:connect", "Disconnect");
+    int fs_ev_count = 0;
+    h_app.on("window:fullscreen", [&](const std::string&) { ++fs_ev_count; });
+    h_app.set_fullscreen(true);
+    require(h_app.is_fullscreen(), "set_fullscreen(true) sets is_fullscreen()");
+    h_app.set_fullscreen(false);
+    require(!h_app.is_fullscreen() && fs_ev_count == 2, "set_fullscreen(false) clears is_fullscreen() and emits events");
+    auto wv_ver = cfire::webui::runtime_version();
+#if defined(__APPLE__)
+    require(wv_ver.has_value() && !wv_ver->empty(),
+            std::format("macOS runtime_version returns WebKit version (got {})", wv_ver.value_or("<none>")));
+#else
+    (void)wv_ver;
+#endif
 
     // Verify Release build plan flag & eject_cmake generator expression
     const auto prev_profile = cfire::build::current_build_profile();
@@ -508,6 +526,10 @@ inline void gtk_main() {
     g_win_state_cb(&g_win, &ev_enter, g_win_state_ud);
     GdkEventWindowState ev_exit{GDK_WINDOW_STATE_FULLSCREEN, 0};
     g_win_state_cb(&g_win, &ev_exit, g_win_state_ud);
+    g_app_ptr->set_fullscreen(true);
+    if (!g_app_ptr->is_fullscreen()) std::exit(32);
+    g_app_ptr->set_fullscreen(false);
+    if (g_app_ptr->is_fullscreen()) std::exit(33);
 
     GtkSelectionData sd{{"file:///var/vault/alpha.key", "file:///var/vault/beta%20file.txt"}};
     g_drag_cb(reinterpret_cast<GtkWidget*>(&g_wv), nullptr, 0, 0, &sd, 0, 123, g_drag_ud);
@@ -1137,16 +1159,21 @@ int main() {
     if (app.native_window_handle() != nullptr || app.native_controller_handle() != nullptr) return 12;
     if (active_count != 1 || inactive_count != 1) return 13;
 
-    // Verify WM_SETFOCUS invokes on_set_focus callback (MoveFocus restoration hook)
+    // Verify WM_SETFOCUS + kWmCfireSetFullscreen callbacks
     {
         bool focus_called = false;
+        bool fs_called = false;
+        bool fs_arg = false;
         cfire::webui::detail::Win32WindowContext focus_ctx{};
         focus_ctx.on_set_focus = [&]() { focus_called = true; };
+        focus_ctx.on_set_fullscreen = [&](bool on) { fs_called = true; fs_arg = on; };
         LONG_PTR saved_ud = GetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA);
         SetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&focus_ctx));
         (void)cfire::webui::detail::cfire_win32_wndproc(&g_dummy_obj, 0x0007 /* WM_SETFOCUS */, 0, 0);
+        (void)cfire::webui::detail::cfire_win32_wndproc(&g_dummy_obj, cfire::webui::detail::kWmCfireSetFullscreen, 1, 0);
         SetWindowLongPtrW(&g_dummy_obj, GWLP_USERDATA, saved_ud);
         if (!focus_called) return 17;
+        if (!fs_called || !fs_arg) return 18;
     }
 
     // WebView2 source origin gate + navigation interception COM helpers
@@ -1569,10 +1596,15 @@ int main(int argc, char** argv) {
 inline void verify_native_win32_and_com() {
     (void)cfire::webui::detail::win32_enable_per_monitor_dpi_v2();
 
-    // 1. Test real Win32 HWND + cfire_win32_wndproc WM_DPICHANGED & WM_SETFOCUS handling
+    // 1. Test real Win32 HWND + cfire_win32_wndproc WM_DPICHANGED, WM_SETFOCUS & kWmCfireSetFullscreen handling
     auto state = std::make_shared<cfire::webui::detail::AppState>();
     bool focus_called = false;
-    cfire::webui::detail::Win32WindowContext ctx{state, nullptr, nullptr, nullptr, nullptr, [&]() { focus_called = true; }};
+    bool fs_called = false;
+    bool fs_val = false;
+    cfire::webui::detail::Win32WindowContext ctx{
+        state, nullptr, nullptr, nullptr, nullptr,
+        [&]() { focus_called = true; },
+        [&](bool on) { fs_called = true; fs_val = on; }};
     HWND hwnd = ::CreateWindowExW(
         0, L"STATIC", L"DpiTest", WS_POPUP, 10, 10, 400, 300, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
     require(hwnd != nullptr, "native Win32 test window created");
@@ -1587,6 +1619,8 @@ inline void verify_native_win32_and_com() {
             "WM_DPICHANGED resizes real Win32 HWND to suggested rect");
     cfire::webui::detail::cfire_win32_wndproc(hwnd, 0x0007 /* WM_SETFOCUS */, 0, 0);
     require(focus_called, "WM_SETFOCUS invokes on_set_focus callback on real Win32 HWND");
+    cfire::webui::detail::cfire_win32_wndproc(hwnd, cfire::webui::detail::kWmCfireSetFullscreen, 1, 0);
+    require(fs_called && fs_val, "kWmCfireSetFullscreen invokes on_set_fullscreen callback on real Win32 HWND");
     ::DestroyWindow(hwnd);
 
     // 2. Test apply_webview2_settings & extract_webview2_dropped_files with real Win32 CoTaskMemAlloc

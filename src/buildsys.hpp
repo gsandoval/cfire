@@ -1869,11 +1869,20 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
         std::error_code dir_ec;
         std::filesystem::create_directories(shard_dir, dir_ec);
         std::filesystem::create_directories(obj_dir, dir_ec);
-        auto decls_path = shard_dir / "decls.hpp";
-        if (auto wr = write_file_if_changed(decls_path, sharded.decls_hpp); !wr) {
-            return std::unexpected(wr.error());
+        std::unordered_map<std::string, std::string> header_hashes;
+        for (const auto& hdr : sharded.headers) {
+            auto h_path = shard_dir / hdr.filename;
+            if (auto wr = write_file_if_changed(h_path, hdr.hpp); !wr) {
+                return std::unexpected(wr.error());
+            }
+            header_hashes[hdr.filename] = sha256_hex(hdr.hpp);
         }
-        const std::string decls_hash = sha256_hex(sharded.decls_hpp);
+        if (!sharded.decls_hpp.empty()) {
+            auto decls_path = shard_dir / "decls.hpp";
+            if (auto wr = write_file_if_changed(decls_path, sharded.decls_hpp); !wr) {
+                return std::unexpected(wr.error());
+            }
+        }
         unit_cpp_paths.reserve(sharded.units.size());
         unit_obj_paths.reserve(sharded.units.size());
         for (const auto& unit : sharded.units) {
@@ -1890,7 +1899,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                 const char sep2 = '\0';
                 st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
             };
-            feed("schema", "shard-obj-v1");
+            feed("schema", "shard-obj-v2");
             feed("compiler", compiler_fp);
             feed("opt", opt_flags);
             feed("target", plan.target_triple);
@@ -1899,11 +1908,16 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
             }
             feed("rt", rt_fp);
             feed("cpp_hdr", local_cpp_hdr_fp);
-            feed("decls", decls_hash);
+            for (const auto& dh : unit.dep_headers) {
+                feed("hdr_name", dh);
+                if (auto hit = header_hashes.find(dh); hit != header_hashes.end()) {
+                    feed("hdr_hash", hit->second);
+                }
+            }
             feed("unit_path", u_cpp.string());
             feed("unit_cpp", unit.cpp);
             std::string h16 = st.final_hex().substr(0, 16);
-            auto u_obj = obj_dir / std::format("{}__pkg_{}_{}.o", stem, unit.id, h16);
+            auto u_obj = obj_dir / std::format("{}__u_{}_{}.o", stem, unit.id, h16);
             unit_cpp_paths.push_back(std::move(u_cpp));
             unit_obj_paths.push_back(std::move(u_obj));
         }
@@ -2061,7 +2075,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
     // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
     std::string pch_path;
     if (plan.target_triple.empty() && !plan.uses_objc && !(plan.is_ios && plan.is_gui)) {
-        std::string umbrella = extract_pch_umbrella_header(will_shard ? sharded.decls_hpp : cpp_code);
+        std::string umbrella = extract_pch_umbrella_header(will_shard ? sharded.preamble_hpp : cpp_code);
         pch_path = ensure_composite_pch(runtime_dir, umbrella, opt_flags, plan.cflags);
     }
 
@@ -2253,7 +2267,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                 // Prune stale `.o` files per unit, keeping at most the 4 newest by mtime (never deleting active unit .o).
                 std::error_code pec;
                 for (std::size_t u = 0; u < sharded.units.size(); ++u) {
-                    const std::string prefix = std::format("{}__pkg_{}_", stem, sharded.units[u].id);
+                    const std::string prefix = std::format("{}__u_{}_", stem, sharded.units[u].id);
                     const std::string keep_name = unit_obj_paths[u].filename().string();
                     struct ObjEntry {
                         std::filesystem::path path;

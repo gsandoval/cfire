@@ -23,6 +23,7 @@ auto main() -> int {
     test_websocket_handshake_read_ahead(rt_dir);  // frames that arrive with the handshake
     test_http_host_bind_and_client_timeout(rt_dir);
     test_ipc_stream_security_and_concurrency(rt_dir);
+    test_signal_and_tray_marshaling_concurrency(rt_dir);
     if (g_failures.load() > 0) {
         std::println("FAIL ({} tsan test assertion(s) failed)", g_failures.load());
         return 1;

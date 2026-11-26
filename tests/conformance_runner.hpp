@@ -183,7 +183,28 @@ struct Options {
     std::filesystem::path runtime_dir{};  // for the TSan fallback's -I
     int timeout = 300;
     std::vector<std::string> run_flags{};
+    bool strict = false;                  // fail non-zero if any conformance test is skipped
 };
+
+[[nodiscard]] inline auto remediation_hint_for_lib(std::string_view lib) -> std::string {
+#if defined(__APPLE__)
+    if (lib == "libsodium") return "brew install libsodium (or 'cfire setup --yes')";
+    if (lib == "libssh") return "brew install libssh (or 'cfire setup --yes')";
+    if (lib == "libzstd") return "brew install zstd (or 'cfire setup --yes')";
+    if (lib == "webkit2gtk") return "N/A on macOS (uses native WKWebView)";
+#elif defined(_WIN32)
+    if (lib == "libsodium") return "pacman -S mingw-w64-clang-x86_64-libsodium";
+    if (lib == "libssh") return "pacman -S mingw-w64-clang-x86_64-libssh";
+    if (lib == "libzstd") return "pacman -S mingw-w64-clang-x86_64-zstd";
+    if (lib == "webkit2gtk") return "N/A on Windows (uses native WebView2)";
+#else
+    if (lib == "libsodium") return "sudo apt-get install -y libsodium-dev (or 'cfire setup --yes')";
+    if (lib == "libssh") return "sudo apt-get install -y libssh-dev (or 'cfire setup --yes')";
+    if (lib == "libzstd") return "sudo apt-get install -y libzstd-dev (or 'cfire setup --yes')";
+    if (lib == "webkit2gtk") return "sudo apt-get install -y libwebkit2gtk-4.1-dev";
+#endif
+    return "run 'cfire setup --yes' to install missing optional native libraries";
+}
 
 [[nodiscard]] inline auto host_has_optional_lib(std::string_view lib) -> bool {
     if (const char* forced = std::getenv("CFIRE_TEST_FORCE_MISSING_LIB"); forced && *forced) {
@@ -468,6 +489,7 @@ struct FileResult {
         fr.outcome = Outcome::Skip;
         fr.skipped_missing_lib = ev->skipped_missing_lib;
         fr.reasons.push_back("missing optional library: " + ev->skipped_missing_lib);
+        fr.reasons.push_back("install hint: " + remediation_hint_for_lib(ev->skipped_missing_lib));
         return fr;
     }
     if (!fr.xfail.empty()) fr.outcome = ev->met ? Outcome::Xpass : Outcome::Xfail;
@@ -568,6 +590,10 @@ inline auto run_corpus(const Options& opt, const std::filesystem::path& corpus, 
                  counts[0], counts[4], counts[2], counts[3], counts[1], files.size());
     if (tsan_skipped > 0)
         std::println("note: {} file(s) asked for ThreadSanitizer, which this platform lacks; they ran unsanitized", tsan_skipped);
+    if (opt.strict && counts[4] > 0) {
+        std::println(stderr, "error: --strict enabled and {} conformance test(s) were skipped due to missing optional libraries", counts[4]);
+        return 1;
+    }
     return (counts[1] > 0 || counts[3] > 0) ? 1 : 0;
 }
 

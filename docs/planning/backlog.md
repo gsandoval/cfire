@@ -1864,10 +1864,10 @@ To prevent re-introducing previously rejected designs or violating language orth
 
 | ID | Priority | Component | Summary | Status |
 | :--- | :---: | :--- | :--- | :---: |
-| `CF-255` | **P2** | `tests/conformance_runner.hpp`, `docs/`, `Makefile` | **Conformance Optional-Library Skips (`libsodium` / `libssh`, `Q81`)**: Explain why macOS skips `ext_smoke/sodium.cf` & `ext_smoke/ssh.cf`, add explicit remediation hints + optional `--strict` CI mode, and resolve whether to install/vendor on macOS host | `[TODO]` |
+| `CF-255` | **P2** | `tests/conformance_runner.hpp`, `docs/`, `Makefile` | **Conformance Optional-Library Skips (`libsodium` / `libssh`, `Q81`)**: Explain why macOS skips `ext_smoke/sodium.cf` & `ext_smoke/ssh.cf`, add explicit remediation hints + optional `--strict` CI mode, and resolve whether to install/vendor on macOS host | `[DONE]` |
 | `CF-256` | **P0** | `src/lsp/`, `src/sema/`, `src/docgen/`, `.vscode/`, `tests/unit/` | **LSP Brace/Enter Sync, Method Discoverability & Valid Token Completion (`Q82`–`Q85`)**: Fix multi-edit `didChange` sync and remove conflicting `onTypeFormatting`, fix method/type resolution & `core:collections` catalog, emit explicit UTF-16 `textEdit` ranges / empty-parens call snippets / `sortText` tiers / strict context gating | `[DONE]` |
 
-### `CF-255` — Investigate & Resolve Conformance Optional-Library Skips (`libsodium` / `libssh`) on macOS (`Q81`) `[TODO]`
+### `CF-255` — Investigate & Resolve Conformance Optional-Library Skips (`libsodium` / `libssh`) on macOS (`Q81`) `[DONE]`
 - **Observed Test Log**:
   ```text
   === Running the Conformance Corpus with Generated Programs under ASan/UBSan ===
@@ -1885,6 +1885,9 @@ To prevent re-introducing previously rejected designs or violating language orth
 - **Open Architectural Question (`Q81`)**:
   1. Should we install `libsodium` and `libssh` on the macOS host (`brew install libsodium libssh` / `cfire setup --yes`) — or vendor them alongside `sqlite3`/`simdjson` — so macOS Tier 1 `make check` and Tier 2 ASan/UBSan `make check-deep` execute `215/215` conformance tests locally instead of deferring `sodium.cf` / `ssh.cf` solely to the Linux/Windows VMs?
   2. Should `tests/conformance_runner.hpp` print an explicit remediation hint on skips (e.g., `cfire setup --yes` / `brew install libsodium libssh`) and support a `--strict` flag (enabled in CI release checks) that turns unexpected skips into failures?
+- **Decision (`Q81`, accepted 2026-11-25) & Delivered**:
+  - Keep `libsodium` and `libssh` as optional system packages (not vendored), add per-OS `remediation_hint_for_lib` install hints on skips and `--strict` mode in [`tests/conformance_runner.hpp`](../../tests/conformance_runner.hpp) & [`tests/test_main.cpp`](../../tests/test_main.cpp), wire `--strict` (`CONFORMANCE_FLAGS=--strict`) into [`Makefile`](../../Makefile) and [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) across macOS/Linux/Windows CI jobs, add `libssh` (`ext:net/ssh`) check parity in [`src/doctor.hpp`](../../src/doctor.hpp), and install `libsodium` (`1.0.22`) + `libssh` (`0.12.2_1`) via Homebrew on the macOS host.
+  - Verified via [`tests/runner_self_tests.hpp`](../../tests/runner_self_tests.hpp) (`install hint:` + `--strict` skip failure) and `248/248` conformance (`0` skipped) under both macOS `make check CONFORMANCE_FLAGS=--strict` and ASan/UBSan `make check-deep CONFORMANCE_FLAGS=--strict`, plus Linux and Windows VMs (`make check-platforms`).
 
 ### `CF-256` — Deep LSP Autocomplete Architecture Overhaul (`str`, Slice `[]T` & Tab-Acceptance Reliability) `[DONE]`
 - **Problem Statement**: Editor autocomplete continues to suffer recurring regressions on two core workflows that cannot keep failing:

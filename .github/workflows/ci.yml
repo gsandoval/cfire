@@ -20,10 +20,10 @@ jobs:
         run: make build
 
       - name: make check (every-commit tier)
-        run: make check
+        run: make check CONFORMANCE_FLAGS=--strict
 
       - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
-        run: make check-deep
+        run: make check-deep CONFORMANCE_FLAGS=--strict
 
   linux:
     runs-on: ubuntu-latest
@@ -53,10 +53,10 @@ jobs:
           cp /tmp/cfire_ci_pollution/junk_1.cf /tmp/junk_root.cf
 
       - name: make check (every-commit tier)
-        run: make check
+        run: make check CONFORMANCE_FLAGS=--strict
 
       - name: make check-deep (ASan/UBSan, TSan, fuzz replay)
-        run: make check-deep
+        run: make check-deep CONFORMANCE_FLAGS=--strict
 
   fuzz-smoke:
     runs-on: ubuntu-latest
@@ -133,4 +133,4 @@ jobs:
           ./cfire_test_runner.exe unit
 
       - name: Run Language Conformance Corpus on Windows
-        run: ./cfire_test_runner.exe conformance --cfire ./cfire.exe
+        run: ./cfire_test_runner.exe conformance --strict --cfire ./cfire.exe

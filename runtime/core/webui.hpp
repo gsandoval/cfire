@@ -405,17 +405,38 @@ public:
         return state_->autofill_enabled;
     }
 
-    void fullscreen() {
-        std::function<void()> fn;
-        bool new_fs = false;
+    void set_fullscreen(bool on) {
+        std::function<void(bool)> set_fn;
+        std::function<void()> tog_fn;
+        bool need_toggle = false;
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
-            state_->is_fullscreen = !state_->is_fullscreen;
-            new_fs = state_->is_fullscreen;
-            fn = state_->platform_fullscreen;
+            need_toggle = (state_->is_fullscreen != on);
+            state_->is_fullscreen = on;
+            set_fn = state_->platform_set_fullscreen;
+            tog_fn = state_->platform_fullscreen;
         }
-        if (fn) fn();
-        else state_->notify_fullscreen_changed(new_fs);
+        if (set_fn) {
+            set_fn(on);
+        } else if (tog_fn) {
+            if (need_toggle) tog_fn();
+        } else {
+            state_->notify_fullscreen_changed(on);
+        }
+    }
+
+    [[nodiscard]] auto is_fullscreen() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->is_fullscreen;
+    }
+
+    void fullscreen() {
+        bool target = false;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            target = !state_->is_fullscreen;
+        }
+        set_fullscreen(target);
     }
 
     void minimize() {
@@ -499,6 +520,27 @@ public:
         return state_->has_tray;
     }
 
+    [[nodiscard]] auto tray_shown() const -> bool {
+        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        return state_->tray_shown;
+    }
+
+    void set_tray_item_title(std::string_view event, std::string_view title) {
+        std::function<void(const std::string&, const std::string&)> fn;
+        std::string ev_s(event);
+        std::string title_s(title);
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            for (auto& item : state_->tray_items) {
+                if (item.event == ev_s) {
+                    item.title = title_s;
+                }
+            }
+            fn = state_->platform_set_tray_item_title;
+        }
+        if (fn) fn(ev_s, title_s);
+    }
+
     [[nodiscard]] auto tray_tooltip() const -> std::string {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
         return state_->tray_tooltip;
@@ -580,9 +622,16 @@ public:
         }
 #elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
         if (gtk_init_check(nullptr, nullptr)) {
+            GtkWindow* parent = nullptr;
+            {
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                if (state_->native_window_handle) {
+                    parent = GTK_WINDOW(state_->native_window_handle);
+                }
+            }
             GtkWidget* dialog = gtk_file_chooser_dialog_new(
                 std::string(dialog_title).c_str(),
-                nullptr,
+                parent,
                 GTK_FILE_CHOOSER_ACTION_OPEN,
                 "_Cancel", GTK_RESPONSE_CANCEL,
                 "_Open", GTK_RESPONSE_ACCEPT,
@@ -630,9 +679,16 @@ public:
         }
 #elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
         if (gtk_init_check(nullptr, nullptr)) {
+            GtkWindow* parent = nullptr;
+            {
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                if (state_->native_window_handle) {
+                    parent = GTK_WINDOW(state_->native_window_handle);
+                }
+            }
             GtkWidget* dialog = gtk_file_chooser_dialog_new(
                 std::string(dialog_title).c_str(),
-                nullptr,
+                parent,
                 GTK_FILE_CHOOSER_ACTION_SAVE,
                 "_Cancel", GTK_RESPONSE_CANCEL,
                 "_Save", GTK_RESPONSE_ACCEPT,
@@ -733,8 +789,9 @@ public:
             }
         }
 #elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        std::uint64_t linux_clip_epoch = 0;
         if (!is_headless) {
-            detail::linux_clipboard_set(text, concealed);
+            linux_clip_epoch = detail::linux_clipboard_set(text, concealed);
         }
 #elif defined(_WIN32)
         if (!is_headless) {
@@ -771,6 +828,27 @@ public:
                     });
                 }
             }).detach();
+#elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+            std::thread([st, gen, clear_after_ms, is_headless, linux_clip_epoch]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(clear_after_ms));
+                {
+                    std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                    if (st->clipboard_generation != gen) return;
+                    if (!st->clipboard_fallback.empty()) {
+                        volatile char* p = st->clipboard_fallback.data();
+                        for (std::size_t i = 0; i < st->clipboard_fallback.size(); ++i) p[i] = 0;
+                        st->clipboard_fallback.clear();
+                    }
+                    st->last_clipboard_concealed = false;
+                }
+                if (!is_headless) {
+                    g_idle_add_full(
+                        G_PRIORITY_DEFAULT,
+                        detail::linux_idle_clear_clipboard,
+                        new detail::LinuxIdleClearClipPayload{linux_clip_epoch},
+                        nullptr);
+                }
+            }).detach();
 #else
             std::thread([st, gen, clear_after_ms, is_headless]() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(clear_after_ms));
@@ -785,11 +863,7 @@ public:
                     st->last_clipboard_concealed = false;
                 }
                 (void)is_headless;
-#if defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
-                if (!is_headless) {
-                    g_idle_add_full(G_PRIORITY_DEFAULT, detail::linux_idle_clear_clipboard, nullptr, nullptr);
-                }
-#elif defined(_WIN32)
+#if defined(_WIN32)
                 if (!is_headless) {
                     HWND owner = nullptr;
                     {
@@ -867,6 +941,57 @@ public:
             }
             fonts.assign(unique_families.begin(), unique_families.end());
         }
+#elif defined(__APPLE__) && !CFIRE_WEBUI_IOS
+        if (void* objc_lib = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_LOCAL)) {
+            (void)::dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", RTLD_LAZY | RTLD_LOCAL);
+            using ObjcGetClassFn = void*(*)(const char*);
+            using SelRegisterNameFn = void*(*)(const char*);
+            using ObjcMsgSendFn = void(*)();
+            auto get_class = reinterpret_cast<ObjcGetClassFn>(::dlsym(objc_lib, "objc_getClass"));
+            auto sel_reg = reinterpret_cast<SelRegisterNameFn>(::dlsym(objc_lib, "sel_registerName"));
+            auto msg_send = reinterpret_cast<ObjcMsgSendFn>(::dlsym(objc_lib, "objc_msgSend"));
+            if (get_class && sel_reg && msg_send) {
+                void* fmCls = get_class("NSFontManager");
+                void* fontCls = get_class("NSFont");
+                void* poolCls = get_class("NSAutoreleasePool");
+                void* pool = poolCls
+                    ? reinterpret_cast<void*(*)(void*, void*)>(msg_send)(
+                        reinterpret_cast<void*(*)(void*, void*)>(msg_send)(poolCls, sel_reg("alloc")),
+                        sel_reg("init"))
+                    : nullptr;
+                void* fm = fmCls ? reinterpret_cast<void*(*)(void*, void*)>(msg_send)(fmCls, sel_reg("sharedFontManager")) : nullptr;
+                void* names = fm
+                    ? reinterpret_cast<void*(*)(void*, void*, unsigned long)>(msg_send)(
+                        fm, sel_reg("availableFontNamesWithTraits:"), 0x00000400UL /* NSFixedPitchFontMask */)
+                    : nullptr;
+                if (names) {
+                    unsigned long count = reinterpret_cast<unsigned long(*)(void*, void*)>(msg_send)(names, sel_reg("count"));
+                    std::set<std::string> unique_families;
+                    for (unsigned long i = 0; i < count; ++i) {
+                        void* nameObj = reinterpret_cast<void*(*)(void*, void*, unsigned long)>(msg_send)(
+                            names, sel_reg("objectAtIndex:"), i);
+                        if (!nameObj) continue;
+                        void* fontObj = fontCls
+                            ? reinterpret_cast<void*(*)(void*, void*, void*, double)>(msg_send)(
+                                fontCls, sel_reg("fontWithName:size:"), nameObj, 12.0)
+                            : nullptr;
+                        void* famObj = fontObj
+                            ? reinterpret_cast<void*(*)(void*, void*)>(msg_send)(fontObj, sel_reg("familyName"))
+                            : nameObj;
+                        const char* utf8 = famObj
+                            ? reinterpret_cast<const char*(*)(void*, void*)>(msg_send)(famObj, sel_reg("UTF8String"))
+                            : nullptr;
+                        if (utf8 && utf8[0] != '.' && utf8[0] != '\0') {
+                            unique_families.emplace(utf8);
+                        }
+                    }
+                    fonts.assign(unique_families.begin(), unique_families.end());
+                }
+                if (pool) {
+                    reinterpret_cast<void(*)(void*, void*)>(msg_send)(pool, sel_reg("drain"));
+                }
+            }
+        }
 #elif defined(__linux__)
         FILE* fp = ::popen("fc-list :spacing=mono family 2>/dev/null", "r");
         if (fp) {
@@ -892,9 +1017,6 @@ public:
 #elif defined(_WIN32)
         fonts = detail::win32_monospace_fonts();
 #endif
-        if (fonts.empty()) {
-            fonts = {"SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Fira Code", "Consolas", "DejaVu Sans Mono", "monospace"};
-        }
         return fonts;
     }
 
@@ -1044,6 +1166,80 @@ inline void clipboard_set_secret(std::string_view text, std::int64_t clear_after
 [[nodiscard]] inline auto monospace_fonts() -> std::vector<std::string> {
     App tmp;
     return tmp.monospace_fonts();
+}
+
+[[nodiscard]] inline auto runtime_version() -> std::optional<std::string> {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return std::nullopt;
+#elif defined(__APPLE__) && !CFIRE_WEBUI_IOS
+    if (void* objc_lib = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_LOCAL)) {
+        (void)::dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_LAZY | RTLD_LOCAL);
+        using ObjcGetClassFn = void*(*)(const char*);
+        using SelRegisterNameFn = void*(*)(const char*);
+        using ObjcMsgSendFn = void(*)();
+        auto get_class = reinterpret_cast<ObjcGetClassFn>(::dlsym(objc_lib, "objc_getClass"));
+        auto sel_reg = reinterpret_cast<SelRegisterNameFn>(::dlsym(objc_lib, "sel_registerName"));
+        auto msg_send = reinterpret_cast<ObjcMsgSendFn>(::dlsym(objc_lib, "objc_msgSend"));
+        if (get_class && sel_reg && msg_send) {
+            void* nsStrCls = get_class("NSString");
+            void* nsBundleCls = get_class("NSBundle");
+            if (nsStrCls && nsBundleCls) {
+                auto mk_str = [&](const char* s) -> void* {
+                    return reinterpret_cast<void*(*)(void*, void*, const char*)>(msg_send)(
+                        nsStrCls, sel_reg("stringWithUTF8String:"), s);
+                };
+                void* bid = mk_str("com.apple.WebKit");
+                void* bundle = bid
+                    ? reinterpret_cast<void*(*)(void*, void*, void*)>(msg_send)(
+                        nsBundleCls, sel_reg("bundleWithIdentifier:"), bid)
+                    : nullptr;
+                if (!bundle) {
+                    void* bpath = mk_str("/System/Library/Frameworks/WebKit.framework");
+                    bundle = bpath
+                        ? reinterpret_cast<void*(*)(void*, void*, void*)>(msg_send)(
+                            nsBundleCls, sel_reg("bundleWithPath:"), bpath)
+                        : nullptr;
+                }
+                if (bundle) {
+                    for (const char* k : {"CFBundleShortVersionString", "CFBundleVersion"}) {
+                        void* key = mk_str(k);
+                        void* val = key
+                            ? reinterpret_cast<void*(*)(void*, void*, void*)>(msg_send)(
+                                bundle, sel_reg("objectForInfoDictionaryKey:"), key)
+                            : nullptr;
+                        const char* utf8 = val
+                            ? reinterpret_cast<const char*(*)(void*, void*)>(msg_send)(val, sel_reg("UTF8String"))
+                            : nullptr;
+                        if (utf8 && utf8[0] != '\0') return std::string(utf8);
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+#elif defined(CFIRE_HAS_LINUX_WEBKITGTK) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+    return std::format("{}.{}.{}",
+        webkit_get_major_version(),
+        webkit_get_minor_version(),
+        webkit_get_micro_version());
+#elif defined(__linux__)
+    for (const char* so_name : {"libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37"}) {
+        if (void* wk = ::dlopen(so_name, RTLD_LAZY | RTLD_LOCAL)) {
+            using VerPartFn = unsigned int(*)();
+            auto maj = reinterpret_cast<VerPartFn>(::dlsym(wk, "webkit_get_major_version"));
+            auto min = reinterpret_cast<VerPartFn>(::dlsym(wk, "webkit_get_minor_version"));
+            auto mic = reinterpret_cast<VerPartFn>(::dlsym(wk, "webkit_get_micro_version"));
+            if (maj && min && mic) {
+                return std::format("{}.{}.{}", maj(), min(), mic());
+            }
+        }
+    }
+    return std::nullopt;
+#elif defined(_WIN32)
+    return detail::wv2_runtime_version();
+#else
+    return std::nullopt;
+#endif
 }
 
 } // namespace cfire::webui

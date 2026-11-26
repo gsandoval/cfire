@@ -575,8 +575,8 @@ Things that no longer exist are **deleted**. Before each deletion, confirm with 
 | `CF-268` | **P1** | `F8` | `v0.12.4` | Declarative `build.cf` `build.os()`/`arch()` conditionals, `INVALID-BUILD-VALUE`, `build.Step` & `probe_pkg_config` cache (`Q96`) | `CF-031`, `CF-123`, `CF-166`, `CF-169`, `CF-170` | `[DONE]` |
 | `CF-269` | **P1** | `F8` | `v0.12.4` | Document `cfire test --release` (with `-g`) & print crash backtrace + re-raise signal (`Q99`) | `CF-163`, `CF-167` | `[DONE]` |
 | `CF-270` | **P1** | `F8` | `v0.12.4` | Windows WebView2 `WM_SETFOCUS` focus restoration (+ C++-only `native_controller_handle`) & release accelerator key lockout | `CF-186`, `CF-188` | `[DONE]` |
-| `CF-271` | **P2** | `F9` | `v0.13.0` | Lean `core:os` / `core:fs` ergonomics (`arch`, `name`, `chdir`, `command` `cwd`/`timeout_ms`, `preferred_languages`, `mkdtemp`), `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe | `CF-174`, `CF-187`, `CF-191`, `CF-180` (part), `CF-160`, `CF-168` (hardening), `CF-042` (safety) | `[TODO]` |
-| `CF-272` | **P2** | `F9` | `v0.13.0` | `ext:webui` tray & fullscreen parity (`tray_shown`, `set_tray_item_title`, `runtime_version`, `set_fullscreen`/`is_fullscreen`, Linux clipboard guard, honest `monospace_fonts`, GTK parent) & macOS `NSURLSession` HTTPS headers | `CF-189`, `CF-192`, `CF-179` (part 1), `CF-077` (GTK), `CF-146`, `CF-053` (guard), `CF-045`, `CF-125` | `[TODO]` |
+| `CF-271` | **P2** | `F9` | `v0.13.0` | Lean `core:os` / `core:fs` ergonomics (`arch`, `name`, `chdir`, `command` `cwd`/`timeout_ms`, `preferred_languages`, `mkdtemp`), `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe | `CF-174`, `CF-187`, `CF-191`, `CF-180` (part), `CF-160`, `CF-168` (hardening), `CF-042` (safety) | `[DONE]` |
+| `CF-272` | **P2** | `F9` | `v0.13.0` | `ext:webui` tray & fullscreen parity (`tray_shown`, `set_tray_item_title`, `runtime_version`, `set_fullscreen`/`is_fullscreen`, Linux clipboard guard, honest `monospace_fonts`, GTK parent) & macOS `NSURLSession` HTTPS headers | `CF-189`, `CF-192`, `CF-179` (part 1), `CF-077` (GTK), `CF-146`, `CF-053` (guard), `CF-045`, `CF-125` | `[DONE]` |
 
 ### Architectural Decision Record (`Q95` – `Q99`, resolved interactively 2026-11-24 / 2026-11-25)
 
@@ -676,7 +676,7 @@ Things that no longer exist are **deleted**. Before each deletion, confirm with 
 
 ### Wave F9 (`v0.13.0`, P2): Lean Stdlib, Signal Safety, Desktop WebUI & macOS HTTPS Headers
 
-#### `CF-271` — `core:os` / `core:fs` ergonomics, `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe `[TODO]`
+#### `CF-271` — `core:os` / `core:fs` ergonomics, `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 handle recipe `[DONE]`
 - *Flint ref*: `CF-174`, `CF-187`, `CF-191`, `CF-180` (portable subset), `CF-160`, `CF-168` (hardening), `CF-042` (signal safety).
 - **Implementation**:
   - Add `os.arch() -> str`, `os.name() -> str`, `os.chdir(path: str) -> void!`, optional `cwd` & `timeout_ms` on `os.command`, `os.preferred_languages() -> []str` (CoreFoundation / `GetUserPreferredUILanguages` / POSIX locale env), and `fs.mkdtemp(prefix: str = "cfire-") -> str!`.
@@ -684,7 +684,7 @@ Things that no longer exist are **deleted**. Before each deletion, confirm with 
   - Win32 `fs.rename`: pass `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` to `MoveFileExW` (`CF-168` zero-API hardening), document `fs.open` as regular-file-only, and add the non-owning C++ pointer `using` alias recipe to `GUIDE.md` Ch11 (`CF-160`).
 - **Tests**: Unit/conformance + Windows/Linux VM tests for `os.{arch,name,chdir,command timeout,preferred_languages,on_signal}` and `fs.mkdtemp`.
 
-#### `CF-272` — `ext:webui` tray, fullscreen & GTK fixes + macOS `NSURLSession` HTTPS headers `[TODO]`
+#### `CF-272` — `ext:webui` tray, fullscreen & GTK fixes + macOS `NSURLSession` HTTPS headers `[DONE]`
 - *Flint ref*: `CF-189`, `CF-192`, `CF-179` (part 1), `CF-077` (GTK), `CF-146`, `CF-053` (Linux guard), `CF-045` (fallback), `CF-125` (set/is_fullscreen).
 - **Implementation**:
   - `ext:webui`: add `app.tray_shown() -> bool`, UI-thread-marshaled `app.set_tray_item_title(event, title)`, `webui.runtime_version() -> str?`, `app.set_fullscreen(on: bool)` & `app.is_fullscreen() -> bool` (`CF-125`); pass active `GtkWindow*` parent to `GtkFileChooserDialog` (`CF-077`); connect GTK `owner-change` so timed clipboard clearing never wipes external copies (`CF-053`); return `[]` instead of fabricated fonts in `monospace_fonts()` (`CF-045`).

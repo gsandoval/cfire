@@ -31,6 +31,7 @@
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
+#include <dlfcn.h>
 extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 #define CFIRE_WEBUI_IOS 1
@@ -50,6 +51,7 @@ extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
 #endif
 #elif defined(__linux__)
 #include <unistd.h>
+#include <dlfcn.h>
 #if __has_include(<webkit2/webkit2.h>) && __has_include(<gtk/gtk.h>) && !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
 #define CFIRE_HAS_LINUX_WEBKITGTK 1
 #include <gtk/gtk.h>
@@ -542,6 +544,7 @@ struct AppState {
     bool hide_on_close{false};
     bool window_hidden{false};
     bool has_tray{false};
+    bool tray_shown{false};
     std::string tray_icon_path{};
     std::string tray_tooltip{};
     std::vector<TrayItemSpec> tray_items{};
@@ -584,6 +587,7 @@ struct AppState {
     std::function<void(bool)> platform_set_browser_keys{};
     std::function<void(bool)> platform_set_autofill{};
     std::function<void()> platform_fullscreen{};
+    std::function<void(bool)> platform_set_fullscreen{};
     std::function<void()> platform_minimize{};
     std::function<void()> platform_maximize{};
     std::function<void()> platform_center{};
@@ -591,6 +595,7 @@ struct AppState {
     std::function<void()> platform_hide_window{};
     std::function<void()> platform_show_window{};
     std::function<void()> platform_quit{};
+    std::function<void(const std::string&, const std::string&)> platform_set_tray_item_title{};
     std::function<void(const std::string&, std::function<void(bool)>)> platform_screenshot{};
     std::function<void(bool)> platform_set_scroll_bounce{};
     std::function<void(StatusBarStyle)> platform_set_status_bar_style{};

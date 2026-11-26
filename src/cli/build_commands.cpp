@@ -5,6 +5,7 @@
 #include "../build/clean.hpp"
 #include "../build/package_loader.hpp"
 #include "../build/probe_cache.hpp"
+#include "../build/test_cache.hpp"
 #include "../buildsys.hpp"
 #include "common_args.hpp"
 #include "dispatch.hpp"
@@ -12,6 +13,7 @@
 #include "../codegen.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -297,6 +299,40 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
 
     if (sub == "run" || sub == "test" || sub == "bench") {
         bool is_test = (sub == "test" || sub == "bench");
+        const bool allow_test_cache = is_test &&
+            !cfire::build::g_no_binary_cache &&
+            !args.bench_mode &&
+            !args.force_fuzz &&
+            args.fuzz_runs_arg.empty() &&
+            args.fuzz_seed_arg.empty() &&
+            args.target_triple.empty();
+        auto accumulate_json_suite = [](std::string_view out, int& total_passed, int& total_failed, std::string& combined_tests_json) {
+            if (auto p_pos = out.find("\"passed\": "); p_pos != std::string_view::npos) {
+                p_pos += 10;
+                auto p_end = out.find_first_of(",}", p_pos);
+                if (auto v = cfire::detail::parse_int<int>(out.substr(p_pos, p_end - p_pos))) {
+                    total_passed += *v;
+                }
+            }
+            if (auto f_pos = out.find("\"failed\": "); f_pos != std::string_view::npos) {
+                f_pos += 10;
+                auto f_end = out.find_first_of(",}", f_pos);
+                if (auto v = cfire::detail::parse_int<int>(out.substr(f_pos, f_end - f_pos))) {
+                    total_failed += *v;
+                }
+            }
+            if (auto t_pos = out.find("\"tests\": ["); t_pos != std::string_view::npos) {
+                t_pos += 10;
+                auto t_end = out.rfind("]}");
+                if (t_end != std::string_view::npos && t_end > t_pos) {
+                    std::string inner(out.substr(t_pos, t_end - t_pos));
+                    if (!inner.empty()) {
+                        if (!combined_tests_json.empty()) combined_tests_json += ", ";
+                        combined_tests_json += inner;
+                    }
+                }
+            }
+        };
         if (is_test) {
             if (args.json_mode) {
                 args.run_args.emplace_back("--cfire-test-json");
@@ -367,15 +403,76 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                     return 0;
                 }
 
+                std::vector<std::expected<cfire::build::TestSuiteDeps, std::string>> suite_deps;
+                suite_deps.reserve(suite_entries.size());
+                for (const auto& sf : suite_entries) {
+                    suite_deps.push_back(cfire::build::collect_test_suite_deps(
+                        sf, runtime_dir, args.target_triple, args.sysroot,
+                        args.extra_includes, args.extra_pkg_configs, args.extra_defines));
+                }
+
+                if (args.changed_only) {
+                    std::vector<std::filesystem::path> changed_files;
+                    bool used_git = false;
+                    (void)cfire::build::detect_changed_workspace_files(args.target, changed_files, used_git);
+                    std::unordered_set<std::string> changed_canon_set;
+                    for (const auto& ch : changed_files) {
+                        changed_canon_set.insert(cfire::build::canonical_or_abs_path(ch).generic_string());
+                    }
+                    std::vector<std::filesystem::path> filtered_entries;
+                    std::vector<std::expected<cfire::build::TestSuiteDeps, std::string>> filtered_deps;
+                    for (std::size_t i = 0; i < suite_entries.size(); ++i) {
+                        if (!suite_deps[i].has_value() ||
+                            cfire::build::suite_affected_by_changes(*suite_deps[i], changed_canon_set)) {
+                            filtered_entries.push_back(std::move(suite_entries[i]));
+                            filtered_deps.push_back(std::move(suite_deps[i]));
+                        }
+                    }
+                    suite_entries = std::move(filtered_entries);
+                    suite_deps = std::move(filtered_deps);
+                    if (suite_entries.empty()) {
+                        if (args.json_mode) {
+                            std::println("{{\"success\": true, \"passed\": 0, \"failed\": 0, \"tests\": []}}");
+                        } else {
+                            std::println("✓ No test suites affected by current changes");
+                        }
+                        return 0;
+                    }
+                }
+
                 int total_passed = 0;
                 int total_failed = 0;
                 int suite_failures = 0;
                 std::string combined_tests_json;
+                std::unordered_map<std::string, std::string> passed_file_hashes;
 
                 for (std::size_t idx = 0; idx < suite_entries.size(); ++idx) {
                     const auto& suite_file = suite_entries[idx];
                     if (!args.json_mode && suite_entries.size() > 1) {
                         std::println("==> Suite {}/{}: {}", idx + 1, suite_entries.size(), suite_file.string());
+                    }
+                    std::string cache_key;
+                    if (suite_deps[idx].has_value()) {
+                        cache_key = cfire::build::compute_test_cache_key(
+                            *suite_deps[idx], runtime_dir, args.sanitize, args.target_triple, args.sysroot,
+                            args.extra_link_libs, args.extra_includes, args.extra_pkg_configs, args.extra_defines,
+                            args.filter_pattern, args.json_mode);
+                    }
+                    if (allow_test_cache && !cache_key.empty()) {
+                        std::string cached_out;
+                        if (cfire::build::TestResultCache::try_load(cache_key, cached_out)) {
+                            for (const auto& [fp, fh] : suite_deps[idx]->file_hashes) {
+                                passed_file_hashes[fp] = fh;
+                            }
+                            if (args.json_mode) {
+                                accumulate_json_suite(cached_out, total_passed, total_failed, combined_tests_json);
+                            } else {
+                                std::string formatted = cfire::build::TestResultCache::format_cached_output(cached_out, false);
+                                std::fwrite(formatted.data(), 1, formatted.size(), stdout);
+                                std::fflush(stdout);
+                            }
+                            continue;
+                        }
                     }
                     const char* bin_ext = cfire::build::is_windows_target(args.target_triple) ? ".exe" : "";
                     // Build and run from a private 0700 dir so no other user can swap the binary.
@@ -401,38 +498,44 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                         int rc = 0;
                         std::string out = cfire::bridge::run_command_capture(cmd, rc);
                         std::filesystem::remove(tmp_bin, test_ec);
-                        if (rc != 0) ++suite_failures;
-                        if (auto p_pos = out.find("\"passed\": "); p_pos != std::string::npos) {
-                            p_pos += 10;
-                            auto p_end = out.find_first_of(",}", p_pos);
-                            if (auto v = cfire::detail::parse_int<int>(std::string_view(out).substr(p_pos, p_end - p_pos))) {
-                                total_passed += *v;
+                        if (rc != 0) {
+                            ++suite_failures;
+                        } else {
+                            if (allow_test_cache && !cache_key.empty()) {
+                                cfire::build::TestResultCache::store_pass(cache_key, out);
                             }
-                        }
-                        if (auto f_pos = out.find("\"failed\": "); f_pos != std::string::npos) {
-                            f_pos += 10;
-                            auto f_end = out.find_first_of(",}", f_pos);
-                            if (auto v = cfire::detail::parse_int<int>(std::string_view(out).substr(f_pos, f_end - f_pos))) {
-                                total_failed += *v;
-                            }
-                        }
-                        if (auto t_pos = out.find("\"tests\": ["); t_pos != std::string::npos) {
-                            t_pos += 10;
-                            auto t_end = out.rfind("]}");
-                            if (t_end != std::string::npos && t_end > t_pos) {
-                                std::string inner = out.substr(t_pos, t_end - t_pos);
-                                if (!inner.empty()) {
-                                    if (!combined_tests_json.empty()) combined_tests_json += ", ";
-                                    combined_tests_json += inner;
+                            if (suite_deps[idx].has_value()) {
+                                for (const auto& [fp, fh] : suite_deps[idx]->file_hashes) {
+                                    passed_file_hashes[fp] = fh;
                                 }
                             }
                         }
+                        accumulate_json_suite(out, total_passed, total_failed, combined_tests_json);
                     } else {
-                        std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
-                        int rc = std::system(sys_cmd.c_str());
+                        int rc = 0;
+                        std::string out = cfire::bridge::run_command_capture(cmd, rc, false);
+                        if (!out.empty()) {
+                            std::fwrite(out.data(), 1, out.size(), stdout);
+                            std::fflush(stdout);
+                        }
                         std::filesystem::remove(tmp_bin, test_ec);
-                        if (rc != 0) ++suite_failures;
+                        if (rc != 0) {
+                            ++suite_failures;
+                        } else {
+                            if (allow_test_cache && !cache_key.empty()) {
+                                cfire::build::TestResultCache::store_pass(cache_key, out);
+                            }
+                            if (suite_deps[idx].has_value()) {
+                                for (const auto& [fp, fh] : suite_deps[idx]->file_hashes) {
+                                    passed_file_hashes[fp] = fh;
+                                }
+                            }
+                        }
                     }
+                }
+
+                if (!passed_file_hashes.empty()) {
+                    cfire::build::record_workspace_file_hashes(args.target, passed_file_hashes);
                 }
 
                 if (args.json_mode) {
@@ -700,6 +803,48 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
             return *launch_res;
         }
 
+        std::optional<cfire::build::TestSuiteDeps> single_test_deps;
+        std::string single_test_cache_key;
+        auto single_ws_root = args.target.parent_path().empty() ? std::filesystem::path(".") : args.target.parent_path();
+        if (is_test) {
+            if (auto deps_res = cfire::build::collect_test_suite_deps(
+                    args.target, runtime_dir, args.target_triple, args.sysroot,
+                    args.extra_includes, args.extra_pkg_configs, args.extra_defines)) {
+                single_test_deps = std::move(*deps_res);
+                if (args.changed_only) {
+                    std::vector<std::filesystem::path> changed_files;
+                    bool used_git = false;
+                    (void)cfire::build::detect_changed_workspace_files(single_ws_root, changed_files, used_git);
+                    std::unordered_set<std::string> changed_canon_set;
+                    for (const auto& ch : changed_files) {
+                        changed_canon_set.insert(cfire::build::canonical_or_abs_path(ch).generic_string());
+                    }
+                    if (!cfire::build::suite_affected_by_changes(*single_test_deps, changed_canon_set)) {
+                        if (args.json_mode) {
+                            std::println("{{\"success\": true, \"passed\": 0, \"failed\": 0, \"tests\": []}}");
+                        } else {
+                            std::println("✓ {} is unaffected by current changes", args.target.string());
+                        }
+                        return 0;
+                    }
+                }
+                single_test_cache_key = cfire::build::compute_test_cache_key(
+                    *single_test_deps, runtime_dir, args.sanitize, args.target_triple, args.sysroot,
+                    args.extra_link_libs, args.extra_includes, args.extra_pkg_configs, args.extra_defines,
+                    args.filter_pattern, args.json_mode);
+                if (allow_test_cache && !single_test_cache_key.empty()) {
+                    std::string cached_out;
+                    if (cfire::build::TestResultCache::try_load(single_test_cache_key, cached_out)) {
+                        cfire::build::record_workspace_file_hashes(single_ws_root, single_test_deps->file_hashes);
+                        std::string formatted = cfire::build::TestResultCache::format_cached_output(cached_out, args.json_mode);
+                        std::fwrite(formatted.data(), 1, formatted.size(), stdout);
+                        std::fflush(stdout);
+                        return 0;
+                    }
+                }
+            }
+        }
+
         const char* bin_ext = cfire::build::is_windows_target(args.target_triple) ? ".exe" : "";
         // Build and run from a private 0700 dir so no other user can swap the binary.
         cfire::detail::SecureTempDir run_dir(std::format("cfire-{}", sub));
@@ -716,6 +861,25 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
         std::string cmd = cfire::bridge::shell_quote(tmp_bin.string());
         for (const auto& arg : args.run_args) {
             cmd += " " + cfire::bridge::shell_quote(arg);
+        }
+        if (is_test) {
+            int rc = 0;
+            std::string out = cfire::bridge::run_command_capture(cmd, rc, false);
+            if (!out.empty()) {
+                std::fwrite(out.data(), 1, out.size(), stdout);
+                std::fflush(stdout);
+            }
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp_bin, rm_ec);
+            if (rc == 0) {
+                if (allow_test_cache && !single_test_cache_key.empty()) {
+                    cfire::build::TestResultCache::store_pass(single_test_cache_key, out);
+                }
+                if (single_test_deps.has_value()) {
+                    cfire::build::record_workspace_file_hashes(single_ws_root, single_test_deps->file_hashes);
+                }
+            }
+            return rc;
         }
         std::string sys_cmd = cfire::bridge::win32_quote_cmd(cmd);
         int rc = std::system(sys_cmd.c_str());

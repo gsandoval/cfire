@@ -138,21 +138,49 @@ namespace cfire::build {
 
     bool is_test_entry = test_mode || (!root_ast.path.empty() && root_ast.path.ends_with("_test.cf"));
     bool root_has_main = ast_has_top_level_main(root_ast);
+    const std::string default_pkg = root_ast.package_name.empty() ? std::string("main") : root_ast.package_name;
+    std::unordered_map<std::string, std::string> file_canon_to_pkg_tag;
+    auto record_pkg_import = [&](const std::string& from_pkg, const std::string& to_pkg) {
+        if (from_pkg.empty() || to_pkg.empty() || from_pkg == to_pkg) return;
+        auto& deps = root_ast.pkg_imports[from_pkg];
+        if (std::find(deps.begin(), deps.end(), to_pkg) == deps.end()) {
+            deps.push_back(to_pkg);
+        }
+    };
+    auto record_source_file = [&](const std::string& canon) {
+        if (canon.empty()) return;
+        if (std::find(root_ast.resolved_source_files.begin(), root_ast.resolved_source_files.end(), canon) == root_ast.resolved_source_files.end()) {
+            root_ast.resolved_source_files.push_back(canon);
+        }
+        if (std::find(plan.resolved_cf_files.begin(), plan.resolved_cf_files.end(), canon) == plan.resolved_cf_files.end()) {
+            plan.resolved_cf_files.push_back(canon);
+        }
+    };
+    auto record_build_cf = [&](const std::string& canon) {
+        if (canon.empty()) return;
+        if (std::find(root_ast.resolved_build_cfs.begin(), root_ast.resolved_build_cfs.end(), canon) == root_ast.resolved_build_cfs.end()) {
+            root_ast.resolved_build_cfs.push_back(canon);
+        }
+        if (std::find(plan.resolved_build_cfs.begin(), plan.resolved_build_cfs.end(), canon) == plan.resolved_build_cfs.end()) {
+            plan.resolved_build_cfs.push_back(canon);
+        }
+    };
 
     if (!root_ast.path.empty()) {
         std::error_code ec;
         auto root_canon = std::filesystem::weakly_canonical(root_ast.path, ec);
-        if (!ec && !root_canon.empty()) {
-            visited_files.insert(root_canon.string());
-        } else {
-            visited_files.insert(root_ast.path);
-        }
+        std::string root_canon_str = (!ec && !root_canon.empty()) ? root_canon.string() : root_ast.path;
+        visited_files.insert(root_canon_str);
+        file_canon_to_pkg_tag[root_canon_str] = default_pkg;
+        record_source_file(root_canon_str);
     }
     {
         std::error_code ec;
         auto root_bcf = root_base_dir / "build.cf";
         if (std::filesystem::exists(root_bcf, ec)) {
-            visited_build_cfs.insert(std::filesystem::weakly_canonical(root_bcf, ec).string());
+            std::string bcf_canon = std::filesystem::weakly_canonical(root_bcf, ec).string();
+            visited_build_cfs.insert(bcf_canon);
+            record_build_cf(bcf_canon);
         }
     }
 
@@ -160,6 +188,7 @@ namespace cfire::build {
         std::filesystem::path base_dir;
         frontend::ImportDecl imp;
         bool is_auto_sibling = false;
+        std::string importer_pkg{};
     };
     std::deque<WorkItem> queue;
 
@@ -183,12 +212,12 @@ namespace cfire::build {
             frontend::ImportDecl sib_imp;
             sib_imp.is_cpp = false;
             sib_imp.path = "./" + sib_path.filename().string();
-            queue.push_back({root_base_dir, std::move(sib_imp), true});
+            queue.push_back({root_base_dir, std::move(sib_imp), true, default_pkg});
         }
     }
 
     for (const auto& imp : root_ast.imports) {
-        queue.push_back({root_base_dir, imp, false});
+        queue.push_back({root_base_dir, imp, false, default_pkg});
     }
 
     while (!queue.empty()) {
@@ -210,6 +239,7 @@ namespace cfire::build {
                 std::string sub_bcf_canon = std::filesystem::weakly_canonical(sub_build_cf).string();
                 if (std::filesystem::exists(sub_build_cf) && !visited_build_cfs.contains(sub_bcf_canon)) {
                     visited_build_cfs.insert(sub_bcf_canon);
+                    record_build_cf(sub_bcf_canon);
                     auto parsed = parse_build_cf(sub_build_cf, plan.target_triple);
                     if (!parsed) return std::unexpected(parsed.error());
                     auto add_sub_sources_dep = [&](const std::string& dep_name,
@@ -317,7 +347,12 @@ namespace cfire::build {
 
             for (const auto& fpath : cf_files) {
                 std::string canon = std::filesystem::weakly_canonical(fpath).string();
-                if (visited_files.contains(canon)) continue;
+                if (visited_files.contains(canon)) {
+                    if (auto it = file_canon_to_pkg_tag.find(canon); it != file_canon_to_pkg_tag.end()) {
+                        record_pkg_import(item.importer_pkg, it->second);
+                    }
+                    continue;
+                }
 
                 auto raw = read_file_or_overlay(fpath, source_overlays);
                 if (!raw) return std::unexpected(raw.error());
@@ -352,9 +387,18 @@ namespace cfire::build {
                 }
                 visited_files.insert(canon);
 
+                std::string sub_pkg_tag;
+                if (!sub_ast->package_name.empty() && sub_ast->package_name != root_ast.package_name) {
+                    sub_pkg_tag = !imp.alias.empty() ? imp.alias : sub_ast->package_name;
+                }
+                const std::string target_pkg = sub_pkg_tag.empty() ? default_pkg : sub_pkg_tag;
+                file_canon_to_pkg_tag[canon] = target_pkg;
+                record_source_file(canon);
+                record_pkg_import(item.importer_pkg, target_pkg);
+
                 // Recursively enqueue subpackage imports (subpackage imports)
                 for (const auto& simp : sub_ast->imports) {
-                    queue.push_back({fpath.parent_path(), simp, false});
+                    queue.push_back({fpath.parent_path(), simp, false, target_pkg});
                 }
 
                 // Preserve subpackage AST arena lifetime in root_ast
@@ -363,32 +407,33 @@ namespace cfire::build {
                     sub_ast->child_arenas.begin(), sub_ast->child_arenas.end());
 
                 // Merge AST declarations
-                std::string sub_pkg_tag;
-                if (!sub_ast->package_name.empty() && sub_ast->package_name != root_ast.package_name) {
-                    sub_pkg_tag = !imp.alias.empty() ? imp.alias : sub_ast->package_name;
-                }
+                const std::string fpath_str = fpath.string();
                 for (auto& st : sub_ast->structs) {
                     if (st.package_name.empty() && !sub_pkg_tag.empty()) {
                         st.package_name = sub_pkg_tag;
                     }
+                    if (st.source_path.empty()) st.source_path = fpath_str;
                     root_ast.structs.push_back(std::move(st));
                 }
                 for (auto& en : sub_ast->enums) {
                     if (en.package_name.empty() && !sub_pkg_tag.empty()) {
                         en.package_name = sub_pkg_tag;
                     }
+                    if (en.source_path.empty()) en.source_path = fpath_str;
                     root_ast.enums.push_back(std::move(en));
                 }
                 for (auto& ifc : sub_ast->interfaces) {
                     if (ifc.package_name.empty() && !sub_pkg_tag.empty()) {
                         ifc.package_name = sub_pkg_tag;
                     }
+                    if (ifc.source_path.empty()) ifc.source_path = fpath_str;
                     root_ast.interfaces.push_back(std::move(ifc));
                 }
                 for (auto& gv : sub_ast->global_vars) {
                     if (gv.package_name.empty() && !sub_pkg_tag.empty()) {
                         gv.package_name = sub_pkg_tag;
                     }
+                    if (gv.source_path.empty()) gv.source_path = fpath_str;
                 }
                 root_ast.global_vars.insert(root_ast.global_vars.begin(),
                     std::make_move_iterator(sub_ast->global_vars.begin()),
@@ -397,6 +442,7 @@ namespace cfire::build {
                     if (fn.package_name.empty() && !sub_pkg_tag.empty()) {
                         fn.package_name = sub_pkg_tag;
                     }
+                    if (fn.source_path.empty()) fn.source_path = fpath_str;
                 }
                 root_ast.functions.insert(root_ast.functions.begin(),
                     std::make_move_iterator(sub_ast->functions.begin()),
@@ -405,6 +451,7 @@ namespace cfire::build {
                     if (td.package_name.empty() && !sub_pkg_tag.empty()) {
                         td.package_name = sub_pkg_tag;
                     }
+                    if (td.source_path.empty()) td.source_path = fpath_str;
                     root_ast.tests.push_back(std::move(td));
                 }
             }
@@ -660,6 +707,25 @@ namespace cfire::build {
             }
             rewrite_stmts(rewrite_stmts, rewrite_expr, td.body, td.package_name);
         }
+    }
+
+    for (auto& st : root_ast.structs) {
+        if (st.source_path.empty()) st.source_path = root_ast.path;
+    }
+    for (auto& en : root_ast.enums) {
+        if (en.source_path.empty()) en.source_path = root_ast.path;
+    }
+    for (auto& ifc : root_ast.interfaces) {
+        if (ifc.source_path.empty()) ifc.source_path = root_ast.path;
+    }
+    for (auto& gv : root_ast.global_vars) {
+        if (gv.source_path.empty()) gv.source_path = root_ast.path;
+    }
+    for (auto& fn : root_ast.functions) {
+        if (fn.source_path.empty()) fn.source_path = root_ast.path;
+    }
+    for (auto& td : root_ast.tests) {
+        if (td.source_path.empty()) td.source_path = root_ast.path;
     }
 
     root_ast.imports = std::move(kept_imports);

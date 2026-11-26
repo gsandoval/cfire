@@ -276,11 +276,13 @@ struct Win32WindowContext {
     std::function<void(const std::string&)> on_eval;
     std::function<void()> on_sync_settings;
     std::function<void()> on_set_focus;
+    std::function<void(bool)> on_set_fullscreen;
 };
 
 // Posted by platform_eval with a heap std::string* in lParam; the WndProc owns and frees it.
 inline constexpr UINT kWmCfireEval = WM_APP + 2;
 inline constexpr UINT kWmCfireSyncSettings = WM_APP + 3;
+inline constexpr UINT kWmCfireSetFullscreen = WM_APP + 4;
 
 inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     auto* ctx = reinterpret_cast<Win32WindowContext*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -420,6 +422,10 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, 
         }
         case kWmCfireSyncSettings: {
             if (ctx && ctx->on_sync_settings) ctx->on_sync_settings();
+            return 0;
+        }
+        case kWmCfireSetFullscreen: {
+            if (ctx && ctx->on_set_fullscreen) ctx->on_set_fullscreen(wParam != 0);
             return 0;
         }
         case WM_DESTROY: {
@@ -1063,7 +1069,51 @@ using Wv2CreateInternalFn = HRESULT(STDAPICALLTYPE*)(
     if (!internal_fn) {
         return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
     }
-    return internal_fn(true, 0, user_data_dir, nullptr, handler);
+    if (internal_fn) {
+        return internal_fn(true, 0, user_data_dir, nullptr, handler);
+    }
+    return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+}
+
+[[nodiscard]] inline auto wv2_runtime_version() -> std::optional<std::string> {
+#if defined(_WIN32)
+    if (HMODULE mod = ::LoadLibraryW(L"WebView2Loader.dll")) {
+        using VerFn = HRESULT(STDAPICALLTYPE*)(PCWSTR, LPWSTR*);
+        auto fn = reinterpret_cast<VerFn>(
+            reinterpret_cast<void*>(::GetProcAddress(mod, "GetAvailableCoreWebView2BrowserVersionString")));
+        if (fn) {
+            LPWSTR ver = nullptr;
+            if (SUCCEEDED(fn(nullptr, &ver)) && ver && ver[0] != L'\0') {
+                std::string out = wide_to_utf8(ver);
+                ::CoTaskMemFree(ver);
+                if (!out.empty()) return out;
+            } else if (ver) {
+                ::CoTaskMemFree(ver);
+            }
+        }
+    }
+    static constexpr const wchar_t* kSubKeys[] = {
+        L"SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        L"SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    };
+    const HKEY kRoots[] = {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER};
+    for (HKEY root : kRoots) {
+        for (const wchar_t* sub : kSubKeys) {
+            HKEY hKey = nullptr;
+            if (::RegOpenKeyExW(root, sub, 0, KEY_READ, &hKey) != ERROR_SUCCESS || !hKey) continue;
+            wchar_t buf[256]{};
+            DWORD bytes = sizeof(buf);
+            DWORD type = 0;
+            LONG rc = ::RegQueryValueExW(hKey, L"pv", nullptr, &type, reinterpret_cast<LPBYTE>(buf), &bytes);
+            ::RegCloseKey(hKey);
+            if (rc == ERROR_SUCCESS && (type == REG_SZ || type == REG_EXPAND_SZ) && buf[0] != L'\0') {
+                std::string out = wide_to_utf8(buf);
+                if (!out.empty()) return out;
+            }
+        }
+    }
+#endif
+    return std::nullopt;
 }
 
 [[nodiscard]] inline auto wv2_user_data_dir() -> std::wstring {
@@ -1318,7 +1368,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     wc.lpszClassName = kClassName;
     ::RegisterClassExW(&wc);
 
-    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr, nullptr, nullptr};
+    Win32WindowContext ctx{state_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     DWORD style = state_->frameless ? WS_POPUP : WS_OVERLAPPEDWINDOW;
     DWORD exStyle = state_->always_on_top ? WS_EX_TOPMOST : 0;
 
@@ -1392,6 +1442,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->tray_shown = tray_added;
         state_->win32_hwnd = hwnd;
         state_->native_window_handle = hwnd;
         state_->platform_set_title = [hwnd](const std::string& new_title) {
@@ -1442,12 +1493,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
             RECT rect{100, 100, 1060, 740};
         };
         auto fs_saved = std::make_shared<Win32FullscreenSaved>();
-        state_->platform_fullscreen = [hwnd, st = state_, fs_saved]() {
-            bool fs = false;
-            {
-                std::lock_guard<std::recursive_mutex> lock(st->mtx);
-                fs = st->is_fullscreen;
-            }
+        ctx.on_set_fullscreen = [hwnd, st = state_, fs_saved](bool fs) {
             DWORD cur_style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
             if (fs) {
                 if (!fs_saved->valid) {
@@ -1492,6 +1538,18 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
             }
             st->notify_fullscreen_changed(fs);
         };
+        state_->platform_set_fullscreen = [hwnd](bool on) {
+            (void)::PostMessageW(hwnd, kWmCfireSetFullscreen, on ? 1 : 0, 0);
+        };
+        state_->platform_fullscreen = [hwnd, st = state_]() {
+            bool fs = false;
+            {
+                std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                fs = st->is_fullscreen;
+            }
+            (void)::PostMessageW(hwnd, kWmCfireSetFullscreen, fs ? 1 : 0, 0);
+        };
+        state_->platform_set_tray_item_title = [](const std::string&, const std::string&) {};
         state_->platform_minimize = [hwnd]() {
             ::ShowWindow(hwnd, SW_MINIMIZE);
         };
@@ -1566,6 +1624,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
     }
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->tray_shown = false;
         state_->win32_hwnd = nullptr;
         state_->native_window_handle = nullptr;
         state_->native_webview_handle = nullptr;
@@ -1580,6 +1639,8 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_set_autofill = nullptr;
         state_->platform_center = nullptr;
         state_->platform_fullscreen = nullptr;
+        state_->platform_set_fullscreen = nullptr;
+        state_->platform_set_tray_item_title = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;
         state_->platform_drag = nullptr;
@@ -1588,6 +1649,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
         state_->platform_quit = nullptr;
     }
 #if defined(_WIN32)
+    ctx.on_set_fullscreen = nullptr;
     ctx.on_set_focus = nullptr;
     ctx.on_sync_settings = nullptr;
     ctx.on_eval = nullptr;

@@ -382,7 +382,23 @@ struct CheckItem {
                 "warn",
                 "Not installed (required when importing `ext:crypto/sodium`)",
                 pm == "brew" ? "brew install libsodium" :
-                (pm == "apt" ? "sudo apt-get install -y libsodium-dev" : "Install libsodium")
+                (pm == "apt" ? "sudo apt-get install -y libsodium-dev" :
+                (pm == "pacman" ? "pacman -S mingw-w64-clang-x86_64-libsodium" : "Install libsodium"))
+            });
+        }
+
+        det.clear();
+        if (check_pkg_or_header("libssh", "libssh/libssh.h", det)) {
+            items.push_back({"Native Engine Libraries", "libssh (`ext:net/ssh`)", "ok", det, ""});
+        } else {
+            items.push_back({
+                "Native Engine Libraries",
+                "libssh (`ext:net/ssh`)",
+                "warn",
+                "Not installed (required when importing `ext:net/ssh`)",
+                pm == "brew" ? "brew install libssh" :
+                (pm == "apt" ? "sudo apt-get install -y libssh-dev" :
+                (pm == "pacman" ? "pacman -S mingw-w64-clang-x86_64-libssh" : "Install libssh"))
             });
         }
 

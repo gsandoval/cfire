@@ -196,13 +196,40 @@ inline void linux_secret_clipboard_clear_cb(GtkClipboard* /*cb*/, gpointer user_
     }
 }
 
-inline void linux_clipboard_set(std::string_view text, bool concealed) {
-    if (!gtk_init_check(nullptr, nullptr)) return;
+inline auto linux_clipboard_epoch() noexcept -> std::atomic<std::uint64_t>& {
+    static std::atomic<std::uint64_t> epoch{0};
+    return epoch;
+}
+
+inline auto linux_clipboard_self_writing() noexcept -> bool& {
+    static bool writing = false;
+    return writing;
+}
+
+inline void linux_clipboard_owner_change_cb(GtkClipboard* /*cb*/, GdkEvent* /*ev*/, gpointer /*user_data*/) {
+    if (!linux_clipboard_self_writing()) {
+        linux_clipboard_epoch().fetch_add(1, std::memory_order_acq_rel);
+    }
+}
+
+inline void linux_ensure_clipboard_owner_hook(GtkClipboard* cb) {
+    static bool hooked = false;
+    if (!hooked && cb) {
+        hooked = true;
+        g_signal_connect(cb, "owner-change", G_CALLBACK(linux_clipboard_owner_change_cb), nullptr);
+    }
+}
+
+inline auto linux_clipboard_set(std::string_view text, bool concealed) -> std::uint64_t {
+    if (!gtk_init_check(nullptr, nullptr)) return linux_clipboard_epoch().load(std::memory_order_acquire);
     GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-    if (!cb) return;
+    if (!cb) return linux_clipboard_epoch().load(std::memory_order_acquire);
+    linux_ensure_clipboard_owner_hook(cb);
     if (!concealed) {
+        linux_clipboard_self_writing() = true;
         gtk_clipboard_set_text(cb, std::string(text).c_str(), static_cast<gint>(text.size()));
-        return;
+        linux_clipboard_self_writing() = false;
+        return linux_clipboard_epoch().fetch_add(1, std::memory_order_acq_rel) + 1;
     }
     static GtkTargetEntry targets[] = {
         {const_cast<gchar*>("UTF8_STRING"), 0, 0},
@@ -214,25 +241,91 @@ inline void linux_clipboard_set(std::string_view text, bool concealed) {
         {const_cast<gchar*>("x-kde-passwordManagerHint"), 0, 1},
     };
     auto* d = new LinuxSecretClipboardData{std::string(text)};
-    if (!gtk_clipboard_set_with_data(
-            cb,
-            targets,
-            static_cast<guint>(sizeof(targets) / sizeof(targets[0])),
-            linux_secret_clipboard_get_cb,
-            linux_secret_clipboard_clear_cb,
-            d)) {
+    linux_clipboard_self_writing() = true;
+    gboolean set_ok = gtk_clipboard_set_with_data(
+        cb,
+        targets,
+        static_cast<guint>(sizeof(targets) / sizeof(targets[0])),
+        linux_secret_clipboard_get_cb,
+        linux_secret_clipboard_clear_cb,
+        d);
+    linux_clipboard_self_writing() = false;
+    if (!set_ok) {
         delete d;
+        return linux_clipboard_epoch().load(std::memory_order_acquire);
     }
+    return linux_clipboard_epoch().fetch_add(1, std::memory_order_acq_rel) + 1;
 }
 
-inline gboolean linux_idle_clear_clipboard(gpointer /*data*/) {
-    if (gtk_init_check(nullptr, nullptr)) {
-        GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-        if (cb) gtk_clipboard_set_text(cb, "", 0);
+struct LinuxIdleClearClipPayload {
+    std::uint64_t saved_epoch;
+};
+
+inline gboolean linux_idle_clear_clipboard(gpointer data) {
+    auto* p = static_cast<LinuxIdleClearClipPayload*>(data);
+    if (!p || linux_clipboard_epoch().load(std::memory_order_acquire) == p->saved_epoch) {
+        if (gtk_init_check(nullptr, nullptr)) {
+            GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+            if (cb) {
+                linux_clipboard_self_writing() = true;
+                gtk_clipboard_set_text(cb, "", 0);
+                linux_clipboard_self_writing() = false;
+            }
+        }
     }
+    delete p;
+    return G_SOURCE_REMOVE;
+}
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+inline void linux_tray_embedded_cb(GObject* status_icon, GParamSpec* /*pspec*/, gpointer user_data) {
+    auto* st = static_cast<detail::AppState*>(user_data);
+    if (!st || !status_icon) return;
+    const bool shown = gtk_status_icon_is_embedded(GTK_STATUS_ICON(status_icon)) != FALSE;
+    std::lock_guard<std::recursive_mutex> lock(st->mtx);
+    st->tray_shown = shown;
+}
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+struct LinuxTrayItemTable {
+    bool alive{true};
+    std::vector<std::pair<std::string, GtkWidget*>> items{};
+};
+
+struct LinuxTrayTitlePayload {
+    std::shared_ptr<LinuxTrayItemTable> table;
+    std::string event;
+    std::string title;
+};
+
+inline gboolean linux_idle_set_tray_item_title(gpointer data) {
+    auto* p = static_cast<LinuxTrayTitlePayload*>(data);
+    if (p && p->table && p->table->alive) {
+        for (const auto& [ev, mi] : p->table->items) {
+            if (ev == p->event && mi) {
+                gtk_menu_item_set_label(GTK_MENU_ITEM(mi), p->title.c_str());
+            }
+        }
+    }
+    delete p;
     return G_SOURCE_REMOVE;
 }
 #endif
+
+struct LinuxFullscreenPayload {
+    GtkWidget* window;
+    bool on;
+};
+
+inline gboolean linux_idle_set_fullscreen(gpointer data) {
+    auto* p = static_cast<LinuxFullscreenPayload*>(data);
+    if (p && p->window) {
+        if (p->on) gtk_window_fullscreen(GTK_WINDOW(p->window));
+        else gtk_window_unfullscreen(GTK_WINDOW(p->window));
+    }
+    delete p;
+    return G_SOURCE_REMOVE;
+}
 
 struct LinuxEvalPayload {
     WebKitWebView* webview;
@@ -340,6 +433,7 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     }
     g_signal_connect(window, "delete-event", G_CALLBACK(linux_delete_event_cb), state_.get());
     std::vector<std::unique_ptr<LinuxTrayMenuItemCtx>> tray_ctxs;
+    auto tray_table = std::make_shared<LinuxTrayItemTable>();
     GtkWidget* tray_menu = nullptr;
     G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     GtkStatusIcon* tray_icon = nullptr;
@@ -354,6 +448,11 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
                 gtk_status_icon_set_tooltip_text(tray_icon, state_->tray_tooltip.c_str());
             }
             gtk_status_icon_set_visible(tray_icon, TRUE);
+            g_signal_connect(tray_icon, "notify::embedded", G_CALLBACK(linux_tray_embedded_cb), state_.get());
+            {
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                state_->tray_shown = gtk_status_icon_is_embedded(tray_icon) != FALSE;
+            }
             if (!state_->tray_items.empty()) {
                 tray_menu = gtk_menu_new();
                 std::lock_guard<std::recursive_mutex> lock(state_->mtx);
@@ -367,6 +466,7 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
                     auto ctx = std::make_unique<LinuxTrayMenuItemCtx>(LinuxTrayMenuItemCtx{state_.get(), titem.event});
                     g_signal_connect(mi, "activate", G_CALLBACK(linux_tray_item_activate_cb), ctx.get());
                     tray_ctxs.push_back(std::move(ctx));
+                    tray_table->items.emplace_back(titem.event, mi);
                     gtk_menu_shell_append(GTK_MENU_SHELL(tray_menu), mi);
                 }
                 gtk_widget_show_all(tray_menu);
@@ -454,9 +554,25 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
             g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_eval, payload, nullptr);
         };
         state_->platform_fullscreen = [window, st = state_]() {
-            if (st->is_fullscreen) gtk_window_fullscreen(GTK_WINDOW(window));
-            else gtk_window_unfullscreen(GTK_WINDOW(window));
+            bool fs = false;
+            {
+                std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                fs = st->is_fullscreen;
+            }
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_set_fullscreen, new LinuxFullscreenPayload{window, fs}, nullptr);
         };
+        state_->platform_set_fullscreen = [window](bool on) {
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_set_fullscreen, new LinuxFullscreenPayload{window, on}, nullptr);
+        };
+#if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+        state_->platform_set_tray_item_title = [tray_table](const std::string& ev, const std::string& title) {
+            g_idle_add_full(
+                G_PRIORITY_DEFAULT,
+                linux_idle_set_tray_item_title,
+                new LinuxTrayTitlePayload{tray_table, ev, title},
+                nullptr);
+        };
+#endif
         state_->platform_minimize = [window]() {
             gtk_window_iconify(GTK_WINDOW(window));
         };
@@ -483,11 +599,13 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
     gtk_main();
 
 #if !defined(CFIRE_TEST_LINUX_WEBKITGTK_BACKEND)
+    tray_table->alive = false;
     if (tray_menu) gtk_widget_destroy(tray_menu);
     if (tray_icon) g_object_unref(tray_icon);
 #endif
     {
         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+        state_->tray_shown = false;
         state_->native_window_handle = nullptr;
         state_->native_webview_handle = nullptr;
         state_->platform_eval = nullptr;
@@ -498,6 +616,8 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_set_context_menu = nullptr;
         state_->platform_set_autofill = nullptr;
         state_->platform_fullscreen = nullptr;
+        state_->platform_set_fullscreen = nullptr;
+        state_->platform_set_tray_item_title = nullptr;
         state_->platform_minimize = nullptr;
         state_->platform_maximize = nullptr;
         state_->platform_hide_window = nullptr;
@@ -579,6 +699,9 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
             };
             g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_eval, payload, nullptr);
         };
+        state_->platform_set_fullscreen = [window](bool on) {
+            g_idle_add_full(G_PRIORITY_DEFAULT, linux_idle_set_fullscreen, new LinuxFullscreenPayload{window, on}, nullptr);
+        };
         state_->platform_quit = [st = state_]() {
             st->quit_requested.store(true, std::memory_order_relaxed);
         };
@@ -606,6 +729,7 @@ inline void run_linux_webkitgtk(const std::shared_ptr<AppState>& state_) {
         state_->platform_set_devtools = nullptr;
         state_->platform_set_context_menu = nullptr;
         state_->platform_set_autofill = nullptr;
+        state_->platform_set_fullscreen = nullptr;
         state_->platform_quit = nullptr;
     }
     gtk_widget_destroy(window);

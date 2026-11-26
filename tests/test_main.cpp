@@ -384,6 +384,8 @@ auto main(int argc, char** argv) -> int {
         };
         if (a == "--list") {
             list_only = true;
+        } else if (a == "--strict") {
+            conf_opt.strict = true;
         } else if (a == "--fail-fast") {
             fail_fast = true;
         } else if (a == "-v" || a == "--verbose") {

@@ -11,9 +11,13 @@
 #include <string_view>
 #include <vector>
 #include <expected>
+#include <random>
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 extern "C" int _NSGetExecutablePath(char* buf, std::uint32_t* bufsize);
+#endif
+#if !defined(_WIN32)
+#include <unistd.h>
 #endif
 
 namespace cfire::fs {
@@ -161,12 +165,82 @@ template <typename St>
 }
 
 [[nodiscard]] inline auto rename(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {
+    auto src = detail::resolve_path(from, false);
+    auto dst = detail::resolve_path(to, true);
+#if defined(_WIN32)
+    if (!::MoveFileExW(src.wstring().c_str(), dst.wstring().c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DWORD err = ::GetLastError();
+        return cfire::make_error(
+            std::format("rename failed from {} to {}: win32 error {}", from.string(), to.string(), err),
+            detail::classify_win32_error(err));
+    }
+    return {};
+#else
     std::error_code ec;
-    std::filesystem::rename(detail::resolve_path(from, false), detail::resolve_path(to, true), ec);
+    std::filesystem::rename(src, dst, ec);
     if (ec) {
         return cfire::make_error(std::format("rename failed from {} to {}: {}", from.string(), to.string(), ec.message()), detail::classify_error_code(ec));
     }
     return {};
+#endif
+}
+
+[[nodiscard]] inline auto mkdtemp(std::string_view prefix = "cfire-") -> std::expected<std::string, cfire::Error> {
+    if (prefix.contains('/') || prefix.contains('\\') || prefix.contains("..")) {
+        return cfire::make_error("fs.mkdtemp prefix must not contain path separators or '..'");
+    }
+    for (char c : prefix) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 0x20 || uc == 0x7f) {
+            return cfire::make_error("fs.mkdtemp prefix must not contain control characters");
+        }
+    }
+    std::error_code ec;
+    auto base = std::filesystem::temp_directory_path(ec);
+    if (ec) {
+        return cfire::make_error(std::format("fs.mkdtemp failed: {}", ec.message()), detail::classify_error_code(ec));
+    }
+#if defined(_WIN32)
+    static constexpr const wchar_t kChars[] = L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    std::random_device rd;
+    std::mt19937_64 rng(rd());
+    std::wstring wprefix;
+    if (!prefix.empty()) {
+        int len = ::MultiByteToWideChar(CP_UTF8, 0, prefix.data(), static_cast<int>(prefix.size()), nullptr, 0);
+        if (len > 0) {
+            wprefix.resize(static_cast<std::size_t>(len));
+            ::MultiByteToWideChar(CP_UTF8, 0, prefix.data(), static_cast<int>(prefix.size()), wprefix.data(), len);
+        }
+    }
+    for (int attempt = 0; attempt < 128; ++attempt) {
+        std::wstring suffix(6, L'0');
+        for (int i = 0; i < 6; ++i) {
+            suffix[static_cast<std::size_t>(i)] = kChars[rng() % (sizeof(kChars) / sizeof(wchar_t) - 1)];
+        }
+        auto candidate = base / (wprefix + suffix);
+        if (::CreateDirectoryW(candidate.wstring().c_str(), nullptr)) {
+            auto u8 = candidate.u8string();
+            return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+        }
+        DWORD err = ::GetLastError();
+        if (err != ERROR_ALREADY_EXISTS) {
+            return cfire::make_error(
+                std::format("fs.mkdtemp failed: win32 error {}", err),
+                detail::classify_win32_error(err));
+        }
+    }
+    return cfire::make_error("fs.mkdtemp failed after 128 attempts", ERR_EXISTS);
+#else
+    auto tmpl = (base / (std::string(prefix) + "XXXXXX")).string();
+    char* created = ::mkdtemp(tmpl.data());
+    if (!created) {
+        int err_no = errno;
+        return cfire::make_error(
+            std::format("fs.mkdtemp failed: {}", std::strerror(err_no)),
+            detail::classify_errno(err_no));
+    }
+    return std::string(created);
+#endif
 }
 
 [[nodiscard]] inline auto copy_file(const std::filesystem::path& from, const std::filesystem::path& to) -> std::expected<void, cfire::Error> {

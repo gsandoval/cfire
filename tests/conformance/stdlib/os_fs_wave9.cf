@@ -1,0 +1,49 @@
+// expect: stdout
+// | os_fs_wave9 ok
+package main
+
+import "core:fs"
+import "core:os"
+import "core:net/http"
+
+fn check_signal_compile(s: i32) {
+    _ = s
+}
+
+fn main() -> void! {
+    sys := os.name()
+    arch := os.arch()
+    assert(sys.len() > 0 && sys != "unknown")
+    assert(arch.len() > 0 && arch != "unknown")
+    _ = os.preferred_languages()
+
+    tmp := try fs.mkdtemp("w9cf_")
+    assert(fs.is_dir(tmp))
+    defer { _ = fs.remove(tmp) }
+
+    sub := tmp + "/sub"
+    try fs.mkdir_all(sub)
+    try fs.write_text(sub + "/a.txt", "alpha")
+    try fs.write_text(sub + "/b.txt", "beta")
+    try fs.rename(sub + "/b.txt", sub + "/a.txt")
+    assert_eq(try fs.read_text(sub + "/a.txt"), "beta")
+
+    // Test os.chdir in isolated conformance process
+    orig := os.cwd()
+    try os.chdir(sub)
+    assert(os.cwd().ends_with("sub"))
+    try os.chdir(orig)
+
+    if sys != "windows" {
+        res := try os.command("pwd", cwd: sub, timeout_ms: 5000)
+        assert_eq(res.exit_code, 0)
+        assert(res.stdout.trim().ends_with("sub"))
+    }
+
+    if os.args().len() > 999999 {
+        os.on_signal(10, |sig| { check_signal_compile(sig) })
+        _ = try http.get("http://127.0.0.1:1/x", max_response_bytes: 1024)
+    }
+
+    println("os_fs_wave9 ok")
+}

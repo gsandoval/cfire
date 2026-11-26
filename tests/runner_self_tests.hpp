@@ -110,12 +110,26 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
                                                      conformance::outcome_name(got[i])));
     }
 
-    // Missing optional library yields SKIP (never PASS or FAIL).
+    // Missing optional library yields SKIP (never PASS or FAIL) with an install hint, and --strict fails on skips.
     test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "libssh");
-    auto skip_file = dir.file("missing_lib.cf", "// requires-lib: libssh\n// expect: stdout\n// | ok\npackage main\nfn main() {\n    println(\"ok\")\n}\n");
-    auto skip_res = conformance::classify(opt, skip_file);
-    test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "");
+    auto skip_dir = dir.file("strict_corpus/skip_only.cf",
+        "// requires-lib: libssh\n// expect: stdout\n// | ok\npackage main\nfn main() {\n    println(\"ok\")\n}\n").parent_path();
+    auto skip_res = conformance::classify(opt, skip_dir / "skip_only.cf");
     require(skip_res.outcome == Outcome::Skip, std::format("missing requires-lib yields SKIP (got {})", conformance::outcome_name(skip_res.outcome)));
+    bool has_hint = false;
+    for (const auto& r : skip_res.reasons) {
+        if (r.contains("install hint:")) has_hint = true;
+    }
+    require(has_hint, "skipped conformance entry includes explicit remediation install hint");
+    conformance::Options relaxed_opt = opt;
+    relaxed_opt.strict = false;
+    conformance::Options strict_opt = opt;
+    strict_opt.strict = true;
+    require(conformance::run_corpus(relaxed_opt, skip_dir, "*", 1, false) == 0,
+        "conformance run_corpus allows optional skip when strict=false");
+    require(conformance::run_corpus(strict_opt, skip_dir, "*", 1, false) == 1,
+        "conformance run_corpus fails non-zero when strict=true and a test is skipped");
+    test_set_env("CFIRE_TEST_FORCE_MISSING_LIB", "");
 
     // Composite PCH stem invariance against ephemeral temp -I flags, plus LRU budget eviction.
     {

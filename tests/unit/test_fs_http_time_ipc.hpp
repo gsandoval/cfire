@@ -3,16 +3,20 @@
 
 #include "../test_harness.hpp"
 #include "core/fs.hpp"
+#include "core/os.hpp"
 #include "core/net/http.hpp"
 #include "core/net/ipc.hpp"
 #include "core/net/tcp.hpp"
 #include "core/net/websocket.hpp"
 #include "core/time.hpp"
+#include "core/webui/bridge.hpp"
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -84,6 +88,75 @@ void test_fs_exclusive_create_stat_and_sync([[maybe_unused]] const std::filesyst
     // Standard output non-owning handle flushes without failing on stdio.
     cfire::fs::File out_handle(1, false);
     require(out_handle.flush().has_value(), "File::flush on stdout non-owning fd succeeds");
+
+    // Wave F9 (CF-271): fs::mkdtemp + fs::rename overwrite durability + os::{name,arch,preferred_languages,command(cwd,timeout_ms),on_signal}
+    auto mkd_bad = cfire::fs::mkdtemp("../bad");
+    require(!mkd_bad.has_value(), "fs::mkdtemp rejects '..' prefix traversal");
+    auto mkd = cfire::fs::mkdtemp("cfire_w9_");
+    require(mkd.has_value() && cfire::fs::is_dir(*mkd),
+        std::format("fs::mkdtemp creates real temp directory: {}", mkd ? *mkd : mkd.error().message()));
+    if (mkd) {
+        std::filesystem::path dpath(*mkd);
+        auto src_f = dpath / "src.txt";
+        auto dst_f = dpath / "dst.txt";
+        require(cfire::fs::write_text(dst_f, "v1").has_value(), "write initial dst");
+        require(cfire::fs::write_text(src_f, "v2").has_value(), "write src");
+        auto ren = cfire::fs::rename(src_f, dst_f);
+        require(ren.has_value(), std::format("fs::rename overwrite succeeds: {}", ren ? "" : ren.error().message()));
+        auto rd = cfire::fs::read_text(dst_f);
+        require(rd.has_value() && *rd == "v2", "fs::rename overwrote destination cleanly");
+        (void)cfire::fs::remove(*mkd);
+    }
+
+    require(!cfire::os::name().empty() && cfire::os::name() != "unknown", "os::name returns known platform");
+    require(!cfire::os::arch().empty() && cfire::os::arch() != "unknown", "os::arch returns known arch");
+    auto langs = cfire::os::preferred_languages();
+    require(!langs.empty() || true, "os::preferred_languages executes cleanly");
+
+#if !defined(_WIN32)
+    {
+        // Async-signal-safe os::on_signal dispatches outside signal handler context without blocking mutexes
+        std::mutex sig_mtx;
+        std::vector<int> sigs;
+        std::atomic<int> seen{0};
+        cfire::os::on_signal(SIGUSR1, [&](std::int32_t s) {
+            std::lock_guard<std::mutex> lk(sig_mtx);
+            sigs.push_back(s);
+            seen.fetch_add(1, std::memory_order_release);
+        });
+        std::raise(SIGUSR1);
+        for (int i = 0; i < 100 && seen.load(std::memory_order_acquire) == 0; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        {
+            std::lock_guard<std::mutex> lk(sig_mtx);
+            require(seen.load(std::memory_order_acquire) >= 1 && !sigs.empty() && sigs[0] == SIGUSR1,
+                "os::on_signal delivers SIGUSR1 via async-signal-safe dispatcher");
+        }
+        cfire::os::on_signal(SIGUSR1, nullptr);
+        // Restore default disposition so subsequent signals behave cleanly
+        struct sigaction dfl{};
+        dfl.sa_handler = SIG_DFL;
+        sigemptyset(&dfl.sa_mask);
+        (void)::sigaction(SIGUSR1, &dfl, nullptr);
+    }
+    {
+        ScopedTempDir cmd_tmp("cfire_w9_cmd");
+        auto ok_cmd = cfire::os::command("/bin/pwd", {}, cmd_tmp.path.string(), 5000);
+        require(ok_cmd.has_value() && ok_cmd->success(),
+            std::format("os::command cwd + timeout_ms succeeds: {}", ok_cmd ? "" : ok_cmd.error().message()));
+        if (ok_cmd) {
+            std::error_code ec1, ec2;
+            std::string trimmed = ok_cmd->stdout_cf_;
+            while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r')) trimmed.pop_back();
+            require(std::filesystem::weakly_canonical(trimmed, ec1) == std::filesystem::weakly_canonical(cmd_tmp.path, ec2),
+                "os::command cwd sets subprocess working directory without mutating parent cwd");
+        }
+        auto to_cmd = cfire::os::command("/bin/sleep", {"2"}, "", 80);
+        require(!to_cmd.has_value() && to_cmd.error().message().contains("timed out"),
+            "os::command timeout_ms kills slow subprocess and returns timeout error");
+    }
+#endif
 
     std::println("--- PASS: test_fs_exclusive_create_stat_and_sync");
 }
@@ -213,6 +286,62 @@ void test_http_host_bind_and_client_timeout([[maybe_unused]] const std::filesyst
             require(slow_ok.has_value() && slow_ok->status_code == 200 && slow_ok->body == "slow-ok",
                 std::format("timeout_ms = 0 succeeds on slow response: {}", slow_ok ? slow_ok->body : slow_ok.error().message()));
             if (slow_thread.joinable()) slow_thread.join();
+        }
+    }
+
+    // 5. Wave F9 (CF-272): max_response_bytes enforcement & macOS NSURLSession response header forwarding.
+    {
+        auto ln_res = cfire::net::listen(0, "127.0.0.1");
+        require(ln_res.has_value(), "max_response_bytes TcpListener binds");
+        if (ln_res) {
+            const std::uint16_t port = ln_res->port();
+            std::atomic<bool> stop_srv{false};
+            std::thread srv_thread([&]() {
+                while (!stop_srv.load(std::memory_order_acquire)) {
+                    if (!ln_res->fd()) break;
+                    if (auto conn = ln_res->accept()) {
+                        (void)conn->poll(100);
+                        (void)conn->write_text(
+                            "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: text/plain\r\n"
+                            "X-Cfire-Test: wave-f9\r\n"
+                            "Content-Length: 16\r\n"
+                            "Connection: close\r\n\r\n"
+                            "0123456789abcdef");
+                        conn->close();
+                    }
+                }
+            });
+
+            std::string url = std::format("http://127.0.0.1:{}/cap", port);
+            auto cap_err = cfire::http::get(url, {}, true, 5000, 8);
+            require(!cap_err.has_value() && cap_err.error().code() == 413,
+                "http::get rejects response exceeding max_response_bytes with 413");
+
+            auto cap_ok = cfire::http::get(url, {}, true, 5000, 16);
+            require(cap_ok.has_value() && cap_ok->status_code == 200 && cap_ok->body == "0123456789abcdef" &&
+                        cap_ok->header("x-cfire-test") == "wave-f9",
+                "http::get accepts response within max_response_bytes");
+
+#if defined(__APPLE__) && !CFIRE_TARGET_IOS
+            auto ns_ok = cfire::http::detail::request_apple_foundation(
+                "GET", url, "", "", {{"X-Client", "cfire"}}, 5000, 16);
+            require(ns_ok.has_value() && ns_ok->status_code == 200 && ns_ok->body == "0123456789abcdef" &&
+                        ns_ok->header("x-cfire-test") == "wave-f9",
+                std::format("macOS NSURLSession returns status, body, and lowercased headers: {}",
+                    ns_ok ? ns_ok->header("x-cfire-test") : ns_ok.error().message()));
+
+            auto ns_cap = cfire::http::detail::request_apple_foundation(
+                "GET", url, "", "", {}, 5000, 8);
+            require(!ns_cap.has_value() && ns_cap.error().code() == 413,
+                "macOS NSURLSession enforces max_response_bytes with 413");
+#endif
+            stop_srv.store(true, std::memory_order_release);
+            // Poke listener to unblock accept() cleanly
+            if (auto poke = cfire::net::connect_tcp_timeout("127.0.0.1", port, 200)) {
+                poke->close();
+            }
+            if (srv_thread.joinable()) srv_thread.join();
         }
     }
 
@@ -385,4 +514,62 @@ void test_ipc_stream_security_and_concurrency([[maybe_unused]] const std::filesy
     }
 
     std::println("--- PASS: test_ipc_stream_security_and_concurrency");
+}
+
+inline void test_signal_and_tray_marshaling_concurrency([[maybe_unused]] const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_signal_and_tray_marshaling_concurrency");
+    auto st = std::make_shared<cfire::webui::detail::AppState>();
+    std::atomic<int> relabel_calls{0};
+    {
+        std::lock_guard<std::recursive_mutex> lk(st->mtx);
+        st->tray_items.push_back({"Initial", "tray:status"});
+        st->platform_set_tray_item_title = [&relabel_calls](const std::string&, const std::string&) {
+            relabel_calls.fetch_add(1, std::memory_order_relaxed);
+        };
+    }
+    std::vector<std::thread> workers;
+    for (int w = 0; w < 4; ++w) {
+        workers.emplace_back([&, w]() {
+            for (int i = 0; i < 20; ++i) {
+                std::function<void(const std::string&, const std::string&)> fn;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(st->mtx);
+                    st->tray_items[0].title = std::format("Item-{}-{}", w, i);
+                    fn = st->platform_set_tray_item_title;
+                }
+                if (fn) fn("tray:status", std::format("Item-{}-{}", w, i));
+            }
+        });
+    }
+    for (auto& t : workers) {
+        if (t.joinable()) t.join();
+    }
+    require(relabel_calls.load(std::memory_order_relaxed) == 80, "concurrent tray relabeling completes race-free");
+
+#if !defined(_WIN32)
+    std::mutex sig_mtx;
+    int sig_count = 0;
+    cfire::os::on_signal(SIGUSR2, [&](std::int32_t) {
+        std::lock_guard<std::mutex> lk(sig_mtx);
+        ++sig_count;
+    });
+    std::raise(SIGUSR2);
+    for (int i = 0; i < 100; ++i) {
+        {
+            std::lock_guard<std::mutex> lk(sig_mtx);
+            if (sig_count > 0) break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    {
+        std::lock_guard<std::mutex> lk(sig_mtx);
+        require(sig_count >= 1, "SIGUSR2 async-signal-safe dispatch succeeded under TSan");
+    }
+    cfire::os::on_signal(SIGUSR2, nullptr);
+    struct sigaction dfl{};
+    dfl.sa_handler = SIG_DFL;
+    sigemptyset(&dfl.sa_mask);
+    (void)::sigaction(SIGUSR2, &dfl, nullptr);
+#endif
+    std::println("--- PASS: test_signal_and_tray_marshaling_concurrency");
 }

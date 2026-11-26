@@ -685,13 +685,185 @@ inline auto read_http_request(cfire::net::TcpConn& conn, std::size_t max_body_si
 
 #if defined(__APPLE__)
 namespace detail {
+struct AppleSessionState {
+    std::mutex mtx{};
+    std::condition_variable cv{};
+    bool done{false};
+    bool has_error{false};
+    bool size_exceeded{false};
+    std::string error_msg{};
+    int status_code{0};
+    std::unordered_map<std::string, std::string> headers{};
+    std::string body{};
+    std::size_t max_response_bytes{0};
+};
+
+[[nodiscard]] inline auto ensure_apple_session_delegate_class(void* objc_lib) -> void* {
+    static std::mutex reg_mtx;
+    static void* cls = nullptr;
+    std::lock_guard<std::mutex> lock(reg_mtx);
+    if (cls) return cls;
+
+    using GetClsFn = void*(*)(const char*);
+    using AllocClsFn = void*(*)(void*, const char*, std::size_t);
+    using AddIvarFn = signed char(*)(void*, const char*, std::size_t, std::uint8_t, const char*);
+    using AddMethodFn = signed char(*)(void*, void*, void(*)(void), const char*);
+    using RegClsFn = void(*)(void*);
+    using SelRegFn = void*(*)(const char*);
+    using GetIvarFn = void*(*)(void*, const char*);
+    using IvarOffFn = std::ptrdiff_t(*)(void*);
+    using MsgSendFn = void(*)();
+
+    auto get_cls = reinterpret_cast<GetClsFn>(::dlsym(objc_lib, "objc_getClass"));
+    auto alloc_cls = reinterpret_cast<AllocClsFn>(::dlsym(objc_lib, "objc_allocateClassPair"));
+    auto add_ivar = reinterpret_cast<AddIvarFn>(::dlsym(objc_lib, "class_addIvar"));
+    auto add_method = reinterpret_cast<AddMethodFn>(::dlsym(objc_lib, "class_addMethod"));
+    auto reg_cls = reinterpret_cast<RegClsFn>(::dlsym(objc_lib, "objc_registerClassPair"));
+    auto sel_reg = reinterpret_cast<SelRegFn>(::dlsym(objc_lib, "sel_registerName"));
+    auto get_ivar = reinterpret_cast<GetIvarFn>(::dlsym(objc_lib, "class_getInstanceVariable"));
+    auto ivar_off = reinterpret_cast<IvarOffFn>(::dlsym(objc_lib, "ivar_getOffset"));
+    auto msg_send = reinterpret_cast<MsgSendFn>(::dlsym(objc_lib, "objc_msgSend"));
+
+    if (!get_cls || !alloc_cls || !add_ivar || !add_method || !reg_cls || !sel_reg || !get_ivar || !ivar_off || !msg_send) {
+        return nullptr;
+    }
+
+    if (void* existing = get_cls("CfireURLSessionDelegate")) {
+        cls = existing;
+        return cls;
+    }
+
+    void* nsObject = get_cls("NSObject");
+    if (!nsObject) return nullptr;
+    void* newCls = alloc_cls(nsObject, "CfireURLSessionDelegate", 0);
+    if (!newCls) return get_cls("CfireURLSessionDelegate");
+
+    (void)add_ivar(newCls, "_cfire_state", sizeof(void*), static_cast<std::uint8_t>(alignof(void*) >= 8 ? 3 : 2), "^v");
+
+    struct Helpers {
+        static auto get_state(void* self, void* libc) -> AppleSessionState* {
+            using GetObjClsFn = void*(*)(void*);
+            using GetIvarFn2 = void*(*)(void*, const char*);
+            using IvarOffFn2 = std::ptrdiff_t(*)(void*);
+            auto obj_cls = reinterpret_cast<GetObjClsFn>(::dlsym(libc, "object_getClass"));
+            auto get_ivar2 = reinterpret_cast<GetIvarFn2>(::dlsym(libc, "class_getInstanceVariable"));
+            auto ivar_off2 = reinterpret_cast<IvarOffFn2>(::dlsym(libc, "ivar_getOffset"));
+            if (!self || !obj_cls || !get_ivar2 || !ivar_off2) return nullptr;
+            void* c = obj_cls(self);
+            void* iv = c ? get_ivar2(c, "_cfire_state") : nullptr;
+            if (!iv) return nullptr;
+            std::ptrdiff_t off = ivar_off2(iv);
+            AppleSessionState* ptr = nullptr;
+            std::memcpy(&ptr, reinterpret_cast<const char*>(self) + off, sizeof(ptr));
+            return ptr;
+        }
+        static void did_receive_data(void* self, void* /*_cmd*/, void* /*session*/, void* dataTask, void* data) {
+            void* libc = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_LOCAL);
+            AppleSessionState* st = libc ? get_state(self, libc) : nullptr;
+            if (!st || !data) return;
+            auto msg_send2 = reinterpret_cast<void(*)()>(::dlsym(libc, "objc_msgSend"));
+            auto sel_reg2 = reinterpret_cast<void*(*)(const char*)>(::dlsym(libc, "sel_registerName"));
+            if (!msg_send2 || !sel_reg2) return;
+            const void* bytes = reinterpret_cast<const void*(*)(void*, void*)>(msg_send2)(data, sel_reg2("bytes"));
+            unsigned long len = reinterpret_cast<unsigned long(*)(void*, void*)>(msg_send2)(data, sel_reg2("length"));
+            bool exceeded = false;
+            {
+                std::lock_guard<std::mutex> lk(st->mtx);
+                if (st->max_response_bytes > 0 && st->body.size() + static_cast<std::size_t>(len) > st->max_response_bytes) {
+                    st->size_exceeded = true;
+                    exceeded = true;
+                } else if (bytes && len > 0) {
+                    st->body.append(reinterpret_cast<const char*>(bytes), static_cast<std::size_t>(len));
+                }
+            }
+            if (exceeded && dataTask) {
+                reinterpret_cast<void(*)(void*, void*)>(msg_send2)(dataTask, sel_reg2("cancel"));
+            }
+        }
+        static void did_complete(void* self, void* /*_cmd*/, void* /*session*/, void* task, void* err) {
+            void* libc = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_LOCAL);
+            AppleSessionState* st = libc ? get_state(self, libc) : nullptr;
+            if (!st) return;
+            auto msg_send2 = reinterpret_cast<void(*)()>(::dlsym(libc, "objc_msgSend"));
+            auto sel_reg2 = reinterpret_cast<void*(*)(const char*)>(::dlsym(libc, "sel_registerName"));
+            auto get_cls2 = reinterpret_cast<void*(*)(const char*)>(::dlsym(libc, "objc_getClass"));
+
+            std::lock_guard<std::mutex> lk(st->mtx);
+            if (task && msg_send2 && sel_reg2) {
+                void* resp = reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(task, sel_reg2("response"));
+                void* httpRespCls = get_cls2 ? get_cls2("NSHTTPURLResponse") : nullptr;
+                bool is_http = false;
+                if (resp && httpRespCls) {
+                    is_http = reinterpret_cast<signed char(*)(void*, void*, void*)>(msg_send2)(
+                        resp, sel_reg2("isKindOfClass:"), httpRespCls) != 0;
+                }
+                if (resp && is_http) {
+                    long code = reinterpret_cast<long(*)(void*, void*)>(msg_send2)(resp, sel_reg2("statusCode"));
+                    if (code > 0) st->status_code = static_cast<int>(code);
+                    void* hdrDict = reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(resp, sel_reg2("allHeaderFields"));
+                    if (hdrDict) {
+                        void* keys = reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(hdrDict, sel_reg2("allKeys"));
+                        unsigned long count = keys
+                            ? reinterpret_cast<unsigned long(*)(void*, void*)>(msg_send2)(keys, sel_reg2("count"))
+                            : 0;
+                        void* selObjAtIdx = sel_reg2("objectAtIndex:");
+                        void* selObjForKey = sel_reg2("objectForKey:");
+                        void* selDesc = sel_reg2("description");
+                        void* selUTF8 = sel_reg2("UTF8String");
+                        for (unsigned long i = 0; i < count; ++i) {
+                            void* kObj = reinterpret_cast<void*(*)(void*, void*, unsigned long)>(msg_send2)(keys, selObjAtIdx, i);
+                            void* vObj = kObj ? reinterpret_cast<void*(*)(void*, void*, void*)>(msg_send2)(hdrDict, selObjForKey, kObj) : nullptr;
+                            void* kDesc = kObj ? reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(kObj, selDesc) : nullptr;
+                            void* vDesc = vObj ? reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(vObj, selDesc) : nullptr;
+                            const char* ks = kDesc ? reinterpret_cast<const char*(*)(void*, void*)>(msg_send2)(kDesc, selUTF8) : nullptr;
+                            const char* vs = vDesc ? reinterpret_cast<const char*(*)(void*, void*)>(msg_send2)(vDesc, selUTF8) : nullptr;
+                            if (ks && vs && st->headers.size() < kMaxHttpHeaders) {
+                                std::string lk_key;
+                                for (const char* p = ks; *p != '\0'; ++p) {
+                                    lk_key.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(*p))));
+                                }
+                                st->headers[std::move(lk_key)] = strip_crlf(vs);
+                            }
+                        }
+                    }
+                }
+            }
+            if (err && !st->size_exceeded) {
+                st->has_error = true;
+                if (msg_send2 && sel_reg2) {
+                    void* desc = reinterpret_cast<void*(*)(void*, void*)>(msg_send2)(err, sel_reg2("localizedDescription"));
+                    const char* utf8 = desc ? reinterpret_cast<const char*(*)(void*, void*)>(msg_send2)(desc, sel_reg2("UTF8String")) : nullptr;
+                    if (utf8) st->error_msg = utf8;
+                }
+            }
+            st->done = true;
+            st->cv.notify_all();
+        }
+    };
+
+    (void)add_method(
+        newCls,
+        sel_reg("URLSession:dataTask:didReceiveData:"),
+        reinterpret_cast<void(*)(void)>(&Helpers::did_receive_data),
+        "v@:@@@");
+    (void)add_method(
+        newCls,
+        sel_reg("URLSession:task:didCompleteWithError:"),
+        reinterpret_cast<void(*)(void)>(&Helpers::did_complete),
+        "v@:@@@");
+    reg_cls(newCls);
+    cls = newCls;
+    return cls;
+}
+
 [[nodiscard]] inline auto request_apple_foundation(
     std::string_view method,
     std::string_view url_str,
     std::string_view body,
     std::string_view content_type,
     const std::unordered_map<std::string, std::string>& extra_headers,
-    std::int64_t timeout_ms = 30000
+    std::int64_t timeout_ms = 30000,
+    std::size_t max_response_bytes = 0
 ) -> std::expected<Response, cfire::Error> {
     if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
     void* objc_lib = ::dlopen("/usr/lib/libobjc.A.dylib", RTLD_LAZY | RTLD_GLOBAL);
@@ -706,7 +878,9 @@ namespace detail {
     auto get_class = reinterpret_cast<ObjcGetClassFn>(::dlsym(handle, "objc_getClass"));
     auto sel_reg = reinterpret_cast<SelRegisterNameFn>(::dlsym(handle, "sel_registerName"));
     auto msg_send = reinterpret_cast<ObjcMsgSendFn>(::dlsym(handle, "objc_msgSend"));
-    if (!get_class || !sel_reg || !msg_send) {
+    auto get_ivar = reinterpret_cast<void*(*)(void*, const char*)>(::dlsym(handle, "class_getInstanceVariable"));
+    auto ivar_off = reinterpret_cast<std::ptrdiff_t(*)(void*)>(::dlsym(handle, "ivar_getOffset"));
+    if (!get_class || !sel_reg || !msg_send || !get_ivar || !ivar_off) {
         return cfire::make_error("Objective-C runtime unavailable for HTTPS request");
     }
 
@@ -714,21 +888,33 @@ namespace detail {
     void* nsUrlCls = get_class("NSURL");
     void* nsReqCls = get_class("NSMutableURLRequest");
     void* nsDataCls = get_class("NSData");
-    void* nsConnCls = get_class("NSURLConnection");
-    if (!nsStrCls || !nsUrlCls || !nsReqCls || !nsDataCls || !nsConnCls) {
-        return cfire::make_error("Foundation networking classes unavailable");
+    void* nsSessCls = get_class("NSURLSession");
+    void* nsSessCfgCls = get_class("NSURLSessionConfiguration");
+    void* delCls = ensure_apple_session_delegate_class(handle);
+    if (!nsStrCls || !nsUrlCls || !nsReqCls || !nsDataCls || !nsSessCls || !nsSessCfgCls || !delCls) {
+        return cfire::make_error("Foundation NSURLSession classes unavailable");
     }
 
+    using FnVoid0 = void*(*)(void*, void*);
     using FnStrUTF8 = void*(*)(void*, void*, const char*);
     using FnObj1 = void*(*)(void*, void*, void*);
     using FnVoid1 = void(*)(void*, void*, void*);
+    using FnVoid0Call = void(*)(void*, void*);
     using FnVoidDouble = void(*)(void*, void*, double);
     using FnVoid2 = void(*)(void*, void*, void*, void*);
     using FnDataBytes = void*(*)(void*, void*, const void*, unsigned long);
-    using FnSyncReq = void*(*)(void*, void*, void*, void**, void**);
-    using FnLong = long(*)(void*, void*);
-    using FnBytes = const void*(*)(void*, void*);
-    using FnULong = unsigned long(*)(void*, void*);
+    using FnSessCreate = void*(*)(void*, void*, void*, void*, void*);
+
+    auto fnVoid0 = reinterpret_cast<FnVoid0>(msg_send);
+    auto fnVoid0Call = reinterpret_cast<FnVoid0Call>(msg_send);
+
+    void* poolCls = get_class("NSAutoreleasePool");
+    void* pool = poolCls
+        ? fnVoid0(fnVoid0(poolCls, sel_reg("alloc")), sel_reg("init"))
+        : nullptr;
+    auto pool_guard = cfire::scope_exit([&]() {
+        if (pool) fnVoid0Call(pool, sel_reg("drain"));
+    });
 
     auto fnStr = reinterpret_cast<FnStrUTF8>(msg_send);
     void* selUTF8 = sel_reg("stringWithUTF8String:");
@@ -769,30 +955,68 @@ namespace detail {
         }
     }
 
-    void* urlResp = nullptr;
-    void* urlErr = nullptr;
-    void* respData = reinterpret_cast<FnSyncReq>(msg_send)(
-        nsConnCls, sel_reg("sendSynchronousRequest:returningResponse:error:"), req, &urlResp, &urlErr);
-    if (!respData && urlErr) {
-        return cfire::make_error("Foundation HTTPS request failed");
+    auto st = std::make_unique<AppleSessionState>();
+    st->max_response_bytes = max_response_bytes;
+
+    void* delegate = fnVoid0(fnVoid0(delCls, sel_reg("alloc")), sel_reg("init"));
+    if (!delegate) return cfire::make_error("failed to allocate NSURLSession delegate");
+    void* state_ivar = get_ivar(delCls, "_cfire_state");
+    AppleSessionState* raw_st = st.get();
+    std::memcpy(reinterpret_cast<char*>(delegate) + ivar_off(state_ivar), &raw_st, sizeof(raw_st));
+
+    void* cfg = fnVoid0(nsSessCfgCls, sel_reg("ephemeralSessionConfiguration"));
+    if (cfg) {
+        reinterpret_cast<FnVoidDouble>(msg_send)(cfg, sel_reg("setTimeoutIntervalForRequest:"), timeout_sec);
+        reinterpret_cast<FnVoidDouble>(msg_send)(cfg, sel_reg("setTimeoutIntervalForResource:"), timeout_sec);
+    }
+    void* session = reinterpret_cast<FnSessCreate>(msg_send)(
+        nsSessCls, sel_reg("sessionWithConfiguration:delegate:delegateQueue:"), cfg, delegate, nullptr);
+    if (!session) {
+        fnVoid0Call(delegate, sel_reg("release"));
+        return cfire::make_error("failed to create NSURLSession");
+    }
+
+    void* task = reinterpret_cast<FnObj1>(msg_send)(session, sel_reg("dataTaskWithRequest:"), req);
+    if (!task) {
+        fnVoid0Call(session, sel_reg("invalidateAndCancel"));
+        fnVoid0Call(delegate, sel_reg("release"));
+        return cfire::make_error("failed to create NSURLSessionDataTask");
+    }
+
+    fnVoid0Call(task, sel_reg("resume"));
+    {
+        std::unique_lock<std::mutex> lk(st->mtx);
+        if (timeout_ms > 0) {
+            if (!st->cv.wait_for(lk, std::chrono::milliseconds(timeout_ms), [&]() { return st->done; })) {
+                lk.unlock();
+                fnVoid0Call(session, sel_reg("invalidateAndCancel"));
+                fnVoid0Call(delegate, sel_reg("release"));
+                return cfire::make_error("http request timed out", 408);
+            }
+        } else {
+            st->cv.wait(lk, [&]() { return st->done; });
+        }
+    }
+
+    fnVoid0Call(session, sel_reg("finishTasksAndInvalidate"));
+    fnVoid0Call(delegate, sel_reg("release"));
+
+    if (st->size_exceeded) {
+        return cfire::make_error("http response body exceeds max_response_bytes limit", 413);
+    }
+    if (st->has_error) {
+        return cfire::make_error(
+            st->error_msg.empty() ? "Foundation HTTPS request failed" : std::format("Foundation HTTPS request failed: {}", st->error_msg));
     }
 
     Response out;
-    if (urlResp) {
-        long code = reinterpret_cast<FnLong>(msg_send)(urlResp, sel_reg("statusCode"));
-        if (code > 0) {
-            out.status_code = static_cast<int>(code);
-            out.status = out.status_code;
-        }
-        out.status_text = status_text_for_code(out.status_code);
+    if (st->status_code > 0) {
+        out.status_code = st->status_code;
+        out.status = st->status_code;
     }
-    if (respData) {
-        const void* ptr = reinterpret_cast<FnBytes>(msg_send)(respData, sel_reg("bytes"));
-        unsigned long len = reinterpret_cast<FnULong>(msg_send)(respData, sel_reg("length"));
-        if (ptr && len > 0) {
-            out.body.assign(reinterpret_cast<const char*>(ptr), len);
-        }
-    }
+    out.status_text = status_text_for_code(out.status_code);
+    out.headers = std::move(st->headers);
+    out.body = std::move(st->body);
     return out;
 }
 } // namespace detail
@@ -897,7 +1121,8 @@ namespace detail {
     const std::unordered_map<std::string, std::string>& extra_headers = {},
     bool verify_peer = true,
     std::string_view ca_file = "",
-    std::int64_t timeout_ms = 30000
+    std::int64_t timeout_ms = 30000,
+    std::size_t max_response_bytes = 0
 ) -> std::expected<Response, cfire::Error> {
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
     (void)verify_peer;
@@ -965,6 +1190,9 @@ namespace detail {
     res.status = status_code;
     res.status_text = status_text_for_code(status_code);
     res.body = (nl != std::string::npos) ? combined.substr(nl + 1) : std::move(combined);
+    if (max_response_bytes > 0 && res.body.size() > max_response_bytes) {
+        return cfire::make_error("http response body exceeds max_response_bytes limit", 413);
+    }
     return res;
 #else
     if (timeout_ms < 0) return cfire::make_error("http request timed out", 408);
@@ -991,7 +1219,7 @@ namespace detail {
 #if CFIRE_TARGET_IOS
     if (u->scheme == "https") {
         std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
-        return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem);
+        return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem, max_response_bytes);
     }
 #endif
 
@@ -1006,7 +1234,7 @@ namespace detail {
 #if defined(__APPLE__)
             if (!cfire::tls::available() && (!has_deadline || rem_ms() > 0)) {
                 std::int64_t rem = has_deadline ? std::max<std::int64_t>(1, rem_ms()) : 0;
-                return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem);
+                return detail::request_apple_foundation(method, url_str, body, content_type, extra_headers, rem, max_response_bytes);
             }
 #endif
             if (has_deadline && rem_ms() <= 0) return cfire::make_error("http request timed out", 408);
@@ -1052,10 +1280,32 @@ namespace detail {
         if (!chunk) return std::unexpected(chunk.error());
         if (chunk->empty()) break;
         full_response.append(*chunk);
+        if (max_response_bytes > 0) {
+            std::size_t h_end = full_response.find("\r\n\r\n");
+            std::size_t sep = 4;
+            if (h_end == std::string::npos) {
+                h_end = full_response.find("\n\n");
+                sep = 2;
+            }
+            if (h_end != std::string::npos) {
+                std::size_t raw_body_len = full_response.size() - (h_end + sep);
+                // Avoid cutting off valid chunked framing overhead up to +16KB before decode check
+                if (raw_body_len > max_response_bytes + 16384) {
+                    return cfire::make_error("http response body exceeds max_response_bytes limit", 413);
+                }
+            } else if (full_response.size() > max_response_bytes + 65536) {
+                return cfire::make_error("http response exceeds max_response_bytes limit", 413);
+            }
+        }
         if (detail::response_complete_on_wire(method, full_response)) break;
     }
 
-    return parse_response(full_response);
+    auto parsed_resp = parse_response(full_response);
+    if (!parsed_resp) return parsed_resp;
+    if (max_response_bytes > 0 && parsed_resp->body.size() > max_response_bytes) {
+        return cfire::make_error("http response body exceeds max_response_bytes limit", 413);
+    }
+    return parsed_resp;
 #endif
 }
 
@@ -1063,9 +1313,10 @@ namespace detail {
     std::string_view url_str,
     const std::unordered_map<std::string, std::string>& headers = {},
     bool verify_peer = true,
-    std::int64_t timeout_ms = 30000
+    std::int64_t timeout_ms = 30000,
+    std::size_t max_response_bytes = 0
 ) -> std::expected<Response, cfire::Error> {
-    return request("GET", url_str, "", "", headers, verify_peer, "", timeout_ms);
+    return request("GET", url_str, "", "", headers, verify_peer, "", timeout_ms, max_response_bytes);
 }
 
 [[nodiscard]] inline auto get_insecure(
@@ -1082,9 +1333,10 @@ namespace detail {
     std::string_view content_type = "application/json",
     const std::unordered_map<std::string, std::string>& headers = {},
     bool verify_peer = true,
-    std::int64_t timeout_ms = 30000
+    std::int64_t timeout_ms = 30000,
+    std::size_t max_response_bytes = 0
 ) -> std::expected<Response, cfire::Error> {
-    return request("POST", url_str, body, content_type, headers, verify_peer, "", timeout_ms);
+    return request("POST", url_str, body, content_type, headers, verify_peer, "", timeout_ms, max_response_bytes);
 }
 
 [[nodiscard]] inline auto post_insecure(

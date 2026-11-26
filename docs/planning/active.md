@@ -646,3 +646,23 @@ This workbench tracks the active 5-phase execution promoted from [`backlog.md`](
   - [x] `CF-269`: `cfire test --release` docs/symbols & async-signal-safe crash backtrace + signal re-raise
   - [x] `CF-270`: Windows WebView2 `WM_SETFOCUS` restoration, `native_controller_handle` & `set_browser_keys`
   - [x] `make check-all` verification & sign-off
+
+- [x] **Wave F9: Flint Upstream P2 Lean Stdlib, Signal Safety, Desktop WebUI & macOS HTTPS Headers (`CF-271` – `CF-272`, `Q95`)**. Source: [`flint.md`](./flint.md); Decision `Q95`.
+  - *In scope*:
+    - `CF-271` (`Flint CF-174, CF-187, CF-191, CF-180 subset, CF-160, CF-168 hardening, CF-042 safety`): Add `os.arch()`, `os.name()`, `os.chdir(path)`, optional `cwd` & `timeout_ms` on `os.command`, `os.preferred_languages()`, `fs.mkdtemp(prefix)`, async-signal-safe self-pipe/event `os.on_signal` + `RawTerminal` `SIGTERM`/`SIGHUP` restoration, Win32 `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` in `fs.rename`, `fs.open` regular-file doc note, and GUIDE Ch11 C++ non-owning pointer `using` alias recipe.
+    - `CF-272` (`Flint CF-189, CF-192, CF-179 part 1, CF-077 GTK, CF-146, CF-053 guard, CF-045 fallback, CF-125 fullscreen`): Add `app.tray_shown()`, UI-thread-marshaled `app.set_tray_item_title(event, title)`, `webui.runtime_version()`, `app.set_fullscreen(on)` / `app.is_fullscreen()`, GTK file-chooser parent window, Linux GTK clipboard `owner-change` guard, honest empty `monospace_fonts()` fallback removal, and macOS `NSURLSession` HTTPS response headers + optional `max_response_bytes`.
+  - [x] `CF-271`: `core:os` / `core:fs` ergonomics, `CF-042` signal safety, Win32 rename durability & GUIDE Ch11 recipe
+  - [x] `CF-272`: `ext:webui` tray/fullscreen/GTK/clipboard/fonts & macOS `NSURLSession` HTTPS headers
+  - [x] `make check-all` verification & sign-off (macOS `check-fast` `89/89`, `check` `114/114` unit + `14/14` stdlib + `46/46` GUIDE + `246/248` conformance w/ 2 optional skips, `check-deep` ASan/UBSan `114/114` + `246/248` `--sanitize` + TSan `10/10` + `13/13` concurrency + `8/8` fuzz-replay; Linux VM `check` `248/248` & `check-deep` rc=0; Windows VM `63/63` unit + `14/14` stdlib + `248/248` conformance rc=0)
+
+- [x] **Wave B8: 1:1 Per-File Translation Units & Incremental / Cached `cfire test` (`CF-273`)**. Source: [`backlog-build-distribution.md`](./backlog-build-distribution.md#L695).
+  - *In scope*:
+    - Phase 1: Track `source_path` and directed `pkg_imports` across `FileAST` and `resolve_local_cf_imports`, split monolithic `decls.hpp` into `preamble.hpp` + per-package `pkg_<id>.hpp` headers, emit 1:1 per-`.cf`-file `.cpp`/`.o` (`shard-obj-v2`) with transitive-header-scoped object hashing, and update `tests/unit/test_sharded_cpp_codegen.hpp` (`Subtest A` + `Step B4 == 2` + new multi-file package subtest).
+    - Phase 2: Cache `cfire test` `PASS` results keyed on `.cf` sources, transitive imports, `build.cf`, local C++ headers, and flags (`(cached) PASS`, `--no-cache` / `--fuzz` bypass), plus `cfire test --changed` (git status or `.cfire/cache/test_file_hashes.txt` fallback + reverse import closure).
+  - [x] `CF-273` Phase 1: 1:1 per-`.cf`-file TU sharding & per-package public headers (`shard-obj-v2`)
+  - [x] `CF-273` Phase 2: Incremental & cached `cfire test` (`(cached) PASS`, `--changed`, `--fuzz`)
+
+- [x] **Conformance Optional-Library Skips (`libsodium` / `libssh`, `CF-255`, `Q81`)**. Source: [`backlog.md`](./backlog.md#L1870).
+  - *In scope*: Add per-OS remediation hints + `--strict` CI mode to `tests/conformance_runner.hpp` / `tests/test_main.cpp`, wire `--strict` into `.github/workflows/ci.yml`, add `libssh` parity to `src/doctor.hpp`, update `Makefile` (`CONFORMANCE_FLAGS`), and install `libsodium` + `libssh` on the local macOS host (`248/248`).
+  - [x] `CF-255`: Runner remediation hints, `--strict` mode, `ci.yml`, `doctor.hpp` & macOS `libsodium`/`libssh` setup (`248/248`)
+  - [x] `make check-all` verification & sign-off for Wave B8 (`CF-273`) + `CF-255` (macOS `check-fast` `89/89` + `doctor` `18/18` w/ `libsodium`+`libssh`, `check CONFORMANCE_FLAGS=--strict` `114/114` unit + `14/14` stdlib + `46/46` GUIDE + `248/248` strict conformance, `check-deep CONFORMANCE_FLAGS=--strict` ASan/UBSan `114/114` + `248/248` `--sanitize --strict` + TSan `10/10` + `13/13` concurrency + `8/8` fuzz-replay; Linux VM `check` `248/248` & `check-deep` rc=0; Windows VM `63/63` unit + `14/14` stdlib + `248/248` conformance rc=0)

@@ -1041,6 +1041,9 @@ inline void apply_macos_webview_prefs(
                 }
                 st->notify_fullscreen_changed(fs);
             };
+            state_->platform_set_fullscreen = [st = state_](bool on) {
+                st->notify_fullscreen_changed(on);
+            };
             state_->platform_quit = [st = state_]() {
                 st->quit_requested.store(true, std::memory_order_relaxed);
             };
@@ -1092,6 +1095,7 @@ inline void apply_macos_webview_prefs(
             state_->platform_set_context_menu = nullptr;
             state_->platform_set_autofill = nullptr;
             state_->platform_fullscreen = nullptr;
+            state_->platform_set_fullscreen = nullptr;
             state_->platform_quit = nullptr;
             state_->platform_screenshot = nullptr;
         }
@@ -1206,8 +1210,13 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
 
         // System Tray / Menu Bar Icon (`NSStatusBar` / `NSStatusItem`)
         NSStatusItem* statusItem = nil;
+        NSMenu* trayMenu = nil;
         if (state_->has_tray) {
             statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+            {
+                std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+                state_->tray_shown = (statusItem != nil);
+            }
             if (statusItem && statusItem.button) {
                 if (!state_->tray_tooltip.empty()) {
                     NSString* nsTip = [NSString stringWithUTF8String:state_->tray_tooltip.c_str()];
@@ -1232,7 +1241,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                 }
             }
             if (statusItem && !state_->tray_items.empty()) {
-                NSMenu* trayMenu = [[NSMenu alloc] init];
+                trayMenu = [[NSMenu alloc] init];
                 std::lock_guard<std::recursive_mutex> lock(state_->mtx);
                 for (const auto& titem : state_->tray_items) {
                     if (titem.title == "-") {
@@ -1396,6 +1405,28 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
                     [window toggleFullScreen:nil];
                 });
             };
+            state_->platform_set_fullscreen = [window](bool on) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    bool cur = (([window styleMask] & NSWindowStyleMaskFullScreen) != 0);
+                    if (cur != on) {
+                        [window toggleFullScreen:nil];
+                    }
+                });
+            };
+            state_->platform_set_tray_item_title = [trayMenu](const std::string& ev, const std::string& title) {
+                if (!trayMenu) return;
+                NSString* nsEv = [NSString stringWithUTF8String:ev.c_str()];
+                NSString* nsTitle = [NSString stringWithUTF8String:title.c_str()];
+                if (!nsEv || !nsTitle) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    for (NSMenuItem* mi in [trayMenu itemArray]) {
+                        id rep = [mi representedObject];
+                        if ([rep isKindOfClass:[NSString class]] && [(NSString*)rep isEqualToString:nsEv]) {
+                            [mi setTitle:nsTitle];
+                        }
+                    }
+                });
+            };
             state_->platform_minimize = [window]() {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [window miniaturize:nil];
@@ -1473,6 +1504,7 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
         }
         {
             std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+            state_->tray_shown = false;
             state_->native_window_handle = nullptr;
             state_->native_webview_handle = nullptr;
             state_->platform_eval = nullptr;
@@ -1483,6 +1515,8 @@ inline void run_macos_app(const std::shared_ptr<AppState>& state_) {
             state_->platform_set_context_menu = nullptr;
             state_->platform_set_autofill = nullptr;
             state_->platform_fullscreen = nullptr;
+            state_->platform_set_fullscreen = nullptr;
+            state_->platform_set_tray_item_title = nullptr;
             state_->platform_minimize = nullptr;
             state_->platform_maximize = nullptr;
             state_->platform_center = nullptr;

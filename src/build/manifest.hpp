@@ -111,6 +111,8 @@ struct BuildPlan {
     std::string generated_cpp{};
     std::vector<std::string> warnings{};
     std::vector<std::string> local_cf_packages{};
+    std::vector<std::string> resolved_cf_files{};
+    std::vector<std::string> resolved_build_cfs{};
     std::vector<std::string> auto_linked{};
     std::vector<std::string> pkg_config_deps{};
     std::vector<std::string> queried_pkg_configs{};

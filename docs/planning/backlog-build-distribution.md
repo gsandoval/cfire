@@ -694,7 +694,7 @@ flowchart TD
 
 ## Wave B8: 1:1 Per-File Translation Units & Incremental Testing (`CF-273`)
 
-#### `CF-273` — 1:1 Per-`.cf`-File TU Sharding & Incremental / Cached `cfire test` `[TODO]`
+#### `CF-273` — 1:1 Per-`.cf`-File TU Sharding & Incremental / Cached `cfire test` `[DONE]`
 - **Motivation**: `emit_sharded_cpp` (`src/codegen.hpp:17`, `src/buildsys.hpp:1811-1874`) currently shards 1:1 **per package** rather than 1:1 per `.cf` source file, and emits one shared monolithic `decls.hpp` whose `decls_hash` invalidates every shard when any package declaration changes. Meanwhile, `cfire test` re-runs unchanged test packages even when neither their `.cf` sources nor their transitive dependencies changed.
 - **In Scope**:
   1. **Phase 1 — 1:1 Per-`.cf`-File TU Sharding & Per-Package Public Headers**:
@@ -707,3 +707,7 @@ flowchart TD
   - Unit tests verifying per-file `.cpp`/`.o` shard generation, non-invalidation of sibling `.o`s on body-only edits, and ODR-clean cross-file linking within multi-file packages.
   - Integration tests verifying `cfire test` cache hit (`(cached) PASS`), cache invalidation on transitive dependency / header edit, `--no-cache` bypass, and `cfire test --changed` filtering.
   - Full `make check-all` gate (including Linux and Windows VMs).
+- **Delivered**:
+  - Phase 1: Added directed `pkg_imports` and `source_path` provenance tracking in [`src/ast.hpp`](../../src/ast.hpp) and [`src/build/package_loader.hpp`](../../src/build/package_loader.hpp); updated `emit_sharded_cpp` ([`src/codegen.hpp`](../../src/codegen.hpp), [`src/codegen/declarations.hpp`](../../src/codegen/declarations.hpp)) to emit `preamble.hpp` + per-package public headers (`pkg_<id>.hpp` with `#ifndef`-guarded `cfire_method_*` fallbacks) and 1:1 per-`.cf`-file concrete units (`unit_*.cpp`); updated [`src/buildsys.hpp`](../../src/buildsys.hpp) to `shard-obj-v2` hashing keyed on each unit's transitive header closure (`dep_headers`).
+  - Phase 2: Added [`src/build/test_cache.hpp`](../../src/build/test_cache.hpp), CLI flags `--changed` & `--fuzz` ([`src/cli/common_args.hpp`](../../src/cli/common_args.hpp), [`src/cli/usage.hpp`](../../src/cli/usage.hpp)), `cfire clean --cache` `test/` support ([`runtime/cfire_prelude.hpp`](../../runtime/cfire_prelude.hpp)), signal exit preservation in [`src/clang_bridge.hpp`](../../src/clang_bridge.hpp), and directory + single-file `(cached) PASS` caching & git/hash-snapshot `--changed` filtering in [`src/cli/build_commands.cpp`](../../src/cli/build_commands.cpp).
+  - Verified in [`tests/unit/test_sharded_cpp_codegen.hpp`](../../tests/unit/test_sharded_cpp_codegen.hpp) (`Subtest A` per-package headers, `Step B4 == 2`, `Subtest C` multi-file 1:1 sharding & 1-unit body rebuild, `Subtest D` `(cached) PASS`, `--no-cache`, `--fuzz`, `--changed`, C++ header invalidation, and git repo `--changed`) plus full `make check-all` (macOS + Linux VM + Windows VM).

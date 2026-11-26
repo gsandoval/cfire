@@ -18,6 +18,13 @@
 #include <memory>
 #include <unordered_map>
 #include <csignal>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <ranges>
+#include <concepts>
+#include <filesystem>
+#include <cctype>
 
 #if !defined(_WIN32)
 #include <spawn.h>
@@ -33,6 +40,7 @@
 
 #ifdef __APPLE__
 #include <TargetConditionals.h>
+#include <dlfcn.h>
 #if !TARGET_OS_IPHONE
 #include <crt_externs.h>
 #elif !defined(PLATFORM_WEB)
@@ -189,6 +197,152 @@ inline void setenv(std::string_view key, std::string_view val) {
     return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
+[[nodiscard]] inline auto name() noexcept -> std::string {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return "wasm";
+#elif defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    return "ios";
+#elif defined(__APPLE__)
+    return "macos";
+#elif defined(_WIN32)
+    return "windows";
+#elif defined(__linux__)
+    return "linux";
+#else
+    return "unknown";
+#endif
+}
+
+[[nodiscard]] inline auto arch() noexcept -> std::string {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    return "wasm32";
+#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__arm64__)
+    return "arm64";
+#elif defined(__x86_64__) || defined(_M_X64) || defined(__amd64__)
+    return "x86_64";
+#elif defined(__arm__) || defined(_M_ARM)
+    return "arm";
+#elif defined(__i386__) || defined(_M_IX86)
+    return "x86";
+#else
+    return "unknown";
+#endif
+}
+
+[[nodiscard]] inline auto chdir(std::string_view path) -> std::expected<void, cfire::Error> {
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WEB)
+    (void)path;
+    return cfire::make_error("os.chdir is not supported on WebAssembly");
+#elif defined(_WIN32)
+    if (path.empty()) {
+        return cfire::make_error("os.chdir failed: empty path", cfire::fs::ERR_NOT_FOUND);
+    }
+    std::wstring wp = detail::win32_utf8_to_wide(path);
+    if (!::SetCurrentDirectoryW(wp.c_str())) {
+        DWORD err = ::GetLastError();
+        return cfire::make_error(
+            std::format("os.chdir('{}') failed: win32 error {}", path, err),
+            cfire::fs::detail::classify_win32_error(err));
+    }
+    return {};
+#else
+    if (path.empty()) {
+        return cfire::make_error("os.chdir failed: empty path", cfire::fs::ERR_NOT_FOUND);
+    }
+    std::string p_str(path);
+    if (::chdir(p_str.c_str()) != 0) {
+        int err_no = errno;
+        return cfire::make_error(
+            std::format("os.chdir('{}') failed: {}", path, std::strerror(err_no)),
+            cfire::fs::detail::classify_errno(err_no));
+    }
+    return {};
+#endif
+}
+
+[[nodiscard]] inline auto preferred_languages() -> std::vector<std::string> {
+    std::vector<std::string> out;
+    auto push_unique = [&](std::string s) {
+        if (s.empty()) return;
+        if (std::find(out.begin(), out.end(), s) == out.end()) {
+            out.push_back(std::move(s));
+        }
+    };
+#if defined(__APPLE__) && !defined(PLATFORM_WEB)
+    if (void* cf = ::dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_LAZY | RTLD_LOCAL)) {
+        using CopyPrefFn = const void* (*)();
+        using ArrCountFn = long (*)(const void*);
+        using ArrValFn = const void* (*)(const void*, long);
+        using StrCStrFn = unsigned char (*)(const void*, char*, long, std::uint32_t);
+        using ReleaseFn = void (*)(const void*);
+        auto copy_fn = reinterpret_cast<CopyPrefFn>(::dlsym(cf, "CFLocaleCopyPreferredLanguages"));
+        auto count_fn = reinterpret_cast<ArrCountFn>(::dlsym(cf, "CFArrayGetCount"));
+        auto val_fn = reinterpret_cast<ArrValFn>(::dlsym(cf, "CFArrayGetValueAtIndex"));
+        auto cstr_fn = reinterpret_cast<StrCStrFn>(::dlsym(cf, "CFStringGetCString"));
+        auto rel_fn = reinterpret_cast<ReleaseFn>(::dlsym(cf, "CFRelease"));
+        if (copy_fn && count_fn && val_fn && cstr_fn && rel_fn) {
+            if (const void* arr = copy_fn()) {
+                long n = count_fn(arr);
+                for (long i = 0; i < n; ++i) {
+                    const void* sref = val_fn(arr, i);
+                    char buf[256]{};
+                    if (sref && cstr_fn(sref, buf, static_cast<long>(sizeof(buf)), 0x08000100U /* kCFStringEncodingUTF8 */)) {
+                        push_unique(std::string(buf));
+                    }
+                }
+                rel_fn(arr);
+            }
+        }
+    }
+#elif defined(_WIN32)
+    ULONG num_langs = 0;
+    ULONG buf_len = 0;
+    (void)::GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &num_langs, nullptr, &buf_len);
+    if (buf_len > 0) {
+        std::wstring buf(static_cast<std::size_t>(buf_len), L'\0');
+        if (::GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &num_langs, buf.data(), &buf_len)) {
+            std::size_t pos = 0;
+            while (pos < buf.size() && buf[pos] != L'\0') {
+                std::size_t end = buf.find(L'\0', pos);
+                if (end == std::wstring::npos) end = buf.size();
+                std::string lang = detail::win32_wide_to_utf8(std::wstring_view(buf.data() + pos, end - pos));
+                push_unique(std::move(lang));
+                pos = end + 1;
+            }
+        }
+    }
+#endif
+    if (out.empty()) {
+        auto normalize_locale = [&](std::string_view raw) {
+            while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front()))) raw.remove_prefix(1);
+            while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back()))) raw.remove_suffix(1);
+            if (auto dot = raw.find('.'); dot != std::string_view::npos) raw = raw.substr(0, dot);
+            if (auto at = raw.find('@'); at != std::string_view::npos) raw = raw.substr(0, at);
+            if (raw.empty() || raw == "C" || raw == "POSIX") return;
+            std::string norm(raw);
+            std::replace(norm.begin(), norm.end(), '_', '-');
+            push_unique(std::move(norm));
+        };
+        if (auto lang_list = getenv("LANGUAGE"); lang_list && !lang_list->empty()) {
+            std::string_view sv(*lang_list);
+            std::size_t pos = 0;
+            while (pos < sv.size()) {
+                std::size_t colon = sv.find(':', pos);
+                std::string_view part = (colon == std::string_view::npos) ? sv.substr(pos) : sv.substr(pos, colon - pos);
+                normalize_locale(part);
+                if (colon == std::string_view::npos) break;
+                pos = colon + 1;
+            }
+        }
+        for (const char* env_key : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
+            if (auto v = getenv(env_key); v && !v->empty()) {
+                normalize_locale(*v);
+            }
+        }
+    }
+    return out;
+}
+
 [[nodiscard]] inline auto getpid() noexcept -> std::int64_t {
 #if defined(_WIN32)
     return static_cast<std::int64_t>(::GetCurrentProcessId());
@@ -272,9 +426,16 @@ struct ExecResult {
     };
 }
 
-[[nodiscard]] inline auto command(std::string_view binary, std::span<const std::string> args = {})
-    -> std::expected<ExecResult, cfire::Error>
-{
+namespace detail {
+[[nodiscard]] inline auto command_impl(
+    std::string_view binary,
+    std::span<const std::string> args,
+    std::string_view cwd,
+    std::int64_t timeout_ms
+) -> std::expected<ExecResult, cfire::Error> {
+    if (timeout_ms < 0) {
+        return cfire::make_error(std::format("os.command '{}' timed out ({} ms)", binary, timeout_ms));
+    }
 #if defined(_WIN32)
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -294,11 +455,12 @@ struct ExecResult {
         return cfire::make_error("failed to create Win32 subprocess pipes");
     }
 
-    std::wstring cmd_line = detail::quote_win32_arg(detail::win32_utf8_to_wide(binary));
+    std::wstring cmd_line = quote_win32_arg(win32_utf8_to_wide(binary));
     for (const auto& a : args) {
         cmd_line.push_back(L' ');
-        cmd_line += detail::quote_win32_arg(detail::win32_utf8_to_wide(a));
+        cmd_line += quote_win32_arg(win32_utf8_to_wide(a));
     }
+    std::wstring w_cwd = cwd.empty() ? std::wstring{} : win32_utf8_to_wide(cwd);
 
     STARTUPINFOW si{};
     si.cb = sizeof(STARTUPINFOW);
@@ -316,16 +478,33 @@ struct ExecResult {
         TRUE,
         CREATE_NO_WINDOW,
         nullptr,
-        nullptr,
+        w_cwd.empty() ? nullptr : w_cwd.c_str(),
         &si,
         &pi);
     ::CloseHandle(out_write);
     ::CloseHandle(err_write);
 
     if (!ok) {
+        DWORD err = ::GetLastError();
         ::CloseHandle(out_read);
         ::CloseHandle(err_read);
-        return cfire::make_error(std::format("CreateProcessW failed for '{}'", binary));
+        return cfire::make_error(
+            std::format("CreateProcessW failed for '{}' (win32 error {})", binary, err),
+            cfire::fs::detail::classify_win32_error(err));
+    }
+
+    HANDLE job = nullptr;
+    if (timeout_ms > 0) {
+        job = ::CreateJobObjectW(nullptr, nullptr);
+        if (job) {
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli{};
+            jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if (!::SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli)) ||
+                !::AssignProcessToJobObject(job, pi.hProcess)) {
+                ::CloseHandle(job);
+                job = nullptr;
+            }
+        }
     }
 
     auto read_handle = [](HANDLE h) -> std::string {
@@ -340,16 +519,40 @@ struct ExecResult {
     };
 
     ExecResult res;
+    std::thread out_thread([&]() {
+        res.stdout_cf_ = read_handle(out_read);
+    });
     std::thread err_thread([&]() {
         res.stderr_cf_ = read_handle(err_read);
     });
-    res.stdout_cf_ = read_handle(out_read);
+
+    bool timed_out = false;
+    if (timeout_ms > 0) {
+        DWORD wait_ms = static_cast<DWORD>(std::min<std::int64_t>(timeout_ms, 0x7FFFFFFFLL));
+        DWORD wrc = ::WaitForSingleObject(pi.hProcess, wait_ms);
+        if (wrc == WAIT_TIMEOUT) {
+            timed_out = true;
+            if (job) {
+                (void)::TerminateJobObject(job, 1);
+            } else {
+                (void)::TerminateProcess(pi.hProcess, 1);
+            }
+            (void)::WaitForSingleObject(pi.hProcess, INFINITE);
+        }
+    } else {
+        ::WaitForSingleObject(pi.hProcess, INFINITE);
+    }
+
+    out_thread.join();
     err_thread.join();
-    ::WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exit_code = 0;
     ::GetExitCodeProcess(pi.hProcess, &exit_code);
+    if (job) ::CloseHandle(job);
     ::CloseHandle(pi.hProcess);
     ::CloseHandle(pi.hThread);
+    if (timed_out) {
+        return cfire::make_error(std::format("os.command '{}' timed out after {} ms", binary, timeout_ms));
+    }
     res.exit_code = static_cast<int>(exit_code);
     return res;
 #else
@@ -360,15 +563,6 @@ struct ExecResult {
         if (stderr_pipe[0] >= 0) { ::close(stderr_pipe[0]); ::close(stderr_pipe[1]); }
         return cfire::make_error("failed to create subprocess pipes");
     }
-
-    posix_spawn_file_actions_t actions;
-    ::posix_spawn_file_actions_init(&actions);
-    ::posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
-    ::posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
-    ::posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
-    ::posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
-    ::posix_spawn_file_actions_addclose(&actions, stdout_pipe[1]);
-    ::posix_spawn_file_actions_addclose(&actions, stderr_pipe[1]);
 
     std::vector<char*> argv_ptrs;
     std::string bin_str(binary);
@@ -388,16 +582,96 @@ struct ExecResult {
     char** env = ::environ;
 #endif
 
-    int spawn_rc = ::posix_spawnp(&pid, bin_str.c_str(), &actions, nullptr, argv_ptrs.data(), env);
-    ::posix_spawn_file_actions_destroy(&actions);
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[1]);
+    std::string cwd_str(cwd);
+    if (cwd_str.empty()) {
+        posix_spawn_file_actions_t actions;
+        ::posix_spawn_file_actions_init(&actions);
+        ::posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
+        ::posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
+        ::posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
+        ::posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
+        ::posix_spawn_file_actions_addclose(&actions, stdout_pipe[1]);
+        ::posix_spawn_file_actions_addclose(&actions, stderr_pipe[1]);
 
-    if (spawn_rc != 0) {
-        ::close(stdout_pipe[0]);
-        ::close(stderr_pipe[0]);
-        return cfire::make_error(std::format("posix_spawnp failed for '{}': {}", binary, std::strerror(spawn_rc)));
+        int spawn_rc = ::posix_spawnp(&pid, bin_str.c_str(), &actions, nullptr, argv_ptrs.data(), env);
+        ::posix_spawn_file_actions_destroy(&actions);
+        ::close(stdout_pipe[1]);
+        ::close(stderr_pipe[1]);
+
+        if (spawn_rc != 0) {
+            ::close(stdout_pipe[0]);
+            ::close(stderr_pipe[0]);
+            return cfire::make_error(
+                std::format("posix_spawnp failed for '{}': {}", binary, std::strerror(spawn_rc)),
+                cfire::fs::detail::classify_errno(spawn_rc));
+        }
+    } else {
+        int err_pipe[2]{-1, -1};
+        if (::pipe(err_pipe) != 0) {
+            ::close(stdout_pipe[0]); ::close(stdout_pipe[1]);
+            ::close(stderr_pipe[0]); ::close(stderr_pipe[1]);
+            return cfire::make_error("failed to create subprocess error pipe");
+        }
+        (void)::fcntl(err_pipe[0], F_SETFD, FD_CLOEXEC);
+        (void)::fcntl(err_pipe[1], F_SETFD, FD_CLOEXEC);
+
+        pid = ::fork();
+        if (pid < 0) {
+            int err_no = errno;
+            ::close(stdout_pipe[0]); ::close(stdout_pipe[1]);
+            ::close(stderr_pipe[0]); ::close(stderr_pipe[1]);
+            ::close(err_pipe[0]); ::close(err_pipe[1]);
+            return cfire::make_error(
+                std::format("fork failed for '{}': {}", binary, std::strerror(err_no)),
+                cfire::fs::detail::classify_errno(err_no));
+        }
+        if (pid == 0) {
+            ::close(stdout_pipe[0]);
+            ::close(stderr_pipe[0]);
+            ::close(err_pipe[0]);
+            if (::dup2(stdout_pipe[1], STDOUT_FILENO) < 0 || ::dup2(stderr_pipe[1], STDERR_FILENO) < 0) {
+                int e = errno;
+                (void)::write(err_pipe[1], &e, sizeof(e));
+                ::_exit(127);
+            }
+            ::close(stdout_pipe[1]);
+            ::close(stderr_pipe[1]);
+            if (::chdir(cwd_str.c_str()) != 0) {
+                int e = errno;
+                (void)::write(err_pipe[1], &e, sizeof(e));
+                ::_exit(127);
+            }
+            ::execvp(bin_str.c_str(), argv_ptrs.data());
+            int e = errno;
+            (void)::write(err_pipe[1], &e, sizeof(e));
+            ::_exit(127);
+        }
+        ::close(stdout_pipe[1]);
+        ::close(stderr_pipe[1]);
+        ::close(err_pipe[1]);
+
+        int child_errno = 0;
+        ssize_t nread = ::read(err_pipe[0], &child_errno, sizeof(child_errno));
+        ::close(err_pipe[0]);
+        if (nread == static_cast<ssize_t>(sizeof(child_errno)) && child_errno != 0) {
+            ::close(stdout_pipe[0]);
+            ::close(stderr_pipe[0]);
+            int st = 0;
+            while (::waitpid(pid, &st, 0) < 0 && errno == EINTR) {}
+            return cfire::make_error(
+                std::format("os.command '{}' (cwd '{}') failed: {}", binary, cwd_str, std::strerror(child_errno)),
+                cfire::fs::detail::classify_errno(child_errno));
+        }
     }
+
+    const bool has_timeout = timeout_ms > 0;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(has_timeout ? timeout_ms : 0);
+    auto rem_ms = [&]() -> int {
+        if (!has_timeout) return -1;
+        auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (diff <= 0) return 0;
+        return static_cast<int>(std::min<std::int64_t>(diff, 2000000000LL));
+    };
 
     ExecResult res;
     struct pollfd pfds[2]{};
@@ -407,11 +681,24 @@ struct ExecResult {
     pfds[1].events = POLLIN;
     int open_pipes = 2;
     char buf[4096];
+    bool timed_out = false;
 
     while (open_pipes > 0) {
-        int prc = ::poll(pfds, 2, -1);
+        int wait_arg = -1;
+        if (has_timeout) {
+            wait_arg = rem_ms();
+            if (wait_arg <= 0) {
+                timed_out = true;
+                break;
+            }
+        }
+        int prc = ::poll(pfds, 2, wait_arg);
         if (prc < 0) {
             if (errno == EINTR) continue;
+            break;
+        }
+        if (prc == 0 && has_timeout && rem_ms() <= 0) {
+            timed_out = true;
             break;
         }
         auto drain_one = [&](int idx, std::string& dst) {
@@ -434,18 +721,69 @@ struct ExecResult {
     if (pfds[1].fd >= 0) ::close(pfds[1].fd);
 
     int status = 0;
-    while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    if (timed_out) {
+        ::kill(pid, SIGKILL);
+        while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+        return cfire::make_error(std::format("os.command '{}' timed out after {} ms", binary, timeout_ms));
+    }
+    if (has_timeout) {
+        for (;;) {
+            pid_t w = ::waitpid(pid, &status, WNOHANG);
+            if (w == pid) break;
+            if (w < 0 && errno != EINTR) break;
+            if (rem_ms() <= 0) {
+                ::kill(pid, SIGKILL);
+                while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+                return cfire::make_error(std::format("os.command '{}' timed out after {} ms", binary, timeout_ms));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    } else {
+        while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    }
     res.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
     return res;
 #endif
 }
+} // namespace detail
 
-[[nodiscard]] inline auto command(std::string_view binary, std::initializer_list<std::string_view> args)
+[[nodiscard]] inline auto command(std::string_view binary)
     -> std::expected<ExecResult, cfire::Error>
 {
+    return detail::command_impl(binary, {}, "", 0);
+}
+
+[[nodiscard]] inline auto command(
+    std::string_view binary,
+    std::initializer_list<std::string_view> args,
+    std::string_view cwd = "",
+    std::int64_t timeout_ms = 0
+) -> std::expected<ExecResult, cfire::Error>
+{
     std::vector<std::string> vec;
+    vec.reserve(args.size());
     for (auto a : args) vec.emplace_back(a);
-    return command(binary, std::span<const std::string>(vec));
+    return detail::command_impl(binary, std::span<const std::string>(vec), cwd, timeout_ms);
+}
+
+template <typename Range>
+requires std::ranges::range<Range> &&
+         std::convertible_to<std::ranges::range_value_t<Range>, std::string_view> &&
+         (!std::same_as<std::decay_t<Range>, std::initializer_list<std::string_view>>)
+[[nodiscard]] inline auto command(
+    std::string_view binary,
+    const Range& args,
+    std::string_view cwd = "",
+    std::int64_t timeout_ms = 0
+) -> std::expected<ExecResult, cfire::Error>
+{
+    if constexpr (std::same_as<std::decay_t<Range>, std::vector<std::string>>) {
+        return detail::command_impl(binary, std::span<const std::string>(args), cwd, timeout_ms);
+    } else {
+        std::vector<std::string> vec;
+        for (const auto& a : args) vec.emplace_back(std::string_view(a));
+        return detail::command_impl(binary, std::span<const std::string>(vec), cwd, timeout_ms);
+    }
 }
 
 // --- Terminal & Event Loop Primitives ---
@@ -482,7 +820,7 @@ struct AtexitTermState {
     int fd = -1;
     struct termios orig{};
 #endif
-    bool active = false;
+    std::atomic<bool> active{false};
 };
 
 inline auto atexit_term_state() noexcept -> AtexitTermState& {
@@ -492,18 +830,31 @@ inline auto atexit_term_state() noexcept -> AtexitTermState& {
 
 inline void atexit_restore_term() noexcept {
     auto& st = atexit_term_state();
-    if (!st.active) return;
+    if (!st.active.exchange(false, std::memory_order_acq_rel)) return;
 #if defined(_WIN32)
     if (st.handle != INVALID_HANDLE_VALUE) {
         ::SetConsoleMode(st.handle, st.orig_mode);
     }
 #else
     if (st.fd >= 0) {
-        ::tcsetattr(st.fd, TCSAFLUSH, &st.orig);
+        ::tcsetattr(st.fd, TCSANOW, &st.orig);
     }
 #endif
-    st.active = false;
 }
+
+#if !defined(_WIN32)
+inline void raw_term_signal_handler(int sig) noexcept {
+    auto& st = atexit_term_state();
+    if (st.active.exchange(false, std::memory_order_acq_rel) && st.fd >= 0) {
+        ::tcsetattr(st.fd, TCSANOW, &st.orig);
+    }
+    struct sigaction dfl{};
+    dfl.sa_handler = SIG_DFL;
+    sigemptyset(&dfl.sa_mask);
+    (void)::sigaction(sig, &dfl, nullptr);
+    (void)::raise(sig);
+}
+#endif
 
 inline void register_atexit_term(
 #if defined(_WIN32)
@@ -512,8 +863,9 @@ inline void register_atexit_term(
     int fd, const struct termios& orig
 #endif
 ) noexcept {
-    static bool registered = false;
+    static std::once_flag reg_once;
     auto& st = atexit_term_state();
+    st.active.store(false, std::memory_order_release);
 #if defined(_WIN32)
     st.handle = h;
     st.orig_mode = orig;
@@ -521,11 +873,22 @@ inline void register_atexit_term(
     st.fd = fd;
     st.orig = orig;
 #endif
-    st.active = true;
-    if (!registered) {
-        registered = true;
+    st.active.store(true, std::memory_order_release);
+    std::call_once(reg_once, []() {
         std::atexit(atexit_restore_term);
-    }
+#if !defined(_WIN32)
+        for (int sig : {SIGTERM, SIGHUP}) {
+            struct sigaction cur{};
+            if (::sigaction(sig, nullptr, &cur) == 0 && cur.sa_handler == SIG_DFL) {
+                struct sigaction sa{};
+                sa.sa_handler = raw_term_signal_handler;
+                sigemptyset(&sa.sa_mask);
+                sa.sa_flags = 0;
+                (void)::sigaction(sig, &sa, nullptr);
+            }
+        }
+#endif
+    });
 }
 } // namespace detail
 
@@ -573,13 +936,13 @@ public:
         if (active_ && handle_ != INVALID_HANDLE_VALUE) {
             ::SetConsoleMode(handle_, orig_mode_);
             active_ = false;
-            detail::atexit_term_state().active = false;
+            detail::atexit_term_state().active.store(false, std::memory_order_release);
         }
 #else
         if (active_ && fd_ >= 0) {
             ::tcsetattr(fd_, TCSAFLUSH, &orig_);
             active_ = false;
-            detail::atexit_term_state().active = false;
+            detail::atexit_term_state().active.store(false, std::memory_order_release);
         }
 #endif
     }
@@ -635,19 +998,120 @@ inline auto signal_handlers() -> std::array<std::function<void(std::int32_t)>, 6
     static std::array<std::function<void(std::int32_t)>, 64> handlers{};
     return handlers;
 }
-inline void signal_trampoline(int sig) {
+inline auto signal_pending_flags() noexcept -> std::array<std::atomic<int>, 64>& {
+    static_assert(std::atomic<int>::is_always_lock_free, "signal dispatch requires lock-free atomic<int>");
+    static std::array<std::atomic<int>, 64> flags{};
+    return flags;
+}
+inline void dispatch_pending_signals() {
+    auto& flags = signal_pending_flags();
+    for (int s = 0; s < 64; ++s) {
+        if (flags[static_cast<std::size_t>(s)].exchange(0, std::memory_order_acq_rel) != 0) {
+            std::function<void(std::int32_t)> cb;
+            {
+                std::lock_guard<std::mutex> lk(signal_mutex());
+                cb = signal_handlers()[static_cast<std::size_t>(s)];
+            }
+            if (cb) cb(static_cast<std::int32_t>(s));
+        }
+    }
+}
+#if defined(_WIN32)
+inline auto signal_wake_event() noexcept -> std::atomic<HANDLE>& {
+    static_assert(std::atomic<HANDLE>::is_always_lock_free);
+    static std::atomic<HANDLE> ev{nullptr};
+    return ev;
+}
+inline void ensure_signal_dispatcher() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        HANDLE ev = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (ev) {
+            signal_wake_event().store(ev, std::memory_order_release);
+            std::thread([ev]() {
+                for (;;) {
+                    DWORD rc = ::WaitForSingleObject(ev, INFINITE);
+                    if (rc != WAIT_OBJECT_0) break;
+                    dispatch_pending_signals();
+                }
+            }).detach();
+        }
+    });
+}
+#else
+inline auto signal_write_fd() noexcept -> std::atomic<int>& {
+    static_assert(std::atomic<int>::is_always_lock_free);
+    static std::atomic<int> wfd{-1};
+    return wfd;
+}
+inline void ensure_signal_dispatcher() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        int pfd[2]{-1, -1};
+        if (::pipe(pfd) == 0) {
+            (void)::fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
+            (void)::fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
+            int fl0 = ::fcntl(pfd[0], F_GETFL, 0);
+            if (fl0 >= 0) (void)::fcntl(pfd[0], F_SETFL, fl0 | O_NONBLOCK);
+            int fl1 = ::fcntl(pfd[1], F_GETFL, 0);
+            if (fl1 >= 0) (void)::fcntl(pfd[1], F_SETFL, fl1 | O_NONBLOCK);
+            signal_write_fd().store(pfd[1], std::memory_order_release);
+            int rfd = pfd[0];
+            std::thread([rfd]() {
+                struct pollfd pfd_in{};
+                pfd_in.fd = rfd;
+                pfd_in.events = POLLIN;
+                for (;;) {
+                    int prc = ::poll(&pfd_in, 1, -1);
+                    if (prc < 0) {
+                        if (errno == EINTR) continue;
+                        break;
+                    }
+                    char drain[64];
+                    while (::read(rfd, drain, sizeof(drain)) > 0) {}
+                    dispatch_pending_signals();
+                }
+            }).detach();
+        }
+    });
+}
+#endif
+inline void signal_trampoline(int sig) noexcept {
     if (sig >= 0 && sig < 64) {
-        auto& h = signal_handlers()[static_cast<std::size_t>(sig)];
-        if (h) h(static_cast<std::int32_t>(sig));
+        signal_pending_flags()[static_cast<std::size_t>(sig)].store(1, std::memory_order_release);
+#if defined(_WIN32)
+        if (HANDLE ev = signal_wake_event().load(std::memory_order_acquire)) {
+            (void)::SetEvent(ev);
+        }
+#else
+        int saved_errno = errno;
+        int wfd = signal_write_fd().load(std::memory_order_acquire);
+        if (wfd >= 0) {
+            char byte_sig = static_cast<char>(sig);
+            (void)::write(wfd, &byte_sig, 1);
+        }
+        errno = saved_errno;
+#endif
     }
 }
 } // namespace detail
 
 inline void on_signal(std::int32_t sig, std::function<void(std::int32_t)> handler) {
     if (sig >= 0 && sig < 64) {
-        std::lock_guard<std::mutex> lk(detail::signal_mutex());
-        detail::signal_handlers()[static_cast<std::size_t>(sig)] = std::move(handler);
+        detail::ensure_signal_dispatcher();
+        {
+            std::lock_guard<std::mutex> lk(detail::signal_mutex());
+            detail::signal_handlers()[static_cast<std::size_t>(sig)] = std::move(handler);
+        }
+#if defined(_WIN32)
         std::signal(static_cast<int>(sig), detail::signal_trampoline);
+#else
+        struct sigaction sa{};
+        sa.sa_handler = detail::signal_trampoline;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        (void)::sigaction(static_cast<int>(sig), &sa, nullptr);
+#endif
     }
 }
 

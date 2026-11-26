@@ -222,7 +222,7 @@ test: build .cfire_test_runner$(EXE)
 	./cfire$(EXE) test tests/stdlib_suite_test.cf
 	./cfire$(EXE) doc --check
 	./.cfire_test_runner$(EXE) guide
-	./.cfire_test_runner$(EXE) conformance
+	./.cfire_test_runner$(EXE) conformance $(CONFORMANCE_FLAGS)
 
 test-unit: build .cfire_test_runner$(EXE)
 	./.cfire_test_runner$(EXE) unit
@@ -239,7 +239,7 @@ test-guide: build .cfire_test_runner$(EXE)
 
 # Filter and options: ./.cfire_test_runner conformance --filter 'ownership/*' -v
 test-conformance: build .cfire_test_runner$(EXE)
-	./.cfire_test_runner$(EXE) conformance
+	./.cfire_test_runner$(EXE) conformance $(CONFORMANCE_FLAGS)
 
 ASAN_CXXFLAGS := -std=c++2b -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 ASAN_LDFLAGS  := -fsanitize=address,undefined -fno-sanitize-recover=undefined $(LDFLAGS)
@@ -259,7 +259,7 @@ test-asan:
 	@MAKEFLAGS= $(MAKE) -j$(SAN_JOBS) --no-print-directory .cfire_test_runner_asan$(EXE)
 	./.cfire_test_runner_asan$(EXE) --jobs $(SAN_RUN_JOBS)
 	@echo "=== Running the Conformance Corpus with Generated Programs under ASan/UBSan ==="
-	./.cfire_test_runner$(EXE) conformance --jobs $(SAN_RUN_JOBS) --run-flags=--sanitize
+	./.cfire_test_runner$(EXE) conformance --jobs $(SAN_RUN_JOBS) --run-flags=--sanitize $(CONFORMANCE_FLAGS)
 
 TSAN_CXXFLAGS := -std=c++2b -O1 -g -fsanitize=thread -fno-omit-frame-pointer -Wall -Wextra -Wno-parentheses-equality -DCFIRE_GIT_SHA=\"$(GIT_SHA)\" $(LINUX_CXXFLAGS) -Iruntime -Isrc
 

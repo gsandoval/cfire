@@ -208,31 +208,53 @@ fn main() {
         require(single_before == single_after, "emit_sharded_cpp leaves emit_cpp byte-for-byte deterministic");
         require(sharded.units.size() == 3, "Subtest A produces 3 package units (main, pkga, pkgb)");
 
-        // Verify linkage rules on decls.hpp and each pkg_*.cpp
-        require(sharded.decls_hpp.contains("#pragma once"), "decls.hpp starts with #pragma once");
-        require(sharded.decls_hpp.contains("#include \"core/str.hpp\""), "decls.hpp includes core/str.hpp unconditionally");
-        require(sharded.decls_hpp.contains("#include \"core/builtin_methods.hpp\""), "decls.hpp includes core/builtin_methods.hpp unconditionally");
-        require(sharded.decls_hpp.contains("concept Describable"), "decls.hpp contains interface concept");
-        require(sharded.decls_hpp.contains("inline std::int64_t pkg_bonus"), "decls.hpp keeps package global inline");
-        require(sharded.decls_hpp.contains("auto bump(") && !sharded.decls_hpp.contains("inline auto bump("),
-            "decls.hpp emits non-inline prototype for concrete free function");
-        require(sharded.decls_hpp.contains("auto helper(") && !sharded.decls_hpp.contains("inline auto helper("),
-            "decls.hpp emits non-inline prototype for second package concrete free function");
-        require(sharded.decls_hpp.contains("auto Counter__doubled(") && !sharded.decls_hpp.contains("inline auto Counter__doubled("),
-            "decls.hpp emits non-inline prototype for concrete method wrapper");
-        require(sharded.decls_hpp.contains("template <typename T>\n[[nodiscard]] inline auto id_val("),
-            "decls.hpp keeps generic function template inline");
+        // Verify per-package header & 1:1 linkage rules on preamble.hpp, pkg_*.hpp, and each unit_*.cpp
+        require(sharded.preamble_hpp.contains("#pragma once"), "preamble.hpp starts with #pragma once");
+        require(sharded.preamble_hpp.contains("#include \"core/str.hpp\""), "preamble.hpp includes core/str.hpp unconditionally");
+        require(sharded.preamble_hpp.contains("#include \"core/builtin_methods.hpp\""), "preamble.hpp includes core/builtin_methods.hpp unconditionally");
+
+        auto find_hdr = [&](std::string_view pkg) -> const cfire::frontend::CppHeader* {
+            for (const auto& h : sharded.headers) {
+                if (h.pkg_name == pkg) return &h;
+            }
+            return nullptr;
+        };
+        const auto* hdr_pa = find_hdr("pa");
+        const auto* hdr_pb = find_hdr("pb");
+        const auto* hdr_main = find_hdr("main");
+        require(hdr_pa != nullptr && hdr_pb != nullptr && hdr_main != nullptr,
+            "emit_sharded_cpp emits separate per-package headers for main, pa, and pb");
+        if (hdr_pa && hdr_pb && hdr_main) {
+            require(hdr_pa->hpp.contains("concept Describable"), "pkg_pa.hpp contains interface concept");
+            require(hdr_pa->hpp.contains("inline std::int64_t pkg_bonus"), "pkg_pa.hpp keeps package global inline");
+            require(hdr_pa->hpp.contains("auto bump(") && !hdr_pa->hpp.contains("inline auto bump("),
+                "pkg_pa.hpp emits non-inline prototype for concrete free function");
+            require(hdr_pa->hpp.contains("auto Counter__doubled(") && !hdr_pa->hpp.contains("inline auto Counter__doubled("),
+                "pkg_pa.hpp emits non-inline prototype for concrete method wrapper");
+            require(hdr_pa->hpp.contains("template <typename T>\n[[nodiscard]] inline auto id_val("),
+                "pkg_pa.hpp keeps generic function template inline");
+            require(!hdr_pa->hpp.contains("auto helper("), "pkg_pa.hpp omits unrelated pb symbols");
+            require(hdr_pb->hpp.contains("auto helper(") && !hdr_pb->hpp.contains("inline auto helper("),
+                "pkg_pb.hpp emits non-inline prototype for second package concrete free function");
+            require(!hdr_pb->hpp.contains("struct Counter"), "pkg_pb.hpp omits unrelated pa structs");
+            require(hdr_main->hpp.contains("#include \"pkg_pa.hpp\"") && hdr_main->hpp.contains("#include \"pkg_pb.hpp\""),
+                "pkg_main.hpp includes direct imported package headers");
+        }
 
         for (const auto& u : sharded.units) {
-            require(u.cpp.contains("#include \"decls.hpp\""), "each pkg unit includes decls.hpp");
+            require(u.cpp.contains(std::format("#include \"{}\"", u.header_file)),
+                "each sharded unit includes its own package header");
             require(!u.cpp.contains("inline auto bump(") && !u.cpp.contains("inline auto helper(") &&
                     !u.cpp.contains("inline auto Counter__doubled(") && !u.cpp.contains("inline auto cfire_method_doubled("),
-                "concrete definitions in pkg_*.cpp omit inline specifier");
+                "concrete definitions in unit_*.cpp omit inline specifier");
         }
 
         // Write shards & compile manually with -Wundefined-inline -Werror to catch any C++23 [dcl.inline] bugs
         const auto shard_out = sub_a / "manual_shards";
         test_sharded_codegen_detail::write_text(shard_out / "decls.hpp", sharded.decls_hpp);
+        for (const auto& h : sharded.headers) {
+            test_sharded_codegen_detail::write_text(shard_out / h.filename, h.hpp);
+        }
         std::string cxx = cfire::build::resolve_cxx_compiler("");
         std::vector<std::filesystem::path> objs;
         for (const auto& u : sharded.units) {
@@ -333,7 +355,10 @@ fn main() {
 )CF");
 
         const auto out_sharded = test_sharded_codegen_detail::exe_path(proj / "app_sharded");
-        const auto decls_path = proj / ".cfire" / "gen" / "shards" / "app" / "decls.hpp";
+        const auto shard_dir = proj / ".cfire" / "gen" / "shards" / "app";
+        const auto decls_path = shard_dir / "preamble.hpp";
+        const auto pkg_pa_path = shard_dir / "pkg_pa.hpp";
+        const auto pkg_pb_path = shard_dir / "pkg_pb.hpp";
 
         // Step B1: Clean build with BinaryCache bypassed -> compiles all 5 units
         flags_guard.set(true, false);
@@ -391,7 +416,9 @@ fn b_val(x: i64) -> i64 {
         require(run_rc == 0 && sharded_out_3 == "res=110",
             "body edit binary output expected 'res=110', got: '" + sharded_out_3 + "'");
 
-        // Step B4: Struct layout edit in pkg_a invalidates decls.hpp and cleanly recompiles all 5 units
+        // Step B4: Struct layout edit in pkg_a updates pkg_pa.hpp and recompiles ONLY dependent units (pa + main = 2 of 5)
+        const std::string pkg_pa_content_1 = test_sharded_codegen_detail::read_text(pkg_pa_path);
+        const std::string pkg_pb_content_1 = test_sharded_codegen_detail::read_text(pkg_pb_path);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         test_sharded_codegen_detail::write_text(proj / "pkg_a" / "pkg_a.cf", R"CF(package pkg_a
 
@@ -418,9 +445,10 @@ fn a_val() -> i64 {
         require(b4.has_value(), "struct edit rebuild succeeds: " + (b4 ? "" : b4.error()));
         if (!b4) return;
         require(b4->used_sharded && b4->sharded_total_units == 5, "struct edit rebuild stays sharded");
-        require(b4->sharded_recompiled_units == 5,
-            std::format("struct edit in decls.hpp must recompile all 5 units, got {}", b4->sharded_recompiled_units));
-        require(test_sharded_codegen_detail::read_text(decls_path) != decls_content_1, "struct edit updates decls.hpp");
+        require(b4->sharded_recompiled_units == 2,
+            std::format("struct edit in pkg_a should recompile ONLY pkg_a and main (2 units), got {}", b4->sharded_recompiled_units));
+        require(test_sharded_codegen_detail::read_text(pkg_pa_path) != pkg_pa_content_1, "struct edit updates pkg_pa.hpp");
+        require(test_sharded_codegen_detail::read_text(pkg_pb_path) == pkg_pb_content_1, "struct edit in pkg_a preserves unrelated pkg_pb.hpp");
 
         std::string sharded_out_4 = test_sharded_codegen_detail::trim_str(
             cfire::bridge::run_command_capture(cfire::bridge::shell_quote(out_sharded.string()) + " 2>&1", run_rc));
@@ -474,6 +502,265 @@ fn a_val() -> i64 {
         require(b_d3.has_value() && b_d3->used_sharded && b_d3->sharded_recompiled_units == 5,
             "missing .cfire/obj on macOS DevDebug invalidates BinaryCache restore and rebuilds all 5 .o files");
 #endif
+    }
+
+    // 3. Subtest C: 1:1 Per-File TU Sharding Inside a Multi-File Package & Body-Only 1-Unit Rebuild
+    {
+        const auto mproj = root.dir / "multi_file_pkg";
+        const auto alpha_cf = mproj / "libm" / "alpha.cf";
+        const auto beta_cf = mproj / "libm" / "beta.cf";
+        const auto main_cf = mproj / "main.cf";
+
+        test_sharded_codegen_detail::write_text(alpha_cf, R"CF(package libm
+
+type Box struct {
+    id: i64
+}
+
+fn (b: Box) tag() -> i64 {
+    return b.id + 1
+}
+
+fn alpha_fn(x: i64) -> i64 {
+    b := Box{id: x}
+    return beta_helper(b.tag())
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(beta_cf, R"CF(package libm
+
+fn beta_helper(x: i64) -> i64 {
+    return x * 10
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(main_cf, R"CF(package main
+
+import "./libm" as lm
+
+fn main() {
+    println("m={}", lm.alpha_fn(4) + lm.beta_helper(2))
+}
+)CF");
+
+        const auto out_bin = test_sharded_codegen_detail::exe_path(mproj / "app_multi");
+        flags_guard.set(true, false);
+        auto m1 = cfire::build::build_native(main_cf, rt_dir, out_bin);
+        require(m1.has_value(), "Subtest C multi-file package clean build succeeds: " + (m1 ? "" : m1.error()));
+        if (!m1) return;
+        require(m1->used_sharded && m1->sharded_total_units == 3 && m1->sharded_recompiled_units == 3,
+            std::format("multi-file package produces 1:1 units (expected 3, got total={}, recompiled={})",
+                m1->sharded_total_units, m1->sharded_recompiled_units));
+        int run_rc = 0;
+        std::string out1 = test_sharded_codegen_detail::trim_str(
+            cfire::bridge::run_command_capture(cfire::bridge::shell_quote(out_bin.string()) + " 2>&1", run_rc));
+        require(run_rc == 0 && out1 == "m=70", "Subtest C initial binary outputs 'm=70', got: '" + out1 + "'");
+
+        const auto pkg_lm_hdr = mproj / ".cfire" / "gen" / "shards" / "main" / "pkg_lm.hpp";
+        const std::string hdr_before = test_sharded_codegen_detail::read_text(pkg_lm_hdr);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        test_sharded_codegen_detail::write_text(alpha_cf, R"CF(package libm
+
+type Box struct {
+    id: i64
+}
+
+fn (b: Box) tag() -> i64 {
+    return b.id + 1
+}
+
+fn alpha_fn(x: i64) -> i64 {
+    b := Box{id: x}
+    return beta_helper(b.tag()) + 7
+}
+)CF");
+
+        auto m2 = cfire::build::build_native(main_cf, rt_dir, out_bin);
+        require(m2.has_value(), "Subtest C body-only edit rebuild succeeds: " + (m2 ? "" : m2.error()));
+        if (!m2) return;
+        require(m2->used_sharded && m2->sharded_total_units == 3 && m2->sharded_recompiled_units == 1,
+            std::format("body-only edit in alpha.cf must recompile ONLY 1 unit (not beta.cf or main.cf), got {}",
+                m2->sharded_recompiled_units));
+        require(test_sharded_codegen_detail::read_text(pkg_lm_hdr) == hdr_before,
+            "body-only edit inside multi-file package keeps pkg_lm.hpp identical");
+        std::string out2 = test_sharded_codegen_detail::trim_str(
+            cfire::bridge::run_command_capture(cfire::bridge::shell_quote(out_bin.string()) + " 2>&1", run_rc));
+        require(run_rc == 0 && out2 == "m=77", "Subtest C body edit outputs 'm=77', got: '" + out2 + "'");
+    }
+
+    // 4. Subtest D: Incremental & Cached `cfire test` (`(cached) PASS`, `--no-cache`, `--fuzz`, `--changed`)
+    {
+        const auto tproj = root.dir / "inc_test_ws";
+        const auto a_cf = tproj / "pkg_a" / "a.cf";
+        const auto a_test_cf = tproj / "pkg_a" / "a_test.cf";
+        const auto b_cf = tproj / "pkg_b" / "b.cf";
+        const auto b_test_cf = tproj / "pkg_b" / "b_test.cf";
+        const auto val_hpp = tproj / "pkg_c" / "val.hpp";
+        const auto c_cf = tproj / "pkg_c" / "c.cf";
+        const auto c_test_cf = tproj / "pkg_c" / "c_test.cf";
+
+        test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
+
+fn base_num() -> i64 {
+    return 10
+}
+)CF");
+        test_sharded_codegen_detail::write_text(a_test_cf, R"CF(package pkg_a
+
+test "a_basic" {
+    assert(base_num() == 10)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(b_cf, R"CF(package pkg_b
+
+import "../pkg_a" as pa
+
+fn derived_num() -> i64 {
+    return pa.base_num() + 5
+}
+)CF");
+        test_sharded_codegen_detail::write_text(b_test_cf, R"CF(package pkg_b
+
+test "b_basic" {
+    assert(derived_num() == 15)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(val_hpp, R"CPP(#pragma once
+inline long long cfire_test_cpp_val() { return 42; }
+)CPP");
+        test_sharded_codegen_detail::write_text(c_cf, R"CF(package pkg_c
+
+import cpp "val.hpp"
+
+fn native_num() -> i64 {
+    return cpp.cfire_test_cpp_val()
+}
+)CF");
+        test_sharded_codegen_detail::write_text(c_test_cf, R"CF(package pkg_c
+
+test "c_basic" {
+    assert(native_num() == 42)
+}
+)CF");
+
+        const std::string cfire_bin = cfire::bridge::shell_quote(cfire_exe());
+        const std::string ws_q = cfire::bridge::shell_quote(tproj.string());
+        int rc = 0;
+
+        // Run 1: cold pass (uncached)
+        std::string r1 = cfire::bridge::run_command_capture(
+            std::format("{} test {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r1.contains("All 3 test suite(s) passed") && !r1.contains("(cached) PASS"),
+            std::format("Subtest D Run 1 expected 3 uncached suites to pass (rc={}):\n{}", rc, r1));
+
+        // Run 2: warm pass -> cache hits for all 3 suites
+        std::string r2 = cfire::bridge::run_command_capture(
+            std::format("{} test {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r2.contains("(cached) PASS") && r2.contains("All 3 test suite(s) passed"),
+            std::format("Subtest D Run 2 expected `(cached) PASS` cache hits (rc={}):\n{}", rc, r2));
+
+        // Run 3: `--no-cache` and `--fuzz` bypass cache
+        std::string r_nc = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && !r_nc.contains("(cached) PASS") && r_nc.contains("All 3 test suite(s) passed"),
+            "Subtest D `--no-cache` bypasses test result cache");
+
+        std::string r_fz = cfire::bridge::run_command_capture(
+            std::format("{} test --fuzz {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && !r_fz.contains("(cached) PASS") && r_fz.contains("All 3 test suite(s) passed"),
+            "Subtest D `--fuzz` bypasses test result cache");
+
+        // Clean `--changed` in non-git workspace reports 0 affected suites
+        std::string r_ch_clean = cfire::bridge::run_command_capture(
+            std::format("{} test --changed {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r_ch_clean.contains("No test suites affected"),
+            std::format("Subtest D clean `--changed` expected no affected suites (rc={}):\n{}", rc, r_ch_clean));
+
+        // Edit `pkg_a/a.cf` (transitive dep of `pkg_b`, unrelated to `pkg_c`): `--changed` runs only pkg_a + pkg_b
+        test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
+
+fn base_num() -> i64 {
+    return 20
+}
+)CF");
+        test_sharded_codegen_detail::write_text(a_test_cf, R"CF(package pkg_a
+
+test "a_basic" {
+    assert(base_num() == 20)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(b_test_cf, R"CF(package pkg_b
+
+test "b_basic" {
+    assert(derived_num() == 25)
+}
+)CF");
+
+        std::string r_ch_dirty = cfire::bridge::run_command_capture(
+            std::format("{} test --changed {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r_ch_dirty.contains("All 2 test suite(s) passed") && !r_ch_dirty.contains("c_test.cf"),
+            std::format("Subtest D `--changed` after pkg_a edit runs only 2 affected suites (rc={}):\n{}", rc, r_ch_dirty));
+
+        // Verify C++ header modification invalidates ONLY pkg_c while pkg_a and pkg_b hit cache
+        std::string r_warm = cfire::bridge::run_command_capture(
+            std::format("{} test {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r_warm.contains("(cached) PASS"), "Subtest D re-warms cache cleanly");
+
+        test_sharded_codegen_detail::write_text(val_hpp, R"CPP(#pragma once
+inline long long cfire_test_cpp_val() { return 99; }
+)CPP");
+        test_sharded_codegen_detail::write_text(c_test_cf, R"CF(package pkg_c
+
+test "c_basic" {
+    assert(native_num() == 99)
+}
+)CF");
+        std::string r_hdr = cfire::bridge::run_command_capture(
+            std::format("{} test {} 2>&1", cfire_bin, ws_q), rc);
+        require(rc == 0 && r_hdr.contains("All 3 test suite(s) passed") && r_hdr.contains("(cached) PASS"),
+            std::format("Subtest D C++ header edit keeps pkg_a/pkg_b cached while invalidating pkg_c (rc={}):\n{}", rc, r_hdr));
+        // Split output at Suite 3/3 to verify Suite 3 actually ran uncached!
+        if (auto s3_pos = r_hdr.find("Suite 3/3:"); s3_pos != std::string::npos) {
+            std::string s3_tail = r_hdr.substr(s3_pos);
+            require(!s3_tail.contains("(cached) PASS"), "Suite 3 (pkg_c) ran uncached after val.hpp edit");
+        } else {
+            require(false, "expected Suite 3/3 marker in output");
+        }
+
+        // Git-backed `--changed` check inside a temp `git init` workspace
+        int git_rc = 0;
+        (void)cfire::bridge::run_command_capture(std::format("git -C {} init 2>&1", ws_q), git_rc);
+        if (git_rc == 0) {
+            (void)cfire::bridge::run_command_capture(
+                std::format("git -C {} config user.email test@cfire.local && git -C {} config user.name Tester && git -C {} add -A && git -C {} commit -m init 2>&1",
+                    ws_q, ws_q, ws_q, ws_q),
+                git_rc);
+            if (git_rc == 0) {
+                test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
+
+fn base_num() -> i64 {
+    return 30
+}
+)CF");
+                test_sharded_codegen_detail::write_text(a_test_cf, R"CF(package pkg_a
+
+test "a_basic" {
+    assert(base_num() == 30)
+}
+)CF");
+                test_sharded_codegen_detail::write_text(b_test_cf, R"CF(package pkg_b
+
+test "b_basic" {
+    assert(derived_num() == 35)
+}
+)CF");
+                std::string r_git_ch = cfire::bridge::run_command_capture(
+                    std::format("{} test --changed {} 2>&1", cfire_bin, ws_q), rc);
+                require(rc == 0 && r_git_ch.contains("All 2 test suite(s) passed") && !r_git_ch.contains("c_test.cf"),
+                    std::format("Subtest D git-backed `--changed` runs only pkg_a + pkg_b (rc={}):\n{}", rc, r_git_ch));
+            }
+        }
     }
 
     std::println("--- PASS: test_sharded_cpp_codegen");

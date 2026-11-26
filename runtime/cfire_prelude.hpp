@@ -437,7 +437,7 @@ inline constexpr std::string_view kCacheMarkerName = ".cfire-cache";
 
 [[nodiscard]] inline auto is_known_cache_entry(std::string_view name) noexcept -> bool {
     if (name == "pch" || name == "bin" || name == "libs" || name == "headers" ||
-        name == "ast" || name == "pkg" || name == "doc" || name == "mcp" ||
+        name == "ast" || name == "pkg" || name == "doc" || name == "mcp" || name == "test" ||
         name == "emscripten" || name == "ipc" || name == "ipc-test" ||
         name == "test-header-cache" || name == "secure-temp-test" || name == "probes.json") {
         return true;
