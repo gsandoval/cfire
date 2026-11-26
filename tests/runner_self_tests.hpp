@@ -34,6 +34,36 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
                 "requires-lib must name a library");
         require(!conformance::parse_spec("// requires-lib: unknown_lib\n// expect: stdout\npackage main\n").has_value(),
                 "requires-lib rejects unknown library");
+
+        // Multi-file archive directive parsing & path safety.
+        auto mf = conformance::parse_spec(
+            "// expect: stdout\n"
+            "// | ok\n"
+            "// --- file: dom/dom.cf\n"
+            "package dom\n"
+            "// --- file: ad/ad.cf\n"
+            "package ad\n"
+            "fn bad() { x := 1; x = 2 } //~ error cfire/ASSIGN-IMMUTABLE\n"
+            "// --- file: app/main.cf (entry)\n"
+            "package main\n"
+            "fn main() { println(\"ok\") }\n"
+        );
+        require(mf.has_value() && mf->files.size() == 3, "parse_spec parses multi-file sections");
+        require(mf && mf->files[0].relpath == "dom/dom.cf" && !mf->files[0].is_entry, "first section relpath parsed");
+        require(mf && mf->files[2].relpath == "app/main.cf" && mf->files[2].is_entry, "(entry) marker parsed");
+        require(mf && mf->file_errors.contains({"ad/ad.cf", "cfire/ASSIGN-IMMUTABLE", 2, 0}),
+                "multi-file inline error attributed to section relpath and section-local line");
+        for (std::string_view bad_path : {"../escape.cf", "/abs.cf", "a\\b.cf", "dom//dom.cf", "C:/x.cf"}) {
+            std::string bad_spec = std::format("// expect: stdout\n// | ok\n// --- file: {}\npackage main\n", bad_path);
+            require(!conformance::parse_spec(bad_spec).has_value(),
+                    std::format("parse_spec rejects unsafe virtual path '{}'", bad_path));
+        }
+        require(!conformance::parse_spec(
+                    "// expect: stdout\n// | ok\n// --- file: a/x.cf (entry)\npackage a\n// --- file: b/y.cf (entry)\npackage b\n").has_value(),
+                "parse_spec rejects multiple (entry) virtual files");
+        require(!conformance::parse_spec(
+                    "// expect: stdout\n// | ok\n// --- file: a/x.cf\npackage a\n// --- file: a/x.cf\npackage a\n").has_value(),
+                "parse_spec rejects duplicate virtual file paths");
     }
 
     // Guide block extraction.
@@ -94,6 +124,31 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
         {"bad_inline.cf", "package main\nfn main() {\n    x := 1 //~ eror cfire/X\n}\n", Outcome::Fail},
         {"bad_type_error_expectation.cf", "package main\nfn main() {\n    x := 1 //~ error cfire/TYPE-ERROR\n}\n", Outcome::Fail},
         {"pass_panic.cf", "// expect: panic \"index out of bounds\" @6\npackage main\nfn main() {\n    xs: []i32 = [1]\n    i := 3\n    println(\"{}\", xs[i])\n}\n",
+         Outcome::Pass},
+        {"pass_multifile.cf",
+         "// expect: stdout\n"
+         "// | hi 42\n"
+         "// --- file: helper/helper.cf\n"
+         "package helper\n"
+         "fn val() -> i64 { return 42 }\n"
+         "// --- file: app/main.cf (entry)\n"
+         "package main\n"
+         "import \"../helper\"\n"
+         "fn main() {\n"
+         "    println(\"hi {}\", helper.val())\n"
+         "}\n",
+         Outcome::Pass},
+        {"pass_multifile_error.cf",
+         "// --- file: helper/helper.cf\n"
+         "package helper\n"
+         "fn bad() {\n"
+         "    x := 1\n"
+         "    x = 2 //~ error cfire/ASSIGN-IMMUTABLE\n"
+         "}\n"
+         "// --- file: app/main.cf (entry)\n"
+         "package main\n"
+         "import \"../helper\"\n"
+         "fn main() { helper.bad() }\n",
          Outcome::Pass},
     };
     ScopedTempDir dir("cfire_runner_selftest");

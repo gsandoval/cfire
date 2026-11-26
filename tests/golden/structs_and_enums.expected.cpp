@@ -64,6 +64,8 @@ inline auto cfire::json::parse_struct<Config>(simdjson::ondemand::object obj) ->
     Config out{};
     out.Host = "127.0.0.1";
     CFIRE_TRY_ASSIGN(out.Host, cfire::json::get_str(obj, "host", out.Host));
+    out.Port = static_cast<std::uint16_t>(8080);
+    CFIRE_TRY_ASSIGN(out.Port, cfire::json::get_u16(obj, "port", out.Port));
     return out;
 }
 

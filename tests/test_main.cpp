@@ -90,6 +90,7 @@ inline constexpr SuiteEntry kSuites[] = {
     {"unit", "test_toolchain_pch_and_binary_caching", test_toolchain_pch_and_binary_caching, false, false, 80},
     {"unit", "test_single_pass_in_memory_check", test_single_pass_in_memory_check, false, false, 30},
     {"unit", "test_sharded_cpp_codegen", test_sharded_cpp_codegen, false, false, 85},
+    {"unit", "test_cross_package_json_sharded_and_noshard", test_cross_package_json_sharded_and_noshard, false, false, 40},
     {"unit", "test_vendored_archives_and_portable_releases", test_vendored_archives_and_portable_releases, false, false, 95},
     {"unit", "test_toolchain_upgrade", test_toolchain_upgrade, false, false, 60},
     {"unit", "test_language_consistency_and_docs", test_language_consistency_and_docs, false, true, 65},

@@ -2583,6 +2583,28 @@ type Config struct {
 }
 ```
 
+### `[cfire/JSON-UNSUPPORTED-TYPE]` — Unsupported Type in Typed `core:json` Call
+
+`json.stringify`, `json.parse[T]`, and `json.schema[T]` require every serialized field of `T` (including nested and cross-package structs/enums) to be a JSON-supported type (primitives, strings, booleans, slices, optionals, unit enums, non-generic structs, or `json.Value`). Pointers, closures, maps, smart pointers, fixed arrays, generic structs, OS/network handles, and payload enums are rejected at compile time unless skipped with `` `json:"-"` ``.
+
+**Rejected (`.cf`):**
+```cf
+type Record struct {
+    name: str `json:"name"`
+    meta: map[str]i64 `json:"meta"`
+}
+fn dump(r: Record) -> str { return json.stringify(r) } // ERROR [cfire/JSON-UNSUPPORTED-TYPE]
+```
+
+**Accepted (`.cf`):**
+```cf
+type Record struct {
+    name: str `json:"name"`
+    meta: map[str]i64 `json:"-"`
+}
+fn dump(r: Record) -> str { return json.stringify(r) } // OK
+```
+
 ### `[cfire/REDUNDANT-TRY]` — Redundant `try` on Non-Fallible Expression
 
 `try` propagates errors from fallible `T!` (`std::expected<T, cfire::Error>`) expressions. Applying `try` to a plain value, literal, or non-fallible function call has no effect and is rejected at compile time.

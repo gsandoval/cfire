@@ -2,6 +2,7 @@
 // src/sema/fn_checker.hpp — Single-Pass Function Body & Effect Checker
 
 #include "types.hpp"
+#include "json_support.hpp"
 #include "stdlib_index.hpp"
 #include "builtin_methods.hpp"
 #include <algorithm>

@@ -765,3 +765,207 @@ test "b_basic" {
 
     std::println("--- PASS: test_sharded_cpp_codegen");
 }
+
+void test_cross_package_json_sharded_and_noshard(const std::filesystem::path& rt_dir) {
+    std::println("=== RUN   test_cross_package_json_sharded_and_noshard");
+
+    test_sharded_codegen_detail::ScopedTempRoot root("cfire_cross_pkg_json");
+    const std::string cfire_bin = cfire::bridge::shell_quote(
+        std::filesystem::absolute(cfire_exe()).string());
+    int rc = 0;
+
+    // 1. Exact Flint 3-file repro across `cfire test ad` (sharded) and `cfire test --no-shard ad`
+    {
+        auto ws = root.dir / "flint_repro";
+        test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
+
+type Settings struct {
+    accent: str `json:"accent"`
+    tags: []str `json:"tags"`
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad.cf", R"CF(package ad
+
+import "core:json"
+import "../dom"
+
+type File struct {
+    version: i64 `json:"version"`
+    settings: dom.Settings `json:"settings"`
+    list: []dom.Settings `json:"list"`
+}
+
+fn dump(f: File) -> str {
+    return json.stringify(f)
+}
+
+fn load(t: str) -> File! {
+    return try json.parse[File](t)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad_test.cf", R"CF(package ad
+
+import "../dom"
+
+test "json across packages" {
+    s := dom.Settings{ accent: "moss", tags: ["a"] }
+    text := dump(File{ version: 1, settings: s, list: [s] })
+    assert(text.contains("\"version\":1"))
+    assert(text.contains("\"accent\":\"moss\""))
+    back := try load(text)
+    assert_eq(back.version, i64(1))
+    assert_eq(back.settings.accent, "moss")
+    assert_eq(back.list.len(), usize(1))
+    assert_eq(back.list[0].tags.len(), usize(1))
+    assert_eq(back.list[0].tags[0], "a")
+}
+)CF");
+
+        const std::string ad_q = cfire::bridge::shell_quote((ws / "ad").string());
+        std::string r_sharded = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 &&
+                r_sharded.contains("PASS: json across packages") &&
+                r_sharded.contains("PASS: [auto] json round-trip: Settings") &&
+                r_sharded.contains("PASS: [auto] json round-trip: File"),
+            std::format("Flint 3-file repro passes with auto round-trips in sharded mode (rc={}):\n{}", rc, r_sharded));
+
+        std::string r_noshard = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache --no-shard {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 &&
+                r_noshard.contains("PASS: json across packages") &&
+                r_noshard.contains("PASS: [auto] json round-trip: Settings") &&
+                r_noshard.contains("PASS: [auto] json round-trip: File"),
+            std::format("Flint 3-file repro passes with auto round-trips in --no-shard mode (rc={}):\n{}", rc, r_noshard));
+    }
+
+    // 2. Colliding struct/enum names across packages + narrow ints + `json:"-"` in sharded and `--no-shard`
+    {
+        auto ws = root.dir / "colliding_cross_pkg";
+        test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
+
+type Mode enum {
+    Fast,
+    Safe,
+}
+
+type Item struct {
+    label: str `json:"label"`
+    mode: Mode `json:"mode"`
+    prio: u8 `json:"prio"`
+    delta: i8 `json:"delta"`
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad.cf", R"CF(package ad
+
+import "core:json"
+import "../dom"
+
+type Item struct {
+    id: u32 `json:"id"`
+    port: u16 `json:"port"`
+    offset: i16 `json:"offset"`
+    primary: dom.Item `json:"primary"`
+    extras: []dom.Item `json:"extras"`
+    internal_cache: map[str]i64 `json:"-"`
+}
+
+fn roundtrip(it: Item) -> Item! {
+    s := json.stringify(it)
+    return try json.parse[Item](s)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad_test.cf", R"CF(package ad
+
+import "../dom"
+
+test "colliding cross-pkg struct and enum" {
+    d := dom.Item{ label: "core", mode: dom.Mode::Safe(), prio: u8(9), delta: i8(-5) }
+    mut cache: map[str]i64 = make(map[str]i64)
+    cache["k"] = 77
+    in_it := Item{
+        id: u32(42000),
+        port: u16(8443),
+        offset: i16(-300),
+        primary: d,
+        extras: [d],
+        internal_cache: cache,
+    }
+    out_it := try roundtrip(in_it)
+    assert_eq(out_it.id, u32(42000))
+    assert_eq(out_it.port, u16(8443))
+    assert_eq(out_it.offset, i16(-300))
+    assert_eq(out_it.primary.label, "core")
+    assert(out_it.primary.mode == dom.Mode::Safe())
+    assert_eq(out_it.primary.prio, u8(9))
+    assert_eq(out_it.primary.delta, i8(-5))
+    assert_eq(out_it.extras.len(), usize(1))
+}
+)CF");
+        const std::string ad_q = cfire::bridge::shell_quote((ws / "ad").string());
+        std::string r_sharded = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 && r_sharded.contains("PASS: colliding cross-pkg struct and enum"),
+            std::format("Colliding cross-package JSON test passes in sharded mode (rc={}):\n{}", rc, r_sharded));
+
+        std::string r_noshard = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache --no-shard {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 && r_noshard.contains("PASS: colliding cross-pkg struct and enum"),
+            std::format("Colliding cross-package JSON test passes in --no-shard mode (rc={}):\n{}", rc, r_noshard));
+    }
+
+    // 3. Cross-package cfire/JSON-UNSUPPORTED-TYPE reports exact nested field path
+    {
+        auto ws = root.dir / "unsupported_cross_pkg";
+        test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
+
+type BadInner struct {
+    meta: map[str]i64 `json:"meta"`
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "app" / "main.cf", R"CF(package main
+
+import "core:json"
+import "../dom"
+
+type BadOuter struct {
+    inner: dom.BadInner `json:"inner"`
+}
+
+fn main() {
+    b := BadOuter{ inner: dom.BadInner{ meta: make(map[str]i64) } }
+    println("{}", json.stringify(b))
+}
+)CF");
+        const std::string main_q = cfire::bridge::shell_quote((ws / "app" / "main.cf").string());
+        std::string r_chk = cfire::bridge::run_command_capture(
+            std::format("{} check --json {} 2>&1", cfire_bin, main_q), rc);
+        require(rc != 0 && r_chk.contains("cfire/JSON-UNSUPPORTED-TYPE") && r_chk.contains("inner.meta"),
+            std::format("cfire check reports cfire/JSON-UNSUPPORTED-TYPE with nested field path 'inner.meta' (rc={}):\n{}", rc, r_chk));
+    }
+
+    // 4. Runtime static_assert defense-in-depth on unspecialized C++ struct
+    {
+        auto cpp_p = root.dir / "unspecialized_json_check.cpp";
+        test_sharded_codegen_detail::write_text(cpp_p, R"CPP(#include "core/json.hpp"
+struct MissingReflect { int x = 0; };
+int main() {
+    MissingReflect m{};
+    auto s = cfire::json::stringify(m);
+    auto p = cfire::json::parse<MissingReflect>("{}");
+    return static_cast<int>(s.size()) + (p.has_value() ? 0 : 1);
+}
+)CPP");
+        const char* cxx_env = std::getenv("CXX");
+        std::string cxx = (cxx_env != nullptr && *cxx_env != '\0') ? cxx_env : "clang++";
+        std::string cmd = std::format("{} -std=c++2b -fsyntax-only -I{} {} 2>&1",
+            cxx,
+            cfire::bridge::shell_quote(rt_dir.string()),
+            cfire::bridge::shell_quote(cpp_p.string()));
+        std::string r_cxx = cfire::bridge::run_command_capture(cmd, rc);
+        require(rc != 0 && r_cxx.contains("missing generated JSON reflection specialization"),
+            std::format("runtime/core/json.hpp static_assert rejects unspecialized struct (rc={}):\n{}", rc, r_cxx));
+    }
+
+    std::println("--- PASS: test_cross_package_json_sharded_and_noshard");
+}

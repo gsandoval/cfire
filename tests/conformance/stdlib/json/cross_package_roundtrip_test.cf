@@ -1,0 +1,120 @@
+// expect: stdout
+// | CROSS_PKG_JSON_OK
+
+// --- file: dom/dom.cf
+package dom
+
+type Mode enum {
+    Light,
+    Dark,
+}
+
+type Settings struct {
+    accent: str `json:"accent"`
+    tags: []str `json:"tags"`
+    mode: Mode `json:"mode"`
+    small_i8: i8 `json:"small_i8"`
+    small_u16: u16 `json:"small_u16"`
+    flag: byte `json:"flag"`
+}
+
+// --- file: ad/ad.cf
+package ad
+
+import "core:json"
+import "../dom"
+
+type File struct {
+    version: i64 `json:"version"`
+    settings: dom.Settings `json:"settings"`
+    list: []dom.Settings `json:"list"`
+    opt_settings: dom.Settings? `json:"opt_settings"`
+    mode: dom.Mode `json:"mode"`
+    modes: []dom.Mode `json:"modes"`
+    opt_mode: dom.Mode? `json:"opt_mode"`
+    port: u16 `json:"port"`
+    temp: i16 `json:"temp"`
+    count: u32 `json:"count"`
+    scratch: map[str]i64 `json:"-"`
+}
+
+fn dump(f: File) -> str {
+    return json.stringify(f)
+}
+
+fn load(t: str) -> File! {
+    return try json.parse[File](t)
+}
+
+fn schema_text() -> str {
+    return json.schema[File]()
+}
+
+// --- file: app/app_test.cf (entry)
+package app
+
+import "../dom"
+import "../ad"
+
+test "cross package json roundtrip" {
+    s := dom.Settings{
+        accent: "moss",
+        tags: ["a", "b"],
+        mode: dom.Mode::Dark(),
+        small_i8: -12,
+        small_u16: 512,
+        flag: byte(7),
+    }
+    mut scratch: map[str]i64 = make(map[str]i64)
+    scratch["skip"] = 99
+    f := ad.File{
+        version: 3,
+        settings: s,
+        list: [s],
+        opt_settings: s,
+        mode: dom.Mode::Dark(),
+        modes: [dom.Mode::Light(), dom.Mode::Dark()],
+        opt_mode: dom.Mode::Light(),
+        port: 8080,
+        temp: -45,
+        count: 123456,
+        scratch: scratch,
+    }
+    encoded := ad.dump(f)
+    assert(encoded != "{}")
+    assert(encoded.contains("\"accent\":\"moss\""))
+    assert(encoded.contains("\"port\":8080"))
+    assert(!encoded.contains("scratch"))
+
+    back := try ad.load(encoded)
+    assert(back.version == 3)
+    assert(back.settings.accent == "moss")
+    assert(back.settings.tags.len() == usize(2))
+    assert(back.settings.tags[1] == "b")
+    assert(back.settings.mode == dom.Mode::Dark())
+    assert(back.settings.small_i8 == i8(-12))
+    assert(back.settings.small_u16 == u16(512))
+    assert(back.settings.flag == byte(7))
+    assert(back.list.len() == usize(1))
+    assert(back.list[0].accent == "moss")
+    unwrapped := back.opt_settings or s
+    assert(back.opt_settings != none)
+    assert(unwrapped.accent == "moss")
+    assert(back.mode == dom.Mode::Dark())
+    assert(back.modes.len() == usize(2))
+    assert(back.modes[0] == dom.Mode::Light())
+    assert(back.modes[1] == dom.Mode::Dark())
+    assert(back.opt_mode != none)
+    assert(back.port == u16(8080))
+    assert(back.temp == i16(-45))
+    assert(back.count == u32(123456))
+
+    sc := ad.schema_text()
+    assert(sc.contains("\"version\""))
+    assert(sc.contains("\"settings\""))
+    assert(sc.contains("\"accent\""))
+    assert(sc.contains("\"port\""))
+    assert(!sc.contains("scratch"))
+
+    println("CROSS_PKG_JSON_OK")
+}

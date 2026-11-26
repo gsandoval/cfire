@@ -349,6 +349,14 @@ struct Arbitrary<std::vector<E>> {
     }
 };
 
+template <typename E>
+struct Arbitrary<std::optional<E>> {
+    static auto generate(FuzzRng& rng, std::size_t iter) -> std::optional<E> {
+        if ((iter % 3) == 0) return std::nullopt;
+        return Arbitrary<E>::generate(rng, iter);
+    }
+};
+
 template <typename E, std::size_t N>
 struct Arbitrary<std::array<E, N>> {
     static auto generate(FuzzRng& rng, std::size_t iter) -> std::array<E, N> {

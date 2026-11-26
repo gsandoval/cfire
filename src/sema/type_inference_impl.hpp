@@ -826,12 +826,10 @@
             if (!mem->is_namespace && mem->object) {
                 std::string owner_t = type_name_of(mem->object);
                 if (!owner_t.empty()) {
-                    for (const auto& st : cf_.ast.structs) {
-                        if (st.name == owner_t) {
-                            for (const auto& fld : st.fields) {
-                                if (fld.name == mem->field) {
-                                    return fld.type.is_optional && !fld.type.is_fallible;
-                                }
+                    if (const StructDecl* st = json_support::find_struct_decl(cf_, owner_t, pkg_name_)) {
+                        for (const auto& fld : st->fields) {
+                            if (fld.name == mem->field) {
+                                return fld.type.is_optional && !fld.type.is_fallible;
                             }
                         }
                     }
@@ -1429,11 +1427,20 @@
                         auto find_ret_id = [&](const std::string& key) -> TypeId {
                             if (auto mit = idx.receiver_methods.find(key); mit != idx.receiver_methods.end()) {
                                 const std::string& uret = mit->second.unwrapped_return_type;
+                                if (!call->type_args.empty() && (uret == "T" || uret == "[]T" || uret == "T?")) {
+                                    TypeId ta = resolve_typeref(call->type_args[0]);
+                                    TypeId base = (uret == "[]T") ? cf_.type_table.make_slice(ta)
+                                        : (uret == "T?") ? cf_.type_table.make_optional(ta) : ta;
+                                    return wrap_stdlib_ret(mit->second, base);
+                                }
                                 if (!generic_arg.empty() && uret == "T") {
                                     return wrap_stdlib_ret(mit->second, type_id_of(generic_arg));
                                 }
                                 if (!generic_arg.empty() && uret == "[]T") {
                                     return wrap_stdlib_ret(mit->second, type_id_of("[]" + generic_arg));
+                                }
+                                if (!generic_arg.empty() && uret == "T?") {
+                                    return wrap_stdlib_ret(mit->second, cf_.type_table.make_optional(type_id_of(generic_arg)));
                                 }
                                 if (uret.empty() || uret == "void") {
                                     return wrap_stdlib_ret(mit->second, TypeId::Void());
@@ -1443,6 +1450,12 @@
                                     ? local_qualifier_for_module_sema(mit->second.module_import, mit->second.ns_alias)
                                     : recv_t.substr(0, dotq);
                                 std::string qtype = qualify_stdlib_type_sema(mit->second, qual);
+                                if (!call->type_args.empty()) {
+                                    std::string targ = cf_.type_table.to_string(resolve_typeref(call->type_args[0]));
+                                    if (auto p = qtype.find("[T]"); p != std::string::npos && !targ.empty()) {
+                                        qtype.replace(p, 3, "[" + targ + "]");
+                                    }
+                                }
                                 return wrap_stdlib_ret(mit->second, type_id_of(qtype));
                             }
                             return TypeId::Unknown();
@@ -2078,8 +2091,11 @@
                     }
                     return true;
                 case TypeKind::NominalStruct: {
-                    auto sit = cf_.struct_defs.find(d.name);
-                    if (sit == cf_.struct_defs.end()) {
+                    if (json_support::find_enum_decl(cf_, d.name, d.package_name)) {
+                        return true;
+                    }
+                    const StructDecl* st = json_support::find_struct_decl(cf_, d.name, d.package_name);
+                    if (!st) {
                         std::string canon = d.name;
                         if (auto dot = d.name.find('.'); dot != std::string::npos) {
                             if (std::string ns = resolve_stdlib_ns_sema(std::string_view(d.name.data(), dot)); !ns.empty()) {
@@ -2089,8 +2105,8 @@
                         return canon == "time.Time" || canon == "time.Duration" ||
                                canon == "fs.FileInfo" || canon == "ipc.PeerCred";
                     }
-                    for (const auto& f : sit->second.fields) {
-                        if (!self(self, resolve_typeref_in_pkg(f.type, sit->second.package_name))) return false;
+                    for (const auto& f : st->fields) {
+                        if (!self(self, resolve_typeref_in_pkg(f.type, st->package_name))) return false;
                     }
                     return true;
                 }

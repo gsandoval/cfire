@@ -1,0 +1,40 @@
+// --- file: dom/dom.cf
+package dom
+
+type WithMap struct {
+    name: str `json:"name"`
+    meta: map[str]i64 `json:"meta"`
+}
+
+type Payload enum {
+    Empty,
+    Num(i64),
+}
+
+// --- file: ad/main.cf (entry)
+package main
+
+import "core:json"
+import "../dom"
+
+type Wrapper struct {
+    inner: dom.WithMap `json:"inner"`
+}
+
+type HasPayload struct {
+    p: dom.Payload `json:"p"`
+}
+
+type HasFn struct {
+    cb: fn(i64) -> i64 `json:"cb"`
+}
+
+fn check_bad(w: Wrapper) -> void! {
+    _ = json.stringify(w) //~ error cfire/JSON-UNSUPPORTED-TYPE
+    _ = try json.parse[HasPayload]("{}") //~ error cfire/JSON-UNSUPPORTED-TYPE
+    _ = json.schema[HasFn]() //~ error cfire/JSON-UNSUPPORTED-TYPE
+}
+
+fn main() {
+    _ = check_bad(Wrapper{ inner: dom.WithMap{ name: "x", meta: make(map[str]i64) } }) or {}
+}

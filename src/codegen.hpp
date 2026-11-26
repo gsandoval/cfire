@@ -2,6 +2,7 @@
 // src/codegen.hpp — C++23 Emitter for cfire (.cf)
 
 #include "sema/types.hpp"
+#include "sema/json_support.hpp"
 #include <string>
 #include <vector>
 
@@ -53,6 +54,7 @@ namespace cfire::frontend {
 
 #include "module_registry.hpp"
 #include "sema/types.hpp"
+#include "sema/json_support.hpp"
 #include "sema/stdlib_index.hpp"
 #include "sema/builtin_methods.hpp"
 #include <algorithm>
@@ -559,11 +561,8 @@ public:
     };
 
     [[nodiscard]] auto is_local_type(const std::string& name) const -> bool {
-        if (cf_.struct_tags.contains(name) || cf_.enums.contains(name)) return true;
-        for (const auto& st : cf_.ast.structs) {
-            if (st.name == name) return true;
-        }
-        return false;
+        return json_support::find_struct_decl(cf_, name, cur_pkg_) != nullptr ||
+               json_support::find_enum_decl(cf_, name, cur_pkg_) != nullptr;
     }
 
     [[nodiscard]] auto is_package_ident(const std::string& ident) const -> bool {
@@ -1015,69 +1014,69 @@ public:
         return lower_owning_type(tr);
     }
 
-    [[nodiscard]] auto is_non_value_field_type(const TypeRef& tr, int depth = 0) const -> bool {
-        if (depth > 8) return true;
+    [[nodiscard]] auto is_non_value_field_type_impl(
+        const TypeRef& tr,
+        std::string_view owner_pkg,
+        std::unordered_set<std::string>& visiting
+    ) const -> bool {
         if (tr.is_ptr || tr.is_mut_ptr || tr.is_borrow ||
-            tr.is_mut_borrow || tr.is_fn || !tr.smart_wrap.empty()) {
+            tr.is_mut_borrow || tr.is_fn || !tr.smart_wrap.empty() || tr.is_map) {
             return true;
         }
-        if (tr.is_slice && tr.elem_type) return is_non_value_field_type(*tr.elem_type, depth + 1);
-        std::string n = tr.name;
-        if (n == "fs.FileInfo" || n == "fs::FileInfo" || n == "FileInfo" ||
-            n == "ipc.PeerCred" || n == "ipc::PeerCred" || n == "PeerCred") {
+        if (tr.is_optional) {
+            TypeRef inner = tr;
+            inner.is_optional = false;
+            return is_non_value_field_type_impl(inner, owner_pkg, visiting);
+        }
+        if (tr.is_slice && tr.elem_type) return is_non_value_field_type_impl(*tr.elem_type, owner_pkg, visiting);
+        std::string n = json_support::normalize_type_lookup_name(tr.name);
+        if (json_support::is_json_primitive_name(n)) {
             return false;
         }
-        if (n.starts_with("cpp::") || n.starts_with("webui.") || n.starts_with("webui::") ||
-            n.starts_with("sync.") || n.starts_with("sync::") ||
-            n.starts_with("sqlite.") || n.starts_with("sqlite::") ||
-            n.starts_with("ssh.") || n.starts_with("ssh::") ||
-            n.starts_with("fs.") || n.starts_with("fs::") ||
-            n.starts_with("net.") || n.starts_with("net::") ||
-            n.starts_with("http.") || n.starts_with("http::") ||
-            n.starts_with("ipc.") || n.starts_with("ipc::") ||
-            n.starts_with("websocket.") || n.starts_with("websocket::") ||
+        // Check user structs and enums first so user types (e.g. `File`, `App`, `Server`, `Session`,
+        // `Conn`, `Listener`, `Mutex`, `Channel`) shadow stdlib handles consistently.
+        if (const StructDecl* sub_st = json_support::find_struct_decl(cf_, n, owner_pkg)) {
+            if (!sub_st->type_params.empty() || !tr.type_args.empty()) return true;
+            if (visiting.contains(sub_st->name)) return false;
+            visiting.insert(sub_st->name);
+            for (const auto& sf : sub_st->fields) {
+                if (is_non_value_field_type_impl(sf.type, sub_st->package_name, visiting)) {
+                    visiting.erase(sub_st->name);
+                    return true;
+                }
+            }
+            visiting.erase(sub_st->name);
+            return false;
+        }
+        if (const EnumDecl* en = json_support::find_enum_decl(cf_, n, owner_pkg)) {
+            return !en->type_params.empty() || !tr.type_args.empty() || !json_support::is_unit_enum(*en);
+        }
+        if (n == "fs.FileInfo" || n == "FileInfo" ||
+            n == "ipc.PeerCred" || n == "PeerCred") {
+            return false;
+        }
+        if (n.starts_with("cpp.") || n.starts_with("webui.") ||
+            n.starts_with("sync.") || n.starts_with("sqlite.") ||
+            n.starts_with("ssh.") || n.starts_with("fs.") ||
+            n.starts_with("net.") || n.starts_with("http.") ||
+            n.starts_with("ipc.") || n.starts_with("websocket.") ||
             n == "App" || n == "Mutex" || n == "WaitGroup" || n == "Channel" ||
             n == "Conn" || n == "Session" || n == "File" || n == "TcpConn" || n == "TcpListener" ||
-            n == "Listener" || n == "HttpServer" || n == "Server") {
+            n == "Listener" || n == "HttpServer" || n == "Server" ||
+            json_support::is_json_dynamic_value_name(n)) {
             return true;
-        }
-        for (const auto& sub_st : cf_.ast.structs) {
-            if (sub_st.name == n) {
-                for (const auto& sf : sub_st.fields) {
-                    if (is_non_value_field_type(sf.type, depth + 1)) return true;
-                }
-                break;
-            }
         }
         return false;
     }
 
-    [[nodiscard]] auto can_emit_json_field_type(const TypeRef& tr, int depth = 0) const -> bool {
-        if (depth > 8) return false;
-        if (is_non_value_field_type(tr, depth)) return false;
-        if (tr.is_map || tr.is_tuple || tr.is_array) return false;
-        if (tr.is_slice) return tr.elem_type && can_emit_json_field_type(*tr.elem_type, depth + 1);
-        if (tr.is_optional) {
-            TypeRef inner = tr;
-            inner.is_optional = false;
-            return can_emit_json_field_type(inner, depth + 1);
-        }
-        const std::string& n = tr.name;
-        if (n == "i8" || n == "i16" || n == "i32" || n == "i64" || n == "isize" ||
-            n == "u8" || n == "u16" || n == "u32" || n == "u64" || n == "usize" ||
-            n == "f32" || n == "f64" || n == "bool" || n == "str") {
-            return true;
-        }
-        if (cf_.enums.contains(n)) return true;
-        for (const auto& sub_st : cf_.ast.structs) {
-            if (sub_st.name == n) {
-                for (const auto& sf : sub_st.fields) {
-                    if (!can_emit_json_field_type(sf.type, depth + 1)) return false;
-                }
-                return true;
-            }
-        }
-        return false;
+    [[nodiscard]] auto is_non_value_field_type(const TypeRef& tr, int /*depth*/ = 0) const -> bool {
+        std::unordered_set<std::string> visiting;
+        return is_non_value_field_type_impl(tr, cur_pkg_, visiting);
+    }
+
+    [[nodiscard]] auto can_emit_json_field_type(const TypeRef& tr, int /*depth*/ = 0) const -> bool {
+        std::unordered_set<std::string> visiting;
+        return json_support::check_json_type_ref(cf_, tr, "", cur_pkg_, visiting, nullptr);
     }
 };
 

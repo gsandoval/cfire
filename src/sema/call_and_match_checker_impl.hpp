@@ -730,6 +730,34 @@
                     if (auto r = emit_error(diag_at(a.line, a.col, "cfire/UNKNOWN-ARG-LABEL", std::format("'{}.{}' has no parameter named '{}'; parameters: {}", std_sig->ns_alias, std_sig->name, a.label, names))); !r) return r;
                 }
             }
+            if (std_sig->ns_alias == "json" &&
+                (std_sig->name == "stringify" || std_sig->name == "parse" || std_sig->name == "schema")) {
+                TypeId check_tid = TypeId::Unknown();
+                int diag_line = line;
+                int diag_col = col;
+                bool allow_top_borrow = false;
+                if (std_sig->name == "stringify" && !call.args.empty() && call.args[0].value) {
+                    check_tid = infer_expr_type_id_sema(call.args[0].value);
+                    if (call.args[0].line > 0) diag_line = call.args[0].line;
+                    if (call.args[0].col > 0) diag_col = call.args[0].col;
+                    allow_top_borrow = true;
+                } else if ((std_sig->name == "parse" || std_sig->name == "schema") && !call.type_args.empty()) {
+                    check_tid = resolve_typeref(call.type_args[0]);
+                }
+                if (check_tid.is_valid()) {
+                    std::unordered_set<std::string> visiting;
+                    json_support::JsonSupportError jerr;
+                    if (!json_support::check_json_type_id(cf_, check_tid, "", allow_top_borrow, visiting, &jerr)) {
+                        std::string tdesc = cf_.type_table.to_string(check_tid);
+                        std::string msg = jerr.field_path.empty()
+                            ? std::format("cannot use type '{}' with 'json.{}': {}", tdesc, std_sig->name, jerr.reason)
+                            : std::format("cannot use type '{}' with 'json.{}': field '{}' has unsupported type ({}){}",
+                                tdesc, std_sig->name, jerr.field_path, jerr.reason,
+                                jerr.suggest_json_ignore ? "; add `json:\"-\"` tag to skip it" : "");
+                        if (auto r = emit_error(diag_at(diag_line, diag_col, "cfire/JSON-UNSUPPORTED-TYPE", std::move(msg))); !r) return r;
+                    }
+                }
+            }
         } else if (callee_fn_type.is_valid()) {
             const auto& fdesc = cf_.type_table.get(callee_fn_type);
             std::size_t actual_args = call.args.size() + (call.block_arg ? 1 : 0);

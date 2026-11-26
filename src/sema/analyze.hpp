@@ -2,6 +2,7 @@
 // src/sema/analyze.hpp — Top-Level AST Semantic Analysis Drivers
 
 #include "types.hpp"
+#include "json_support.hpp"
 #include "stdlib_index.hpp"
 #include "fn_checker.hpp"
 #include "builtin_methods.hpp"

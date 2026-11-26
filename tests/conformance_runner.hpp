@@ -31,6 +31,12 @@
 
 namespace conformance {
 
+struct VirtualFile {
+    std::string relpath{};
+    std::string content{};
+    bool is_entry = false;
+};
+
 struct Spec {
     std::optional<std::vector<std::string>> stdout_lines{};
     std::set<std::tuple<std::string, int, int>> errors{};  // (code, line, col or 0 = any)
@@ -41,6 +47,10 @@ struct Spec {
     std::string xfail{};
     std::vector<std::string> flags{};
     std::vector<std::string> requires_libs{};
+    std::vector<VirtualFile> files{};
+    std::set<std::tuple<std::string, std::string, int, int>> file_errors{};  // (relpath, code, line, col)
+    std::set<std::tuple<std::string, std::string, int>> file_warnings{};     // (relpath, code, line)
+    std::optional<std::tuple<std::string, std::string, int>> file_panic{};   // (relpath, sub, line)
 };
 
 struct DirectiveError {
@@ -82,18 +92,42 @@ struct DirectiveError {
     return out;
 }
 
+[[nodiscard]] inline auto validate_virtual_relpath(std::string_view rel) -> bool {
+    if (rel.empty()) return false;
+    if (rel.front() == '/' || rel.front() == '\\' || rel.find('\\') != std::string_view::npos || rel.find(':') != std::string_view::npos) {
+        return false;
+    }
+    std::size_t pos = 0;
+    while (pos <= rel.size()) {
+        auto slash = rel.find('/', pos);
+        std::string_view seg = (slash == std::string_view::npos) ? rel.substr(pos) : rel.substr(pos, slash - pos);
+        if (seg.empty() || seg == "." || seg == "..") return false;
+        if (slash == std::string_view::npos) break;
+        pos = slash + 1;
+    }
+    return true;
+}
+
+[[nodiscard]] inline auto normalize_slash_path(std::string_view p) -> std::string {
+    std::string out(p);
+    std::ranges::replace(out, '\\', '/');
+    return out;
+}
+
 [[nodiscard]] inline auto parse_spec(std::string_view text) -> std::expected<Spec, DirectiveError> {
     static const std::regex kDiag(R"((cfire/[A-Z0-9-]+)\s+@(\d+)(?::(\d+))?)");
     static const std::regex kPanic(R"rx("([^"]*)"(?:\s+@(\d+))?)rx");
     static const std::regex kInlineDiag(R"(//~\s*(error|warning)\s+(cfire/[A-Z0-9-]+)\s*$)");
     static const std::regex kInlinePanic(R"rx(//~\s*panic\s+"([^"]*)"\s*$)rx");
     static const std::regex kXfailTopic(R"([a-z0-9][a-z0-9_-]*:\s+\S.*)");
+    static const std::regex kFileMarker(R"(^//\s*---\s*file:\s*(.+?)\s*$)");
     auto bad = [](std::string m) { return std::unexpected(DirectiveError{std::move(m)}); };
 
     Spec spec;
     const auto lines = split_lines(text);
     std::size_t i = 0;
-    while (i < lines.size() && lines[i].starts_with("//")) {
+    std::smatch fm;
+    while (i < lines.size() && lines[i].starts_with("//") && !std::regex_match(lines[i], fm, kFileMarker)) {
         const std::string body = trim(std::string_view(lines[i]).substr(2));
         if (body.starts_with("expect:")) {
             const std::string rest = trim(std::string_view(body).substr(7));
@@ -147,21 +181,91 @@ struct DirectiveError {
         }
         ++i;
     }
-    // Inline annotations travel with the code they describe, so adding or removing header directives
-    // (e.g. dropping an `xfail` line) never invalidates expected line numbers.
-    for (std::size_t n = 0; n < lines.size(); ++n) {
-        const int lineno = static_cast<int>(n) + 1;
-        std::smatch m;
-        if (std::regex_search(lines[n], m, kInlineDiag)) {
-            if (m[1].str() == "error") spec.errors.emplace(m[2].str(), lineno, 0);
-            else spec.warnings.emplace(m[2].str(), lineno);
-            continue;
+
+    bool has_file_markers = false;
+    for (std::size_t n = i; n < lines.size(); ++n) {
+        if (std::regex_match(lines[n], fm, kFileMarker)) {
+            has_file_markers = true;
+            break;
         }
-        if (std::regex_search(lines[n], m, kInlinePanic)) {
-            if (spec.panic) return bad("more than one panic expectation");
-            spec.panic = std::pair{m[1].str(), lineno};
-        } else if (lines[n].contains("//~")) {
-            return bad(std::format("bad inline annotation on line {}: '{}'", lineno, trim(lines[n])));
+    }
+
+    if (has_file_markers) {
+        std::set<std::string> seen_paths;
+        bool seen_entry = false;
+        int local_lineno = 0;
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            if (std::regex_match(lines[n], fm, kFileMarker)) {
+                std::string raw_spec = trim(fm[1].str());
+                bool is_entry = false;
+                constexpr std::string_view kEntryTag = "(entry)";
+                if (raw_spec.ends_with(kEntryTag)) {
+                    is_entry = true;
+                    raw_spec = trim(std::string_view(raw_spec).substr(0, raw_spec.size() - kEntryTag.size()));
+                }
+                if (!validate_virtual_relpath(raw_spec)) {
+                    return bad(std::format("invalid virtual file path '{}' on line {}", raw_spec, n + 1));
+                }
+                if (!seen_paths.insert(raw_spec).second) {
+                    return bad(std::format("duplicate virtual file path '{}' on line {}", raw_spec, n + 1));
+                }
+                if (is_entry) {
+                    if (seen_entry) return bad("multiple '(entry)' virtual files declared");
+                    seen_entry = true;
+                }
+                spec.files.push_back(VirtualFile{raw_spec, "", is_entry});
+                local_lineno = 0;
+                continue;
+            }
+            if (spec.files.empty()) {
+                std::string trimmed_line = trim(lines[n]);
+                if (!trimmed_line.empty() && !trimmed_line.starts_with("//")) {
+                    return bad(std::format("unexpected code outside '// --- file:' section on line {}", n + 1));
+                }
+                continue;
+            }
+            ++local_lineno;
+            spec.files.back().content += lines[n];
+            spec.files.back().content.push_back('\n');
+            std::smatch m;
+            if (std::regex_search(lines[n], m, kInlineDiag)) {
+                if (m[1].str() == "error") {
+                    spec.errors.emplace(m[2].str(), local_lineno, 0);
+                    spec.file_errors.emplace(spec.files.back().relpath, m[2].str(), local_lineno, 0);
+                } else {
+                    spec.warnings.emplace(m[2].str(), local_lineno);
+                    spec.file_warnings.emplace(spec.files.back().relpath, m[2].str(), local_lineno);
+                }
+                continue;
+            }
+            if (std::regex_search(lines[n], m, kInlinePanic)) {
+                if (spec.panic) return bad("more than one panic expectation");
+                spec.panic = std::pair{m[1].str(), local_lineno};
+                spec.file_panic = std::tuple{spec.files.back().relpath, m[1].str(), local_lineno};
+            } else if (lines[n].contains("//~")) {
+                return bad(std::format("bad inline annotation in '{}' on line {}: '{}'", spec.files.back().relpath, local_lineno, trim(lines[n])));
+            }
+        }
+        if (!spec.errors.empty() && spec.file_errors.empty()) {
+            return bad("header 'expect: error' cannot be used without '//~ error' in multi-file specs");
+        }
+    } else {
+        // Inline annotations travel with the code they describe, so adding or removing header directives
+        // (e.g. dropping an `xfail` line) never invalidates expected line numbers.
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            const int lineno = static_cast<int>(n) + 1;
+            std::smatch m;
+            if (std::regex_search(lines[n], m, kInlineDiag)) {
+                if (m[1].str() == "error") spec.errors.emplace(m[2].str(), lineno, 0);
+                else spec.warnings.emplace(m[2].str(), lineno);
+                continue;
+            }
+            if (std::regex_search(lines[n], m, kInlinePanic)) {
+                if (spec.panic) return bad("more than one panic expectation");
+                spec.panic = std::pair{m[1].str(), lineno};
+            } else if (lines[n].contains("//~")) {
+                return bad(std::format("bad inline annotation on line {}: '{}'", lineno, trim(lines[n])));
+            }
         }
     }
     if (!spec.stdout_lines && spec.errors.empty() && !spec.panic && !spec.exit && !spec.exit_signal && spec.warnings.empty()) {
@@ -312,11 +416,35 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
     }
     auto& reasons = ev.reasons;
     const std::string fname = path.filename().string();
-    const bool is_test = fname.ends_with("_test.cf");
     ScopedTempDir work("cfire_conf");
-    const std::string name = is_test ? "main_test.cf" : "main.cf";
+    std::string name;
+    bool is_test = fname.ends_with("_test.cf");
     std::error_code ec;
-    std::filesystem::copy_file(path, work.path / name, std::filesystem::copy_options::overwrite_existing, ec);
+    if (!spec.files.empty()) {
+        const VirtualFile* entry_vf = nullptr;
+        for (const auto& vf : spec.files) {
+            if (vf.is_entry) { entry_vf = &vf; break; }
+        }
+        if (!entry_vf) {
+            for (const auto& vf : spec.files) {
+                if (vf.relpath == "main_test.cf" || vf.relpath == "main.cf") {
+                    entry_vf = &vf;
+                    break;
+                }
+            }
+        }
+        if (!entry_vf) entry_vf = &spec.files.back();
+        for (const auto& vf : spec.files) {
+            auto dst = work.path / std::filesystem::path(vf.relpath);
+            if (dst.has_parent_path()) std::filesystem::create_directories(dst.parent_path(), ec);
+            (void)cfire::fs::write_text(dst, vf.content);
+        }
+        name = entry_vf->relpath;
+        is_test = is_test || entry_vf->relpath.ends_with("_test.cf");
+    } else {
+        name = is_test ? "main_test.cf" : "main.cf";
+        std::filesystem::copy_file(path, work.path / name, std::filesystem::copy_options::overwrite_existing, ec);
+    }
 
     const bool needs_run = static_cast<bool>(spec.stdout_lines || spec.panic || spec.exit || spec.exit_signal);
     const bool verify_cpp_in_check = !(needs_run && spec.errors.empty());
@@ -342,15 +470,34 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
         reasons.push_back(std::format("unparseable check --json output: {}", (chk.out + chk.err).substr(0, 200)));
         return ev;
     }
+    auto match_virtual_rel = [&](std::string raw_file) -> std::string {
+        std::string norm = normalize_slash_path(raw_file);
+        if (norm.empty()) return name;
+        for (const auto& vf : spec.files) {
+            if (norm == vf.relpath || norm.ends_with("/" + vf.relpath)) return vf.relpath;
+        }
+        return norm;
+    };
     std::set<std::tuple<std::string, int, int>> got_errors;
     std::set<std::pair<std::string, int>> got_warnings;
+    std::set<std::tuple<std::string, std::string, int>> got_file_errors;
+    std::set<std::tuple<std::string, std::string, int>> got_file_warnings;
     if (auto diags = report->get("diagnostics"); diags && diags->is_array()) {
         for (const auto& d : diags->as_array()) {
             auto str_of = [&](std::string_view k) { auto v = d.get(k); return v && v->is_string() ? std::string(v->as_str()) : std::string(); };
             auto int_of = [&](std::string_view k) { auto v = d.get(k); return v && v->is_number() ? static_cast<int>(v->as_int()) : 0; };
             const auto sev = str_of("severity");
-            if (sev == "error") got_errors.emplace(str_of("code"), int_of("line"), int_of("col"));
-            else if (sev == "warning") got_warnings.emplace(str_of("code"), int_of("line"));
+            const auto code = str_of("code");
+            const int dline = int_of("line");
+            const int dcol = int_of("col");
+            const auto relf = match_virtual_rel(str_of("file"));
+            if (sev == "error") {
+                got_errors.emplace(code, dline, dcol);
+                got_file_errors.emplace(relf, code, dline);
+            } else if (sev == "warning") {
+                got_warnings.emplace(code, dline);
+                got_file_warnings.emplace(relf, code, dline);
+            }
         }
     }
 
@@ -367,26 +514,51 @@ inline auto run_program(const Options& opt, const std::filesystem::path& work, c
             reasons.push_back(std::format("internal compiler error: clang rejected generated C++ at line {} for a program Sema accepted ({})", l, c));
     }
     std::erase_if(got_errors, [&](const auto& e) { return is_backend_ice(std::get<0>(e)); });
+    std::erase_if(got_file_errors, [&](const auto& e) { return is_backend_ice(std::get<1>(e)); });
     std::set<std::pair<std::string, int>> want, have;
     for (const auto& [c, l, col] : spec.errors) want.emplace(c, l);
     for (const auto& [c, l, col] : got_errors) have.emplace(c, l);
-    auto fmt_set = [](const std::vector<std::pair<std::string, int>>& v) {
-        std::string s = "[";
-        for (std::size_t k = 0; k < v.size(); ++k) s += std::format("{}('{}', {})", k ? ", " : "", v[k].first, v[k].second);
-        return s + "]";
-    };
-    if (want != have) {
-        std::vector<std::pair<std::string, int>> missing, extra;
-        std::ranges::set_difference(want, have, std::back_inserter(missing));
-        std::ranges::set_difference(have, want, std::back_inserter(extra));
-        if (!missing.empty()) reasons.push_back("missing errors " + fmt_set(missing));
-        if (!extra.empty()) reasons.push_back("unexpected errors " + fmt_set(extra));
-    }
-    for (const auto& [c, l, col] : spec.errors) {
-        if (col != 0 && !got_errors.contains({c, l, col})) reasons.push_back(std::format("error {} @{} expected at column {}", c, l, col));
-    }
-    for (const auto& w : spec.warnings) {
-        if (!got_warnings.contains(w)) reasons.push_back(std::format("missing warning ('{}', {})", w.first, w.second));
+    if (!spec.files.empty()) {
+        std::set<std::tuple<std::string, std::string, int>> want_f;
+        for (const auto& [rf, c, l, col] : spec.file_errors) want_f.emplace(rf, c, l);
+        auto fmt_fset = [](const std::vector<std::tuple<std::string, std::string, int>>& v) {
+            std::string s = "[";
+            for (std::size_t k = 0; k < v.size(); ++k) {
+                s += std::format("{}('{}:{}', {})", k ? ", " : "", std::get<0>(v[k]), std::get<1>(v[k]), std::get<2>(v[k]));
+            }
+            return s + "]";
+        };
+        if (want_f != got_file_errors) {
+            std::vector<std::tuple<std::string, std::string, int>> missing, extra;
+            std::ranges::set_difference(want_f, got_file_errors, std::back_inserter(missing));
+            std::ranges::set_difference(got_file_errors, want_f, std::back_inserter(extra));
+            if (!missing.empty()) reasons.push_back("missing errors " + fmt_fset(missing));
+            if (!extra.empty()) reasons.push_back("unexpected errors " + fmt_fset(extra));
+        }
+        for (const auto& [rf, w, l] : spec.file_warnings) {
+            if (!got_file_warnings.contains({rf, w, l})) {
+                reasons.push_back(std::format("missing warning ('{}:{}', {})", rf, w, l));
+            }
+        }
+    } else {
+        auto fmt_set = [](const std::vector<std::pair<std::string, int>>& v) {
+            std::string s = "[";
+            for (std::size_t k = 0; k < v.size(); ++k) s += std::format("{}('{}', {})", k ? ", " : "", v[k].first, v[k].second);
+            return s + "]";
+        };
+        if (want != have) {
+            std::vector<std::pair<std::string, int>> missing, extra;
+            std::ranges::set_difference(want, have, std::back_inserter(missing));
+            std::ranges::set_difference(have, want, std::back_inserter(extra));
+            if (!missing.empty()) reasons.push_back("missing errors " + fmt_set(missing));
+            if (!extra.empty()) reasons.push_back("unexpected errors " + fmt_set(extra));
+        }
+        for (const auto& [c, l, col] : spec.errors) {
+            if (col != 0 && !got_errors.contains({c, l, col})) reasons.push_back(std::format("error {} @{} expected at column {}", c, l, col));
+        }
+        for (const auto& w : spec.warnings) {
+            if (!got_warnings.contains(w)) reasons.push_back(std::format("missing warning ('{}', {})", w.first, w.second));
+        }
     }
 
     if (needs_run && have.empty()) {

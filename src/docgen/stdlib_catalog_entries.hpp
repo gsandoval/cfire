@@ -1247,6 +1247,13 @@ inline void apply_module_metadata(StdModuleDoc& m) {
             "type Config struct {\n    Port: i64 `json:\"port\" default:\"8080\"`\n    Alt:  i64 `json:\"alt_port\"` // OK\n}"
         },
         {
+            "cfire/JSON-UNSUPPORTED-TYPE",
+            "Unsupported Type in Typed `core:json` Call",
+            "`json.stringify`, `json.parse[T]`, and `json.schema[T]` require every serialized field of `T` (including nested and cross-package structs/enums) to be a JSON-supported type (primitives, strings, booleans, slices, optionals, unit enums, non-generic structs, or `json.Value`). Pointers, closures, maps, smart pointers, fixed arrays, generic structs, OS/network handles, and payload enums are rejected at compile time unless skipped with `` `json:\"-\"` ``.",
+            "type Record struct {\n    name: str `json:\"name\"`\n    meta: map[str]i64 `json:\"meta\"`\n}\nfn dump(r: Record) -> str { return json.stringify(r) } // ERROR [cfire/JSON-UNSUPPORTED-TYPE]",
+            "type Record struct {\n    name: str `json:\"name\"`\n    meta: map[str]i64 `json:\"-\"`\n}\nfn dump(r: Record) -> str { return json.stringify(r) } // OK"
+        },
+        {
             "cfire/REDUNDANT-TRY",
             "Redundant `try` on Non-Fallible Expression",
             "`try` propagates errors from fallible `T!` (`std::expected<T, cfire::Error>`) expressions. Applying `try` to a plain value, literal, or non-fallible function call has no effect and is rejected at compile time.",

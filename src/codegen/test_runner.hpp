@@ -17,13 +17,13 @@ CFIRE_CG_INLINE void Emitter::emit_test_runner(const FileAST& ast, bool has_user
                 }
             }
             if (!has_json_or_desc) continue;
-            bool supported = true;
-            for (const auto& fld : st.fields) {
-                if (fld.type.is_ptr || fld.type.is_mut_ptr || fld.type.is_borrow ||
-                    fld.type.is_mut_borrow || fld.type.is_fn || !fld.type.smart_wrap.empty() ||
-                    !can_emit_json_field_type(fld.type)) {
-                    supported = false;
-                    break;
+            bool supported = st.type_params.empty() && json_support::can_emit_json_struct(cf_, st);
+            if (supported) {
+                for (const auto& fld : st.fields) {
+                    if (is_non_value_field_type(fld.type, 0)) {
+                        supported = false;
+                        break;
+                    }
                 }
             }
             if (supported) {

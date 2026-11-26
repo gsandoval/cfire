@@ -1065,7 +1065,7 @@ syncCfireThemeBtn();
       <div class="stat-lbl">Line-Mapped Lowering</div>
     </div>
     <div class="stat-pill">
-      <div class="stat-val">38 Rules</div>
+      <div class="stat-val">39 Rules</div>
       <div class="stat-lbl">Static Intent &amp; Match Checks</div>
     </div>
     <div class="stat-pill">
@@ -1317,7 +1317,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">b=42 p=100</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1493,7 +1493,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">result: alpha..(1)..gamma</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1583,7 +1583,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">received: ping-payload</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1730,7 +1730,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">service=auth latency=1.42ms</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1791,7 +1791,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">fnv1a hash: 0x268ccafd</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -1878,7 +1878,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rms=0.24 peak=0.40</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2156,12 +2156,12 @@ auto main(int argc, char** argv) -&gt; int {
     }
     std::vector&lt;float&gt; qvec = std::move(*_try_6);
     #line 38 &quot;snippet_ai.cf&quot;
-    auto _try_7 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
+    std::expected&lt;std::vector&lt;DocEntry&gt;, cfire::Error&gt; _try_7 = db.query&lt;DocEntry&gt;(&quot;SELECT id, title, snippet FROM docs ORDER BY vec_cosine_similarity(embedding, ?1) DESC LIMIT 1&quot;, qvec);
     if (!_try_7.has_value()) {
         std::println(stderr, &quot;Error: {}&quot;, _try_7.error().message());
         return 1;
     }
-    auto hits = std::move(*_try_7);
+    std::vector&lt;DocEntry&gt; hits = std::move(*_try_7);
     #line 39 &quot;snippet_ai.cf&quot;
     if (hits.size() &gt; 0) {
         #line 40 &quot;snippet_ai.cf&quot;
@@ -2181,7 +2181,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">Match [Transpiler]: cfire lowers 1-to-1 to ISO C++23 with zero runtime overhead.</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>
@@ -2417,7 +2417,7 @@ auto main(int argc, char** argv) -&gt; int {
         <span class="telemetry-stat"><code>$ cfire run main.cf</code></span>
         <span class="telemetry-stat">Output: <strong style="color:var(--text-bright);">rpc={"message":"Hello, Ada!","count":2} events=1</strong></span>
         <span class="telemetry-stat">Standard: <span class="telemetry-val">ISO C++23 (-pedantic-errors)</span></span>
-        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">93/93 cfire/* rules</span></span>
+        <span class="telemetry-stat">Static Checks: <span class="telemetry-val">94/94 cfire/* rules</span></span>
       </div>
     </div>
   </div>

@@ -2090,7 +2090,7 @@ syncCfireThemeBtn();
           <option value="mod-ssh">ext:net/ssh (27 fns)</option>
           <option value="mod-tako">ext:tako (8 fns)</option>
           <option value="mod-webui">ext:webui (71 fns)</option>
-          <option value="diagnostics">Diagnostics (38 Rules)</option>
+          <option value="diagnostics">Diagnostics (39 Rules)</option>
         </select>
         <button type="button" class="mobile-mode-btn" id="ref-mobile-mode-cycle" onclick="setRefMode(currentRefMode==='all'?'module':'all')" title="Switch reading mode">Module</button>
       </div>
@@ -2151,7 +2151,7 @@ syncCfireThemeBtn();
         <h4 style="margin-top:1rem;">Vendor Libraries (0)</h4>
         <ul class="sidebar-module-list" style="list-style: none; padding: 0;">
         </ul>
-        <h4 style="margin-top:1.25rem;">Diagnostics (38)</h4>
+        <h4 style="margin-top:1.25rem;">Diagnostics (39)</h4>
         <ul class="sidebar-diag-list" style="list-style: none; padding: 0;">
           <li class="nav-item"><a href="#diag-cfire/RETIRED-API" id="nav-diag-cfire/RETIRED-API" onclick="navigateToRefDiag('diag-cfire/RETIRED-API'); return false;"><code>cfire/RETIRED-API</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/INVALID-MAKE" id="nav-diag-cfire/INVALID-MAKE" onclick="navigateToRefDiag('diag-cfire/INVALID-MAKE'); return false;"><code>cfire/INVALID-MAKE</code></a></li>
@@ -2180,6 +2180,7 @@ syncCfireThemeBtn();
           <li class="nav-item"><a href="#diag-cfire/SHELL-INJECTION-RISK" id="nav-diag-cfire/SHELL-INJECTION-RISK" onclick="navigateToRefDiag('diag-cfire/SHELL-INJECTION-RISK'); return false;"><code>cfire/SHELL-INJECTION-RISK</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/RETURN-IN-DEFER" id="nav-diag-cfire/RETURN-IN-DEFER" onclick="navigateToRefDiag('diag-cfire/RETURN-IN-DEFER'); return false;"><code>cfire/RETURN-IN-DEFER</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/INVALID-STRUCT-TAG" id="nav-diag-cfire/INVALID-STRUCT-TAG" onclick="navigateToRefDiag('diag-cfire/INVALID-STRUCT-TAG'); return false;"><code>cfire/INVALID-STRUCT-TAG</code></a></li>
+          <li class="nav-item"><a href="#diag-cfire/JSON-UNSUPPORTED-TYPE" id="nav-diag-cfire/JSON-UNSUPPORTED-TYPE" onclick="navigateToRefDiag('diag-cfire/JSON-UNSUPPORTED-TYPE'); return false;"><code>cfire/JSON-UNSUPPORTED-TYPE</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/REDUNDANT-TRY" id="nav-diag-cfire/REDUNDANT-TRY" onclick="navigateToRefDiag('diag-cfire/REDUNDANT-TRY'); return false;"><code>cfire/REDUNDANT-TRY</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/TRY-ON-OPTIONAL" id="nav-diag-cfire/TRY-ON-OPTIONAL" onclick="navigateToRefDiag('diag-cfire/TRY-ON-OPTIONAL'); return false;"><code>cfire/TRY-ON-OPTIONAL</code></a></li>
           <li class="nav-item"><a href="#diag-cfire/TRY-IN-NON-FALLIBLE-FN" id="nav-diag-cfire/TRY-IN-NON-FALLIBLE-FN" onclick="navigateToRefDiag('diag-cfire/TRY-IN-NON-FALLIBLE-FN'); return false;"><code>cfire/TRY-IN-NON-FALLIBLE-FN</code></a></li>
@@ -2226,7 +2227,7 @@ syncCfireThemeBtn();
       </div>
       <article class="ref-pane active" id="ref-pane-overview" data-pane-id="overview" data-pane-short="Overview" data-pane-title="Overview (All 37 Modules)">
         <h1>Standard Library &amp; Diagnostics Reference</h1>
-        <p class="subtitle" style="margin:0 0 1.5rem;">37 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (28 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (8 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (0 bundled C/C++ graphics engines) — plus 38 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
+        <p class="subtitle" style="margin:0 0 1.5rem;">37 modules organized into three explicit package namespaces — <strong><code>core:*</code> Foundational Core</strong> (28 zero-setup ISO C++23 &amp; baseline OS modules), <strong><code>ext:*</code> Domain Extensions</strong> (8 opt-in native C library, WebUI, and AI engine modules), and <strong><code>vendor:*</code> Third-Party Libraries</strong> (0 bundled C/C++ graphics engines) — plus 39 semantic diagnostics, verified by <code>cfire doc --check</code>.</p>
         <div class="ref-category-title">core:* — Text, Containers, Math &amp; Data Formats</div>
         <div class="ref-category-grid">
           <a href="#mod-unicode" class="ref-mod-card" onclick="navigateToRefPane('mod-unicode'); return false;">
@@ -2530,12 +2531,12 @@ syncCfireThemeBtn();
             <div class="ref-mod-card-desc">Wails/Tauri-style hybrid desktop and mobile application runtime hosting an OS-native WebView (<code>WKWebView</code> on macOS &amp; iOS, <code>WebKitGTK</code> on Linux, <code>WebView2</code> on Windows) over a custom <code>app://localhost/</code> URI scheme with two-way typed struct RPC (<code>app.bind[T]</code>), live event streaming (<code>app.on</code>, <code>app.emit</code>), reactive key-value state (<code>app.set_state</code>), and an injected <code>window.backend.*</code> ES6 Proxy + <code>window.invoke</code> + <code>window.runtime.*</code> JavaScript bridge.</div>
           </a>
         </div>
-        <div class="ref-category-title">Compiler Semantic Diagnostics (38 Rules)</div>
+        <div class="ref-category-title">Compiler Semantic Diagnostics (39 Rules)</div>
         <div class="ref-category-grid">
           <a href="#diagnostics" class="ref-mod-card" onclick="navigateToRefPane('diagnostics'); return false;">
             <div class="ref-mod-card-head">
               <span class="ref-mod-card-code">cfire/* Rules</span>
-              <span class="ref-mod-card-count">38 rules</span>
+              <span class="ref-mod-card-count">39 rules</span>
             </div>
             <div class="ref-mod-card-title">Compiler Semantic Diagnostics Catalog</div>
             <div class="ref-mod-card-desc">Rejected vs. Accepted <code>.cf</code> side-by-side verification rules enforced by the semantic checker.</div>
@@ -4887,7 +4888,7 @@ fn main() {
           </a>
           <a href="#diagnostics" class="pager-card next" onclick="navigateToRefPane('diagnostics'); return false;">
             <span class="pager-dir">Diagnostics Reference &rarr;</span>
-            <span class="pager-title">38 Semantic Verification Rules</span>
+            <span class="pager-title">39 Semantic Verification Rules</span>
           </a>
         </nav>
       </article>
@@ -5264,6 +5265,22 @@ x := 100 / denom // OK</code></pre></div>
     Port: i64 `json:&quot;port&quot; default:&quot;8080&quot;`
     Alt:  i64 `json:&quot;alt_port&quot;` // OK
 }</code></pre></div>
+          </div>
+        </div>
+        <div class="card" id="diag-cfire/JSON-UNSUPPORTED-TYPE" style="margin-bottom:1.25rem;">
+          <h3><code>[cfire/JSON-UNSUPPORTED-TYPE]</code> &mdash; Unsupported Type in Typed <code>core:json</code> Call</h3>
+          <p style="margin-bottom:0.85rem;"><code>json.stringify</code>, <code>json.parse[T]</code>, and <code>json.schema[T]</code> require every serialized field of <code>T</code> (including nested and cross-package structs/enums) to be a JSON-supported type (primitives, strings, booleans, slices, optionals, unit enums, non-generic structs, or <code>json.Value</code>). Pointers, closures, maps, smart pointers, fixed arrays, generic structs, OS/network handles, and payload enums are rejected at compile time unless skipped with <code></code> <code>json:&quot;-&quot;</code> <code></code>.</p>
+          <div class="grid-2">
+            <div><div class="code-header"><span style="color:var(--err);font-weight:700;">Rejected (.cf)</span></div><pre><code>type Record struct {
+    name: str `json:&quot;name&quot;`
+    meta: map[str]i64 `json:&quot;meta&quot;`
+}
+fn dump(r: Record) -&gt; str { return json.stringify(r) } // ERROR [cfire/JSON-UNSUPPORTED-TYPE]</code></pre></div>
+            <div><div class="code-header"><span style="color:var(--ok);font-weight:700;">Accepted (.cf)</span></div><pre><code>type Record struct {
+    name: str `json:&quot;name&quot;`
+    meta: map[str]i64 `json:&quot;-&quot;`
+}
+fn dump(r: Record) -&gt; str { return json.stringify(r) } // OK</code></pre></div>
           </div>
         </div>
         <div class="card" id="diag-cfire/REDUNDANT-TRY" style="margin-bottom:1.25rem;">

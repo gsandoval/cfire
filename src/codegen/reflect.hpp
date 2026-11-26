@@ -4,6 +4,15 @@
 namespace cfire::frontend {
 
 CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
+    struct PkgGuard {
+        std::string& slot;
+        std::string prev;
+        PkgGuard(std::string& s, std::string_view next) : slot(s), prev(s) {
+            if (!next.empty()) slot = std::string(next);
+        }
+        ~PkgGuard() { slot = prev; }
+    } pkg_guard(cur_pkg_, st.package_name);
+
     writeln();
     if (!st.type_params.empty()) {
         std::string tparams, targs;
@@ -149,16 +158,7 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
         writeln("}");
     }
 
-    bool can_emit_json = can_emit_arbitrary;
-    if (can_emit_json) {
-        for (const auto& t : tags) {
-            std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
-            if (!jkey.empty() && !can_emit_json_field_type(t.field_type, 0)) {
-                can_emit_json = false;
-                break;
-            }
-        }
-    }
+    const bool can_emit_json = json_support::can_emit_json_struct(cf_, st);
 
     if (can_emit_json && used_core_.contains("json")) {
         writeln();
@@ -176,9 +176,13 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                     writeln(std::format("out.{} = \"{}\";", fname, escape_unescaped_quotes(dval)));
                 } else if (t.field_type.name == "bool") {
                     writeln(std::format("out.{} = {};", fname, (dval == "true" || dval == "1") ? "true" : "false"));
-                } else if (!dval.empty() && (t.field_type.name == "u64" || t.field_type.name == "usize" ||
-                           t.field_type.name == "i64" || t.field_type.name == "isize" ||
-                           t.field_type.name == "i32" || t.field_type.name == "f64" || t.field_type.name == "f32")) {
+                } else if (!dval.empty() && (
+                           t.field_type.name == "i8" || t.field_type.name == "i16" ||
+                           t.field_type.name == "i32" || t.field_type.name == "i64" || t.field_type.name == "isize" ||
+                           t.field_type.name == "u8" || t.field_type.name == "byte" ||
+                           t.field_type.name == "u16" || t.field_type.name == "u32" ||
+                           t.field_type.name == "u64" || t.field_type.name == "usize" ||
+                           t.field_type.name == "f64" || t.field_type.name == "f32")) {
                     writeln(std::format("out.{} = static_cast<{}>({});", fname, lower_raw_owning_type(t.field_type), dval));
                 }
             }
@@ -191,12 +195,26 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_vec<{}>(obj, \"{}\"));", fname, elem_cpp, jkey));
                 } else if (t.field_type.name == "str") {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_str(obj, \"{}\", out.{}));", fname, jkey, fname));
-                } else if (t.field_type.name == "u64" || t.field_type.name == "usize") {
+                } else if (t.field_type.name == "u8" || t.field_type.name == "byte") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u8(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "u16") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u16(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "u32") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u32(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "u64") {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_u64(obj, \"{}\", out.{}));", fname, jkey, fname));
-                } else if (t.field_type.name == "i64" || t.field_type.name == "isize") {
-                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "usize") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_usize(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "i8") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i8(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "i16") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i16(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "i32") {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i32(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "i64") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_i64(obj, \"{}\", out.{}));", fname, jkey, fname));
+                } else if (t.field_type.name == "isize") {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_isize(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "f64") {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_f64(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (t.field_type.name == "f32") {
@@ -205,6 +223,8 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (is_local_type(t.field_type.name)) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
+                } else if (json_support::is_json_dynamic_value_name(t.field_type.name)) {
+                    writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_value(obj, \"{}\"));", fname, jkey));
                 }
                 if (t.validation.has_rules) {
                     const auto& v = t.validation;
@@ -277,7 +297,8 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
             if (!jkey.empty()) {
                 std::string prefix = first_j ? "" : ",";
                 first_j = false;
-                if (t.field_type.is_optional || t.field_type.is_slice || is_local_type(t.field_type.name)) {
+                if (t.field_type.is_optional || t.field_type.is_slice || is_local_type(t.field_type.name) ||
+                    json_support::is_json_dynamic_value_name(t.field_type.name)) {
                     writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, fname));
                 } else if (t.field_type.name == "str") {
                     writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, fname));

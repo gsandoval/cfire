@@ -2079,6 +2079,7 @@ Every diagnostic has a stable `cfire/*` code, shown after the message and emitte
 | `cfire/INVALID-STRUCT-TAG` | Detailed rule | Duplicate or Malformed Struct Reflection Tag |
 | `cfire/INVALID-TRY-CONTEXT` | Detailed rule | `try` Inside Short-Circuit Operand or `for` Condition |
 | `cfire/ITERATOR-INVALIDATION` | Detailed rule | Structural Mutation or Move of Collection During `for` Iteration |
+| `cfire/JSON-UNSUPPORTED-TYPE` | Detailed rule | Unsupported Type in Typed `core:json` Call |
 | `cfire/LITERAL-OUT-OF-RANGE` | Numbers | An integer literal that does not fit its target type. |
 | `cfire/MISSING-IMPORT` | Imports | A stdlib module is used without being imported. |
 | `cfire/MISSING-RETURN` | Control flow | A function with a return type can fall off its end. |
