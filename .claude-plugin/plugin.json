@@ -1,6 +1,6 @@
 {
   "name": "cfire",
-  "version": "0.12.5",
+  "version": "0.12.6",
   "description": "Official cfire (.cf) Language Server (LSP) plugin for Claude Code.",
   "lspServers": {
     "cfire": {
