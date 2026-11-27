@@ -501,7 +501,7 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                         if (rc != 0) {
                             ++suite_failures;
                         } else {
-                            if (allow_test_cache && !cache_key.empty()) {
+                            if (allow_test_cache && !cache_key.empty() && plan->warnings.empty()) {
                                 cfire::build::TestResultCache::store_pass(cache_key, out);
                             }
                             if (suite_deps[idx].has_value()) {
@@ -522,7 +522,7 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
                         if (rc != 0) {
                             ++suite_failures;
                         } else {
-                            if (allow_test_cache && !cache_key.empty()) {
+                            if (allow_test_cache && !cache_key.empty() && plan->warnings.empty()) {
                                 cfire::build::TestResultCache::store_pass(cache_key, out);
                             }
                             if (suite_deps[idx].has_value()) {
@@ -872,7 +872,7 @@ auto run_build_commands(std::string_view sub, int argc, char** argv, const std::
             std::error_code rm_ec;
             std::filesystem::remove(tmp_bin, rm_ec);
             if (rc == 0) {
-                if (allow_test_cache && !single_test_cache_key.empty()) {
+                if (allow_test_cache && !single_test_cache_key.empty() && plan->warnings.empty()) {
                     cfire::build::TestResultCache::store_pass(single_test_cache_key, out);
                 }
                 if (single_test_deps.has_value()) {

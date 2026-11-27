@@ -1367,11 +1367,21 @@ mut port := 8080
 max_conn: i32 = 1000
 mut is_ready: bool = true
 
-fn test_vars() {
+fn test_vars() -> i64 {
 x := 10
 mut y := 20
 name: str = "cfire"
 mut count: i64 = 99
+if name == "" {
+    return 0
+}
+if is_ready && max_conn > 0 {
+    return i64(x) + i64(y) + count + port + i64(app_name.len())
+}
+return 0
+}
+fn main() {
+    println("{}", test_vars())
 }
 )";
     auto ast = cfire::frontend::parse_source("test_canonical_vars.cf", src_canonical);
@@ -1401,7 +1411,7 @@ void test_recursive_package_resolution([[maybe_unused]] const std::filesystem::p
 
     // pkg_b contains a C library dependency in its sibling build.cf
     tmp_ws.file("pkg_b/pkg_b.cf", R"(package pkg_b
-fn helper_b() -> i32 { return 42 }
+pub fn helper_b() -> i32 { return 42 }
 )");
     tmp_ws.file("pkg_b/build.cf", R"(package build
 helper_lib := build.CC("helper_c", {
@@ -1413,7 +1423,7 @@ Sources: ["helper.c"]
     // pkg_a imports pkg_b
     tmp_ws.file("pkg_a/pkg_a.cf", R"(package pkg_a
 import "../pkg_b"
-fn helper_a() -> i32 { return pkg_b.helper_b() + 1 }
+pub fn helper_a() -> i32 { return pkg_b.helper_b() + 1 }
 )");
 
     // root main.cf imports pkg_a

@@ -1225,7 +1225,7 @@ fn main() {
             "cfire/RETIRED-API");
         if constexpr (!kRunningUnderAsan) {
             ScopedTempDir rel_pkg("rel_local_pkg");
-            rel_pkg.file("pkg/sub.cf", "package sub\n\nfn answer() -> i32 {\n    return 42\n}\n");
+            rel_pkg.file("pkg/sub.cf", "package sub\n\npub fn answer() -> i32 {\n    return 42\n}\n");
             auto main_cf = rel_pkg.file("main.cf",
                 "package main\nimport \"./pkg/sub\" as sub\n\nfn main() {\n    println(\"{}\", sub.answer())\n}\n");
             auto r_pkg = run_cfire(std::format("run \"{}\"", main_cf.string()));

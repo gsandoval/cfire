@@ -4,12 +4,12 @@
 // --- file: dom/dom.cf
 package dom
 
-type Mode enum {
+pub type Mode enum {
     Light,
     Dark,
 }
 
-type Settings struct {
+pub type Settings struct {
     accent: str `json:"accent"`
     tags: []str `json:"tags"`
     mode: Mode `json:"mode"`
@@ -24,7 +24,7 @@ package ad
 import "core:json"
 import "../dom"
 
-type File struct {
+pub type File struct {
     version: i64 `json:"version"`
     settings: dom.Settings `json:"settings"`
     list: []dom.Settings `json:"list"`
@@ -38,15 +38,15 @@ type File struct {
     scratch: map[str]i64 `json:"-"`
 }
 
-fn dump(f: File) -> str {
+pub fn dump(f: File) -> str {
     return json.stringify(f)
 }
 
-fn load(t: str) -> File! {
+pub fn load(t: str) -> File! {
     return try json.parse[File](t)
 }
 
-fn schema_text() -> str {
+pub fn schema_text() -> str {
     return json.schema[File]()
 }
 

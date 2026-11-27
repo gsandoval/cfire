@@ -66,12 +66,17 @@ namespace cfire::cli {
             }
             json += "],\n";
 
+            std::unordered_map<std::string, bool> type_pub;
+            for (const auto& st : ast->structs) type_pub[st.name] = st.is_pub;
+            for (const auto& en : ast->enums) type_pub[en.name] = en.is_pub;
+            for (const auto& ifc : ast->interfaces) type_pub[ifc.name] = ifc.is_pub;
+
             json += "      \"types\": [\n";
             bool first_type = true;
             for (const auto& st : ast->structs) {
                 if (!first_type) json += ",\n";
                 first_type = false;
-                json += std::format("        {{\"name\": \"{}\", \"kind\": \"struct\", \"fields\": [", st.name);
+                json += std::format("        {{\"name\": \"{}\", \"kind\": \"struct\", \"pub\": {}, \"fields\": [", st.name, st.is_pub ? "true" : "false");
                 for (std::size_t i = 0; i < st.fields.size(); ++i) {
                     if (i > 0) json += ", ";
                     json += std::format("{{\"name\": \"{}\", \"type\": \"{}\", \"tag\": \"{}\"}}",
@@ -84,7 +89,7 @@ namespace cfire::cli {
             for (const auto& en : ast->enums) {
                 if (!first_type) json += ",\n";
                 first_type = false;
-                json += std::format("        {{\"name\": \"{}\", \"kind\": \"enum\", \"variants\": [", en.name);
+                json += std::format("        {{\"name\": \"{}\", \"kind\": \"enum\", \"pub\": {}, \"variants\": [", en.name, en.is_pub ? "true" : "false");
                 for (std::size_t i = 0; i < en.variants.size(); ++i) {
                     if (i > 0) json += ", ";
                     std::string var_str = en.variants[i].name;
@@ -103,7 +108,7 @@ namespace cfire::cli {
             for (const auto& ifc : ast->interfaces) {
                 if (!first_type) json += ",\n";
                 first_type = false;
-                json += std::format("        {{\"name\": \"{}\", \"kind\": \"interface\", \"methods\": [", ifc.name);
+                json += std::format("        {{\"name\": \"{}\", \"kind\": \"interface\", \"pub\": {}, \"methods\": [", ifc.name, ifc.is_pub ? "true" : "false");
                 for (std::size_t i = 0; i < ifc.methods.size(); ++i) {
                     if (i > 0) json += ", ";
                     std::string sig = cfire::fmt::format_interface_method_sig(ifc.methods[i]);
@@ -140,8 +145,8 @@ namespace cfire::cli {
                         }
                     }
                 }
-                json += std::format("        {{\"name\": \"{}\", \"line\": {}, \"call\": \"{}\", \"type_arg\": \"{}\", \"args\": [",
-                    gv.name, gv.line, ctor_call, type_arg);
+                json += std::format("        {{\"name\": \"{}\", \"pub\": {}, \"line\": {}, \"call\": \"{}\", \"type_arg\": \"{}\", \"args\": [",
+                    gv.name, gv.is_pub ? "true" : "false", gv.line, ctor_call, type_arg);
                 for (std::size_t a = 0; a < args.size(); ++a) {
                     if (a > 0) json += ", ";
                     json += std::format("\"{}\"", cfire::lsp::detail::json_escape(args[a]));
@@ -153,6 +158,14 @@ namespace cfire::cli {
             for (std::size_t i = 0; i < ast->functions.size(); ++i) {
                 if (i > 0) json += ",\n";
                 const auto& fn = ast->functions[i];
+                bool fn_pub = fn.is_pub;
+                if (fn.receiver) {
+                    std::string rbase = fn.receiver->type.name;
+                    if (auto lb = rbase.find('['); lb != std::string::npos) rbase = rbase.substr(0, lb);
+                    if (auto it = type_pub.find(rbase); it != type_pub.end()) fn_pub = it->second;
+                } else if (!fn.ctor_type.empty()) {
+                    if (auto it = type_pub.find(fn.ctor_type); it != type_pub.end()) fn_pub = it->second;
+                }
                 std::string rec_str;
                 if (fn.receiver) {
                     std::string rec_intent = (fn.receiver->intent == "mut") ? "mut " : "";
@@ -171,8 +184,8 @@ namespace cfire::cli {
                 }
                 tparams_str += "]";
 
-                json += std::format("        {{\"name\": \"{}\", \"receiver\": \"{}\", \"type_params\": {}, \"params\": [",
-                    fn.name, cfire::lsp::detail::json_escape(rec_str), tparams_str);
+                json += std::format("        {{\"name\": \"{}\", \"pub\": {}, \"receiver\": \"{}\", \"type_params\": {}, \"params\": [",
+                    fn.name, fn_pub ? "true" : "false", cfire::lsp::detail::json_escape(rec_str), tparams_str);
                 for (std::size_t p = 0; p < fn.params.size(); ++p) {
                     if (p > 0) json += ", ";
                     std::string param_type = cfire::fmt::format_type_ref(fn.params[p].type);

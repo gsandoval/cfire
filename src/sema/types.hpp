@@ -1181,6 +1181,24 @@ private:
     mutable std::unordered_map<std::string, TypeId> param_structural_cache_{};
 };
 
+struct DeclVisInfo {
+    std::string kind{}; // "struct", "enum", "interface", "fn", "global"
+    std::string name{}; // unmangled symbol name
+    std::string package_name{};
+    std::string source_path{};
+    int line = 1;
+    bool is_pub = false;
+};
+
+struct UsageLedger {
+    std::unordered_map<std::string, std::unordered_set<std::string>> used_qualifiers_by_file{};
+    std::unordered_set<std::string> files_with_cpp_block{};
+    std::unordered_set<std::string> used_types{};   // "pkg::orig_name"
+    std::unordered_set<std::string> used_fns{};     // "pkg::fn_name"
+    std::unordered_set<std::string> used_globals{}; // "pkg::gv_name"
+    std::unordered_set<std::string> used_methods{}; // "orig_owner::method_name"
+};
+
 struct CheckedFile {
     FileAST ast{};
     TypeTable type_table{};
@@ -1197,6 +1215,11 @@ struct CheckedFile {
     std::unordered_set<std::string> colliding_gv_names{};
     std::unordered_map<std::string, std::vector<StructTagInfo>> struct_tags{};
     std::unordered_map<std::string, StructDecl> struct_defs{};
+    std::unordered_map<std::string, DeclVisInfo> type_visibility{};
+    std::unordered_map<std::string, DeclVisInfo> fn_visibility{};
+    std::unordered_map<std::string, DeclVisInfo> gv_visibility{};
+    mutable UsageLedger usage{};
+    mutable std::unordered_set<std::string> reported_private_uses{};
     std::unordered_map<std::string, uint64_t> last_use_move{}; // "fnName:varName" -> expr_id
     std::unordered_map<std::string, std::vector<std::string>> cpp_fn_params{}; // C/C++ fn -> param QualTypes
     std::unordered_map<std::string, std::string> cpp_fn_returns{}; // C/C++ fn -> return QualType
@@ -1237,6 +1260,101 @@ struct CheckedFile {
         d.severity = "warning";
         warnings.push_back(cfire::diag::render_diagnostic(d));
         diagnostics.push_back(std::move(d));
+    }
+
+    [[nodiscard]] static auto strip_pkg_mangle(std::string_view n) -> std::string {
+        if (n.starts_with("cfire_pkg_")) {
+            if (auto sep = n.find("__"); sep != std::string_view::npos) {
+                return std::string(n.substr(sep + 2));
+            }
+        }
+        return std::string(n);
+    }
+
+    [[nodiscard]] static auto extract_mangled_pkg(std::string_view n) -> std::string {
+        if (n.starts_with("cfire_pkg_")) {
+            if (auto sep = n.find("__"); sep != std::string_view::npos && sep > 10) {
+                return std::string(n.substr(10, sep - 10));
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] auto normalize_pkg(std::string_view p) const -> std::string {
+        if (!p.empty()) return std::string(p);
+        return ast.package_name.empty() ? std::string("main") : ast.package_name;
+    }
+
+    [[nodiscard]] auto normalize_file_key(std::string_view f) const -> std::string {
+        std::string raw = f.empty() ? ast.path : std::string(f);
+        if (raw.empty()) return raw;
+        return std::filesystem::path(raw).lexically_normal().string();
+    }
+
+    void mark_qualifier_used(std::string_view file, std::string_view qual) const {
+        if (qual.empty()) return;
+        usage.used_qualifiers_by_file[normalize_file_key(file)].insert(std::string(qual));
+    }
+
+    void mark_file_cpp_block(std::string_view file) const {
+        usage.files_with_cpp_block.insert(normalize_file_key(file));
+    }
+
+    void mark_type_used(std::string_view decl_pkg, std::string_view name) const {
+        std::string s = std::string(name);
+        if (auto lb = s.find('['); lb != std::string::npos) s.resize(lb);
+        std::string mp = extract_mangled_pkg(s);
+        std::string orig = strip_pkg_mangle(s);
+        std::string pkg = !mp.empty() ? mp : std::string(decl_pkg);
+        if (auto dot = orig.find('.'); dot != std::string::npos) {
+            if (pkg.empty()) pkg = orig.substr(0, dot);
+            orig = orig.substr(dot + 1);
+        }
+        if (orig.empty()) return;
+        usage.used_types.insert(normalize_pkg(pkg) + "::" + orig);
+    }
+
+    void mark_fn_used(std::string_view decl_pkg, std::string_view name) const {
+        if (name.empty()) return;
+        usage.used_fns.insert(normalize_pkg(decl_pkg) + "::" + std::string(name));
+    }
+
+    void mark_global_used(std::string_view decl_pkg, std::string_view name) const {
+        if (name.empty()) return;
+        usage.used_globals.insert(normalize_pkg(decl_pkg) + "::" + std::string(name));
+    }
+
+    void mark_method_used(std::string_view owner_type, std::string_view method_name) const {
+        std::string base = std::string(owner_type);
+        if (auto lb = base.find('['); lb != std::string::npos) base.resize(lb);
+        std::string mp = extract_mangled_pkg(base);
+        std::string orig = strip_pkg_mangle(base);
+        if (auto dot = orig.find('.'); dot != std::string::npos) {
+            if (mp.empty()) mp = orig.substr(0, dot);
+            orig = orig.substr(dot + 1);
+        }
+        if (orig.empty() || method_name.empty()) return;
+        if (!mp.empty()) {
+            usage.used_methods.insert(mp + "." + orig + "::" + std::string(method_name));
+        }
+        usage.used_methods.insert(orig + "::" + std::string(method_name));
+    }
+
+    [[nodiscard]] auto lookup_type_vis(std::string_view raw_name, std::string_view cur_pkg) const -> const DeclVisInfo* {
+        std::string s(raw_name);
+        if (auto lb = s.find('['); lb != std::string::npos) s.resize(lb);
+        for (auto p = s.find("::"); p != std::string::npos; p = s.find("::")) s.replace(p, 2, ".");
+        if (s.empty()) return nullptr;
+        std::string ncur = normalize_pkg(cur_pkg);
+        if (s.find('.') == std::string::npos && !s.starts_with("cfire_pkg_")) {
+            if (auto it = type_visibility.find(ncur + "." + s); it != type_visibility.end()) {
+                return &it->second;
+            }
+        }
+        if (auto it = type_visibility.find(s); it != type_visibility.end()) {
+            return &it->second;
+        }
+        return nullptr;
     }
 };
 

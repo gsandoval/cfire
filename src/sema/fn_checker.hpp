@@ -521,12 +521,19 @@ public:
     struct ScopeGuard {
         SemaFnChecker& checker;
         std::unordered_map<std::string, SavedVarDeclState> saved_vars{};
+        bool check_unused = true;
 
-        explicit ScopeGuard(SemaFnChecker& c) : checker(c) {
+        explicit ScopeGuard(SemaFnChecker& c, bool unused_check = true)
+            : checker(c), check_unused(unused_check) {
             ++checker.scope_depth_;
             checker.scope_stack_.push_back(&saved_vars);
         }
         ~ScopeGuard() {
+            if (check_unused) {
+                checker.emit_unused_bindings_at_depth(checker.scope_depth_);
+            } else {
+                checker.discard_bindings_at_depth(checker.scope_depth_);
+            }
             for (const auto& [name, st] : saved_vars) {
                 if (st.scope_depth) checker.var_scope_depth_[name] = *st.scope_depth;
                 else checker.var_scope_depth_.erase(name);
@@ -591,7 +598,32 @@ public:
 
     void save_var_before_redecl(const std::string& name);
 
-    void bind_scoped_var(const std::string& name, bool is_mut);
+    void bind_scoped_var(const std::string& name, bool is_mut, int line = 0, int col = 0, bool track = true);
+
+    void register_tracked_binding(std::string_view name, int line, int col, bool is_param, bool is_mut_param, bool is_self);
+
+    void mark_binding_read(std::string_view name) const;
+
+    [[nodiscard]] auto mark_binding_written(std::string_view name) const -> bool;
+
+    void emit_unused_bindings_at_depth(int depth);
+
+    void discard_bindings_at_depth(int depth);
+
+    void finish_unused_checks();
+
+    void record_typeref_use_and_check_visibility(const TypeRef& tr, int line, int col) const;
+
+    void check_cross_package_decl(
+        std::string_view decl_pkg,
+        bool is_pub,
+        std::string_view kind,
+        std::string_view orig_name,
+        std::string_view decl_path,
+        int decl_line,
+        int use_line,
+        int use_col
+    ) const;
 
     void bind_match_arm_vars(const MatchArm& arm, const std::string& target_t = "");
 
@@ -709,8 +741,23 @@ private:
     std::unordered_map<std::string, int> moved_at_line_{};
     std::unordered_set<std::string> move_params_{};
     std::unordered_set<std::string> param_names_{};
+    std::string receiver_name_{};
+    std::string receiver_type_base_{};
     std::unordered_set<std::string> mut_vars_{};
     std::unordered_set<std::string> imm_vars_{};
+
+    struct TrackedBinding {
+        std::string name{};
+        int line = 1;
+        int col = 1;
+        bool is_param = false;
+        bool is_mut_param = false;
+        bool is_self = false;
+        mutable bool read = false;
+        mutable bool written_after_init = false;
+        int scope_depth = 1;
+    };
+    mutable std::vector<TrackedBinding> active_bindings_{};
 };
 
 #if !defined(CFIRE_SPLIT_TUS) || defined(CFIRE_SEMA_INFER_IMPL)

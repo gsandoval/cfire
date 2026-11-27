@@ -1,0 +1,53 @@
+// expect: stdout
+// | PUB_VISIBILITY_OK
+
+// --- file: dom/dom.cf
+package dom
+
+pub VAL := 42
+
+pub type Mode enum {
+    Light,
+    Dark,
+}
+
+pub type Labelled interface {
+    fn label() -> str
+}
+
+pub type Settings struct {
+    accent: str
+}
+
+fn (Settings) make(accent: str) -> Settings {
+    return Settings{accent: accent}
+}
+
+pub fn format_setting(s: Settings, m: Mode) -> str {
+    return match m {
+        Light => "light:" + s.accent,
+        Dark => "dark:" + s.accent,
+    }
+}
+
+fn (s: Settings) label() -> str {
+    return s.accent
+}
+
+// --- file: app/main.cf (entry)
+package main
+
+import "../dom"
+
+fn show_label[T: dom.Labelled](x: T) -> str {
+    return x.label()
+}
+
+fn main() {
+    s := make(dom.Settings, "moss")
+    assert_eq(s.accent, "moss")
+    assert_eq(dom.VAL, 42)
+    assert_eq(show_label(s), "moss")
+    assert_eq(dom.format_setting(s, dom.Mode::Dark()), "dark:moss")
+    println("PUB_VISIBILITY_OK")
+}

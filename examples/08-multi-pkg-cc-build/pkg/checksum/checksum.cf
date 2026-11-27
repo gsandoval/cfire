@@ -2,6 +2,6 @@ package checksum
 
 import cpp "fastcrc.h"
 
-fn compute_tag(label: str) -> u32 {
+pub fn compute_tag(label: str) -> u32 {
     return cpp.fastcrc_compute(label, label.len())
 }

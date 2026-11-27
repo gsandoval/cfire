@@ -40,7 +40,63 @@ public:
                         if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
                         synchronize_decl();
                     } else {
+                        imp->package_name = f.package_name;
                         f.imports.push_back(std::move(*imp));
+                    }
+                    break;
+                }
+                case TokenKind::KwPub: {
+                    Token pub_tok = advance();
+                    if (cur().kind == TokenKind::KwType) {
+                        const std::size_t s0 = f.structs.size();
+                        const std::size_t e0 = f.enums.size();
+                        const std::size_t i0 = f.interfaces.size();
+                        if (auto r = parse_type_decl(f); !r) {
+                            record_error(r.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else {
+                            if (f.structs.size() > s0) f.structs.back().is_pub = true;
+                            if (f.enums.size() > e0) f.enums.back().is_pub = true;
+                            if (f.interfaces.size() > i0) f.interfaces.back().is_pub = true;
+                        }
+                    } else if (cur().kind == TokenKind::KwFn) {
+                        auto fn = parse_fn_decl();
+                        if (!fn) {
+                            record_error(fn.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else if (fn->receiver.has_value() || !fn->ctor_type.empty()) {
+                            record_error(SourceError{std::string(file_), static_cast<int>(pub_tok.line), static_cast<int>(pub_tok.col),
+                                "'pub' cannot be placed on methods or constructors; they inherit their receiver type's visibility"});
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        } else {
+                            fn->is_pub = true;
+                            f.functions.push_back(std::move(*fn));
+                        }
+                    } else if ((cur().kind == TokenKind::KwMut && peek(1).kind == TokenKind::Ident) ||
+                               (cur().kind == TokenKind::Ident &&
+                                (peek(1).kind == TokenKind::ColonEq || peek(1).kind == TokenKind::Colon ||
+                                 (cur().lexeme == "const" && peek(1).kind == TokenKind::Ident)))) {
+                        auto gv = parse_global_var();
+                        if (!gv) {
+                            record_error(gv.error());
+                            if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                            synchronize_decl();
+                        } else {
+                            gv->is_pub = true;
+                            f.global_vars.push_back(std::move(*gv));
+                        }
+                    } else {
+                        record_error(SourceError{std::string(file_), static_cast<int>(pub_tok.line), static_cast<int>(pub_tok.col),
+                            "'pub' is only valid on top-level type, free function, and global declarations"});
+                        if (!resilient_) return make_parse_result(std::move(f), std::move(errors_));
+                        if (cur().kind != TokenKind::KwPackage && cur().kind != TokenKind::KwImport &&
+                            cur().kind != TokenKind::KwType && cur().kind != TokenKind::KwFn &&
+                            cur().kind != TokenKind::KwMut && cur().kind != TokenKind::KwTest &&
+                            cur().kind != TokenKind::KwPub) {
+                            synchronize_decl();
+                        }
                     }
                     break;
                 }
@@ -194,6 +250,7 @@ private:
         while (cur().kind != TokenKind::Eof) {
             switch (cur().kind) {
                 case TokenKind::KwPackage:
+                case TokenKind::KwPub:
                 case TokenKind::KwImport:
                 case TokenKind::KwType:
                 case TokenKind::KwFn:
@@ -369,6 +426,7 @@ private:
         auto start = expect(TokenKind::KwImport);
         if (!start) return std::unexpected(start.error());
         imp.line = start->line;
+        imp.source_path = file_;
         if (cur().kind == TokenKind::KwCpp) {
             advance();
             imp.is_cpp = true;

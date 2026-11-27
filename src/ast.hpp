@@ -159,6 +159,9 @@ struct ImportDecl {
     std::string alias{};
     std::vector<ImportAttr> attrs{};
     int line = 1;
+    std::string source_path{};
+    std::string package_name{};
+    std::string resolved_pkg_name{};
 };
 
 struct StructField {
@@ -255,6 +258,7 @@ struct StructDecl {
     int line = 1;
     std::string source_path{};
     std::string package_name{};
+    bool is_pub = false;
 };
 
 struct EnumVariant {
@@ -270,6 +274,7 @@ struct EnumDecl {
     int line = 1;
     std::string source_path{};
     std::string package_name{};
+    bool is_pub = false;
 };
 
 struct InterfaceMethodSig {
@@ -289,6 +294,7 @@ struct InterfaceDecl {
     int line = 1;
     std::string package_name{};
     std::string source_path{};
+    bool is_pub = false;
 };
 
 struct ReceiverDecl {
@@ -865,6 +871,7 @@ struct FnDecl {
     std::string package_name{};
     std::string source_path{};
     std::string ctor_type{};  // set for `fn (T) make(...)`, whose name is rewritten to `cfire_ctor_T`
+    bool is_pub = false;
 };
 
 struct GlobalVarDecl {
@@ -876,6 +883,7 @@ struct GlobalVarDecl {
     std::string package_name{};
     std::string source_path{};
     mutable uint32_t resolved_type_id = 0;
+    bool is_pub = false;
 };
 
 struct BenchParamVariation {
@@ -912,6 +920,8 @@ struct FileAST {
     std::unordered_map<std::string, std::vector<std::string>> pkg_imports{};
     std::vector<std::string> resolved_source_files{};
     std::vector<std::string> resolved_build_cfs{};
+    std::vector<ImportDecl> file_imports{};
+    std::unordered_map<std::string, std::unordered_set<std::string>> sibling_test_idents{};
 };
 
 } // namespace cfire::frontend

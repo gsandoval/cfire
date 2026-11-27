@@ -80,9 +80,10 @@ namespace cfire::cli {
             };
             auto is_token_removal_fix_code = [](std::string_view code) -> bool {
                 return code == "cfire/REDUNDANT-TRY" || code == "cfire/REDUNDANT-OR" ||
-                       code == "cfire/REDUNDANT-CALLSITE-INTENT";
+                       code == "cfire/REDUNDANT-CALLSITE-INTENT" || code == "cfire/UNUSED-IMPORT";
             };
 
+            bool rewrote_import_path = false;
             for (int pass = 0; pass < 8; ++pass) {
                 auto pres = cfire::frontend::parse_source_resilient(fpath.string(), current_text);
                 auto lines = cfire::diag::split_lines(current_text);
@@ -94,6 +95,7 @@ namespace cfire::cli {
                 bool has_batch_import_fix = !import_fixes.empty();
                 for (auto& f : import_fixes) {
                     if (only.empty() && f.applicability != cfire::diag::FixApplicability::MachineApplicable) continue;
+                    rewrote_import_path = true;
                     pass_edits.push_back(std::move(f));
                 }
 
@@ -120,9 +122,14 @@ namespace cfire::cli {
                     if (d.severity == "error" && has_batch_import_fix && d.code == "cfire/MISSING-IMPORT") continue;
                     if (!wanted(d.code)) continue;
                     if (has_unresolved_diagnostics && is_token_removal_fix_code(d.code)) continue;
+                    if (only.empty() && rewrote_import_path && d.code == "cfire/UNUSED-IMPORT") continue;
                     for (auto& fix : d.fixits) {
                         if (only.empty()) {
                             if (fix.is_preferred && fix.applicability == cfire::diag::FixApplicability::MachineApplicable) {
+                                if (d.code == "cfire/INVALID-IMPORT" || d.code == "cfire/RETIRED-API" ||
+                                    d.code == "cfire/MISSING-IMPORT") {
+                                    rewrote_import_path = true;
+                                }
                                 pass_edits.push_back(std::move(fix));
                                 break;
                             }
@@ -181,6 +188,80 @@ namespace cfire::cli {
                         break;
                     }
                     if (!renamed) break;
+                }
+            }
+
+            // PRIVATE-SYMBOL (`cfire fix --only cfire/PRIVATE-SYMBOL`) marks referenced private declarations
+            // `pub` in their owning package file.
+            if (!only.empty() && wanted("cfire/PRIVATE-SYMBOL")) {
+                cfire::analysis::CheckOptions pub_opts;
+                pub_opts.verify_cpp_backend = false;
+                pub_opts.resolve_sibling_packages = true;
+                std::optional<std::string> pub_txt;
+                if (dry_run) {
+                    pub_txt = current_text;
+                } else if (auto r = cfire::build::read_file_text(fpath)) {
+                    pub_txt = std::move(*r);
+                }
+                if (pub_txt) {
+                    pub_opts.source_overlays[fpath.string()] = *pub_txt;
+                    auto p_diags = cfire::analysis::check_source(fpath.string(), *pub_txt, pub_opts);
+                    struct PubTarget {
+                        std::string file;
+                        int line;
+                        std::string symbol;
+                    };
+                    std::vector<PubTarget> pub_targets;
+                    std::unordered_set<std::string> seen_targets;
+                    for (const auto& pd : p_diags) {
+                        if (pd.code != "cfire/PRIVATE-SYMBOL") continue;
+                        std::string tf = cfire::diag::fact_of(pd, "target_file");
+                        std::string tl_str = cfire::diag::fact_of(pd, "target_line");
+                        std::string sym = cfire::diag::fact_of(pd, "symbol");
+                        if (tf.empty() || tl_str.empty()) continue;
+                        int tl = std::atoi(tl_str.c_str());
+                        if (tl < 1) continue;
+                        std::error_code tec;
+                        auto tc = std::filesystem::weakly_canonical(std::filesystem::path(tf), tec);
+                        std::string key = std::format("{}:{}", (!tec && !tc.empty()) ? tc.string() : tf, tl);
+                        if (seen_targets.insert(key).second) {
+                            pub_targets.push_back({tf, tl, sym});
+                        }
+                    }
+                    std::unordered_map<std::string, std::vector<PubTarget>> by_file;
+                    for (auto& pt : pub_targets) by_file[pt.file].push_back(std::move(pt));
+                    for (auto& [tf, targets] : by_file) {
+                        auto target_txt = cfire::build::read_file_text(tf);
+                        if (!target_txt) continue;
+                        auto tlines = cfire::diag::split_lines(*target_txt);
+                        std::vector<cfire::diag::FixItEdit> fedits;
+                        for (const auto& pt : targets) {
+                            if (pt.line < 1 || static_cast<std::size_t>(pt.line - 1) >= tlines.size()) continue;
+                            const std::string& ln = tlines[static_cast<std::size_t>(pt.line - 1)];
+                            std::size_t indent_end = 0;
+                            while (indent_end < ln.size() && (ln[indent_end] == ' ' || ln[indent_end] == '\t')) ++indent_end;
+                            if (ln.compare(indent_end, 4, "pub ") == 0) continue;
+                            cfire::diag::FixItEdit ed;
+                            ed.title = std::format("Mark '{}' as 'pub' in {}:{} (cfire/PRIVATE-SYMBOL)", pt.symbol, tf, pt.line);
+                            ed.start_line = pt.line;
+                            ed.start_col = static_cast<int>(indent_end) + 1;
+                            ed.end_line = pt.line;
+                            ed.end_col = static_cast<int>(indent_end) + 1;
+                            ed.replacement = "pub ";
+                            ed.applicability = cfire::diag::FixApplicability::EditorOnly;
+                            fedits.push_back(std::move(ed));
+                        }
+                        if (!fedits.empty()) {
+                            auto [updated, applied_pub] = cfire::diag::apply_fixits(*target_txt, fedits);
+                            if (!applied_pub.empty() && updated != *target_txt) {
+                                if (!dry_run) {
+                                    std::ofstream out(tf, std::ios::binary | std::ios::trunc);
+                                    out << updated;
+                                }
+                                for (auto& ap : applied_pub) total_applied.push_back(std::move(ap));
+                            }
+                        }
+                    }
                 }
             }
 

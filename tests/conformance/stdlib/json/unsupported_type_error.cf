@@ -1,12 +1,12 @@
 // --- file: dom/dom.cf
 package dom
 
-type WithMap struct {
+pub type WithMap struct {
     name: str `json:"name"`
     meta: map[str]i64 `json:"meta"`
 }
 
-type Payload enum {
+pub type Payload enum {
     Empty,
     Num(i64),
 }

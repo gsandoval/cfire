@@ -406,6 +406,7 @@ void test_ipc_stream_security_and_concurrency(const std::filesystem::path& rt_di
 void test_webui_security_and_desktop(const std::filesystem::path& rt_dir);
 void test_build_manifest_ios(const std::filesystem::path& rt_dir);
 void test_closed_type_checker();
+void test_pub_and_unused_diagnostics(const std::filesystem::path& rt_dir);
 
 // E2E Suites
 void test_end_to_end_canonical_examples(const std::filesystem::path& rt_dir);

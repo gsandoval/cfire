@@ -1,6 +1,6 @@
 #pragma once
 // cfire_prelude.hpp — Zero-overhead C++23 Runtime Prelude for cfire (.cf)
-// CFIRE_RUNTIME_VERSION: 0.12.8
+// CFIRE_RUNTIME_VERSION: 0.13.0
 // CFIRE_RUNTIME_ARCHIVE_SHA: $Format:%h$
 
 #if defined(__clang__) && !defined(__apple_build_version__)

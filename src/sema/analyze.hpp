@@ -277,19 +277,59 @@ namespace cfire::frontend {
         }
     }
 
-    // 1. Index Interfaces and Enums
+    const bool is_build_manifest_file =
+        std::filesystem::path(cf.ast.path).filename() == "build.cf" || cf.ast.package_name == "build";
+
+    auto report_private_top = [&](std::string_view cur_pkg, const DeclVisInfo& dv,
+                                  std::string_view use_path, int use_line, int use_col) {
+        if (dv.is_pub || dv.name.empty()) return;
+        std::string ncur = cf.normalize_pkg(cur_pkg);
+        std::string ndec = cf.normalize_pkg(dv.package_name);
+        if (ncur == ndec) return;
+        std::string dedup = std::format("{}:{}:{}:{}.{}",
+            cf.normalize_file_key(use_path), use_line, dv.kind, ndec, dv.name);
+        if (!cf.reported_private_uses.insert(std::move(dedup)).second) return;
+        cf.add_error(cfire::diag::diag(
+            use_path, use_line, use_col, "cfire/PRIVATE-SYMBOL",
+            std::format("{} '{}.{}' is private to package '{}'; mark it 'pub' to export it",
+                dv.kind, ndec, dv.name, ndec),
+            {
+                {"symbol", dv.name},
+                {"kind", dv.kind},
+                {"package", ndec},
+                {"target_file", dv.source_path},
+                {"target_line", std::to_string(dv.line > 0 ? dv.line : 1)},
+            }));
+    };
+
+    // 1. Index Interfaces and Enums (plus visibility tables & REDUNDANT-PUB checks)
+    auto index_type_vis = [&](std::string_view ast_name, std::string_view pkg, std::string_view src_path,
+                              int line, std::string_view kind, bool is_pub) {
+        std::string npkg = cf.normalize_pkg(pkg);
+        std::string orig = CheckedFile::strip_pkg_mangle(ast_name);
+        DeclVisInfo dv{std::string(kind), orig, npkg, std::string(src_path), line, is_pub};
+        cf.type_visibility[std::string(ast_name)] = dv;
+        cf.type_visibility[npkg + "." + orig] = dv;
+        if (!is_build_manifest_file && is_pub && npkg == "main") {
+            cf.add_warning(cfire::diag::diag(
+                src_path, line, 1, "cfire/REDUNDANT-PUB",
+                std::format("'pub' on {} '{}' has no effect in package 'main' because 'main' cannot be imported", kind, orig)));
+        }
+    };
+
+    for (const auto& st : cf.ast.structs) {
+        std::string st_path = st.source_path.empty() ? cf.ast.path : st.source_path;
+        index_type_vis(st.name, st.package_name, st_path, st.line, "struct", st.is_pub);
+    }
     for (const auto& iface : cf.ast.interfaces) {
         cf.interfaces.insert(iface.name);
         cf.interface_defs[iface.name] = iface;
+        std::string orig_name = CheckedFile::strip_pkg_mangle(iface.name);
         if (!iface.package_name.empty()) {
-            std::string orig_name = iface.name;
-            if (orig_name.starts_with("cfire_pkg_")) {
-                if (auto sep = orig_name.find("__"); sep != std::string::npos) {
-                    orig_name = orig_name.substr(sep + 2);
-                }
-            }
             cf.interface_defs[iface.package_name + "." + orig_name] = iface;
         }
+        std::string ifc_path = iface.source_path.empty() ? cf.ast.path : iface.source_path;
+        index_type_vis(iface.name, iface.package_name, ifc_path, iface.line, "interface", iface.is_pub);
     }
     for (const auto& en : cf.ast.enums) {
         cf.enums[en.name] = en;
@@ -298,6 +338,17 @@ namespace cfire::frontend {
                 cf.ambiguous_variants.insert(v.name);
             }
             cf.variant_to_enum[v.name] = en.name;
+        }
+        std::string en_path = en.source_path.empty() ? cf.ast.path : en.source_path;
+        index_type_vis(en.name, en.package_name, en_path, en.line, "enum", en.is_pub);
+    }
+    for (const auto& gv : cf.ast.global_vars) {
+        std::string npkg = cf.normalize_pkg(gv.package_name);
+        std::string gv_path = gv.source_path.empty() ? cf.ast.path : gv.source_path;
+        if (!is_build_manifest_file && gv.is_pub && npkg == "main") {
+            cf.add_warning(cfire::diag::diag(
+                gv_path, gv.line, 1, "cfire/REDUNDANT-PUB",
+                std::format("'pub' on global '{}' has no effect in package 'main' because 'main' cannot be imported", gv.name)));
         }
     }
 
@@ -343,11 +394,26 @@ namespace cfire::frontend {
     for (const auto& en : cf.ast.enums) declare_type_name(en.name);
     for (const auto& in : cf.ast.interfaces) declare_type_name(in.name);
     std::unordered_set<std::string> scope_type_params;  // type parameters of the declaration being checked
-    auto check_type_params_bounds = [&](const std::vector<TypeParam>& tps, std::string_view decl_path, int decl_line) {
+    std::string active_decl_pkg;
+    auto check_type_params_bounds = [&](const std::vector<TypeParam>& tps, std::string_view decl_pkg, std::string_view decl_path, int decl_line) {
         for (const auto& tp : tps) {
             for (const auto& bound : tp.constraints) {
-                if (bound.empty() || cf.interface_defs.contains(bound) ||
-                    bound == "Comparable" || bound == "Ordered" ||
+                if (bound.empty()) continue;
+                if (cf.interface_defs.contains(bound)) {
+                    if (auto dot = bound.find('.'); dot != std::string::npos) {
+                        cf.mark_qualifier_used(decl_path, bound.substr(0, dot));
+                    }
+                    std::string mp = CheckedFile::extract_mangled_pkg(bound);
+                    if (!mp.empty() && mp != cf.normalize_pkg(decl_pkg)) {
+                        cf.mark_qualifier_used(decl_path, mp);
+                    }
+                    if (const DeclVisInfo* dv = cf.lookup_type_vis(bound, decl_pkg)) {
+                        cf.mark_type_used(dv->package_name, dv->name);
+                        report_private_top(decl_pkg, *dv, decl_path, decl_line, 1);
+                    }
+                    continue;
+                }
+                if (bound == "Comparable" || bound == "Ordered" ||
                     bound == "Numeric" || bound == "Integer") {
                     continue;
                 }
@@ -357,8 +423,29 @@ namespace cfire::frontend {
             }
         }
     };
-    // Validate no dynamic slices or arrays of structural interfaces
-    auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col) -> void {
+    // Validate no dynamic slices or arrays of structural interfaces, plus record import/type usage & visibility
+    auto check_type_ref_separators_ast = [&](auto& self, const TypeRef& tr, std::string_view src_path, int line, int col, bool mark_root_used = true) -> void {
+        if (!tr.raw_name.empty()) {
+            auto dot = tr.raw_name.find('.');
+            auto dcol = tr.raw_name.find("::");
+            std::size_t sep = std::min(dot, dcol);
+            if (sep != std::string::npos) {
+                cf.mark_qualifier_used(src_path, tr.raw_name.substr(0, sep));
+            }
+        }
+        if (!tr.name.empty()) {
+            std::string mp = CheckedFile::extract_mangled_pkg(tr.name);
+            if (!mp.empty() && mp != cf.normalize_pkg(active_decl_pkg)) {
+                cf.mark_qualifier_used(src_path, mp);
+            }
+            if (auto dot = tr.name.find('.'); dot != std::string::npos) {
+                cf.mark_qualifier_used(src_path, tr.name.substr(0, dot));
+            }
+            if (const DeclVisInfo* dv = cf.lookup_type_vis(tr.name, active_decl_pkg)) {
+                if (mark_root_used) cf.mark_type_used(dv->package_name, dv->name);
+                report_private_top(active_decl_pkg, *dv, src_path, line, col);
+            }
+        }
         // no raw pointer types (C++ interop only) and no `&T` / `&mut T` reference types.
         if (tr.is_ptr || tr.is_mut_ptr) {
             cf.add_error(cfire::diag::diag(src_path, line, col, "cfire/RAW-POINTER",
@@ -446,9 +533,10 @@ namespace cfire::frontend {
     std::unordered_set<std::string> field_case_seen;  // merged package views list a struct under `./f.cf` and `f.cf`
     for (const auto& st : cf.ast.structs) {
         std::string_view st_path = st.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(st.source_path);
+        active_decl_pkg = st.package_name;
         scope_type_params.clear();
         for (const auto& tp : st.type_params) scope_type_params.insert(tp.name);
-        check_type_params_bounds(st.type_params, st_path, st.line);
+        check_type_params_bounds(st.type_params, st.package_name, st_path, st.line);
         for (const auto& fld : st.fields) {
             std::string seen_key = std::format("{}:{}:{}.{}", std::filesystem::path(st_path).lexically_normal().string(), fld.line, st.name, fld.name);
             if (std::string snake = snake_case_of(fld.name); snake != fld.name && field_case_seen.insert(seen_key).second) {
@@ -576,15 +664,21 @@ namespace cfire::frontend {
 
     for (const auto& fn : cf.ast.functions) {
         std::string_view fn_path = fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path);
+        if (!is_build_manifest_file && fn.is_pub && !fn.receiver && fn.ctor_type.empty() && cf.normalize_pkg(fn.package_name) == "main") {
+            cf.add_warning(cfire::diag::diag(
+                fn_path, fn.line, 1, "cfire/REDUNDANT-PUB",
+                std::format("'pub' on function '{}' has no effect in package 'main' because 'main' cannot be imported", fn.name)));
+        }
+        active_decl_pkg = fn.package_name;
         scope_type_params.clear();
         for (const auto& tp : fn.type_params) scope_type_params.insert(tp.name);
-        check_type_params_bounds(fn.type_params, fn_path, fn.line);
+        check_type_params_bounds(fn.type_params, fn.package_name, fn_path, fn.line);
         if (fn.receiver) {
             for (const auto& ta : fn.receiver->type.type_args) scope_type_params.insert(ta.name);  // `fn (b: Box[T])`
             for (const auto& st : cf.ast.structs) {
                 if (st.name == fn.receiver->type.name) for (const auto& tp : st.type_params) scope_type_params.insert(tp.name);
             }
-            check_type_ref_separators_ast(check_type_ref_separators_ast, fn.receiver->type, fn_path, fn.line, 1);
+            check_type_ref_separators_ast(check_type_ref_separators_ast, fn.receiver->type, fn_path, fn.line, 1, false);
         }
         for (const auto& p : fn.params) {
             check_type_ref_separators_ast(check_type_ref_separators_ast, p.type, fn_path, p.line, p.col);
@@ -599,15 +693,17 @@ namespace cfire::frontend {
     }
     for (const auto& en : cf.ast.enums) {
         std::string_view en_path = en.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(en.source_path);
+        active_decl_pkg = en.package_name;
         scope_type_params.clear();
         for (const auto& tp : en.type_params) scope_type_params.insert(tp.name);
-        check_type_params_bounds(en.type_params, en_path, en.line);
+        check_type_params_bounds(en.type_params, en.package_name, en_path, en.line);
         for (const auto& v : en.variants) {
             for (const auto& pt : v.payload_types) check_type_ref_separators_ast(check_type_ref_separators_ast, pt, en_path, v.line, 1);
         }
     }
     for (const auto& iface : cf.ast.interfaces) {
         std::string_view ifc_path = iface.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(iface.source_path);
+        active_decl_pkg = iface.package_name;
         scope_type_params.clear();
         for (const auto& m : iface.methods) {
             int mline = m.line > 0 ? m.line : iface.line;
@@ -618,12 +714,23 @@ namespace cfire::frontend {
     }
     scope_type_params.clear();
     for (const auto& gv : cf.ast.global_vars) {
+        active_decl_pkg = gv.package_name;
         if (gv.type) {
             std::string_view gv_path = gv.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(gv.source_path);
             check_type_ref_separators_ast(check_type_ref_separators_ast, *gv.type, gv_path, gv.line, 1);
             if (auto iface = find_interface_in_slice(*gv.type, cf.interfaces)) {
                 cf.add_error(cfire::diag::diag(gv_path, gv.line, 0, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface)));
             }
+        }
+    }
+    for (const auto& td : cf.ast.tests) {
+        std::string_view td_path = td.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(td.source_path);
+        active_decl_pkg = td.package_name;
+        for (const auto& p : td.params) {
+            check_type_ref_separators_ast(check_type_ref_separators_ast, p.type, td_path, p.line, p.col);
+        }
+        for (const auto& bv : td.bench_variations) {
+            check_type_ref_separators_ast(check_type_ref_separators_ast, bv.inferred_type, td_path, bv.line, 1);
         }
     }
 
@@ -891,6 +998,7 @@ namespace cfire::frontend {
         for (const auto& st : fn.body) {
             (void)checker.check_stmt(st);
         }
+        checker.finish_unused_checks();
         if (!fn.return_type.name.empty() && fn.return_type.name != "void" && fn.name != "main") {
             if (!SemaFnChecker::block_diverges(fn.body, &cf)) {
                 cf.add_error(cfire::diag::diag(fn_path, fn.line, 0, "cfire/MISSING-RETURN", std::format("missing return statement on all execution paths in function '{}' returning '{}'", fn.name, fn.return_type.name)));
@@ -925,6 +1033,184 @@ namespace cfire::frontend {
         }
         for (const auto& st : td.body) {
             (void)checker.check_stmt(st);
+        }
+        checker.finish_unused_checks();
+    }
+
+    // 6. Post-Pass Audits: Per-File Unused Imports & Unused Private Top-Level Symbols
+    auto is_external_or_manifest = [](std::string_view sp) -> bool {
+        if (sp.empty()) return false;
+        std::string s = std::filesystem::path(sp).generic_string();
+        return s.contains("/vendor/") || s.ends_with("/build.cf") || s == "build.cf";
+    };
+
+    {
+        std::unordered_set<std::string> error_import_lines;
+        for (const auto& d : cf.diagnostics) {
+            if (d.severity == "error" &&
+                (d.code == "cfire/UNKNOWN-MODULE" || d.code == "cfire/INVALID-IMPORT" ||
+                 d.code == "cfire/RETIRED-API" || d.code == "cfire/UNRESOLVED-PACKAGE")) {
+                error_import_lines.insert(std::format("{}:{}", cf.normalize_file_key(d.file), d.line));
+            }
+        }
+        const std::vector<ImportDecl>& imports_to_audit = !cf.ast.file_imports.empty() ? cf.ast.file_imports : cf.ast.imports;
+        std::unordered_set<std::string> seen_file_quals;
+        std::unordered_set<std::string> emitted_unused_imp;
+        for (const auto& imp : imports_to_audit) {
+            std::string imp_file = cf.normalize_file_key(imp.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(imp.source_path));
+            if (imp_file.contains("/vendor/") || imp_file.contains("\\vendor\\")) continue;
+            std::string line_key = std::format("{}:{}", imp_file, imp.line);
+            if (error_import_lines.contains(line_key)) continue;
+
+            std::string qual;
+            if (imp.is_cpp) {
+                qual = imp.alias.empty() ? std::string("cpp") : imp.alias;
+                if (cf.usage.files_with_cpp_block.contains(imp_file)) {
+                    cf.mark_qualifier_used(imp_file, qual);
+                }
+            } else if (imp.path.starts_with("./") || imp.path.starts_with("../")) {
+                if (!imp.alias.empty()) {
+                    qual = imp.alias;
+                } else {
+                    std::string importer_pkg = cf.normalize_pkg(imp.package_name);
+                    if (!imp.resolved_pkg_name.empty() && imp.resolved_pkg_name == importer_pkg) {
+                        // Same-package relative file import exposes bare symbols cleanly; skip qualifier check.
+                        continue;
+                    }
+                    qual = imp.resolved_pkg_name;
+                }
+            } else {
+                auto [ns_alias, is_vendor] = cfire::modules::canonical_ns_for_import(imp.path);
+                if (is_vendor) {
+                    qual = imp.alias.empty() ? ns_alias : imp.alias;
+                } else {
+                    std::string canon_ns = ns_alias;
+                    if (canon_ns.empty()) {
+                        auto slash = imp.path.rfind('/');
+                        auto colon = imp.path.rfind(':');
+                        std::size_t sep = (colon != std::string::npos && slash != std::string::npos)
+                            ? std::max(colon, slash)
+                            : (colon != std::string::npos ? colon : slash);
+                        canon_ns = (sep == std::string::npos) ? imp.path : imp.path.substr(sep + 1);
+                    }
+                    qual = imp.alias.empty() ? canon_ns : imp.alias;
+                }
+            }
+            if (qual.empty()) continue;
+
+            const bool is_dup = !seen_file_quals.insert(imp_file + "::" + qual).second;
+            auto qit = cf.usage.used_qualifiers_by_file.find(imp_file);
+            const bool used = !is_dup && (qit != cf.usage.used_qualifiers_by_file.end() && qit->second.contains(qual));
+            if (!used && emitted_unused_imp.insert(line_key).second) {
+                std::string raw_src = imp.source_path.empty() ? cf.ast.path : imp.source_path;
+                cf.add_warning(cfire::diag::diag(
+                    raw_src, imp.line, 1, "cfire/UNUSED-IMPORT",
+                    is_dup ? std::format("duplicate unused import '{}'", imp.path)
+                           : std::format("unused import '{}'", imp.path),
+                    {{"path", imp.path}, {"qualifier", qual}, {"rewrite", "delete_line"}}));
+            }
+        }
+    }
+
+    if (!is_build_manifest_file) {
+        std::unordered_set<std::string> pkgs_with_cpp_block;
+        for (const auto& fn : cf.ast.functions) {
+            std::string fkey = cf.normalize_file_key(fn.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(fn.source_path));
+            if (cf.usage.files_with_cpp_block.contains(fkey)) {
+                pkgs_with_cpp_block.insert(cf.normalize_pkg(fn.package_name));
+            }
+        }
+        for (const auto& td : cf.ast.tests) {
+            std::string fkey = cf.normalize_file_key(td.source_path.empty() ? std::string_view(cf.ast.path) : std::string_view(td.source_path));
+            if (cf.usage.files_with_cpp_block.contains(fkey)) {
+                pkgs_with_cpp_block.insert(cf.normalize_pkg(td.package_name));
+            }
+        }
+        std::unordered_set<std::string> iface_method_names;
+        for (const auto& ifc : cf.ast.interfaces) {
+            for (const auto& m : ifc.methods) iface_method_names.insert(m.name);
+        }
+        auto in_sibling_tests = [&](const std::string& pkg, std::string_view ident) -> bool {
+            if (auto it = cf.ast.sibling_test_idents.find(pkg); it != cf.ast.sibling_test_idents.end()) {
+                return it->second.contains(std::string(ident));
+            }
+            return false;
+        };
+        std::unordered_set<std::string> emitted_unused_syms;
+        auto emit_unused_sym = [&](std::string_view raw_path, int line, std::string_view pkg,
+                                   std::string_view kind, std::string_view name, std::string msg) {
+            std::string k = std::format("{}:{}:{}:{}", cf.normalize_file_key(raw_path), line, kind, name);
+            if (!emitted_unused_syms.insert(std::move(k)).second) return;
+            (void)pkg;
+            cf.add_warning(cfire::diag::diag(
+                raw_path, line, 1, "cfire/UNUSED-SYMBOL", std::move(msg),
+                {{"kind", std::string(kind)}, {"name", std::string(name)}}));
+        };
+
+        auto check_unused_type_decl = [&](const auto& decl) {
+            if (decl.is_pub) return;
+            std::string orig = CheckedFile::strip_pkg_mangle(decl.name);
+            if (orig.empty() || orig.starts_with('_')) return;
+            std::string raw_path = decl.source_path.empty() ? cf.ast.path : decl.source_path;
+            if (is_external_or_manifest(raw_path)) return;
+            std::string pkg = cf.normalize_pkg(decl.package_name);
+            if (pkgs_with_cpp_block.contains(pkg) || in_sibling_tests(pkg, orig)) return;
+            if (!cf.usage.used_types.contains(pkg + "::" + orig)) {
+                emit_unused_sym(raw_path, decl.line, pkg, "type", orig,
+                    std::format("unused private type '{}'; prefix with '_' or remove it", orig));
+            }
+        };
+        for (const auto& st : cf.ast.structs) check_unused_type_decl(st);
+        for (const auto& en : cf.ast.enums) check_unused_type_decl(en);
+        for (const auto& ifc : cf.ast.interfaces) check_unused_type_decl(ifc);
+
+        for (const auto& gv : cf.ast.global_vars) {
+            if (gv.is_pub || gv.name.empty() || gv.name.starts_with('_')) continue;
+            std::string raw_path = gv.source_path.empty() ? cf.ast.path : gv.source_path;
+            if (is_external_or_manifest(raw_path)) continue;
+            std::string pkg = cf.normalize_pkg(gv.package_name);
+            if (pkgs_with_cpp_block.contains(pkg) || in_sibling_tests(pkg, gv.name)) continue;
+            if (!cf.usage.used_globals.contains(pkg + "::" + gv.name)) {
+                emit_unused_sym(raw_path, gv.line, pkg, "global", gv.name,
+                    std::format("unused private global '{}'; prefix with '_' or remove it", gv.name));
+            }
+        }
+
+        for (const auto& fn : cf.ast.functions) {
+            std::string raw_path = fn.source_path.empty() ? cf.ast.path : fn.source_path;
+            if (is_external_or_manifest(raw_path)) continue;
+            std::string pkg = cf.normalize_pkg(fn.package_name);
+            if (pkgs_with_cpp_block.contains(pkg)) continue;
+            if (!fn.receiver && fn.ctor_type.empty()) {
+                if (fn.is_pub || fn.name == "main" || fn.name.empty() || fn.name.starts_with('_')) continue;
+                if (in_sibling_tests(pkg, fn.name)) continue;
+                if (!cf.usage.used_fns.contains(pkg + "::" + fn.name)) {
+                    emit_unused_sym(raw_path, fn.line, pkg, "fn", fn.name,
+                        std::format("unused private function '{}'; prefix with '_' or remove it", fn.name));
+                }
+            } else {
+                std::string owner_raw = !fn.ctor_type.empty() ? fn.ctor_type : fn.receiver->type.name;
+                const DeclVisInfo* dv = cf.lookup_type_vis(owner_raw, fn.package_name);
+                if (dv && dv->is_pub) continue; // methods/constructors on pub types inherit pub visibility
+                std::string orig_owner = dv ? dv->name : CheckedFile::strip_pkg_mangle(owner_raw);
+                if (fn.name.empty() || fn.name.starts_with('_')) continue;
+                if (!fn.ctor_type.empty()) {
+                    if (orig_owner.starts_with('_') || in_sibling_tests(pkg, orig_owner)) continue;
+                    if (!cf.usage.used_fns.contains(pkg + "::" + fn.name) &&
+                        !cf.usage.used_methods.contains(orig_owner + "::" + fn.name) &&
+                        !cf.usage.used_methods.contains(pkg + "." + orig_owner + "::" + fn.name)) {
+                        emit_unused_sym(raw_path, fn.line, pkg, "method", orig_owner + ".make",
+                            std::format("unused private constructor '{}.make'; prefix type with '_' or remove it", orig_owner));
+                    }
+                } else {
+                    if (iface_method_names.contains(fn.name) || in_sibling_tests(pkg, fn.name)) continue;
+                    if (!cf.usage.used_methods.contains(orig_owner + "::" + fn.name) &&
+                        !cf.usage.used_methods.contains(pkg + "." + orig_owner + "::" + fn.name)) {
+                        emit_unused_sym(raw_path, fn.line, pkg, "method", orig_owner + "." + fn.name,
+                            std::format("unused private method '{}.{}'; prefix with '_' or remove it", orig_owner, fn.name));
+                    }
+                }
+            }
         }
     }
 

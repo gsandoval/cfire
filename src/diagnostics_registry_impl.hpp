@@ -333,6 +333,72 @@ CFIRE_DIAG_IMPL_INLINE void synthesize_fixits_for_diagnostic(
         return;
     }
 
+    if (d.code == "cfire/UNUSED-IMPORT") {
+        if (d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+            if (ln.find("import") != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Remove unused import '{}' (cfire/UNUSED-IMPORT)", fact_of(d, "path"));
+                edit.start_line = d.line;
+                edit.start_col = 1;
+                if (static_cast<std::size_t>(d.line) < lines.size()) {
+                    edit.end_line = d.line + 1;
+                    edit.end_col = 1;
+                } else {
+                    edit.end_line = d.line;
+                    edit.end_col = static_cast<int>(ln.size()) + 1;
+                }
+                edit.replacement = "";
+                edit.is_preferred = true;
+                edit.applicability = FixApplicability::MachineApplicable;
+                d.fixits.push_back(std::move(edit));
+            }
+        }
+        return;
+    }
+
+    if (d.code == "cfire/UNUSED-VAR" || d.code == "cfire/UNUSED-PARAM") {
+        std::string name = fact_of(d, "name");
+        if (!name.empty() && !name.starts_with('_') && d.line >= 1 && static_cast<std::size_t>(d.line - 1) < lines.size()) {
+            const std::string& ln = lines[static_cast<std::size_t>(d.line - 1)];
+            auto is_id_ch = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+            std::size_t insert_pos = std::string::npos;
+            if (d.col >= 1 && static_cast<std::size_t>(d.col - 1) + name.size() <= ln.size()) {
+                std::size_t c0 = static_cast<std::size_t>(d.col - 1);
+                if (ln.compare(c0, name.size(), name) == 0 &&
+                    (c0 == 0 || !is_id_ch(ln[c0 - 1])) &&
+                    (c0 + name.size() == ln.size() || !is_id_ch(ln[c0 + name.size()]))) {
+                    insert_pos = c0;
+                }
+            }
+            if (insert_pos == std::string::npos) {
+                std::size_t p = 0;
+                while ((p = ln.find(name, p)) != std::string::npos) {
+                    bool left_ok = (p == 0 || !is_id_ch(ln[p - 1]));
+                    bool right_ok = (p + name.size() == ln.size() || !is_id_ch(ln[p + name.size()]));
+                    if (left_ok && right_ok) {
+                        insert_pos = p;
+                        break;
+                    }
+                    ++p;
+                }
+            }
+            if (insert_pos != std::string::npos) {
+                FixItEdit edit;
+                edit.title = std::format("Prefix '{}' with '_' ({})", name, d.code);
+                edit.start_line = d.line;
+                edit.start_col = static_cast<int>(insert_pos) + 1;
+                edit.end_line = d.line;
+                edit.end_col = static_cast<int>(insert_pos) + 1;
+                edit.replacement = "_";
+                edit.is_preferred = false;
+                edit.applicability = FixApplicability::EditorOnly;
+                d.fixits.push_back(std::move(edit));
+            }
+        }
+        return;
+    }
+
     if (d.code == "cfire/PREFER-ENUM") {
         std::string pfx;
         pfx = fact_of(d, "prefix");

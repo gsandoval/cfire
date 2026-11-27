@@ -13,25 +13,25 @@ void test_package_fixes_and_generics(const std::filesystem::path& rt_dir) {
         ScopedTempDir ws("cfire_pkg_bounds_match");
         ws.file("io_ports/io_ports.cf", R"(package io_ports
 
-type Mode enum {
+pub type Mode enum {
     Read(i32),
     Write(str),
     Idle,
 }
 
-type Codec interface {
+pub type Codec interface {
     fn encode() -> str
     fn mut reset()
 }
 
-fn load_names(ok: bool) -> []str! {
+pub fn load_names(ok: bool) -> []str! {
     if !ok {
         return error("cannot load names")
     }
     return ["eth0", "lo"]
 }
 
-fn fixed_label() -> str {
+pub fn fixed_label() -> str {
     return "steady"
 }
 )");
@@ -364,16 +364,16 @@ fn main() {
         ScopedTempDir ws("cfire_cf156_cross_pkg");
         ws.file("lib/lib.cf", R"(package lib
 
-type Item struct {
+pub type Item struct {
     id:   str
     tags: []str
 }
 
-type Book struct {
+pub type Book struct {
     pending: []Item
 }
 
-fn find_item(book: Book, id: str) -> Item? {
+pub fn find_item(book: Book, id: str) -> Item? {
     for it in book.pending {
         if it.id == id {
             return it
@@ -382,7 +382,7 @@ fn find_item(book: Book, id: str) -> Item? {
     return none
 }
 
-fn summarize(book: Book) -> str {
+pub fn summarize(book: Book) -> str {
     mut parts: []str = []
     for it in book.pending {
         parts.push(it.id + ":" + it.tags.join(","))

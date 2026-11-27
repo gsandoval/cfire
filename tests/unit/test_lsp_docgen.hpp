@@ -220,16 +220,16 @@ type Config struct {
     // Cross-package references and rename tests (LSP-04)
     auto pkg_checksum_uri = cfire::lsp::detail::path_to_uri(rt_dir.parent_path() / "examples/08-multi-pkg-cc-build/pkg/checksum/checksum.cf");
     lsp_in << rpc_frame(std::format(
-        R"({{"jsonrpc":"2.0","id":28,"method":"textDocument/references","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":5}}}}}})",
+        R"({{"jsonrpc":"2.0","id":28,"method":"textDocument/references","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":9}}}}}})",
         pkg_checksum_uri));
     lsp_in << rpc_frame(std::format(
-        R"({{"jsonrpc":"2.0","id":29,"method":"textDocument/rename","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":5}},"newName":"calc_tag"}}}})",
+        R"({{"jsonrpc":"2.0","id":29,"method":"textDocument/rename","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":9}},"newName":"calc_tag"}}}})",
         pkg_checksum_uri));
     lsp_in << rpc_frame(std::format(
         R"({{"jsonrpc":"2.0","id":30,"method":"textDocument/rename","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":5,"character":4}},"newName":"my_tag"}}}})",
         pkg_main_uri));
     lsp_in << rpc_frame(std::format(
-        R"({{"jsonrpc":"2.0","id":31,"method":"textDocument/prepareRename","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":1}}}}}})",
+        R"({{"jsonrpc":"2.0","id":31,"method":"textDocument/prepareRename","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":4,"character":5}}}}}})",
         pkg_checksum_uri));
     // Auto-import stdlib completions (LSP-05)
     lsp_in << rpc_frame(R"({"jsonrpc":"2.0","id":32,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/audit_test.cf"},"position":{"line":7,"character":4}}})");
@@ -984,6 +984,10 @@ fn (mut self: Counter) add_delta(amount: i64) -> i64 {
     self.value += amount
     return self.value
 }
+
+fn (self: Counter) step(delta: i64) -> i64 {
+    return self.value + delta
+}
 )CF");
 
         auto app_cf = sync_tmp.file("app.cf", R"CF(package main
@@ -999,9 +1003,15 @@ fn run_loop() {
     assert_eq(c.value, 16)
 }
 
+fn run_step[T: Runner](r: T) -> i64 {
+    return r.step(1)
+}
+
 test "counter sibling test" {
+    run_loop()
     mut c := Counter{value: 1}
     assert_eq(c.add_delta(2), 3)
+    assert_eq(run_step(c), 4)
 }
 )CF");
         sync_tmp.file(".tako/ignored.cf", "package ignored\nfn should_not_appear() {}\n");
@@ -1123,7 +1133,7 @@ fn main() {
     tmp.file("build.cf", "package build\n");
     auto util_cf = tmp.file("pkg/mathutil/mathutil.cf", R"(package mathutil
 
-fn double_it(n: i32) -> i32 {
+pub fn double_it(n: i32) -> i32 {
     return n * 2
 }
 )");
@@ -1138,7 +1148,7 @@ fn main() {
 }
 )");
 
-    run_cfire(std::format("refactor rename \"{}:3:4\" multiply_two --json", util_cf.string()))
+    run_cfire(std::format("refactor rename \"{}:3:8\" multiply_two --json", util_cf.string()))
         .assert_ok("cross-pkg rename exit 0 (TOOL-03)")
         .assert_contains("\"files_modified\": 2", "cross-pkg modified 2 files (TOOL-03)");
 

@@ -147,7 +147,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_interface_signature(const InterfaceDecl& ifc) -> std::string {
-    std::string out = std::format("type {} interface {{\n", ifc.name);
+    std::string out = std::format("{}type {} interface {{\n", ifc.is_pub ? "pub " : "", ifc.name);
     for (const auto& m : ifc.methods) {
         out += "    " + format_interface_method_sig(m) + "\n";
     }
@@ -156,7 +156,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_fn_signature(const FnDecl& fn) -> std::string {
-    std::string out = "fn ";
+    std::string out = fn.is_pub ? "pub fn " : "fn ";
     if (fn.receiver) {
         if (fn.receiver->intent == "mut") {
             out += std::format("(mut {}: {}) ", fn.receiver->name, format_type_ref(fn.receiver->type));
@@ -183,7 +183,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_struct_signature(const StructDecl& st) -> std::string {
-    std::string out = std::format("type {}{} struct {{\n", st.name, format_type_params_list(st.type_params));
+    std::string out = std::format("{}type {}{} struct {{\n", st.is_pub ? "pub " : "", st.name, format_type_params_list(st.type_params));
     std::size_t max_name = 0;
     std::size_t max_type = 0;
     for (const auto& f : st.fields) {
@@ -204,7 +204,7 @@ using namespace cfire::frontend;
 }
 
 [[nodiscard]] inline auto format_enum_signature(const EnumDecl& en) -> std::string {
-    std::string out = std::format("type {}{} enum {{\n", en.name, format_type_params_list(en.type_params));
+    std::string out = std::format("{}type {}{} enum {{\n", en.is_pub ? "pub " : "", en.name, format_type_params_list(en.type_params));
     for (const auto& v : en.variants) {
         out += "    " + v.name;
         if (!v.payload_types.empty()) {

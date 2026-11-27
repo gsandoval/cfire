@@ -11,10 +11,13 @@
             return emit_error(diag_at(line, col, "cfire/RETIRED-API", std::format("'make[{0}](...)' has been replaced by 'make({0}, ...)'", format_type_ref_sema(call.type_args[0])), {{"rewrite", "make_bracket"}}));
         }
         const TypeRef& t = call.type_args[0];
+        record_typeref_use_and_check_visibility(t, line, col);
         const std::size_t n = call.args.size();
         std::string tname = format_type_ref_sema(t);
         for (auto p = tname.find("::"); p != std::string::npos; p = tname.find("::")) tname.replace(p, 2, ".");
         auto check_ctor_args = [&](const FnDecl& ctor, std::string_view shown) -> std::expected<void, std::string> {
+            cf_.mark_fn_used(ctor.package_name, ctor.name);
+            cf_.mark_method_used(ctor.ctor_type, ctor.name);
             if (n != ctor.params.size()) {
                 return emit_error(diag_at(line, col, "cfire/ARITY-MISMATCH", std::format("constructor of '{}' expects {} argument(s), got {}", shown, ctor.params.size(), n)));
             }
@@ -142,6 +145,7 @@
         const auto& catalog_idx = StdlibCatalogIndex::instance();
 
         for (const auto& ta : call.type_args) {
+            record_typeref_use_and_check_visibility(ta, line, col);
             if (auto iface = find_interface_in_slice(ta, cf_.interfaces)) {
                 if (auto r = emit_error(diag_at(line, col, "cfire/DYNAMIC-INTERFACE-UNSUPPORTED", std::format("dynamic slice or array of interface '{}' is unsupported; structural interfaces lower to C++ concepts and cannot be stored dynamically", *iface))); !r) return r;
             }
@@ -450,6 +454,23 @@
                 if (!key.empty()) {
                     if (auto mit = catalog_idx.receiver_methods.find(key); mit != catalog_idx.receiver_methods.end()) {
                         std_sig = &mit->second;
+                    }
+                }
+            }
+            if (target_sig) {
+                if (target_sig->receiver) {
+                    if (const DeclVisInfo* dv = cf_.lookup_type_vis(target_sig->receiver->type.name, pkg_name_)) {
+                        cf_.mark_type_used(dv->package_name, dv->name);
+                        check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                            dv->source_path, dv->line, line, col);
+                    }
+                    cf_.mark_method_used(target_sig->receiver->type.name, target_sig->name);
+                } else {
+                    check_cross_package_decl(target_sig->package_name, target_sig->is_pub, "fn", target_sig->name,
+                        target_sig->source_path, target_sig->line, line, col);
+                    if (target_sig->name != fn_name_ ||
+                        cf_.normalize_pkg(target_sig->package_name) != cf_.normalize_pkg(pkg_name_)) {
+                        cf_.mark_fn_used(target_sig->package_name, target_sig->name);
                     }
                 }
             }
@@ -1189,10 +1210,12 @@
             for (std::size_t i = 0; i < call.block_arg->params.size(); ++i) {
                 bool is_mut = (i < call.block_arg->param_intents.size()) &&
                               (call.block_arg->param_intents[i] == "mut" || call.block_arg->param_intents[i] == "out");
-                bind_scoped_var(call.block_arg->params[i], is_mut);
+                bind_scoped_var(call.block_arg->params[i], is_mut, line, col, /*track=*/false);
+                register_tracked_binding(call.block_arg->params[i], line, col, /*is_param=*/true, /*is_mut_param=*/is_mut, /*is_self=*/false);
                 TypeId pt = TypeId::Unknown();
                 bool typed = i < call.block_arg->param_types.size() && call.block_arg->param_types[i].has_value();
                 if (typed) {
+                    record_typeref_use_and_check_visibility(*call.block_arg->param_types[i], line, col);
                     pt = resolve_typeref(*call.block_arg->param_types[i]);
                     var_types_[call.block_arg->params[i]] = format_type_ref_sema(*call.block_arg->param_types[i]);
                 } else if (hint_it != closure_param_hints_.end() && i < hint_it->second.size() && !hint_it->second[i].empty()) {
@@ -1209,6 +1232,7 @@
             if (auto r = check_block_stmts(call.block_arg->body); !r) return r;
             TypeId ret_t = TypeId::Void();
             if (call.block_arg->return_type.has_value()) {
+                record_typeref_use_and_check_visibility(*call.block_arg->return_type, line, col);
                 ret_t = (call.block_arg->return_type->name == "void" || call.block_arg->return_type->name.empty())
                     ? (call.block_arg->return_type->is_fallible ? cf_.type_table.make_fallible(TypeId::Void()) : TypeId::Void())
                     : resolve_typeref(*call.block_arg->return_type);
@@ -1304,9 +1328,19 @@
                     if (!arm.guard) has_wildcard = true;
                 } else {
                     if (!arm.guard) covered.insert(pat.variant_name);
-                    if (enum_name.empty() && !pat.enum_prefix.empty()) {
+                    if (!pat.enum_prefix.empty()) {
+                        if (auto dot = pat.enum_prefix.find('.'); dot != std::string::npos) {
+                            cf_.mark_qualifier_used(path_, pat.enum_prefix.substr(0, dot));
+                        }
+                        std::string mp = CheckedFile::extract_mangled_pkg(pat.enum_prefix);
+                        if (!mp.empty() && mp != cf_.normalize_pkg(pkg_name_)) {
+                            cf_.mark_qualifier_used(path_, mp);
+                        }
                         if (const auto* en = resolve_enum_by_prefix_sema(pat.enum_prefix)) {
-                            enum_name = en->name;
+                            cf_.mark_type_used(en->package_name, en->name);
+                            check_cross_package_decl(en->package_name, en->is_pub, "enum",
+                                CheckedFile::strip_pkg_mangle(en->name), en->source_path, en->line, pat.line, 1);
+                            if (enum_name.empty()) enum_name = en->name;
                         }
                     }
                 }
@@ -1343,6 +1377,7 @@
             }
         } else if (!enum_name.empty()) {
             if (auto eit = cf_.enums.find(enum_name); eit != cf_.enums.end()) {
+                cf_.mark_type_used(eit->second.package_name, eit->second.name);
                 for (const auto& arm : arms) {
                     std::vector<MatchPattern> pats = arm.patterns.empty()
                         ? std::vector<MatchPattern>{arm.to_pattern()}

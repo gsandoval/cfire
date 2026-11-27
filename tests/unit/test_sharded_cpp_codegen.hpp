@@ -132,11 +132,11 @@ void test_sharded_cpp_codegen(const std::filesystem::path& rt_dir) {
         const auto sub_a = root.dir / "sub_a";
         test_sharded_codegen_detail::write_text(sub_a / "pkga" / "pkga.cf", R"CF(package pkga
 
-type Describable interface {
+pub type Describable interface {
     fn tag() -> str
 }
 
-type Counter struct {
+pub type Counter struct {
     value: i64
 }
 
@@ -150,18 +150,18 @@ fn (c: Counter) doubled() -> i64 {
     return c.value * 2 + pkg_bonus
 }
 
-fn id_val[T](x: T) -> T {
+pub fn id_val[T](x: T) -> T {
     return x
 }
 
-fn bump(n: i64) -> i64 {
+pub fn bump(n: i64) -> i64 {
     return n + 10
 }
 )CF");
 
         test_sharded_codegen_detail::write_text(sub_a / "pkgb" / "pkgb.cf", R"CF(package pkgb
 
-fn helper(n: i64) -> i64 {
+pub fn helper(n: i64) -> i64 {
     return n * 3
 }
 )CF");
@@ -302,11 +302,11 @@ fn (it: Item) total() -> i64 {
     return it.value
 }
 
-fn wrap_generic[T](v: T) -> T {
+pub fn wrap_generic[T](v: T) -> T {
     return v
 }
 
-fn a_val() -> i64 {
+pub fn a_val() -> i64 {
     it := Item{value: 40}
     return it.total()
 }
@@ -315,7 +315,7 @@ fn a_val() -> i64 {
         const auto pkg_b_file = proj / "pkg_b" / "pkg_b.cf";
         test_sharded_codegen_detail::write_text(pkg_b_file, R"CF(package pkg_b
 
-fn b_val(x: i64) -> i64 {
+pub fn b_val(x: i64) -> i64 {
     return x + 10
 }
 )CF");
@@ -324,14 +324,14 @@ fn b_val(x: i64) -> i64 {
 
 mut c_offset: i64 = 20
 
-fn c_val(x: i64) -> i64 {
+pub fn c_val(x: i64) -> i64 {
     return x + c_offset
 }
 )CF");
 
         test_sharded_codegen_detail::write_text(proj / "pkg_d" / "pkg_d.cf", R"CF(package pkg_d
 
-fn d_val(x: i64) -> i64 {
+pub fn d_val(x: i64) -> i64 {
     return x + 30
 }
 )CF");
@@ -394,7 +394,7 @@ fn main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         test_sharded_codegen_detail::write_text(pkg_b_file, R"CF(package pkg_b
 
-fn b_val(x: i64) -> i64 {
+pub fn b_val(x: i64) -> i64 {
     bonus := i64("  hello  ".trim().len())
     return x + 15 + bonus
 }
@@ -431,11 +431,11 @@ fn (it: Item) total() -> i64 {
     return it.value + it.bonus
 }
 
-fn wrap_generic[T](v: T) -> T {
+pub fn wrap_generic[T](v: T) -> T {
     return v
 }
 
-fn a_val() -> i64 {
+pub fn a_val() -> i64 {
     it := Item{value: 40, bonus: 7}
     return it.total()
 }
@@ -521,7 +521,7 @@ fn (b: Box) tag() -> i64 {
     return b.id + 1
 }
 
-fn alpha_fn(x: i64) -> i64 {
+pub fn alpha_fn(x: i64) -> i64 {
     b := Box{id: x}
     return beta_helper(b.tag())
 }
@@ -529,7 +529,7 @@ fn alpha_fn(x: i64) -> i64 {
 
         test_sharded_codegen_detail::write_text(beta_cf, R"CF(package libm
 
-fn beta_helper(x: i64) -> i64 {
+pub fn beta_helper(x: i64) -> i64 {
     return x * 10
 }
 )CF");
@@ -570,7 +570,7 @@ fn (b: Box) tag() -> i64 {
     return b.id + 1
 }
 
-fn alpha_fn(x: i64) -> i64 {
+pub fn alpha_fn(x: i64) -> i64 {
     b := Box{id: x}
     return beta_helper(b.tag()) + 7
 }
@@ -602,7 +602,7 @@ fn alpha_fn(x: i64) -> i64 {
 
         test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
 
-fn base_num() -> i64 {
+pub fn base_num() -> i64 {
     return 10
 }
 )CF");
@@ -616,7 +616,7 @@ test "a_basic" {
 
 import "../pkg_a" as pa
 
-fn derived_num() -> i64 {
+pub fn derived_num() -> i64 {
     return pa.base_num() + 5
 }
 )CF");
@@ -680,7 +680,7 @@ test "c_basic" {
         // Edit `pkg_a/a.cf` (transitive dep of `pkg_b`, unrelated to `pkg_c`): `--changed` runs only pkg_a + pkg_b
         test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
 
-fn base_num() -> i64 {
+pub fn base_num() -> i64 {
     return 20
 }
 )CF");
@@ -739,7 +739,7 @@ test "c_basic" {
             if (git_rc == 0) {
                 test_sharded_codegen_detail::write_text(a_cf, R"CF(package pkg_a
 
-fn base_num() -> i64 {
+pub fn base_num() -> i64 {
     return 30
 }
 )CF");
@@ -779,7 +779,7 @@ void test_cross_package_json_sharded_and_noshard(const std::filesystem::path& rt
         auto ws = root.dir / "flint_repro";
         test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
 
-type Settings struct {
+pub type Settings struct {
     accent: str `json:"accent"`
     tags: []str `json:"tags"`
 }
@@ -844,12 +844,12 @@ test "json across packages" {
         auto ws = root.dir / "colliding_cross_pkg";
         test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
 
-type Mode enum {
+pub type Mode enum {
     Fast,
     Safe,
 }
 
-type Item struct {
+pub type Item struct {
     label: str `json:"label"`
     mode: Mode `json:"mode"`
     prio: u8 `json:"prio"`
@@ -919,7 +919,7 @@ test "colliding cross-pkg struct and enum" {
         auto ws = root.dir / "unsupported_cross_pkg";
         test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
 
-type BadInner struct {
+pub type BadInner struct {
     meta: map[str]i64 `json:"meta"`
 }
 )CF");
@@ -972,7 +972,7 @@ int main() {
         auto ws = root.dir / "regressions_v0127";
         test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
 
-type St struct {
+pub type St struct {
     now: i64
     items: []str
 }

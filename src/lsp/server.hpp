@@ -27,6 +27,9 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#if !defined(_WIN32)
+#include <pthread.h>
+#endif
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -93,6 +96,10 @@ private:
 
     std::chrono::milliseconds debounce_duration_{150};
     std::thread worker_thread_;
+#if !defined(_WIN32)
+    pthread_t worker_pthread_{};
+    bool worker_pthread_valid_ = false;
+#endif
     std::mutex diag_mutex_;
     std::condition_variable diag_cv_;
     std::atomic<bool> stop_requested_{false};
@@ -239,6 +246,22 @@ CFIRE_LSP_SERVER_INLINE void Server::start_worker() {
     if (worker_running_.load()) return;
     stop_requested_ = false;
     worker_running_ = true;
+#if !defined(_WIN32)
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) == 0) {
+        (void)pthread_attr_setstacksize(&attr, 8u * 1024u * 1024u);
+        auto entry = [](void* ctx) -> void* {
+            static_cast<Server*>(ctx)->worker_loop();
+            return nullptr;
+        };
+        const int rc = pthread_create(&worker_pthread_, &attr, +entry, this);
+        (void)pthread_attr_destroy(&attr);
+        if (rc == 0) {
+            worker_pthread_valid_ = true;
+            return;
+        }
+    }
+#endif
     worker_thread_ = std::thread(&Server::worker_loop, this);
 }
 
@@ -249,6 +272,12 @@ CFIRE_LSP_SERVER_INLINE void Server::stop_worker() {
         stop_requested_ = true;
     }
     diag_cv_.notify_all();
+#if !defined(_WIN32)
+    if (worker_pthread_valid_) {
+        (void)pthread_join(worker_pthread_, nullptr);
+        worker_pthread_valid_ = false;
+    }
+#endif
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }

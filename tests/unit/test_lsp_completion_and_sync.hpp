@@ -1056,7 +1056,7 @@ inline void test_typed_ast_hover_and_inlay_hints() {
         ScopedTempDir tmp("cfire_lsp_typed_pkg_iso");
         (void)tmp.file("helper/helper.cf",
             "package helper\n"
-            "fn double_it(v: i32) -> i32 {\n"
+            "pub fn double_it(v: i32) -> i32 {\n"
             "    res := v * 2\n"
             "    return res\n"
             "}\n");

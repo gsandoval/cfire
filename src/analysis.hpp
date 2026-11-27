@@ -574,6 +574,7 @@ struct ScopedDevDebugGuard {
     }
     std::sort(check_files.begin(), check_files.end());
 
+    std::unordered_set<std::string> seen_diags;
     for (const auto& f : check_files) {
         auto content = cfire::build::read_file_text(f);
         if (!content) {
@@ -592,6 +593,13 @@ struct ScopedDevDebugGuard {
         }
         auto file_diags = check_source(f.string(), *content, opts);
         for (auto& fd : file_diags) {
+            std::string norm_file = fd.file.empty()
+                ? std::string{}
+                : std::filesystem::path(fd.file).lexically_normal().string();
+            std::string dedup_key = std::format("{}:{}:{}:{}:{}",
+                norm_file, fd.line, fd.col, fd.code, fd.message);
+            if (!seen_diags.insert(std::move(dedup_key)).second) continue;
+            if (!norm_file.empty()) fd.file = std::move(norm_file);
             diags.push_back(std::move(fd));
         }
     }

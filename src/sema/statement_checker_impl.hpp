@@ -32,7 +32,146 @@
     }
 
 
-    CFIRE_SEMA_INLINE void SemaFnChecker::bind_scoped_var(const std::string& name, bool is_mut) {
+    CFIRE_SEMA_INLINE void SemaFnChecker::register_tracked_binding(
+        std::string_view name, int line, int col, bool is_param, bool is_mut_param, bool is_self
+    ) {
+        if (name.empty() || name == "_" || name.starts_with('_') || is_self) return;
+        active_bindings_.push_back(TrackedBinding{
+            .name = std::string(name),
+            .line = line > 0 ? line : 1,
+            .col = col > 0 ? col : 1,
+            .is_param = is_param,
+            .is_mut_param = is_mut_param,
+            .is_self = is_self,
+            .read = false,
+            .written_after_init = false,
+            .scope_depth = scope_depth_,
+        });
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::mark_binding_read(std::string_view name) const {
+        if (name.empty() || name == "_") return;
+        for (auto it = active_bindings_.rbegin(); it != active_bindings_.rend(); ++it) {
+            if (it->name == name) {
+                it->read = true;
+                return;
+            }
+        }
+    }
+
+    CFIRE_SEMA_INLINE auto SemaFnChecker::mark_binding_written(std::string_view name) const -> bool {
+        if (name.empty() || name == "_") return false;
+        for (auto it = active_bindings_.rbegin(); it != active_bindings_.rend(); ++it) {
+            if (it->name == name) {
+                if (it->is_mut_param) {
+                    it->read = true;
+                } else {
+                    it->written_after_init = true;
+                }
+                return it->read;
+            }
+        }
+        return false;
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::emit_unused_bindings_at_depth(int depth) {
+        while (!active_bindings_.empty() && active_bindings_.back().scope_depth >= depth) {
+            TrackedBinding b = std::move(active_bindings_.back());
+            active_bindings_.pop_back();
+            if (seen_cpp_block_) continue;
+            if (b.is_self || b.name.empty() || b.name == "_" || b.name.starts_with('_') || b.read) continue;
+            if (b.is_param) {
+                emit_warning(diag_at(b.line, b.col, "cfire/UNUSED-PARAM",
+                    std::format("unused parameter '{}'; prefix with '_' to ignore", b.name),
+                    {{"name", b.name}}));
+            } else {
+                emit_warning(diag_at(b.line, b.col, "cfire/UNUSED-VAR",
+                    b.written_after_init
+                        ? std::format("variable '{}' is assigned but never read", b.name)
+                        : std::format("unused variable '{}'; prefix with '_' to ignore", b.name),
+                    {{"name", b.name}}));
+            }
+        }
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::discard_bindings_at_depth(int depth) {
+        while (!active_bindings_.empty() && active_bindings_.back().scope_depth >= depth) {
+            active_bindings_.pop_back();
+        }
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::finish_unused_checks() {
+        emit_unused_bindings_at_depth(0);
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::check_cross_package_decl(
+        std::string_view decl_pkg,
+        bool is_pub,
+        std::string_view kind,
+        std::string_view orig_name,
+        std::string_view decl_path,
+        int decl_line,
+        int use_line,
+        int use_col
+    ) const {
+        if (is_pub || orig_name.empty()) return;
+        std::string cur_pkg = cf_.normalize_pkg(pkg_name_);
+        std::string target_pkg = cf_.normalize_pkg(decl_pkg);
+        if (cur_pkg == target_pkg) return;
+        std::string dedup = std::format("{}:{}:{}:{}.{}",
+            cf_.normalize_file_key(path_), use_line, kind, target_pkg, orig_name);
+        if (!cf_.reported_private_uses.insert(std::move(dedup)).second) return;
+        (void)const_cast<SemaFnChecker*>(this)->emit_error(diag_at(
+            use_line, use_col, "cfire/PRIVATE-SYMBOL",
+            std::format("{} '{}.{}' is private to package '{}'; mark it 'pub' to export it",
+                kind, target_pkg, orig_name, target_pkg),
+            {
+                {"symbol", std::string(orig_name)},
+                {"kind", std::string(kind)},
+                {"package", target_pkg},
+                {"target_file", std::string(decl_path)},
+                {"target_line", std::to_string(decl_line > 0 ? decl_line : 1)},
+            }));
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::record_typeref_use_and_check_visibility(
+        const TypeRef& tr, int line, int col
+    ) const {
+        auto check_one = [&](auto& self, const TypeRef& cur) -> void {
+            if (!cur.raw_name.empty()) {
+                auto dot = cur.raw_name.find('.');
+                auto dcol = cur.raw_name.find("::");
+                std::size_t sep = std::min(dot, dcol);
+                if (sep != std::string::npos) {
+                    std::string q = cur.raw_name.substr(0, sep);
+                    cf_.mark_qualifier_used(path_, q);
+                }
+            }
+            if (!cur.name.empty()) {
+                std::string mp = CheckedFile::extract_mangled_pkg(cur.name);
+                if (!mp.empty() && mp != cf_.normalize_pkg(pkg_name_)) {
+                    cf_.mark_qualifier_used(path_, mp);
+                }
+                if (auto dot = cur.name.find('.'); dot != std::string::npos) {
+                    cf_.mark_qualifier_used(path_, cur.name.substr(0, dot));
+                }
+                if (const DeclVisInfo* dv = cf_.lookup_type_vis(cur.name, pkg_name_)) {
+                    cf_.mark_type_used(dv->package_name, dv->name);
+                    check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                        dv->source_path, dv->line, line, col);
+                }
+            }
+            if (cur.elem_type) self(self, *cur.elem_type);
+            if (cur.key_type) self(self, *cur.key_type);
+            for (const auto& ta : cur.type_args) self(self, ta);
+            for (const auto& tt : cur.tuple_types) self(self, tt);
+            for (const auto& fp : cur.fn_params) self(self, fp);
+            if (cur.fn_ret) self(self, *cur.fn_ret);
+        };
+        check_one(check_one, tr);
+    }
+
+    CFIRE_SEMA_INLINE void SemaFnChecker::bind_scoped_var(const std::string& name, bool is_mut, int line, int col, bool track) {
         if (name.empty() || name == "_") return;
         save_var_before_redecl(name);
         var_scope_depth_[name] = scope_depth_;
@@ -47,6 +186,9 @@
             mut_vars_.erase(name);
             imm_vars_.insert(name);
         }
+        if (track) {
+            register_tracked_binding(name, line, col, false, false, false);
+        }
     }
 
 
@@ -58,11 +200,11 @@
             if (tid.is_valid()) var_type_ids_[name] = tid;
         };
         if (cf_.match_catchall_bindings.contains(&arm) && !arm.variant_name.empty()) {
-            bind_scoped_var(arm.variant_name, false);
+            bind_scoped_var(arm.variant_name, false, arm.line, 1);
             set_arm_var_type(arm.variant_name, target_t);
         }
         for (const auto& b : arm.bindings) {
-            bind_scoped_var(b, false);
+            bind_scoped_var(b, false, arm.line, 1);
         }
         if (!arm.bindings.empty()) {
             if (arm.is_some || arm.variant_name == "Some") {
@@ -114,15 +256,15 @@
                 rest_t = "&str";
             }
             for (const auto& h : arm.slice_head) {
-                bind_scoped_var(h, false);
+                bind_scoped_var(h, false, arm.line, 1);
                 set_arm_var_type(h, elem_t);
             }
             if (!arm.slice_rest.empty()) {
-                bind_scoped_var(arm.slice_rest, false);
+                bind_scoped_var(arm.slice_rest, false, arm.line, 1);
                 set_arm_var_type(arm.slice_rest, rest_t);
             }
             for (const auto& t : arm.slice_tail) {
-                bind_scoped_var(t, false);
+                bind_scoped_var(t, false, arm.line, 1);
                 set_arm_var_type(t, elem_t);
             }
         }
@@ -148,6 +290,7 @@
         if (std::holds_alternative<CppBlockStmt>(s->node)) {
             seen_cpp_block_ = true;
             cf_.has_cpp_interop = true;
+            cf_.mark_file_cpp_block(path_);
             // Foreign C++ blocks can arbitrarily mutate pointees and alias memory.
             // Invalidate all active loans and demote NonNull facts to MaybeNull.
             for (const auto& [borrower, orig] : borrow_origin_) {
@@ -243,6 +386,7 @@
         TypeId decl_tid = TypeId::Unknown();
         if (vd.type) {
             if (auto r = check_type_ref_separators(*vd.type, vd.line, vd.col, true); !r) return r;
+            record_typeref_use_and_check_visibility(*vd.type, vd.line, vd.col);
             decl_tid = resolve_typeref(*vd.type);
             if (!vd.type->is_slice && !vd.type->is_array && !vd.type->is_optional && !vd.type->is_ptr) {
                 if (auto r = check_int_literal_fits(vd.init, vd.type->name, vd.line, vd.col); !r) return r;
@@ -469,7 +613,7 @@
         }
         auto init_ns = infer_expr_null_state(vd.init);
 
-        bind_scoped_var(vd.name, vd.is_mut);
+        bind_scoped_var(vd.name, vd.is_mut, vd.line, vd.col);
         map_vars_.erase(vd.name);
         fixed_array_lens_.erase(vd.name);
         if (is_byte_slice) byte_slice_vars_.insert(vd.name);
@@ -624,7 +768,7 @@
         dvs.resolved_binding_types.reserve(dvs.bindings.size());
         for (std::size_t i = 0; i < dvs.bindings.size(); ++i) {
             const auto& [name, is_mut] = dvs.bindings[i];
-            bind_scoped_var(name, is_mut);
+            bind_scoped_var(name, is_mut, dvs.line, dvs.col);
             TypeId bt = i < elem_tids.size() ? elem_tids[i] : (!elem_type.empty() ? type_id_of(elem_type) : TypeId::Unknown());
             dvs.resolved_binding_types.push_back(bt.index);
             if (bt.is_valid() && !bt.is_unknown()) {
@@ -738,6 +882,9 @@
         }
         if (const auto* id = std::get_if<IdentExpr>(&as.target->node)) {
             if (id->name == "_") return {};
+            if (as.op == "=") {
+                (void)mark_binding_written(id->name);
+            }
             if (byte_slice_vars_.contains(id->name) && as.value) {
                 if (const auto* arr_lit = std::get_if<ArrayLitExpr>(&as.value->node)) {
                     for (const auto& el : arr_lit->elements) {
@@ -876,6 +1023,9 @@
         if (auto r = check_expr(das.value); !r) return r;
         for (const auto& targ : das.targets) {
             if (const auto* id = std::get_if<IdentExpr>(&targ->node)) {
+                if (das.op == "=") {
+                    (void)mark_binding_written(id->name);
+                }
                 if (imm_vars_.contains(id->name)) {
                     if (auto r = emit_error(diag_at(das.line, 1, "cfire/ASSIGN-IMMUTABLE", std::format("cannot assign to immutable variable '{}'", id->name))); !r) return r;
                 }
@@ -1010,16 +1160,25 @@
                 unwrap_elem_ty = "auto";
             }
         }
+        bool unwrap_read_in_cond = false;
         if (ifs.cond) {
-            ScopeGuard sg_cond(*this);
+            ScopeGuard sg_cond(*this, /*unused_check=*/false);
             if (ifs.unwrap_init && !ifs.unwrap_var.empty()) {
-                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut);
+                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut, ifs.line, 1);
                 var_types_[ifs.unwrap_var] = unwrap_elem_ty;
                 if (unwrap_elem_tid.is_valid()) var_type_ids_[ifs.unwrap_var] = unwrap_elem_tid;
             }
             if (auto r = check_expr(ifs.cond); !r) return r;
             if (!ifs.unwrap_init) {
                 if (auto r = check_bool_condition(ifs.cond, "'if' condition"); !r) return r;
+            }
+            if (ifs.unwrap_init && !ifs.unwrap_var.empty()) {
+                for (auto it = active_bindings_.rbegin(); it != active_bindings_.rend(); ++it) {
+                    if (it->scope_depth == scope_depth_ && it->name == ifs.unwrap_var) {
+                        unwrap_read_in_cond = it->read;
+                        break;
+                    }
+                }
             }
         }
         auto initial_moves = moved_at_line_;
@@ -1033,7 +1192,10 @@
         {
             ScopeGuard sg(*this);
             if (ifs.unwrap_init && !ifs.unwrap_var.empty()) {
-                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut);
+                bind_scoped_var(ifs.unwrap_var, ifs.unwrap_mut, ifs.line, 1);
+                if (unwrap_read_in_cond) {
+                    mark_binding_read(ifs.unwrap_var);
+                }
                 var_types_[ifs.unwrap_var] = unwrap_elem_ty;
                 if (unwrap_elem_tid.is_valid()) var_type_ids_[ifs.unwrap_var] = unwrap_elem_tid;
             }
@@ -1180,7 +1342,7 @@
             ++loop_depth_;
             auto loop_guard = cfire::scope_exit([this] { --loop_depth_; });
             ScopeGuard sg(*this);
-            bind_scoped_var(fs.item_var, fs.unwrap_mut);
+            bind_scoped_var(fs.item_var, fs.unwrap_mut, fs.line, 1);
             if (elem_tid.is_valid() && !elem_tid.is_unknown()) {
                 fs.resolved_unwrap_type_id = elem_tid.index;
                 var_type_ids_[fs.item_var] = elem_tid;
@@ -1225,7 +1387,7 @@
             auto loop_guard = cfire::scope_exit([this] { --loop_depth_; });
             ScopeGuard sg(*this);
             if (fs.range_end) {
-                bind_scoped_var(fs.item_var, false);
+                bind_scoped_var(fs.item_var, false, fs.line, 1);
                 TypeId a = infer_expr_type_id_sema(fs.iter_expr);
                 TypeId b = infer_expr_type_id_sema(fs.range_end);
                 auto validate_bound = [&](const ExprPtr& bound_e, TypeId bt, std::string_view side) -> std::expected<bool, std::string> {
@@ -1339,12 +1501,12 @@
                     }
                 }
                 if (!fs.index_var.empty()) {
-                    bind_scoped_var(fs.index_var, false);
+                    bind_scoped_var(fs.index_var, false, fs.line, 1);
                     fs.resolved_index_type_id = idx_tid.index;
                     var_type_ids_[fs.index_var] = idx_tid;
                     var_types_[fs.index_var] = cf_.type_table.to_string(idx_tid);
                 }
-                bind_scoped_var(fs.item_var, false);
+                bind_scoped_var(fs.item_var, false, fs.line, 1);
                 if (item_tid.is_valid() && !item_tid.is_unknown()) {
                     fs.resolved_item_type_id = item_tid.index;
                     var_type_ids_[fs.item_var] = item_tid;
@@ -1379,7 +1541,7 @@
             auto slot_vars_guard = cfire::scope_exit([this, saved_slot_vars] { slot_captured_vars_ = saved_slot_vars; });
             ScopeGuard sg(*this);
             if (!sc.scope_var.empty()) {
-                bind_scoped_var(sc.scope_var, false);
+                bind_scoped_var(sc.scope_var, false, sc.line, 1);
             }
             if (yields) value_scope_spawns_[sc.scope_var].clear();
             auto spawns_guard = cfire::scope_exit([&] {
@@ -1427,7 +1589,7 @@
             }
             return {};
         }
-        bind_scoped_var(sc.result_var, sc.result_mut);
+        bind_scoped_var(sc.result_var, sc.result_mut, sc.line, sc.result_col);
         var_types_[sc.result_var] = slice_t;
         if (elem_tid.is_valid() && !elem_tid.is_unknown()) {
             var_type_ids_[sc.result_var] = cf_.type_table.make_slice(elem_tid);

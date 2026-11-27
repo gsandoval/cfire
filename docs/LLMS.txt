@@ -2,7 +2,9 @@
 
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
-  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
+  - Package Visibility (`pub`): Top-level declarations (`type`, free `fn`, and package globals/consts) are package-private by default and require leading `pub` (`pub type Config struct`, `pub fn helper()`, `pub MAX := 10`) to be accessed from other packages (`cfire/PRIVATE-SYMBOL`). Struct fields and methods (`fn (self: T) ...`, `fn (T) make(...)`) inherit their type's visibility and do not take `pub`.
+  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share private and `pub` declarations without writing `import "./sibling.cf"` (test-only `*_test.cf` files also retain full access to non-`pub` declarations in their own package).
+  - Unused Hygiene Warnings: Regular compilation (`build`, `run`, `test`, `check`) emits non-fatal warnings for unused per-file imports (`cfire/UNUSED-IMPORT`, removable automatically via `cfire fix`), unread local variables (`cfire/UNUSED-VAR`), unread parameters (`cfire/UNUSED-PARAM`, exempting `self`), and unreferenced private top-level declarations (`cfire/UNUSED-SYMBOL`). Use `_` or a leading `_name` prefix to mark intentionally unused bindings, parameters, or private helpers.
   - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_windows.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:json"`, `import "core:net/http"`, `import "core:keychain"`)
@@ -1152,11 +1154,13 @@ Functions & Methods:
 - `cfire/OPTIONAL-OR-ERR` (Detailed rule): Binding Error Variable `or err` on Optional `T?`
 - `cfire/OUT-CALLSITE` (Migration): A call-site `out` marker (retired with the `out` intent).
 - `cfire/PREFER-ENUM` (Style): A cluster of related integer constants that should be an enum (warning).
+- `cfire/PRIVATE-SYMBOL` (Visibility): Cross-package reference to a non-`pub` symbol; mark the declaration `pub` in its owning package.
 - `cfire/RAW-POINTER` (Ownership): Raw pointer syntax (`*T`, `&x`, `*p`, `.data()`) outside C++ interop.
 - `cfire/RECURSIVE-TYPE` (Types): A struct contains itself directly or through an optional without heap indirection.
 - `cfire/REDUNDANT-CALLSITE-INTENT` (Detailed rule): Redundant `mut` Annotation on a Read-Only Parameter
 - `cfire/REDUNDANT-DEREF` (Style): `(*p).field` on a smart pointer; write `p.field`.
 - `cfire/REDUNDANT-OR` (Detailed rule): Redundant `or` on Non-Fallible, Non-Optional Expression
+- `cfire/REDUNDANT-PUB` (Visibility): `pub` on a declaration in `package main`, which cannot be imported (warning).
 - `cfire/REDUNDANT-TRY` (Detailed rule): Redundant `try` on Non-Fallible Expression
 - `cfire/REFERENCE-TYPE` (Ownership): A `&T` / `&mut T` type; parameters are views by default and `mut` by intent.
 - `cfire/RETIRED-API` (Detailed rule): API Retired in the 0.16 Uniform-API Migration
@@ -1188,6 +1192,10 @@ Functions & Methods:
 - `cfire/UNREACHABLE-MATCH-ARM` (Detailed rule): Unreachable `match` Arm Shadowed by Earlier Pattern
 - `cfire/UNRESOLVED-PACKAGE` (Imports): A local package import that cannot be found.
 - `cfire/UNSATISFIED-CONSTRAINT` (Generics): A type argument that does not satisfy the interface constraint.
+- `cfire/UNUSED-IMPORT` (Hygiene): An import that is never referenced in its file (warning; removable with `cfire fix`).
+- `cfire/UNUSED-PARAM` (Hygiene): A parameter that is never read in its function or closure body; prefix with `_` to silence (warning).
+- `cfire/UNUSED-SYMBOL` (Hygiene): A private top-level type, function, global, or method that is never referenced; prefix with `_` or remove (warning).
+- `cfire/UNUSED-VAR` (Hygiene): A local variable binding that is never read; prefix with `_` or remove (warning).
 - `cfire/UNWRAPPED-OPTIONAL` (Errors): An optional `T?` value used where its non-optional `T` value is required without unwrapping (`or` / `if x := ...`).
 - `cfire/USE-AFTER-FREE` (Detailed rule): Use of a Slice View After Owner Invalidation
 - `cfire/USE-AFTER-MOVE` (Detailed rule): Use of Value After Explicit `move`

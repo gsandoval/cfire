@@ -1,0 +1,23 @@
+// --- file: secret/secret.cf
+package secret
+
+HIDDEN := 99
+
+type Internal struct {
+    x: i64
+}
+
+fn hidden_fn() -> i64 {
+    return HIDDEN
+}
+
+// --- file: app/main.cf (entry)
+package main
+
+import "../secret"
+
+fn main() {
+    _ = secret.Internal{x: 1} //~ error cfire/PRIVATE-SYMBOL
+    _ = secret.hidden_fn() //~ error cfire/PRIVATE-SYMBOL
+    _ = secret.HIDDEN //~ error cfire/PRIVATE-SYMBOL
+}

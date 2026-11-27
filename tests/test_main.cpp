@@ -98,6 +98,7 @@ inline constexpr SuiteEntry kSuites[] = {
     {"unit", "test_package_fixes_and_generics", test_package_fixes_and_generics, false, false, 30},
     {"unit", "test_error_binding_and_named_arg_validation", run_test_error_binding_and_named_arg_validation, false, false, 1},
     {"unit", "test_closed_type_checker", run_test_closed_type_checker, false, false, 2},
+    {"unit", "test_pub_and_unused_diagnostics", test_pub_and_unused_diagnostics, false, false, 15},
     {"unit", "test_webui_security_and_desktop", test_webui_security_and_desktop, true, false, 75},
     {"unit", "test_build_manifest_ios", test_build_manifest_ios, false, false, 20},
 

@@ -1630,7 +1630,9 @@ window.addEventListener('hashchange', updateChapterFromHash);
 
 ## Grammar & Syntax Rules
 - Package: `package <name>` (canonical entry: `package main`)
-  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share types, functions, methods, and constants without writing `import "./sibling.cf"` (test-only `*_test.cf` files are excluded from production builds).
+  - Package Visibility (`pub`): Top-level declarations (`type`, free `fn`, and package globals/consts) are package-private by default and require leading `pub` (`pub type Config struct`, `pub fn helper()`, `pub MAX := 10`) to be accessed from other packages (`cfire/PRIVATE-SYMBOL`). Struct fields and methods (`fn (self: T) ...`, `fn (T) make(...)`) inherit their type's visibility and do not take `pub`.
+  - Same-Directory Package Merging: All `.cf` files in the same directory declaring the same `package <name>` automatically share private and `pub` declarations without writing `import "./sibling.cf"` (test-only `*_test.cf` files also retain full access to non-`pub` declarations in their own package).
+  - Unused Hygiene Warnings: Regular compilation (`build`, `run`, `test`, `check`) emits non-fatal warnings for unused per-file imports (`cfire/UNUSED-IMPORT`, removable automatically via `cfire fix`), unread local variables (`cfire/UNUSED-VAR`), unread parameters (`cfire/UNUSED-PARAM`, exempting `self`), and unreferenced private top-level declarations (`cfire/UNUSED-SYMBOL`). Use `_` or a leading `_name` prefix to mark intentionally unused bindings, parameters, or private helpers.
   - OS-Conditional Platform Files: Files ending in `*_darwin.cf` / `*_macos.cf`, `*_linux.cf`, `*_windows.cf`, `*_ios.cf`, `*_wasm.cf`, or `*_unix.cf` are compiled only when targeting the matching platform.
 - Imports:
   - Foundational Core: `import "core:<module>"` (e.g. `import "core:fs"`, `import "core:json"`, `import "core:net/http"`, `import "core:keychain"`)

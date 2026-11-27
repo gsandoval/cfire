@@ -130,7 +130,7 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
          "// | hi 42\n"
          "// --- file: helper/helper.cf\n"
          "package helper\n"
-         "fn val() -> i64 { return 42 }\n"
+         "pub fn val() -> i64 { return 42 }\n"
          "// --- file: app/main.cf (entry)\n"
          "package main\n"
          "import \"../helper\"\n"
@@ -141,7 +141,7 @@ inline void test_conformance_and_guide_runner_self_tests(const std::filesystem::
         {"pass_multifile_error.cf",
          "// --- file: helper/helper.cf\n"
          "package helper\n"
-         "fn bad() {\n"
+         "pub fn bad() {\n"
          "    x := 1\n"
          "    x = 2 //~ error cfire/ASSIGN-IMMUTABLE\n"
          "}\n"

@@ -151,7 +151,7 @@ void test_single_pass_in_memory_check(const std::filesystem::path& rt_dir) {
 
         // 2c. Multi-file source_overlays: disk sibling takes str, in-memory sibling overlay takes i64 -> clean check
         require(cfire::fs::write_text(mod_cf,
-            "package mathutil\nfn double_it(s: str) -> str { return s }\n").has_value(),
+            "package mathutil\npub fn double_it(s: str) -> str { return s }\n").has_value(),
             "write stale disk sibling");
         const std::string caller_src =
             "package main\nimport \"./pkg/mathutil\"\nfn main() {\n    v := mathutil.double_it(21)\n    println(\"{}\", v)\n}\n";
@@ -160,7 +160,7 @@ void test_single_pass_in_memory_check(const std::filesystem::path& rt_dir) {
         cfire::analysis::CheckOptions ov_opts;
         ov_opts.runtime_dir = rt_dir;
         ov_opts.source_overlays[mod_cf.string()] =
-            "package mathutil\nfn double_it(n: i64) -> i64 { return n * 2 }\n";
+            "package mathutil\npub fn double_it(n: i64) -> i64 { return n * 2 }\n";
         auto d_ov = cfire::analysis::check_source(main_cf.string(), caller_src, ov_opts);
         require(d_ov.empty(),
             std::format("in-memory source_overlays must override stale disk sibling, got {} diag(s)", d_ov.size()));

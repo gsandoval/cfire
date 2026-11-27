@@ -151,6 +151,15 @@
             }
         }
         if (fn.receiver) {
+            receiver_name_ = fn.receiver->name;
+            receiver_type_base_ = CheckedFile::strip_pkg_mangle(fn.receiver->type.name);
+            if (auto dot = receiver_type_base_.rfind('.'); dot != std::string::npos) {
+                receiver_type_base_ = receiver_type_base_.substr(dot + 1);
+            }
+            if (fn.name != "__cfire_global_init") {
+                register_tracked_binding(fn.receiver->name, fn.receiver->line, fn.receiver->col,
+                    /*is_param=*/true, /*is_mut_param=*/fn.receiver->intent == "mut", /*is_self=*/true);
+            }
             (void)check_type_ref_separators(fn.receiver->type, fn.receiver->line, fn.receiver->col);  // recorded by emit_error
             param_names_.insert(fn.receiver->name);
             var_scope_depth_[fn.receiver->name] = 0;
@@ -180,6 +189,10 @@
             }
         }
         for (const auto& p : fn.params) {
+            if (fn.name != "__cfire_global_init") {
+                register_tracked_binding(p.name, p.line, p.col,
+                    /*is_param=*/true, /*is_mut_param=*/p.intent == "mut", /*is_self=*/false);
+            }
             (void)check_type_ref_separators(p.type, p.line, p.col);  // recorded by emit_error
             param_names_.insert(p.name);
             var_scope_depth_[p.name] = 0;
@@ -442,6 +455,7 @@
 
     CFIRE_SEMA_INLINE auto SemaFnChecker::record_var_read(const std::string& name, int line, int col, uint64_t expr_id)
         -> std::expected<void, std::string> {
+        mark_binding_read(name);
         if (auto it = moved_at_line_.find(name); it != moved_at_line_.end()) {
             return emit_error(diag_at(line, col, "cfire/USE-AFTER-MOVE", std::format("use of moved variable '{}' (previously moved at line {})", name, it->second)));
         }

@@ -136,7 +136,7 @@ app := build.Executable{
 )CF");
         dir.file("helper/helper.cf", R"CF(package helper
 import cpp "probe.h"
-fn ReadProbe() -> i32 {
+pub fn ReadProbe() -> i32 {
     return cpp.cfire_define_probe()
 }
 )CF");
@@ -187,7 +187,7 @@ app := build.Executable{
 )CF");
         dir.file("helper/helper.cf", R"CF(package helper
 import cpp "impl_probe.h"
-fn FromHelper() -> i32 {
+pub fn FromHelper() -> i32 {
     return cpp.cfire_impl_fn()
 }
 )CF");
@@ -339,7 +339,7 @@ fn main() {
         ScopedTempDir dir("subpkg_globals");
         dir.file("sub/sub.cf", R"CF(package sub
 LIMIT := 100
-fn SubLimit() -> i64 {
+pub fn SubLimit() -> i64 {
     return LIMIT
 }
 )CF");

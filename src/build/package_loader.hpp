@@ -189,8 +189,29 @@ namespace cfire::build {
         frontend::ImportDecl imp;
         bool is_auto_sibling = false;
         std::string importer_pkg{};
+        std::optional<std::size_t> file_import_idx{};
     };
     std::deque<WorkItem> queue;
+    std::unordered_set<std::string> scanned_test_files;
+    auto scan_test_idents = [&](const std::filesystem::path& test_path, const std::string& expected_pkg) {
+        std::error_code tec;
+        std::string tcanon = std::filesystem::weakly_canonical(test_path, tec).string();
+        if (tcanon.empty()) tcanon = test_path.string();
+        if (!scanned_test_files.insert(tcanon).second) return;
+        auto traw = read_file_or_overlay(test_path, source_overlays);
+        if (!traw) return;
+        auto toks = frontend::tokenize(test_path.string(), *traw);
+        if (!toks || toks->size() < 2) return;
+        if ((*toks)[0].kind != frontend::TokenKind::KwPackage || (*toks)[1].kind != frontend::TokenKind::Ident) return;
+        const std::string& pkg = expected_pkg.empty() ? (*toks)[1].lexeme : expected_pkg;
+        if ((*toks)[1].lexeme != pkg) return;
+        auto& idents = root_ast.sibling_test_idents[pkg];
+        for (const auto& tk : *toks) {
+            if (tk.kind == frontend::TokenKind::Ident) {
+                idents.insert(tk.lexeme);
+            }
+        }
+    };
 
     // 0. Automatically discover same-directory sibling `.cf` files with matching `package_name` (ERG-02a / ERG-02b)
     const bool entry_file_only = explicit_entry_file_only() && !is_test_entry && root_ast.package_name == "main" && root_has_main;
@@ -201,7 +222,10 @@ namespace cfire::build {
             if (!entry.is_regular_file()) continue;
             auto fname = entry.path().filename().string();
             if (entry.path().extension() != ".cf" || fname == "build.cf") continue;
-            if (!is_test_entry && fname.ends_with("_test.cf")) continue;
+            if (!is_test_entry && fname.ends_with("_test.cf")) {
+                scan_test_idents(entry.path(), default_pkg);
+                continue;
+            }
             if (!is_platform_file_enabled(entry.path(), plan)) continue;
             sibling_candidates.push_back(entry.path());
         }
@@ -212,12 +236,16 @@ namespace cfire::build {
             frontend::ImportDecl sib_imp;
             sib_imp.is_cpp = false;
             sib_imp.path = "./" + sib_path.filename().string();
-            queue.push_back({root_base_dir, std::move(sib_imp), true, default_pkg});
+            queue.push_back({root_base_dir, std::move(sib_imp), true, default_pkg, std::nullopt});
         }
     }
 
-    for (const auto& imp : root_ast.imports) {
-        queue.push_back({root_base_dir, imp, false, default_pkg});
+    for (auto imp_copy : root_ast.imports) {
+        if (imp_copy.source_path.empty()) imp_copy.source_path = root_ast.path;
+        if (imp_copy.package_name.empty()) imp_copy.package_name = default_pkg;
+        const std::size_t idx = root_ast.file_imports.size();
+        root_ast.file_imports.push_back(imp_copy);
+        queue.push_back({root_base_dir, std::move(imp_copy), false, default_pkg, idx});
     }
 
     while (!queue.empty()) {
@@ -327,9 +355,14 @@ namespace cfire::build {
                 pkg_dir = target;
                 for (const auto& entry : std::filesystem::directory_iterator(target)) {
                     auto fname = entry.path().filename().string();
-                    if (entry.is_regular_file() && entry.path().extension() == ".cf" &&
-                        fname != "build.cf" && !fname.ends_with("_test.cf") &&
-                        is_platform_file_enabled(entry.path(), plan)) {
+                    if (!entry.is_regular_file() || entry.path().extension() != ".cf" || fname == "build.cf") continue;
+                    if (fname.ends_with("_test.cf")) {
+                        if (!is_test_entry) {
+                            scan_test_idents(entry.path(), "");
+                        }
+                        continue;
+                    }
+                    if (is_platform_file_enabled(entry.path(), plan)) {
                         cf_files.push_back(entry.path());
                     }
                 }
@@ -350,6 +383,13 @@ namespace cfire::build {
                 if (visited_files.contains(canon)) {
                     if (auto it = file_canon_to_pkg_tag.find(canon); it != file_canon_to_pkg_tag.end()) {
                         record_pkg_import(item.importer_pkg, it->second);
+                        if (!item.is_auto_sibling && item.file_import_idx.has_value() &&
+                            *item.file_import_idx < root_ast.file_imports.size()) {
+                            auto& fi = root_ast.file_imports[*item.file_import_idx];
+                            if (fi.resolved_pkg_name.empty()) {
+                                fi.resolved_pkg_name = !imp.alias.empty() ? imp.alias : it->second;
+                            }
+                        }
                     }
                     continue;
                 }
@@ -395,10 +435,21 @@ namespace cfire::build {
                 file_canon_to_pkg_tag[canon] = target_pkg;
                 record_source_file(canon);
                 record_pkg_import(item.importer_pkg, target_pkg);
+                if (!item.is_auto_sibling && item.file_import_idx.has_value() &&
+                    *item.file_import_idx < root_ast.file_imports.size()) {
+                    auto& fi = root_ast.file_imports[*item.file_import_idx];
+                    if (fi.resolved_pkg_name.empty()) {
+                        fi.resolved_pkg_name = !imp.alias.empty() ? imp.alias : target_pkg;
+                    }
+                }
 
                 // Recursively enqueue subpackage imports (subpackage imports)
-                for (const auto& simp : sub_ast->imports) {
-                    queue.push_back({fpath.parent_path(), simp, false, target_pkg});
+                for (auto simp : sub_ast->imports) {
+                    if (simp.source_path.empty()) simp.source_path = fpath.string();
+                    simp.package_name = target_pkg;
+                    const std::size_t idx = root_ast.file_imports.size();
+                    root_ast.file_imports.push_back(simp);
+                    queue.push_back({fpath.parent_path(), std::move(simp), false, target_pkg, idx});
                 }
 
                 // Preserve subpackage AST arena lifetime in root_ast

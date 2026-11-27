@@ -1441,7 +1441,68 @@
             std::size_t sep = std::min(dot, dcol);
             if (sep != std::string::npos) {
                 std::string prefix = id->name.substr(0, sep);
+                if (!is_ident_in_scope_sema(prefix)) {
+                    cf_.mark_qualifier_used(path_, prefix);
+                    std::string mp = CheckedFile::extract_mangled_pkg(prefix);
+                    if (!mp.empty() && mp != cf_.normalize_pkg(pkg_name_)) {
+                        cf_.mark_qualifier_used(path_, mp);
+                    }
+                    if (const auto* en = resolve_enum_by_prefix_sema(prefix)) {
+                        cf_.mark_type_used(en->package_name, en->name);
+                        check_cross_package_decl(en->package_name, en->is_pub, "enum",
+                            CheckedFile::strip_pkg_mangle(en->name), en->source_path, en->line, e->line, e->col);
+                    } else if (dot != std::string::npos && dcol != std::string::npos && dot < dcol) {
+                        std::string epfx = id->name.substr(0, dcol);
+                        if (const auto* qen = resolve_enum_by_prefix_sema(epfx)) {
+                            cf_.mark_type_used(qen->package_name, qen->name);
+                            check_cross_package_decl(qen->package_name, qen->is_pub, "enum",
+                                CheckedFile::strip_pkg_mangle(qen->name), qen->source_path, qen->line, e->line, e->col);
+                        }
+                    }
+                }
                 if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return finalize(std::move(r));
+            }
+            if (id->resolution) {
+                const auto& res = *id->resolution;
+                if (res.kind == SymbolKind::CoreNamespace) {
+                    cf_.mark_qualifier_used(path_, id->name);
+                } else if (res.kind == SymbolKind::EnumVariant) {
+                    if (const DeclVisInfo* dv = cf_.lookup_type_vis(res.owner_type, pkg_name_)) {
+                        cf_.mark_type_used(dv->package_name, dv->name);
+                        check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                            dv->source_path, dv->line, e->line, e->col);
+                    }
+                } else if (res.kind == SymbolKind::Struct) {
+                    if (const DeclVisInfo* dv = cf_.lookup_type_vis(res.type_name, pkg_name_)) {
+                        cf_.mark_type_used(dv->package_name, dv->name);
+                        check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                            dv->source_path, dv->line, e->line, e->col);
+                    }
+                } else if (res.kind == SymbolKind::Global) {
+                    for (const auto& gv : cf_.ast.global_vars) {
+                        if (gv.name == id->name && cf_.normalize_pkg(gv.package_name) == cf_.normalize_pkg(res.package_name)) {
+                            cf_.mark_global_used(gv.package_name, gv.name);
+                            check_cross_package_decl(gv.package_name, gv.is_pub, "global", gv.name,
+                                gv.source_path, gv.line, e->line, e->col);
+                            break;
+                        }
+                    }
+                } else if (res.kind == SymbolKind::Function) {
+                    const FnDecl* sig = nullptr;
+                    if (!res.package_name.empty()) {
+                        if (auto pit = cf_.fn_sigs.find(res.package_name + "." + id->name); pit != cf_.fn_sigs.end()) sig = &pit->second;
+                    }
+                    if (!sig) {
+                        if (auto it = cf_.fn_sigs.find(id->name); it != cf_.fn_sigs.end()) sig = &it->second;
+                    }
+                    if (sig && !sig->receiver) {
+                        check_cross_package_decl(sig->package_name, sig->is_pub, "fn", sig->name,
+                            sig->source_path, sig->line, e->line, e->col);
+                        if (sig->name != fn_name_ || cf_.normalize_pkg(sig->package_name) != cf_.normalize_pkg(pkg_name_)) {
+                            cf_.mark_fn_used(sig->package_name, sig->name);
+                        }
+                    }
+                }
             }
             if (!is_known_identifier_sema(id->name)) {
                 if (cf_.shadowed_default_qualifiers.contains(id->name)) {
@@ -1491,6 +1552,82 @@
         if (auto* mem = std::get_if<MemberExpr>(&e->node)) {
             if (auto r = check_member_expr(*mem, e->line, e->col); !r) return finalize(std::move(r));
             mem->resolution = resolve_member(*mem);
+            if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr;
+                oid && !is_ident_in_scope_sema(oid->name)) {
+                if (oid->name == "cpp" || is_cpp_qualifier_sema(oid->name) ||
+                    is_vendor_alias_sema(oid->name) || is_namespace_ident_sema(oid->name)) {
+                    cf_.mark_qualifier_used(path_, oid->name);
+                }
+                if (const auto* qen = resolve_enum_by_prefix_sema(oid->name + "." + mem->field)) {
+                    cf_.mark_qualifier_used(path_, oid->name);
+                    cf_.mark_type_used(qen->package_name, qen->name);
+                    check_cross_package_decl(qen->package_name, qen->is_pub, "enum",
+                        CheckedFile::strip_pkg_mangle(qen->name), qen->source_path, qen->line, e->line, e->col);
+                }
+                if (mem->resolution && !mem->resolution->package_name.empty()) {
+                    cf_.mark_qualifier_used(path_, oid->name);
+                }
+            }
+            if (mem->resolution) {
+                const auto& res = *mem->resolution;
+                if (res.kind == SymbolKind::Function) {
+                    const FnDecl* sig = nullptr;
+                    if (!res.package_name.empty()) {
+                        if (auto pit = cf_.fn_sigs.find(res.package_name + "." + mem->field); pit != cf_.fn_sigs.end()) sig = &pit->second;
+                    }
+                    if (!sig) {
+                        if (auto it = cf_.fn_sigs.find(mem->field); it != cf_.fn_sigs.end()) sig = &it->second;
+                    }
+                    if (sig && !sig->receiver) {
+                        check_cross_package_decl(sig->package_name, sig->is_pub, "fn", sig->name,
+                            sig->source_path, sig->line, e->line, e->col);
+                        if (sig->name != fn_name_ || cf_.normalize_pkg(sig->package_name) != cf_.normalize_pkg(pkg_name_)) {
+                            cf_.mark_fn_used(sig->package_name, sig->name);
+                        }
+                    }
+                } else if (res.kind == SymbolKind::Global) {
+                    for (const auto& gv : cf_.ast.global_vars) {
+                        if (gv.name == mem->field && cf_.normalize_pkg(gv.package_name) == cf_.normalize_pkg(res.package_name)) {
+                            cf_.mark_global_used(gv.package_name, gv.name);
+                            check_cross_package_decl(gv.package_name, gv.is_pub, "global", gv.name,
+                                gv.source_path, gv.line, e->line, e->col);
+                            break;
+                        }
+                    }
+                } else if (res.kind == SymbolKind::EnumVariant) {
+                    if (const DeclVisInfo* dv = cf_.lookup_type_vis(res.owner_type, pkg_name_)) {
+                        cf_.mark_type_used(dv->package_name, dv->name);
+                        check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                            dv->source_path, dv->line, e->line, e->col);
+                    }
+                } else if ((res.kind == SymbolKind::Method || res.kind == SymbolKind::Field) &&
+                           !res.owner_type.empty() && res.owner_type != "builtin") {
+                    if (const DeclVisInfo* dv = cf_.lookup_type_vis(res.owner_type, pkg_name_)) {
+                        bool is_own_receiver_access = false;
+                        if (!receiver_name_.empty() && dv->name == receiver_type_base_) {
+                            if (const auto* oid = mem->object ? std::get_if<IdentExpr>(&mem->object->node) : nullptr) {
+                                if (oid->name == receiver_name_) {
+                                    is_own_receiver_access = true;
+                                }
+                            }
+                        }
+                        if (!is_own_receiver_access) {
+                            cf_.mark_type_used(dv->package_name, dv->name);
+                        }
+                        check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                            dv->source_path, dv->line, e->line, e->col);
+                    }
+                    if (res.kind == SymbolKind::Method) {
+                        cf_.mark_method_used(res.owner_type, mem->field);
+                    }
+                } else if (res.kind == SymbolKind::Method && res.owner_type.empty()) {
+                    if (auto mit = cf_.method_owners.find(mem->field); mit != cf_.method_owners.end()) {
+                        for (const auto& ow : mit->second) {
+                            cf_.mark_method_used(ow, mem->field);
+                        }
+                    }
+                }
+            }
             return finalize({});
         }
         if (const auto* idx = std::get_if<IndexExpr>(&e->node)) {
@@ -1555,7 +1692,22 @@
             std::size_t sep = std::min(dot, dcol);
             if (sep != std::string::npos) {
                 std::string prefix = st->type_name.substr(0, sep);
+                cf_.mark_qualifier_used(path_, prefix);
                 if (auto r = check_stdlib_ns_imported(prefix, e->line, e->col); !r) return finalize(std::move(r));
+            }
+            {
+                std::string mp = CheckedFile::extract_mangled_pkg(st->type_name);
+                if (!mp.empty() && mp != cf_.normalize_pkg(pkg_name_)) {
+                    cf_.mark_qualifier_used(path_, mp);
+                }
+                if (const DeclVisInfo* dv = cf_.lookup_type_vis(st->type_name, pkg_name_)) {
+                    cf_.mark_type_used(dv->package_name, dv->name);
+                    check_cross_package_decl(dv->package_name, dv->is_pub, dv->kind, dv->name,
+                        dv->source_path, dv->line, e->line, e->col);
+                }
+            }
+            for (const auto& ta : st->type_args) {
+                record_typeref_use_and_check_visibility(ta, e->line, e->col);
             }
             if (dcol != std::string::npos && (dot == std::string::npos || dcol < dot)) {
                 std::string qual = st->type_name.substr(0, dcol);
@@ -1675,6 +1827,7 @@
             if (exp_fn && exp_fn->ret_type.is_valid() && !exp_fn->ret_type.is_unknown()) {
                 closure_ret_types_.try_emplace(cl, cf_.type_table.to_string(exp_fn->ret_type));
             } else if (cl->return_type.has_value()) {
+                record_typeref_use_and_check_visibility(*cl->return_type, e->line, e->col);
                 TypeId rt = (cl->return_type->name == "void" || cl->return_type->name.empty())
                     ? (cl->return_type->is_fallible ? cf_.type_table.make_fallible(TypeId::Void()) : TypeId::Void())
                     : resolve_typeref(*cl->return_type);
@@ -1687,10 +1840,12 @@
             for (std::size_t i = 0; i < cl->params.size(); ++i) {
                 bool is_mut = (i < cl->param_intents.size()) &&
                               (cl->param_intents[i] == "mut" || cl->param_intents[i] == "out");
-                bind_scoped_var(cl->params[i], is_mut);
+                bind_scoped_var(cl->params[i], is_mut, e->line, e->col, /*track=*/false);
+                register_tracked_binding(cl->params[i], e->line, e->col, /*is_param=*/true, /*is_mut_param=*/is_mut, /*is_self=*/false);
                 TypeId pt = TypeId::Unknown();
                 bool typed = i < cl->param_types.size() && cl->param_types[i].has_value();
                 if (typed) {
+                    record_typeref_use_and_check_visibility(*cl->param_types[i], e->line, e->col);
                     pt = resolve_typeref(*cl->param_types[i]);
                     var_types_[cl->params[i]] = format_type_ref_sema(*cl->param_types[i]);
                 } else if (hint_it != closure_param_hints_.end() && i < hint_it->second.size() && !hint_it->second[i].empty()) {
@@ -2816,7 +2971,7 @@
             }
             ScopeGuard sg(*this);
             if (!or_ex.err_var.empty()) {
-                bind_scoped_var(or_ex.err_var, false);
+                bind_scoped_var(or_ex.err_var, false, line, col);
                 var_types_[or_ex.err_var] = "Error";
                 var_type_ids_[or_ex.err_var] = type_id_of("Error");
             }

@@ -3090,3 +3090,4 @@ fn main() {
 }
 
 #include "test_closed_type_checker.hpp"
+#include "test_pub_and_unused_diagnostics.hpp"

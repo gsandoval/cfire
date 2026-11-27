@@ -19,8 +19,9 @@ enum class TokenKind : int {
     Char,      // ASCII byte literal 'L'; the lexeme keeps its quotes
     CppBlock,  // Balanced `{ ... }` after `cplusplus` or `cpp`
 
-    // Keywords (28)
+    // Keywords (29)
     KwPackage,
+    KwPub,
     KwImport,
     KwCpp,
     KwAs,
@@ -123,6 +124,7 @@ struct Token {
         case TokenKind::Char: return "CHAR";
         case TokenKind::CppBlock: return "CPP_BLOCK";
         case TokenKind::KwPackage: return "package";
+        case TokenKind::KwPub: return "pub";
         case TokenKind::KwImport: return "import";
         case TokenKind::KwCpp: return "cpp";
         case TokenKind::KwAs: return "as";
@@ -206,6 +208,7 @@ struct Token {
 inline const std::unordered_map<std::string_view, TokenKind>& keyword_map() {
     static const std::unordered_map<std::string_view, TokenKind> kKeywords = {
         {"package", TokenKind::KwPackage},
+        {"pub", TokenKind::KwPub},
         {"import", TokenKind::KwImport},
         {"cpp", TokenKind::KwCpp},
         {"as", TokenKind::KwAs},

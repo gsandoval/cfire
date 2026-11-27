@@ -132,7 +132,9 @@ MODE_A := 0
 MODE_B := 1
 MODE_C := 2
 
-fn main() {}
+fn main() {
+    println("{} {} {}", MODE_A, MODE_B, MODE_C)
+}
 )");
     auto warn_check = run_cfire(std::format("check \"{}\"", warn_cf.string()));
     warn_check.assert_ok("human cfire check exits 0 on warning")

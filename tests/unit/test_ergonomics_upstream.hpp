@@ -325,7 +325,7 @@ fn main() {
 
 LIMIT := 100
 
-fn helper() -> i64 {
+pub fn helper() -> i64 {
     return LIMIT + 7
 }
 )CF");
@@ -866,18 +866,18 @@ fn main() {
                 std::filesystem::create_directories(pkg_a_dir);
                 std::filesystem::create_directories(pkg_b_dir);
                 (void)cfire::fs::write_text(pkg_a_dir / "a.cf", R"CF(package pkga
-type Record struct {
+pub type Record struct {
     id: i64
 }
-fn make_rec() -> Record {
+pub fn make_rec() -> Record {
     return Record{id: 10}
 }
 )CF");
                 (void)cfire::fs::write_text(pkg_b_dir / "b.cf", R"CF(package pkgb
-type Record struct {
+pub type Record struct {
     id: i64
 }
-fn make_rec() -> Record {
+pub fn make_rec() -> Record {
     return Record{id: 20}
 }
 )CF");

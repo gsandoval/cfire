@@ -1,0 +1,20 @@
+// expect: stdout
+// | UNUSED_WARN_OK
+
+package main
+
+import "core:math" //~ warning cfire/UNUSED-IMPORT
+
+fn helper(used: i64, dead_param: i64) -> i64 { //~ warning cfire/UNUSED-PARAM
+    return used + 1
+}
+
+fn dead_private() -> i64 { //~ warning cfire/UNUSED-SYMBOL
+    return 7
+}
+
+fn main() {
+    dead_local := 10 //~ warning cfire/UNUSED-VAR
+    println("UNUSED_WARN_OK")
+    _ = helper(1, 2)
+}
