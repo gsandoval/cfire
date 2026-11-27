@@ -143,8 +143,18 @@ struct JsonSupportError {
            name == "f32" || name == "f64";
 }
 
-[[nodiscard]] inline auto is_json_dynamic_value_name(std::string_view name) -> bool {
-    return name == "json.Value" || name == "Value";
+[[nodiscard]] inline auto is_json_dynamic_value_name(std::string_view raw_name, const CheckedFile* cf = nullptr) -> bool {
+    std::string norm = normalize_type_lookup_name(raw_name);
+    if (norm == "json.Value" || norm == "Value") return true;
+    if (cf) {
+        if (auto dot = norm.find('.'); dot != std::string::npos) {
+            std::string alias = norm.substr(0, dot);
+            if (auto it = cf->core_aliases.find(alias); it != cf->core_aliases.end() && it->second == "json") {
+                return norm.substr(dot + 1) == "Value";
+            }
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] inline auto is_field_json_ignored(const CheckedFile& cf, const StructDecl& st, std::size_t idx) -> bool {
@@ -262,7 +272,7 @@ inline auto set_json_err(JsonSupportError* err, std::string_view path, std::stri
         return true;
     }
 
-    if (is_json_dynamic_value_name(n)) {
+    if (is_json_dynamic_value_name(n, &cf)) {
         return true;
     }
 
@@ -380,7 +390,7 @@ inline auto set_json_err(JsonSupportError* err, std::string_view path, std::stri
                 }
                 return true;
             }
-            if (is_json_dynamic_value_name(n)) {
+            if (is_json_dynamic_value_name(n, &cf)) {
                 return true;
             }
             return set_json_err(err, path, std::format("type '{}' is not supported by core:json serialization", n), !path.empty());

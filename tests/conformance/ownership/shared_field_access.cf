@@ -1,0 +1,56 @@
+// expect: stdout
+// | OUT 5 1
+// | STATE 42 2
+// | NESTED 99 77
+// | OWNED 11
+
+package main
+
+type St struct {
+    now: i64
+    items: []str
+}
+
+type Clock struct {
+    state: shared[St]
+}
+
+type Outer struct {
+    clock: shared[Clock]
+    owned: own[St]
+}
+
+fn (self: Clock) add() {
+    self.state.items.push("a")
+}
+
+fn (self: Clock) now_ms() -> i64 {
+    return self.state.now
+}
+
+fn (self: Clock) bump(v: i64) {
+    self.state.now = v
+}
+
+fn main() {
+    c := Clock{ state: make(shared[St], St{ now: 5, items: [] }) }
+    c.add()
+    println("OUT {} {}", c.now_ms(), c.state.items.len())
+
+    c.bump(42)
+    c.state.items.push("b")
+    println("STATE {} {}", c.state.now, c.state.items.len())
+
+    o := Outer{
+        clock: make(shared[Clock], Clock{ state: make(shared[St], St{ now: 99, items: ["z"] }) }),
+        owned: make(own[St], St{ now: 11, items: [] }),
+    }
+    o.clock.state.items.push("w")
+    o.clock.state.now = 77
+    println("NESTED {} {}", 99, o.clock.state.now)
+    println("OWNED {}", o.owned.now)
+
+    mut xs: []shared[St] = [make(shared[St], St{ now: 7, items: [] })]
+    xs[0].now = 8
+    assert(xs[0].now == 8)
+}

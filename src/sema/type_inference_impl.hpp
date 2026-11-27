@@ -836,6 +836,12 @@
                 }
             }
         }
+        if (std::holds_alternative<IndexExpr>(e->node)) {
+            TypeId elem_t = infer_expr_type_id_sema(e);
+            if (elem_t.is_valid() && cf_.type_table.is_optional(elem_t)) {
+                return true;
+            }
+        }
         if (const auto* call = std::get_if<CallExpr>(&e->node)) {
             if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node)) {
                 if (mem->object && (mem->field == "from_i32" || mem->field == "from_i64" || mem->field == "from_string")) {
@@ -2103,7 +2109,8 @@
                             }
                         }
                         return canon == "time.Time" || canon == "time.Duration" ||
-                               canon == "fs.FileInfo" || canon == "ipc.PeerCred";
+                               canon == "fs.FileInfo" || canon == "ipc.PeerCred" ||
+                               canon == "json.Value";
                     }
                     for (const auto& f : st->fields) {
                         if (!self(self, resolve_typeref_in_pkg(f.type, st->package_name))) return false;

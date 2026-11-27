@@ -437,7 +437,11 @@ template <typename E>
     std::string out = "[";
     for (std::size_t i = 0; i < v.size(); ++i) {
         if (i > 0) out += ", ";
-        out += format_fuzz_arg(v[i]);
+        if constexpr (std::is_same_v<E, bool>) {
+            out += static_cast<bool>(v[i]) ? "true" : "false";
+        } else {
+            out += format_fuzz_arg(v[i]);
+        }
     }
     out += "]";
     return out;

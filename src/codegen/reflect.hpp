@@ -223,7 +223,7 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_bool(obj, \"{}\", out.{}));", fname, jkey, fname));
                 } else if (is_local_type(t.field_type.name)) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_obj<{}>(obj, \"{}\"));", fname, lower_raw_owning_type(t.field_type), jkey));
-                } else if (json_support::is_json_dynamic_value_name(t.field_type.name)) {
+                } else if (json_support::is_json_dynamic_value_name(t.field_type.name, &cf_)) {
                     writeln(std::format("CFIRE_TRY_ASSIGN(out.{}, cfire::json::get_value(obj, \"{}\"));", fname, jkey));
                 }
                 if (t.validation.has_rules) {
@@ -298,7 +298,7 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
                 std::string prefix = first_j ? "" : ",";
                 first_j = false;
                 if (t.field_type.is_optional || t.field_type.is_slice || is_local_type(t.field_type.name) ||
-                    json_support::is_json_dynamic_value_name(t.field_type.name)) {
+                    json_support::is_json_dynamic_value_name(t.field_type.name, &cf_)) {
                     writeln(std::format("out += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::stringify(val.{}));", prefix, jkey, fname));
                 } else if (t.field_type.name == "str") {
                     writeln(std::format("out += std::format(\"{}\\\"{}\\\":\\\"{{}}\\\"\", cfire::json::escape_string(val.{}));", prefix, jkey, fname));

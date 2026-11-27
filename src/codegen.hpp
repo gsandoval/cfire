@@ -1063,7 +1063,7 @@ public:
             n == "App" || n == "Mutex" || n == "WaitGroup" || n == "Channel" ||
             n == "Conn" || n == "Session" || n == "File" || n == "TcpConn" || n == "TcpListener" ||
             n == "Listener" || n == "HttpServer" || n == "Server" ||
-            json_support::is_json_dynamic_value_name(n)) {
+            json_support::is_json_dynamic_value_name(n, &cf_)) {
             return true;
         }
         return false;

@@ -259,8 +259,9 @@ namespace cfire::frontend {
                 }
                 if (res.kind == SymbolKind::Field) {
                     std::string obj = emit_expr(ex.object);
-                    if (res.is_auto_deref) {
-                        return std::format("(*{}).{}", obj, res.canonical_name);
+                    std::uint8_t depth = res.auto_deref_depth > 0 ? res.auto_deref_depth : (res.is_auto_deref ? 1 : 0);
+                    for (std::uint8_t d = 0; d < depth; ++d) {
+                        obj = std::format("(*{})", obj);
                     }
                     return std::format("{}.{}", obj, res.canonical_name);
                 }

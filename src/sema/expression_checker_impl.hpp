@@ -861,8 +861,10 @@
 
         // 2. Struct fields and methods
         std::string owner_type;
+        TypeId raw_obj_t = TypeId::Unknown();
         if (mem.object) {
-            TypeId un_ot = unwrap_receiver_type(infer_expr_type_id_sema(mem.object), /*unwrap_opt=*/true);
+            raw_obj_t = infer_expr_type_id_sema(mem.object);
+            TypeId un_ot = unwrap_receiver_type(raw_obj_t, /*unwrap_opt=*/true);
             const auto& uod = cf_.type_table.get(un_ot);
             owner_type = (uod.kind == TypeKind::GenericInst) ? uod.base_name : uod.name;
             if (auto lb = owner_type.find('['); lb != std::string::npos) owner_type = owner_type.substr(0, lb);
@@ -879,11 +881,35 @@
                         res.is_optional = f.field_type.is_optional;
                         res.is_smart_ptr = !f.field_type.smart_wrap.empty();
                         res.is_raw_ptr = f.field_type.is_ptr || f.field_type.is_mut_ptr;
-                        if (const auto* oid = std::get_if<IdentExpr>(&mem.object->node)) {
-                            if (smart_ptr_vars_.contains(oid->name) || raw_or_smart_ptr_vars_.contains(oid->name) || optional_vars_.contains(oid->name)) {
-                                res.is_auto_deref = true;
+                        std::uint8_t deref_depth = 0;
+                        if (raw_obj_t.is_valid() && !raw_obj_t.is_unknown() &&
+                            !raw_obj_t.is_error() && !raw_obj_t.is_foreign()) {
+                            TypeId cur = raw_obj_t;
+                            for (int step = 0; step < 8 && cur.is_valid(); ++step) {
+                                const auto& cd = cf_.type_table.get(cur);
+                                if (cd.kind == TypeKind::Borrow || cd.kind == TypeKind::MutBorrow) {
+                                    cur = cd.elem_type;
+                                    continue;
+                                }
+                                if (cd.kind == TypeKind::Own || cd.kind == TypeKind::Shared ||
+                                    cd.kind == TypeKind::RawPtr || cd.kind == TypeKind::MutPtr ||
+                                    cd.kind == TypeKind::Optional) {
+                                    ++deref_depth;
+                                    cur = cd.elem_type;
+                                    continue;
+                                }
+                                break;
                             }
                         }
+                        if (deref_depth == 0) {
+                            if (const auto* oid = std::get_if<IdentExpr>(&mem.object->node)) {
+                                if (smart_ptr_vars_.contains(oid->name) || raw_or_smart_ptr_vars_.contains(oid->name) || optional_vars_.contains(oid->name)) {
+                                    deref_depth = 1;
+                                }
+                            }
+                        }
+                        res.auto_deref_depth = deref_depth;
+                        res.is_auto_deref = (deref_depth > 0);
                         return res;
                     }
                 }

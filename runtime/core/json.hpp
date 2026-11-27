@@ -129,7 +129,13 @@ struct Value {
         }
         return res;
     }
+
+    [[nodiscard]] auto operator==(const Value& rhs) const noexcept -> bool;
 };
+
+[[nodiscard]] inline auto Value::operator==(const Value& rhs) const noexcept -> bool {
+    return data == rhs.data;
+}
 
 class DynamicJsonParser {
 public:
@@ -409,6 +415,13 @@ inline void stringify_value_to(const Value& val, std::string& out, int indent, i
 }
 
 } // namespace cfire::json
+
+template <>
+struct std::formatter<cfire::json::Value> : std::formatter<std::string> {
+    auto format(const cfire::json::Value& v, std::format_context& ctx) const {
+        return std::formatter<std::string>::format(cfire::json::stringify_dynamic(v), ctx);
+    }
+};
 
 #if defined(CFIRE_USE_SIMDJSON) && __has_include(<simdjson.h>)
 #define CFIRE_SIMDJSON_ACTIVE 1
@@ -814,10 +827,15 @@ template <typename T>
     } else if constexpr (std::is_arithmetic_v<D>) {
         return std::format("{}", val);
     } else if constexpr (detail::is_std_vector<D>::value || cfire::is_span_like<D>::value) {
+        using Elem = std::remove_const_t<typename D::value_type>;
         std::string out = "[";
         for (std::size_t i = 0; i < val.size(); ++i) {
             if (i > 0) out += ",";
-            out += stringify(val[i]);
+            if constexpr (std::is_same_v<Elem, bool>) {
+                out += static_cast<bool>(val[i]) ? "true" : "false";
+            } else {
+                out += stringify(val[i]);
+            }
         }
         out += "]";
         return out;

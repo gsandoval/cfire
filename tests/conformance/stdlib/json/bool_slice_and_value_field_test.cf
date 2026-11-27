@@ -1,0 +1,67 @@
+// expect: stdout
+// | OUT 1 {"name":"x","extra":null}
+// | FMT {"ok":true,"n":7}
+// | BOOL_AND_VALUE_OK
+
+package main
+
+import "core:json"
+
+// Untagged structs in a package importing `core:json` must compile even with `[]bool` or non-JSON fields.
+type UntappedBool struct {
+    n:     i64
+    flags: []bool
+}
+
+type UntappedNonJson struct {
+    m:  map[str]i64
+    cb: fn(i64) -> i64
+}
+
+type BoolFlags struct {
+    flags:     []bool  `json:"flags"`
+    opt_flags: []bool? `json:"opt_flags"`
+}
+
+type R struct {
+    name:  str        `json:"name"`
+    extra: json.Value `json:"extra"`
+}
+
+test "bool slice and json.Value struct fields" {
+    mut d := UntappedBool{ n: 1, flags: [] }
+    d.flags.push(true)
+    _ = UntappedNonJson{ m: make(map[str]i64), cb: |x: i64| -> i64 { return x } }
+    println("OUT {} {}", d.flags.len(), json.stringify(R{ name: "x" }))
+
+    bf := BoolFlags{
+        flags: [true, false, true],
+        opt_flags: [false, none, true],
+    }
+    bf_json := json.stringify(bf)
+    assert_eq(bf_json, `{"flags":[true,false,true],"opt_flags":[false,null,true]}`)
+    bf_back := try json.parse[BoolFlags](bf_json)
+    assert_eq(bf_back.flags.len(), usize(3))
+    assert(bf_back.flags[0] == true && bf_back.flags[1] == false && bf_back.flags[2] == true)
+    assert_eq(bf_back.opt_flags.len(), usize(3))
+    assert((bf_back.opt_flags[0] or true) == false)
+    assert(bf_back.opt_flags[1] == none)
+    assert((bf_back.opt_flags[2] or false) == true)
+
+    bf_empty := try json.parse[BoolFlags](`{"flags":[false],"opt_flags":null}`)
+    assert_eq(bf_empty.flags.len(), usize(1))
+    assert(bf_empty.flags[0] == false)
+    assert_eq(bf_empty.opt_flags.len(), usize(0))
+
+    dyn := try json.parse_dynamic(`{"ok":true,"n":7}`)
+    println("FMT {dyn}")
+    rec := R{ name: "probe", extra: dyn }
+    assert(rec.extra == dyn)
+    rec_json := json.stringify(rec)
+    assert_eq(rec_json, `{"name":"probe","extra":{"ok":true,"n":7}}`)
+    rec_back := try json.parse[R](rec_json)
+    assert_eq(rec_back.name, "probe")
+    assert(rec_back.extra == dyn)
+
+    println("BOOL_AND_VALUE_OK")
+}

@@ -967,5 +967,85 @@ int main() {
             std::format("runtime/core/json.hpp static_assert rejects unspecialized struct (rc={}):\n{}", rc, r_cxx));
     }
 
+    // 5. v0.12.7 regressions: shared[T] field access (sharded + --no-shard), aliased `j.Value`, and `[]bool`
+    {
+        auto ws = root.dir / "regressions_v0127";
+        test_sharded_codegen_detail::write_text(ws / "dom" / "dom.cf", R"CF(package dom
+
+type St struct {
+    now: i64
+    items: []str
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad.cf", R"CF(package ad
+
+import "core:json" as j
+import "../dom"
+
+type Clock struct {
+    state: shared[dom.St]
+}
+
+fn (self: Clock) add(s: str) {
+    self.state.items.push(s)
+}
+
+fn (self: Clock) bump(v: i64) {
+    self.state.now = v
+}
+
+fn (self: Clock) now_ms() -> i64 {
+    return self.state.now
+}
+
+type Holder struct {
+    flags: []bool `json:"flags"`
+    extra: j.Value `json:"extra"`
+}
+
+fn dump_holder(h: Holder) -> str {
+    return j.stringify(h)
+}
+
+fn load_holder(s: str) -> Holder! {
+    return try j.parse[Holder](s)
+}
+)CF");
+        test_sharded_codegen_detail::write_text(ws / "ad" / "ad_test.cf", R"CF(package ad
+
+import "core:json" as j
+import "../dom"
+
+test "shared field and aliased j.Value with bool slice" {
+    c := Clock{ state: make(shared[dom.St], dom.St{ now: 5, items: [] }) }
+    c.add("a")
+    assert_eq(c.now_ms(), i64(5))
+    c.bump(19)
+    assert_eq(c.state.now, i64(19))
+    assert_eq(c.state.items.len(), usize(1))
+
+    dv := try j.parse_dynamic(`{"k":9}`)
+    h := Holder{ flags: [true, false], extra: dv }
+    enc := dump_holder(h)
+    assert_eq(enc, `{"flags":[true,false],"extra":{"k":9}}`)
+    back := try load_holder(enc)
+    assert_eq(back.flags.len(), usize(2))
+    assert(back.flags[0] == true && back.flags[1] == false)
+    assert(back.extra == dv)
+}
+)CF");
+
+        const std::string ad_q = cfire::bridge::shell_quote((ws / "ad").string());
+        std::string r_sharded = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 && r_sharded.contains("PASS: shared field and aliased j.Value with bool slice"),
+            std::format("v0.12.7 regressions test passes in sharded mode (rc={}):\n{}", rc, r_sharded));
+
+        std::string r_noshard = cfire::bridge::run_command_capture(
+            std::format("{} test --no-cache --no-shard {} 2>&1", cfire_bin, ad_q), rc);
+        require(rc == 0 && r_noshard.contains("PASS: shared field and aliased j.Value with bool slice"),
+            std::format("v0.12.7 regressions test passes in --no-shard mode (rc={}):\n{}", rc, r_noshard));
+    }
+
     std::println("--- PASS: test_cross_package_json_sharded_and_noshard");
 }

@@ -339,6 +339,7 @@ struct Resolution {
     bool is_smart_ptr = false;
     bool is_raw_ptr = false;
     bool is_auto_deref = false;     // true if access requires auto-deref (*obj)
+    std::uint8_t auto_deref_depth = 0; // number of (*...) dereferences needed
 };
 
 [[nodiscard]] inline auto sanitize_cpp_ident(std::string_view id) -> std::string {
