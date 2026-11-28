@@ -763,6 +763,289 @@ test "b_basic" {
         }
     }
 
+    // 5. Subtest E: Flint-Scale Sharding Invariants (line-shift header invariance, out-of-line & reachable reflection,
+    //    1:1 per-file test sharding, workspace-shared `.cfire/obj` cross-suite reuse, non-test Arbitrary omission)
+    {
+        const auto ws = root.dir / "flint_scale";
+        std::error_code ec;
+        std::filesystem::create_directories(ws / ".git", ec);
+
+        const auto dom_types_cf = ws / "domain" / "types.cf";
+        const auto dom_alerts_cf = ws / "domain" / "alerts.cf";
+        const auto app_service_cf = ws / "app" / "service.cf";
+        const auto app_a_test_cf = ws / "app" / "a_test.cf";
+        const auto app_b_test_cf = ws / "app" / "b_test.cf";
+        const auto cli_cmd_cf = ws / "cli" / "cmd.cf";
+        const auto cli_cmd_test_cf = ws / "cli" / "cmd_test.cf";
+        const auto bin_main_cf = ws / "binapp" / "main.cf";
+
+        test_sharded_codegen_detail::write_text(dom_types_cf, R"CF(package domain
+
+pub type Status enum {
+    Active,
+    Paused,
+}
+
+pub type PublicRecord struct {
+    id: i64 `json:"id"`
+    label: str `json:"label"`
+    status: Status `json:"status"`
+}
+
+pub type InternalScratch struct {
+    cache: map[str]i64
+    notes: []str
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(dom_alerts_cf, R"CF(package domain
+
+pub fn compute_alert(x: i64) -> i64 {
+    return x * 2
+}
+
+pub type AlertRule struct {
+    threshold: i64 `json:"threshold"`
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(app_service_cf, R"CF(package app
+
+import "core:json"
+import "../domain"
+
+pub fn encode_rule(r: domain.AlertRule) -> str {
+    return json.stringify(r)
+}
+
+pub fn app_score(x: i64) -> i64 {
+    return domain.compute_alert(x) + 1
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(app_a_test_cf, R"CF(package app
+
+import "../domain"
+
+test "a_service" {
+    assert_eq(app_score(5), i64(11))
+    mut rec := domain.InternalScratch{ cache: make(map[str]i64), notes: ["ok"] }
+    assert_eq(rec.notes.len(), usize(1))
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(app_b_test_cf, R"CF(package app
+
+import "../domain"
+
+test "b_alert" {
+    enc := encode_rule(domain.AlertRule{ threshold: 42 })
+    assert(enc.contains("42"))
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(cli_cmd_cf, R"CF(package cli
+
+import "core:cli"
+import "../domain"
+
+pub type CliOpts struct {
+    verbose: bool `cli:"--verbose,-v"`
+}
+
+pub fn parse_opts() -> CliOpts! {
+    return try cli.parse[CliOpts](["--verbose"])
+}
+
+pub fn cli_total(x: i64) -> i64 {
+    return domain.compute_alert(x) + 100
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(cli_cmd_test_cf, R"CF(package cli
+
+test "cli_basic" {
+    opts := try parse_opts()
+    assert(opts.verbose)
+    assert_eq(cli_total(5), i64(110))
+}
+)CF");
+
+        test_sharded_codegen_detail::write_text(bin_main_cf, R"CF(package main
+
+import "../domain"
+
+fn main() {
+    println("bin={}", domain.compute_alert(7))
+}
+)CF");
+
+        flags_guard.set(true, false);
+        cfire::build::set_build_profile(cfire::build::BuildProfile::DevDebug);
+
+        const auto app_test_bin = test_sharded_codegen_detail::exe_path(ws / "app_test_bin");
+        auto b1 = cfire::build::build_native(app_service_cf, rt_dir, app_test_bin, true);
+        require(b1.has_value(), "Subtest E app cold test build succeeds: " + (b1 ? "" : b1.error()));
+        if (!b1) return;
+        require(b1->used_sharded, "Subtest E app test build uses sharded codegen");
+
+        // 1. Verify workspace-shared `.cfire/obj` & lean `pkg_domain.hpp` + out-of-line `pkg_domain_reflect.hpp`
+        const auto ws_obj_dir = std::filesystem::weakly_canonical(ws / ".cfire" / "obj", ec);
+        require(std::filesystem::exists(ws_obj_dir, ec) && !std::filesystem::exists(ws / "app" / ".cfire" / "obj", ec),
+            "Subtest E stores shared .o files in workspace root <ws>/.cfire/obj, not app/.cfire/obj");
+        for (const auto& obj_p : b1->sharded_object_files) {
+            std::filesystem::path p = std::filesystem::weakly_canonical(std::filesystem::path(obj_p).parent_path(), ec);
+            require(p == ws_obj_dir && std::filesystem::path(obj_p).filename().string().starts_with("u_"),
+                "Subtest E object filename is suite-independent u_<id>_<hash>.o in <ws>/.cfire/obj: " + obj_p);
+        }
+
+        const auto app_shard_dir = ws / "app" / ".cfire" / "gen" / "shards" / "service_test";
+        const auto pkg_domain_hpp_p = app_shard_dir / "pkg_domain.hpp";
+        const auto pkg_domain_refl_p = app_shard_dir / "pkg_domain_reflect.hpp";
+        const std::string pkg_domain_hpp_1 = test_sharded_codegen_detail::read_text(pkg_domain_hpp_p);
+        const std::string pkg_domain_refl_1 = test_sharded_codegen_detail::read_text(pkg_domain_refl_p);
+
+        require(!pkg_domain_hpp_1.contains("#line "), "pkg_domain.hpp contains zero #line directives");
+        require(!pkg_domain_hpp_1.contains("stringify_struct") && !pkg_domain_hpp_1.contains("parse_struct") &&
+                !pkg_domain_hpp_1.contains("schema_struct"),
+            "pkg_domain.hpp contains zero inline JSON reflection");
+        require(!pkg_domain_hpp_1.contains("Arbitrary<"), "pkg_domain.hpp contains zero Arbitrary<T> bodies");
+        require(!pkg_domain_hpp_1.contains("core/json.hpp") && !pkg_domain_hpp_1.contains("CFIRE_USE_SIMDJSON"),
+            "pkg_domain.hpp does not pull in simdjson/core:json for non-JSON package");
+
+        require(pkg_domain_refl_1.contains("cfire::json::parse_struct<AlertRule>") &&
+                pkg_domain_refl_1.contains("cfire::json::parse_struct<PublicRecord>") &&
+                pkg_domain_refl_1.contains("cfire::json::stringify_struct<Status>"),
+            "pkg_domain_reflect.hpp declares out-of-line specializations for tagged/reachable types");
+        require(!pkg_domain_refl_1.contains("cfire::json::parse_struct<InternalScratch>") &&
+                !pkg_domain_refl_1.contains("cfire::json::stringify_struct<InternalScratch>"),
+            "pkg_domain_reflect.hpp omits JSON reflection for untagged unserialized InternalScratch");
+        require(!pkg_domain_refl_1.contains("inline auto cfire::json::"),
+            "pkg_domain_reflect.hpp omits inline on out-of-line specializations");
+
+        int run_rc = 0;
+        std::string app_out_1 = cfire::bridge::run_command_capture(
+            cfire::bridge::shell_quote(app_test_bin.string()) + " 2>&1", run_rc);
+        require(run_rc == 0 && app_out_1.contains("PASS: a_service") && app_out_1.contains("PASS: b_alert") &&
+                app_out_1.contains("PASS: [auto] json round-trip: PublicRecord") &&
+                app_out_1.contains("PASS: [auto] json round-trip: AlertRule"),
+            "Subtest E app test binary passes all unit + auto round-trip tests:\n" + app_out_1);
+
+        // 2. Non-test binary build: omits Arbitrary<T>, and line-shift inside domain/alerts.cf recompiles ONLY 1 unit!
+        const auto bin_out = test_sharded_codegen_detail::exe_path(ws / "binapp_out");
+        auto nb1 = cfire::build::build_native(bin_main_cf, rt_dir, bin_out, false);
+        require(nb1.has_value(), "Subtest E non-test binapp build succeeds: " + (nb1 ? "" : nb1.error()));
+        if (!nb1) return;
+        const auto bin_shard_dir = ws / "binapp" / ".cfire" / "gen" / "shards" / "main";
+        const std::string bin_dom_refl = test_sharded_codegen_detail::read_text(bin_shard_dir / "pkg_domain_reflect.hpp");
+        require(!bin_dom_refl.contains("Arbitrary<"), "non-test build omits Arbitrary<T> declarations");
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        test_sharded_codegen_detail::write_text(dom_alerts_cf, R"CF(package domain
+
+pub fn compute_alert(x: i64) -> i64 {
+    // Shifting line numbers above AlertRule inside a function body:
+    tmp := x + 0
+
+
+    return tmp * 2
+}
+
+pub type AlertRule struct {
+    threshold: i64 `json:"threshold"`
+}
+)CF");
+
+        auto nb2 = cfire::build::build_native(bin_main_cf, rt_dir, bin_out, false);
+        require(nb2.has_value() && nb2->sharded_recompiled_units == 1,
+            std::format("Subtest E non-test line shift in domain/alerts.cf must recompile ONLY 1 unit, got {}",
+                nb2 ? nb2->sharded_recompiled_units : 999));
+
+        // Now verify `pkg_domain.hpp` stays byte-for-byte identical in `app` test build after that line shift
+        auto b2 = cfire::build::build_native(app_service_cf, rt_dir, app_test_bin, true);
+        require(b2.has_value(), "Subtest E app rebuild after domain line shift succeeds");
+        if (!b2) return;
+        require(test_sharded_codegen_detail::read_text(pkg_domain_hpp_p) == pkg_domain_hpp_1,
+            "Subtest E line shift inside function body leaves pkg_domain.hpp byte-for-byte identical");
+        require(b2->sharded_recompiled_units <= 2,
+            std::format("Subtest E test rebuild after domain line shift must recompile at most 2 units (domain__alerts + __test_main), got {}",
+                b2->sharded_recompiled_units));
+
+        // 3. Adding a test to b_test.cf recompiles ONLY b_test + __test_main (2 units)
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        test_sharded_codegen_detail::write_text(app_b_test_cf, R"CF(package app
+
+import "../domain"
+
+test "b_alert" {
+    enc := encode_rule(domain.AlertRule{ threshold: 42 })
+    assert(enc.contains("42"))
+}
+
+test "b_extra" {
+    assert_eq(domain.compute_alert(10), i64(20))
+}
+)CF");
+        auto b3 = cfire::build::build_native(app_service_cf, rt_dir, app_test_bin, true);
+        require(b3.has_value(), "Subtest E rebuild after adding test to b_test.cf succeeds: " + (b3 ? "" : b3.error()));
+        if (!b3) return;
+        require(b3->sharded_recompiled_units == 2,
+            std::format("Subtest E adding test to b_test.cf must recompile ONLY 2 units (app__b_test + __test_main), got {}",
+                b3->sharded_recompiled_units));
+        std::string app_out_3 = cfire::bridge::run_command_capture(
+            cfire::bridge::shell_quote(app_test_bin.string()) + " 2>&1", run_rc);
+        require(run_rc == 0 && app_out_3.contains("PASS: b_extra") && app_out_3.contains("PASS: a_service"),
+            "Subtest E added test runs and passes cleanly:\n" + app_out_3);
+
+        // 4. Cross-suite `.cfire/obj` reuse: `cli` suite reuses ALL `domain` .o files built by `app`!
+        const auto cli_test_bin = test_sharded_codegen_detail::exe_path(ws / "cli_test_bin");
+        auto b_cli = cfire::build::build_native(cli_cmd_test_cf, rt_dir, cli_test_bin, true);
+        require(b_cli.has_value(), "Subtest E cli test build succeeds: " + (b_cli ? "" : b_cli.error()));
+        if (!b_cli) return;
+        // cli has: cli__cmd, cli__cmd_test, cli__reflect (for CliOpts), __test_main = 4 cli units,
+        // while domain's 2 units (domain__alerts, domain__reflect) MUST be reused from <ws>/.cfire/obj!
+        const std::size_t expected_cli_only = b_cli->sharded_total_units - 2;
+        require(b_cli->sharded_recompiled_units == expected_cli_only,
+            std::format("Subtest E cli suite must reuse all 2 domain .o files (expected {} recompiled of {}, got {})",
+                expected_cli_only, b_cli->sharded_total_units, b_cli->sharded_recompiled_units));
+        std::string cli_out = cfire::bridge::run_command_capture(
+            cfire::bridge::shell_quote(cli_test_bin.string()) + " 2>&1", run_rc);
+        require(run_rc == 0 && cli_out.contains("PASS: cli_basic"),
+            "Subtest E cli test binary runs and passes:\n" + cli_out);
+
+        // 5. Pure CLI struct with `desc:` tag (and NO `core:json` / `json:` tag) must NOT pull simdjson or emit cfire::json::*
+        const auto pure_cli_cf = ws / "pure_cli" / "main.cf";
+        test_sharded_codegen_detail::write_text(pure_cli_cf, R"CF(package main
+
+import "core:cli"
+
+type ServerFlags struct {
+    host: str `cli:"--host,-h" default:"127.0.0.1" desc:"Bind address"`
+    port: u16 `cli:"--port,-p" default:"9090" desc:"Listen port"`
+}
+
+fn main() -> void! {
+    f := try cli.parse[ServerFlags](["--port", "8088"])
+    println("cli={}:{}", f.host, f.port)
+}
+)CF");
+        const auto pure_cli_bin = test_sharded_codegen_detail::exe_path(ws / "pure_cli_bin");
+        auto b_pcli = cfire::build::build_native(pure_cli_cf, rt_dir, pure_cli_bin, false);
+        require(b_pcli.has_value() && b_pcli->used_sharded,
+            "Subtest E pure CLI with desc: sharded build succeeds: " + (b_pcli ? "" : b_pcli.error()));
+        if (!b_pcli) return;
+        const std::string pcli_refl = test_sharded_codegen_detail::read_text(
+            pure_cli_cf.parent_path() / ".cfire" / "gen" / "shards" / "main" / "pkg_main_reflect.hpp");
+        require(pcli_refl.contains("cfire::cli::parse") &&
+                !pcli_refl.contains("cfire::json::") &&
+                !pcli_refl.contains("CFIRE_USE_SIMDJSON"),
+            "pure CLI package with desc: emits cli::parse only without json reflection or CFIRE_USE_SIMDJSON:\n" + pcli_refl);
+        std::string pcli_out = test_sharded_codegen_detail::trim_str(
+            cfire::bridge::run_command_capture(cfire::bridge::shell_quote(pure_cli_bin.string()) + " 2>&1", run_rc));
+        require(run_rc == 0 && pcli_out == "cli=127.0.0.1:8088",
+            "pure CLI binary with desc: runs cleanly, got: '" + pcli_out + "'");
+    }
+
     std::println("--- PASS: test_sharded_cpp_codegen");
 }
 

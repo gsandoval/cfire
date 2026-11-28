@@ -147,6 +147,13 @@ namespace cfire::build {
             deps.push_back(to_pkg);
         }
     };
+    auto record_pkg_nonlocal = [&](const std::string& importer_pkg, const frontend::ImportDecl& imp) {
+        const std::string pkg = importer_pkg.empty() ? default_pkg : importer_pkg;
+        auto& dst = imp.is_cpp ? root_ast.pkg_cpp_imports[pkg] : root_ast.pkg_nonlocal_imports[pkg];
+        if (std::find(dst.begin(), dst.end(), imp.path) == dst.end()) {
+            dst.push_back(imp.path);
+        }
+    };
     auto record_source_file = [&](const std::string& canon) {
         if (canon.empty()) return;
         if (std::find(root_ast.resolved_source_files.begin(), root_ast.resolved_source_files.end(), canon) == root_ast.resolved_source_files.end()) {
@@ -507,6 +514,7 @@ namespace cfire::build {
                 }
             }
         } else {
+            record_pkg_nonlocal(item.importer_pkg, imp);
             // Deduplicate non-local imports (C++ or core imports), preserving & merging attributes
             std::string imp_key = (imp.is_cpp ? "cpp:" : "cf:") + imp.path + (imp.alias.empty() ? "" : ":" + imp.alias);
             if (!seen_non_local_imports.contains(imp_key)) {

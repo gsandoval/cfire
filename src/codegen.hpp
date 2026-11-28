@@ -22,6 +22,9 @@ struct CppUnit {
     std::string filename;
     std::string header_file;
     std::vector<std::string> dep_headers;
+    std::vector<std::string> core_modules;
+    std::vector<std::string> defines;
+    bool uses_cpp_headers = false;
     std::string cpp;
 };
 
@@ -58,7 +61,9 @@ namespace cfire::frontend {
 #include "sema/stdlib_index.hpp"
 #include "sema/builtin_methods.hpp"
 #include <algorithm>
+#include <filesystem>
 #include <format>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <set>
@@ -123,6 +128,16 @@ public:
     bool in_fallible_void_ = false;
     bool in_ptr_return_ = false;
     bool sharded_non_inline_ = false;
+    bool suppress_line_directives_ = false;
+    bool emit_arbitrary_reflection_ = true;
+    enum class ReflectEmitMode : uint8_t {
+        InlineAll,
+        MetaOnly,
+        HeaderDeclsOnly,
+        UnitDefsOnly
+    };
+    ReflectEmitMode reflect_emit_mode_ = ReflectEmitMode::InlineAll;
+    std::optional<std::unordered_set<std::string>> json_needed_types_{};
     std::string cur_fn_raw_return_type_{};
     TypeRef cur_fn_return_typeref_{};
     bool has_cur_fn_return_typeref_ = false;
@@ -198,13 +213,25 @@ public:
     }
 
     void set_source_path(std::string_view p) {
-        if (!p.empty() && p != source_path_) {
-            source_path_ = std::string(p);
+        if (p.empty()) return;
+        std::string next;
+        if (sharded_non_inline_) {
+            std::error_code ec;
+            auto canon = std::filesystem::weakly_canonical(std::filesystem::path(p), ec);
+            next = (!ec && !canon.empty())
+                ? canon.generic_string()
+                : std::filesystem::path(p).lexically_normal().generic_string();
+        } else {
+            next = std::string(p);
+        }
+        if (next != source_path_) {
+            source_path_ = std::move(next);
             last_source_line_ = -1;
         }
     }
 
     void emit_line_directive(int line) {
+        if (suppress_line_directives_) return;
         if (line > 0 && line != last_source_line_ && !source_path_.empty()) {
             last_source_line_ = line;
             writeln(std::format("#line {} \"{}\"", line, escape_line_path(source_path_)));
@@ -216,6 +243,7 @@ public:
     }
 
     void emit_synthetic_line_directive() {
+        if (suppress_line_directives_) return;
         if (!source_path_.empty()) {
             writeln("#line 1 \"<cfire-synthetic>\"");
             last_source_line_ = -1;
@@ -248,6 +276,10 @@ public:
         sub.view_params_ = view_params_;
         sub.generic_params_ = generic_params_;
         sub.sharded_non_inline_ = sharded_non_inline_;
+        sub.suppress_line_directives_ = suppress_line_directives_;
+        sub.emit_arbitrary_reflection_ = emit_arbitrary_reflection_;
+        sub.reflect_emit_mode_ = reflect_emit_mode_;
+        sub.json_needed_types_ = json_needed_types_;
         if (inherit_return_context) {
             sub.in_main_ = in_main_;
             sub.in_test_ = in_test_;
@@ -273,8 +305,17 @@ public:
 
     void emit_file();
 
+    struct ShardedTestEntry {
+        std::size_t ast_test_idx;
+        std::string sym_suffix;
+    };
+
     void emit_test_runner(const FileAST& ast, bool has_user_main);
     void emit_test_decl(const TestDecl& td, std::size_t idx);
+    void emit_test_decl(const TestDecl& td, const std::string& sym_suffix, bool non_inline);
+    void emit_sharded_test_main(const FileAST& ast, bool has_user_main, const std::vector<ShardedTestEntry>& entries);
+
+    [[nodiscard]] auto collect_auto_json_structs(const FileAST& ast) const -> std::vector<std::pair<std::string, int>>;
 
     void emit_interface(const InterfaceDecl& iface);
 

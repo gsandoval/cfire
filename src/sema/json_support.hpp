@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 namespace cfire::frontend::json_support {
 
@@ -397,6 +399,232 @@ inline auto set_json_err(JsonSupportError* err, std::string_view path, std::stri
         }
     }
     return true;
+}
+
+[[nodiscard]] inline auto compute_json_needed_types(const CheckedFile& cf) -> std::optional<std::unordered_set<std::string>> {
+    // Template runtime headers (`webui`, `ai`, `tako`) invoke `cfire::json::{parse,stringify,schema}`
+    // inside C++ templates on arbitrary user structs (including handler signature types), so skip filtering.
+    for (const auto& imp : cf.ast.imports) {
+        if (imp.is_cpp) continue;
+        auto res = cfire::modules::resolve_import(imp.path);
+        if (res.is_vendor && res.vendor_key == "tako") {
+            return std::nullopt;
+        }
+        for (const auto& ck : res.core_keys) {
+            if (ck == "ai" || ck == "webui") {
+                return std::nullopt;
+            }
+        }
+    }
+
+    std::unordered_set<std::string> needed;
+    std::vector<std::string> worklist;
+    auto push_type_name = [&](const std::string& name) {
+        if (!name.empty() && needed.insert(name).second) {
+            worklist.push_back(name);
+        }
+    };
+    auto add_named_decl = [&](std::string_view raw_name, std::string_view owner_pkg) {
+        if (raw_name.empty()) return;
+        if (const StructDecl* st = find_struct_decl(cf, raw_name, owner_pkg)) {
+            if (st->type_params.empty()) push_type_name(st->name);
+            return;
+        }
+        if (const EnumDecl* en = find_enum_decl(cf, raw_name, owner_pkg)) {
+            if (en->type_params.empty()) push_type_name(en->name);
+            return;
+        }
+    };
+
+    // 1. Seed structs with explicit JSON tags.
+    for (const auto& st : cf.ast.structs) {
+        if (!st.type_params.empty()) continue;
+        auto it = cf.struct_tags.find(st.name);
+        if (it == cf.struct_tags.end()) continue;
+        for (const auto& t : it->second) {
+            if (!t.json_key.empty()) {
+                push_type_name(st.name);
+                break;
+            }
+        }
+    }
+
+    bool bail_to_all = false;
+    auto seed_typeref = [&](const auto& self, const TypeRef& tr, std::string_view owner_pkg,
+                            const std::unordered_set<std::string>& tparams) -> void {
+        if (bail_to_all) return;
+        if (!tr.name.empty() && tparams.contains(tr.name)) {
+            bail_to_all = true;
+            return;
+        }
+        if (tr.elem_type) self(self, *tr.elem_type, owner_pkg, tparams);
+        if (tr.key_type) self(self, *tr.key_type, owner_pkg, tparams);
+        for (const auto& ta : tr.type_args) self(self, ta, owner_pkg, tparams);
+        for (const auto& tt : tr.tuple_types) self(self, tt, owner_pkg, tparams);
+        for (const auto& fp : tr.fn_params) self(self, fp, owner_pkg, tparams);
+        if (tr.fn_ret) self(self, *tr.fn_ret, owner_pkg, tparams);
+        if (!tr.name.empty() && !is_json_primitive_name(tr.name)) {
+            add_named_decl(tr.name, owner_pkg);
+        }
+    };
+
+    auto seed_typeid = [&](const auto& self, TypeId tid, const std::unordered_set<std::string>& tparams) -> void {
+        if (bail_to_all) return;
+        if (!tid.is_valid() || tid.is_unknown() || tid.is_error()) {
+            bail_to_all = true;
+            return;
+        }
+        if (cf.type_table.contains_unknown(tid) || cf.type_table.contains_type_param(tid)) {
+            bail_to_all = true;
+            return;
+        }
+        const TypeDesc& d = cf.type_table.get(tid);
+        switch (d.kind) {
+            case TypeKind::Unknown:
+            case TypeKind::TypeParam:
+                bail_to_all = true;
+                return;
+            case TypeKind::Borrow:
+            case TypeKind::MutBorrow:
+            case TypeKind::Optional:
+            case TypeKind::Slice:
+            case TypeKind::Array:
+            case TypeKind::Own:
+            case TypeKind::Shared:
+                if (d.elem_type.is_valid()) self(self, d.elem_type, tparams);
+                return;
+            case TypeKind::Map:
+                if (d.key_type.is_valid()) self(self, d.key_type, tparams);
+                if (d.elem_type.is_valid()) self(self, d.elem_type, tparams);
+                return;
+            case TypeKind::Tuple:
+                for (TypeId pt : d.param_types) self(self, pt, tparams);
+                return;
+            case TypeKind::GenericInst:
+                if (!d.base_name.empty()) {
+                    if (tparams.contains(d.base_name)) { bail_to_all = true; return; }
+                    add_named_decl(d.base_name, d.package_name);
+                }
+                for (TypeId ta : d.type_args) self(self, ta, tparams);
+                return;
+            case TypeKind::NominalStruct:
+            case TypeKind::NominalEnum:
+                if (!d.name.empty()) {
+                    if (tparams.contains(d.name)) { bail_to_all = true; return; }
+                    add_named_decl(d.name, d.package_name);
+                }
+                return;
+            default:
+                return;
+        }
+    };
+
+    auto is_json_ns = [&](std::string_view ns) -> bool {
+        if (ns == "json") return true;
+        auto it = cf.core_aliases.find(std::string(ns));
+        return it != cf.core_aliases.end() && it->second == "json";
+    };
+
+    auto scan_expr_node = [&](const ExprPtr& e, std::string_view cur_pkg,
+                              const std::unordered_set<std::string>& tparams) -> bool {
+        if (bail_to_all) return false;
+        const auto* call = std::get_if<CallExpr>(&e->node);
+        if (!call || !call->callee) return true;
+        std::string method;
+        if (const auto* mem = std::get_if<MemberExpr>(&call->callee->node);
+            mem && mem->object) {
+            if (const auto* obj_id = std::get_if<IdentExpr>(&mem->object->node);
+                obj_id && is_json_ns(obj_id->name)) {
+                method = mem->field;
+            }
+        } else if (const auto* id = std::get_if<IdentExpr>(&call->callee->node)) {
+            std::string norm = normalize_type_lookup_name(id->name);
+            if (auto dot = norm.find('.'); dot != std::string::npos && is_json_ns(norm.substr(0, dot))) {
+                method = norm.substr(dot + 1);
+            }
+        }
+        if (method == "stringify") {
+            if (!call->args.empty() && call->args[0].value) {
+                if (call->args[0].value->resolved_type_id == 0) {
+                    bail_to_all = true;
+                    return false;
+                }
+                seed_typeid(seed_typeid, TypeId{call->args[0].value->resolved_type_id}, tparams);
+            }
+        } else if (method == "parse" || method == "schema") {
+            if (!call->type_args.empty()) {
+                seed_typeref(seed_typeref, call->type_args[0], cur_pkg, tparams);
+            }
+        }
+        return true;
+    };
+
+    for (const auto& st : cf.ast.structs) {
+        std::unordered_set<std::string> st_tparams;
+        for (const auto& tp : st.type_params) st_tparams.insert(tp.name);
+        for (const auto& fld : st.fields) {
+            if (fld.default_val) {
+                visit_expr_tree(fld.default_val, [&](const ExprPtr& e) {
+                    return scan_expr_node(e, st.package_name, st_tparams);
+                });
+            }
+            if (bail_to_all) return std::nullopt;
+        }
+    }
+    for (const auto& gv : cf.ast.global_vars) {
+        std::unordered_set<std::string> empty_tp;
+        if (gv.value) {
+            visit_expr_tree(gv.value, [&](const ExprPtr& e) {
+                return scan_expr_node(e, gv.package_name, empty_tp);
+            });
+        }
+        if (bail_to_all) return std::nullopt;
+    }
+    for (const auto& fn : cf.ast.functions) {
+        std::unordered_set<std::string> fn_tp;
+        for (const auto& tp : fn.type_params) fn_tp.insert(tp.name);
+        if (fn.receiver) {
+            for (const auto& ta : fn.receiver->type.type_args) {
+                if (!ta.name.empty() && !is_json_primitive_name(ta.name) &&
+                    !find_struct_decl(cf, ta.name, fn.package_name) &&
+                    !find_enum_decl(cf, ta.name, fn.package_name)) {
+                    fn_tp.insert(ta.name);
+                }
+            }
+        }
+        visit_exprs(fn.body, [&](const ExprPtr& e) {
+            return scan_expr_node(e, fn.package_name, fn_tp);
+        });
+        if (bail_to_all) return std::nullopt;
+    }
+    for (const auto& td : cf.ast.tests) {
+        std::unordered_set<std::string> empty_tp;
+        visit_exprs(td.body, [&](const ExprPtr& e) {
+            return scan_expr_node(e, td.package_name, empty_tp);
+        });
+        if (bail_to_all) return std::nullopt;
+    }
+
+    // 3. Transitive closure through struct fields and enum variant payloads.
+    const std::unordered_set<std::string> empty_tp;
+    std::size_t cursor = 0;
+    while (cursor < worklist.size()) {
+        std::string cur_name = worklist[cursor++];
+        if (const StructDecl* st = find_struct_decl(cf, cur_name)) {
+            for (std::size_t i = 0; i < st->fields.size(); ++i) {
+                if (is_field_json_ignored(cf, *st, i)) continue;
+                seed_typeref(seed_typeref, st->fields[i].type, st->package_name, empty_tp);
+            }
+        } else if (const EnumDecl* en = find_enum_decl(cf, cur_name)) {
+            for (const auto& v : en->variants) {
+                for (const auto& pt : v.payload_types) {
+                    seed_typeref(seed_typeref, pt, en->package_name, empty_tp);
+                }
+            }
+        }
+    }
+
+    return needed;
 }
 
 } // namespace cfire::frontend::json_support

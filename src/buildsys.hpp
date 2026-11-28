@@ -1383,6 +1383,132 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
     return {};
 }
 
+namespace detail {
+[[nodiscard]] inline auto resolve_shared_obj_dir(const std::filesystem::path& cf_parent) -> std::filesystem::path {
+    std::error_code ec;
+    auto base = cf_parent.empty() ? std::filesystem::path(".") : cf_parent;
+    auto cur = std::filesystem::weakly_canonical(base, ec);
+    if (ec || cur.empty()) {
+        ec.clear();
+        cur = std::filesystem::absolute(base, ec);
+    }
+    if (!cur.empty()) {
+        auto probe = cur;
+        for (int depth = 0; depth < 8 && !probe.empty(); ++depth) {
+            if (std::filesystem::exists(probe / "build.cf", ec) ||
+                std::filesystem::exists(probe / ".git", ec)) {
+                return probe / ".cfire" / "obj";
+            }
+            ec.clear();
+            auto parent = probe.parent_path();
+            if (parent.empty() || parent == probe) break;
+            probe = std::move(parent);
+        }
+    }
+    return base / ".cfire" / "obj";
+}
+
+[[nodiscard]] inline auto filter_unit_cflags(
+    const std::vector<std::string>& base_cflags,
+    const std::filesystem::path& runtime_dir,
+    const std::filesystem::path& cf_parent,
+    const frontend::CppUnit& unit
+) -> std::vector<std::string> {
+    std::unordered_set<std::string_view> mods(unit.core_modules.begin(), unit.core_modules.end());
+    const bool need_json = mods.contains("json") || mods.contains("tako") || mods.contains("ai") || mods.contains("webui");
+    const bool need_sqlite = mods.contains("sqlite");
+    const bool need_sodium = mods.contains("sodium");
+    const bool need_ssh = mods.contains("ssh");
+
+    auto norm_dir = [](const std::filesystem::path& p) -> std::string {
+        if (p.empty()) return {};
+        std::error_code ec;
+        auto can = std::filesystem::weakly_canonical(p, ec);
+        std::string s = (!ec && !can.empty()) ? can.lexically_normal().generic_string()
+                                             : p.lexically_normal().generic_string();
+        while (s.size() > 1 && s.back() == '/') s.pop_back();
+        return s;
+    };
+    const std::string simd_inc = norm_dir(runtime_dir / "vendor" / "simdjson");
+    const std::string sqlite_inc = norm_dir(runtime_dir / "vendor" / "sqlite3");
+    const std::string cf_parent_inc = norm_dir(cf_parent);
+
+    auto should_skip_inc_dir = [&](std::string_view raw_dir) -> bool {
+        while (raw_dir.size() >= 2 && raw_dir.front() == '"' && raw_dir.back() == '"') {
+            raw_dir = raw_dir.substr(1, raw_dir.size() - 2);
+        }
+        if (raw_dir.empty()) return false;
+        std::string nd = norm_dir(std::filesystem::path(raw_dir));
+        if (!need_json && !simd_inc.empty() && nd == simd_inc) return true;
+        if (!need_sqlite && !sqlite_inc.empty() && nd == sqlite_inc) return true;
+        if (!unit.uses_cpp_headers && !cf_parent_inc.empty() && nd == cf_parent_inc) return true;
+        return false;
+    };
+
+    std::vector<std::string> out;
+    out.reserve(base_cflags.size());
+    for (std::size_t i = 0; i < base_cflags.size(); ++i) {
+        const auto& f = base_cflags[i];
+        if (f == "-I" && i + 1 < base_cflags.size()) {
+            if (should_skip_inc_dir(base_cflags[i + 1])) {
+                ++i;
+                continue;
+            }
+            out.push_back(f);
+            out.push_back(base_cflags[++i]);
+            continue;
+        }
+        if (f.starts_with("-I") && f.size() > 2 && should_skip_inc_dir(std::string_view(f).substr(2))) {
+            continue;
+        }
+        if (!need_sqlite && f == "-DSQLITE_HAS_CODEC=1") continue;
+        if (!need_sodium && (f == "-DCFIRE_HAS_LIBSODIUM=1" || f == "-DSODIUM_STATIC=1")) continue;
+        if (!need_ssh && (f == "-DCFIRE_HAS_LIBSSH=1" || f == "-DLIBSSH_STATIC=1")) continue;
+        out.push_back(f);
+    }
+    return out;
+}
+
+[[nodiscard]] inline auto build_unit_pch_umbrella(const frontend::CppUnit& unit) -> std::string {
+    std::string out = "#pragma once\n";
+    for (const auto& def : unit.defines) {
+        std::string_view line = def;
+        while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) line.remove_prefix(1);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.remove_suffix(1);
+        if (!line.starts_with("#define ")) continue;
+        std::string_view rest = line.substr(8);
+        while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.remove_prefix(1);
+        std::size_t id_len = 0;
+        while (id_len < rest.size()) {
+            char c = rest[id_len];
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+                ++id_len;
+            } else {
+                break;
+            }
+        }
+        if (id_len > 0) {
+            std::string_view macro = rest.substr(0, id_len);
+            out += std::format("#ifndef {}\n{}\n#endif\n", macro, line);
+        }
+    }
+    out += "#include \"cfire_prelude.hpp\"\n";
+    out += "#include \"core/str.hpp\"\n";
+    out += "#include \"core/builtin_methods.hpp\"\n";
+    std::set<std::string> extra_hdrs;
+    for (const auto& mod : unit.core_modules) {
+        if (std::string hdr = cfire::modules::core_module_header(mod);
+            !hdr.empty() && hdr != "core/str.hpp" && hdr != "core/builtin_methods.hpp") {
+            extra_hdrs.insert(std::move(hdr));
+        }
+    }
+    for (const auto& hdr : extra_hdrs) {
+        out += std::format("#include \"{}\"\n", hdr);
+    }
+    return out;
+}
+} // namespace detail
+
 [[nodiscard]] CFIRE_BUILDSYS_INLINE auto build_native(
     const std::filesystem::path& cf_file,
     const std::filesystem::path& runtime_dir,
@@ -1859,10 +1985,11 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
 
     const bool use_persistent_obj = (!will_shard && dev_debug && !is_wasm);
     std::filesystem::path obj_path;
-    auto obj_dir = cf_parent / ".cfire" / "obj";
+    auto obj_dir = will_shard ? detail::resolve_shared_obj_dir(cf_parent) : (cf_parent / ".cfire" / "obj");
     std::filesystem::path shard_dir;
     std::vector<std::filesystem::path> unit_cpp_paths;
     std::vector<std::filesystem::path> unit_obj_paths;
+    std::vector<std::vector<std::string>> unit_cflags_list;
 
     if (will_shard) {
         shard_dir = gen_dir / "shards" / stem;
@@ -1885,11 +2012,13 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
         }
         unit_cpp_paths.reserve(sharded.units.size());
         unit_obj_paths.reserve(sharded.units.size());
+        unit_cflags_list.reserve(sharded.units.size());
         for (const auto& unit : sharded.units) {
             auto u_cpp = shard_dir / unit.filename;
             if (auto wr = write_file_if_changed(u_cpp, unit.cpp); !wr) {
                 return std::unexpected(wr.error());
             }
+            auto u_cflags = detail::filter_unit_cflags(plan.cflags, runtime_dir, cf_parent, unit);
             detail::Sha256State st;
             auto feed = [&](std::string_view tag, std::string_view val) {
                 st.update(reinterpret_cast<const uint8_t*>(tag.data()), tag.size());
@@ -1899,27 +2028,30 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                 const char sep2 = '\0';
                 st.update(reinterpret_cast<const uint8_t*>(&sep2), 1);
             };
-            feed("schema", "shard-obj-v2");
+            feed("schema", "shard-obj-v3");
             feed("compiler", compiler_fp);
             feed("opt", opt_flags);
             feed("target", plan.target_triple);
-            for (const auto& cf_flag : plan.cflags) {
+            for (const auto& cf_flag : u_cflags) {
                 feed("cf", cf_flag);
             }
             feed("rt", rt_fp);
-            feed("cpp_hdr", local_cpp_hdr_fp);
+            if (unit.uses_cpp_headers) {
+                feed("cpp_hdr", local_cpp_hdr_fp);
+            }
             for (const auto& dh : unit.dep_headers) {
                 feed("hdr_name", dh);
                 if (auto hit = header_hashes.find(dh); hit != header_hashes.end()) {
                     feed("hdr_hash", hit->second);
                 }
             }
-            feed("unit_path", u_cpp.string());
+            feed("unit_id", unit.id);
             feed("unit_cpp", unit.cpp);
             std::string h16 = st.final_hex().substr(0, 16);
-            auto u_obj = obj_dir / std::format("{}__u_{}_{}.o", stem, unit.id, h16);
+            auto u_obj = obj_dir / std::format("u_{}_{}.o", unit.id, h16);
             unit_cpp_paths.push_back(std::move(u_cpp));
             unit_obj_paths.push_back(std::move(u_obj));
+            unit_cflags_list.push_back(std::move(u_cflags));
         }
         plan.used_sharded = true;
         plan.sharded_total_units = sharded.units.size();
@@ -2072,20 +2204,22 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
         }
     }
 
-    // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode
+    // Only use host PCH if compiling natively for the host (empty target_triple) and not in Objective-C++ mode.
+    // For sharded builds, per-umbrella composite PCHs are built lazily for dirty units below.
     std::string pch_path;
-    if (plan.target_triple.empty() && !plan.uses_objc && !(plan.is_ios && plan.is_gui)) {
-        std::string umbrella = extract_pch_umbrella_header(will_shard ? sharded.preamble_hpp : cpp_code);
+    const bool allow_host_pch = plan.target_triple.empty() && !plan.uses_objc && !(plan.is_ios && plan.is_gui);
+    if (!will_shard && allow_host_pch) {
+        std::string umbrella = extract_pch_umbrella_header(cpp_code);
         pch_path = ensure_composite_pch(runtime_dir, umbrella, opt_flags, plan.cflags);
     }
 
-    auto build_compile_cflags = [&](std::string& out_cmd) {
+    auto build_compile_cflags_with = [&](std::string& out_cmd, const std::vector<std::string>& flags, bool allow_cf_parent_inc) {
         if ((plan.is_ios && plan.is_gui) && !plan.uses_objc) {
             out_cmd += " -fobjc-arc";
         }
         bool has_cf_parent_inc = false;
         const std::string cf_parent_inc = "-I" + cf_parent.string();
-        for (const auto& f : plan.cflags) {
+        for (const auto& f : flags) {
             if (f == cf_parent_inc) has_cf_parent_inc = true;
             if (f.starts_with("-I") && f.size() > 2 && f[2] != '"' && f[2] != ' ') {
                 out_cmd += " -I" + bridge::shell_quote(f.substr(2));
@@ -2095,9 +2229,13 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                 out_cmd += " " + f;
             }
         }
-        if (!plan.cpp_headers.empty() && !cf_parent.empty() && !has_cf_parent_inc) {
+        if (allow_cf_parent_inc && !plan.cpp_headers.empty() && !cf_parent.empty() && !has_cf_parent_inc) {
             out_cmd += " -I" + bridge::shell_quote(cf_parent.string());
         }
+    };
+
+    auto build_compile_cflags = [&](std::string& out_cmd) {
+        build_compile_cflags_with(out_cmd, plan.cflags, true);
     };
 
     auto build_link_ldflags = [&](std::string& out_cmd) {
@@ -2168,15 +2306,45 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
             }
         }
 
+        if (is_verbose_build()) {
+            std::println(stderr, "sharded: recompiled {} of {} unit(s) (obj_dir={})",
+                dirty_indices.size(), unit_obj_paths.size(), obj_dir.string());
+        }
+
         plan.sharded_recompiled_units = dirty_indices.size();
-        plan.used_pch = !pch_path.empty();
+
+        std::vector<std::string> unit_pch_paths(sharded.units.size());
+        bool any_pch_used = false;
+        if (!dirty_indices.empty() && allow_host_pch) {
+            std::unordered_map<std::string, std::string> pch_memo;
+            for (std::size_t u : dirty_indices) {
+                std::string umb = detail::build_unit_pch_umbrella(sharded.units[u]);
+                std::string memo_key = umb + "\n---\n";
+                for (const auto& f : unit_cflags_list[u]) {
+                    memo_key += f;
+                    memo_key.push_back('\n');
+                }
+                auto [it, inserted] = pch_memo.emplace(std::move(memo_key), std::string{});
+                if (inserted) {
+                    it->second = ensure_composite_pch(runtime_dir, umb, opt_flags, unit_cflags_list[u]);
+                }
+                unit_pch_paths[u] = it->second;
+                if (!it->second.empty()) {
+                    any_pch_used = true;
+                }
+            }
+        } else if (dirty_indices.empty() && allow_host_pch) {
+            // Warm cache hits count as PCH-enabled if a composite PCH matches the entry environment.
+            any_pch_used = true;
+        }
+        plan.used_pch = any_pch_used;
 
         auto make_unit_compile_cmd = [&](std::size_t u, const std::filesystem::path& out_obj, bool with_pch) {
             std::string c = compiler;
-            build_compile_cflags(c);
+            build_compile_cflags_with(c, unit_cflags_list[u], sharded.units[u].uses_cpp_headers);
             c += std::format(" -iquote \"{}\"", shard_dir.string());
-            if (with_pch && !pch_path.empty()) {
-                c += std::format(" -include-pch \"{}\"{}", pch_path, pch_static_flag());
+            if (with_pch && !unit_pch_paths[u].empty()) {
+                c += std::format(" -include-pch \"{}\"{}", unit_pch_paths[u], pch_static_flag());
             }
             c += std::format(" {} -c \"{}\" -o \"{}\"", opt_flags, unit_cpp_paths[u].string(), out_obj.string());
             return c;
@@ -2206,7 +2374,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                     std::string unit_cmd = make_unit_compile_cmd(u, tmp_obj, allow_pch);
                     int rc = 0;
                     std::string out_txt = bridge::run_command_capture(unit_cmd, rc);
-                    if (rc != 0 && allow_pch && allow_per_unit_fallback && !pch_path.empty()) {
+                    if (rc != 0 && allow_pch && allow_per_unit_fallback && !unit_pch_paths[u].empty()) {
                         if (is_verbose_build()) {
                             std::lock_guard<std::mutex> lk(err_mu);
                             std::println(stderr, "note: precompiled header compilation failed for {}; retrying without PCH", sharded.units[u].filename);
@@ -2264,10 +2432,10 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
             compile_shard_indices(dirty_indices, true, true);
 
             if (exit_code == 0) {
-                // Prune stale `.o` files per unit, keeping at most the 4 newest by mtime (never deleting active unit .o).
+                // Prune stale `.o` files per unit, keeping at most the 8 newest by mtime (never deleting active unit .o).
                 std::error_code pec;
                 for (std::size_t u = 0; u < sharded.units.size(); ++u) {
-                    const std::string prefix = std::format("{}__u_{}_", stem, sharded.units[u].id);
+                    const std::string prefix = std::format("u_{}_", sharded.units[u].id);
                     const std::string keep_name = unit_obj_paths[u].filename().string();
                     struct ObjEntry {
                         std::filesystem::path path;
@@ -2283,11 +2451,11 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
                             pec.clear();
                         }
                     }
-                    if (stale.size() > 3) {
+                    if (stale.size() > 8) {
                         std::sort(stale.begin(), stale.end(), [](const ObjEntry& a, const ObjEntry& b) {
                             return a.mtime > b.mtime;
                         });
-                        for (std::size_t s = 3; s < stale.size(); ++s) {
+                        for (std::size_t s = 8; s < stale.size(); ++s) {
                             std::filesystem::remove(stale[s].path, pec);
                         }
                     }
@@ -2308,7 +2476,7 @@ inline void sync_ios_min_flags(BuildPlan& plan) {
             build_link_ldflags(link_cmd);
             int link_rc = 0;
             std::string link_out = bridge::run_command_capture(link_cmd, link_rc);
-            if (link_rc != 0 && !pch_path.empty()) {
+            if (link_rc != 0 && any_pch_used) {
                 if (is_verbose_build()) {
                     std::println(stderr, "note: link failed after PCH compilation; recompiling shards without PCH");
                 }

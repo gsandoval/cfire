@@ -13,102 +13,130 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
         ~PkgGuard() { slot = prev; }
     } pkg_guard(cur_pkg_, st.package_name);
 
-    writeln();
-    if (!st.type_params.empty()) {
-        std::string tparams, targs;
-        for (std::size_t i = 0; i < st.type_params.size(); ++i) {
-            if (i > 0) {
-                tparams += ", ";
-                targs += ", ";
+    const bool emit_meta = (reflect_emit_mode_ == ReflectEmitMode::InlineAll ||
+                            reflect_emit_mode_ == ReflectEmitMode::MetaOnly);
+    const bool emit_decls_only = (reflect_emit_mode_ == ReflectEmitMode::HeaderDeclsOnly);
+    const std::string opt_inline = (reflect_emit_mode_ == ReflectEmitMode::InlineAll) ? "inline " : "";
+
+    if (emit_meta) {
+        writeln();
+        if (!st.type_params.empty()) {
+            std::string tparams, targs;
+            for (std::size_t i = 0; i < st.type_params.size(); ++i) {
+                if (i > 0) {
+                    tparams += ", ";
+                    targs += ", ";
+                }
+                tparams += "typename " + st.type_params[i].name;
+                targs += st.type_params[i].name;
             }
-            tparams += "typename " + st.type_params[i].name;
-            targs += st.type_params[i].name;
+            writeln(std::format("template <{}>", tparams));
+            writeln(std::format("struct cfire::reflect_struct<{}<{}> > {{", st.name, targs));
+        } else {
+            writeln("template <>");
+            writeln(std::format("struct cfire::reflect_struct<{}> {{", st.name));
         }
-        writeln(std::format("template <{}>", tparams));
-        writeln(std::format("struct cfire::reflect_struct<{}<{}> > {{", st.name, targs));
-    } else {
-        writeln("template <>");
-        writeln(std::format("struct cfire::reflect_struct<{}> {{", st.name));
+        ++indent_;
+        writeln(std::format("static constexpr std::string_view name = \"{}\";", st.name));
+        writeln(std::format("static constexpr std::size_t field_count = {};", st.fields.size()));
+        writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_names = {");
+        ++indent_;
+        for (const auto& fld : st.fields) {
+            writeln(std::format("\"{}\",", fld.name));
+        }
+        --indent_;
+        writeln("};");
+        writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_tags = {");
+        ++indent_;
+        for (const auto& fld : st.fields) {
+            writeln(std::format("R\"tag({})tag\",", fld.raw_tag));
+        }
+        --indent_;
+        writeln("};");
+        --indent_;
+        writeln("};");
     }
-    ++indent_;
-    writeln(std::format("static constexpr std::string_view name = \"{}\";", st.name));
-    writeln(std::format("static constexpr std::size_t field_count = {};", st.fields.size()));
-    writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_names = {");
-    ++indent_;
-    for (const auto& fld : st.fields) {
-        writeln(std::format("\"{}\",", fld.name));
+    if (reflect_emit_mode_ == ReflectEmitMode::MetaOnly) {
+        return;
     }
-    --indent_;
-    writeln("};");
-    writeln("static constexpr std::array<std::string_view, " + std::to_string(st.fields.size()) + "> field_tags = {");
-    ++indent_;
-    for (const auto& fld : st.fields) {
-        writeln(std::format("R\"tag({})tag\",", fld.raw_tag));
-    }
-    --indent_;
-    writeln("};");
-    --indent_;
-    writeln("};");
 
     auto tags_it = cf_.struct_tags.find(st.name);
 
-    bool can_emit_arbitrary = st.type_params.empty();
-    for (const auto& fld : st.fields) {
-        if (is_non_value_field_type(fld.type, 0)) {
-            can_emit_arbitrary = false;
-            break;
+    bool can_emit_arbitrary = emit_arbitrary_reflection_ && st.type_params.empty();
+    if (can_emit_arbitrary) {
+        for (const auto& fld : st.fields) {
+            if (is_non_value_field_type(fld.type, 0)) {
+                can_emit_arbitrary = false;
+                break;
+            }
         }
     }
     if (can_emit_arbitrary) {
-        writeln();
-        writeln("template <>");
-        writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", st.name));
-        ++indent_;
-        writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {} {{", st.name));
-        ++indent_;
-        writeln(std::format("{} out{{}};", st.name));
-        for (std::size_t fi = 0; fi < st.fields.size(); ++fi) {
-            std::string fname = sanitize_cpp_ident(st.fields[fi].name);
-            writeln(std::format("out.{} = cfire::testing_detail::Arbitrary<std::decay_t<decltype(out.{})>>::generate(rng, iter + {});",
-                fname, fname, fi));
-            if (tags_it != cf_.struct_tags.end() && fi < tags_it->second.size() && tags_it->second[fi].validation.has_rules) {
-                const auto& v = tags_it->second[fi].validation;
-                const auto& ftype = tags_it->second[fi].field_type;
-                std::string val_expr = ftype.is_optional ? ("(*out." + fname + ")") : ("out." + fname);
-                if (ftype.is_optional) {
-                    writeln(std::format("if (out.{}.has_value()) {{", fname));
-                    ++indent_;
-                }
-                if (v.has_min) {
-                    writeln(std::format("if ({0} < static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.min_raw));
-                }
-                if (v.has_max) {
-                    writeln(std::format("if ({0} > static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.max_raw));
-                }
-                if (!v.oneof.empty()) {
-                    writeln(std::format("{0} = \"{1}\";", val_expr, escape_unescaped_quotes(v.oneof.front())));
-                } else {
-                    std::size_t req_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
-                    if (req_min_len > 0 && ftype.name == "str") {
-                        writeln(std::format("while ({0}.size() < {1}u) {0} += 'a';", val_expr, req_min_len));
-                    } else if (req_min_len > 0 && ftype.is_slice) {
-                        writeln(std::format("while ({0}.size() < {1}u) {0}.emplace_back();", val_expr, req_min_len));
+        if (emit_decls_only) {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", st.name));
+            ++indent_;
+            writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {};", st.name));
+            --indent_;
+            writeln("};");
+        } else {
+            writeln();
+            if (reflect_emit_mode_ == ReflectEmitMode::InlineAll) {
+                writeln("template <>");
+                writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", st.name));
+                ++indent_;
+                writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {} {{", st.name));
+            } else {
+                writeln(std::format("auto cfire::testing_detail::Arbitrary<{}>::generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {} {{", st.name, st.name));
+            }
+            ++indent_;
+            writeln(std::format("{} out{{}};", st.name));
+            for (std::size_t fi = 0; fi < st.fields.size(); ++fi) {
+                std::string fname = sanitize_cpp_ident(st.fields[fi].name);
+                writeln(std::format("out.{} = cfire::testing_detail::Arbitrary<std::decay_t<decltype(out.{})>>::generate(rng, iter + {});",
+                    fname, fname, fi));
+                if (tags_it != cf_.struct_tags.end() && fi < tags_it->second.size() && tags_it->second[fi].validation.has_rules) {
+                    const auto& v = tags_it->second[fi].validation;
+                    const auto& ftype = tags_it->second[fi].field_type;
+                    std::string val_expr = ftype.is_optional ? ("(*out." + fname + ")") : ("out." + fname);
+                    if (ftype.is_optional) {
+                        writeln(std::format("if (out.{}.has_value()) {{", fname));
+                        ++indent_;
                     }
-                    if (v.has_max_len && (ftype.name == "str" || ftype.is_slice)) {
-                        writeln(std::format("if ({0}.size() > {1}u) {0}.resize({1}u);", val_expr, v.max_len));
+                    if (v.has_min) {
+                        writeln(std::format("if ({0} < static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.min_raw));
                     }
-                }
-                if (ftype.is_optional) {
-                    --indent_;
-                    writeln("}");
+                    if (v.has_max) {
+                        writeln(std::format("if ({0} > static_cast<std::decay_t<decltype({0})>>({1})) {0} = static_cast<std::decay_t<decltype({0})>>({1});", val_expr, v.max_raw));
+                    }
+                    if (!v.oneof.empty()) {
+                        writeln(std::format("{0} = \"{1}\";", val_expr, escape_unescaped_quotes(v.oneof.front())));
+                    } else {
+                        std::size_t req_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
+                        if (req_min_len > 0 && ftype.name == "str") {
+                            writeln(std::format("while ({0}.size() < {1}u) {0} += 'a';", val_expr, req_min_len));
+                        } else if (req_min_len > 0 && ftype.is_slice) {
+                            writeln(std::format("while ({0}.size() < {1}u) {0}.emplace_back();", val_expr, req_min_len));
+                        }
+                        if (v.has_max_len && (ftype.name == "str" || ftype.is_slice)) {
+                            writeln(std::format("if ({0}.size() > {1}u) {0}.resize({1}u);", val_expr, v.max_len));
+                        }
+                    }
+                    if (ftype.is_optional) {
+                        --indent_;
+                        writeln("}");
+                    }
                 }
             }
+            writeln("return out;");
+            --indent_;
+            writeln("}");
+            if (reflect_emit_mode_ == ReflectEmitMode::InlineAll) {
+                --indent_;
+                writeln("};");
+            }
         }
-        writeln("return out;");
-        --indent_;
-        writeln("}");
-        --indent_;
-        writeln("};");
     }
 
     if (tags_it == cf_.struct_tags.end()) return;
@@ -125,45 +153,62 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
 
     if (has_cli && used_core_.contains("cli")) {
         writeln();
-        auto emit_cli_defaults = [&]() {
-            for (const auto& t : tags) {
-                if (auto dit = t.custom_tags.find("default"); dit != t.custom_tags.end()) {
-                    std::string fname = sanitize_cpp_ident(t.field_name);
-                    const std::string& dval = dit->second;
-                    if (t.field_type.name == "str") {
-                        writeln(std::format("out.{} = \"{}\";", fname, escape_unescaped_quotes(dval)));
-                    } else if (t.field_type.name == "bool") {
-                        writeln(std::format("out.{} = {};", fname, (dval == "true" || dval == "1") ? "true" : "false"));
-                    } else if (!dval.empty()) {
-                        writeln(std::format("out.{} = static_cast<{}>({});", fname, lower_raw_owning_type(t.field_type), dval));
+        if (emit_decls_only) {
+            writeln("template <>");
+            writeln(std::format("auto cfire::cli::parse<{}>(int argc, char** argv) -> std::expected<{}, cfire::Error>;", st.name, st.name));
+        } else {
+            auto emit_cli_defaults = [&]() {
+                for (const auto& t : tags) {
+                    if (auto dit = t.custom_tags.find("default"); dit != t.custom_tags.end()) {
+                        std::string fname = sanitize_cpp_ident(t.field_name);
+                        const std::string& dval = dit->second;
+                        if (t.field_type.name == "str") {
+                            writeln(std::format("out.{} = \"{}\";", fname, escape_unescaped_quotes(dval)));
+                        } else if (t.field_type.name == "bool") {
+                            writeln(std::format("out.{} = {};", fname, (dval == "true" || dval == "1") ? "true" : "false"));
+                        } else if (!dval.empty()) {
+                            writeln(std::format("out.{} = static_cast<{}>({});", fname, lower_raw_owning_type(t.field_type), dval));
+                        }
                     }
                 }
-            }
-        };
+            };
 
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::cli::parse<{}>(int argc, char** argv) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
-        ++indent_;
-        writeln(std::format("{} out{{}};", st.name));
-        emit_cli_defaults();
-        writeln("cfire::cli::FlagReader reader(argc, argv);");
-        for (const auto& t : tags) {
-            if (!t.cli_long.empty()) {
-                writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::cli::parse<{}>(int argc, char** argv) -> std::expected<{}, cfire::Error> {{", opt_inline, st.name, st.name));
+            ++indent_;
+            writeln(std::format("{} out{{}};", st.name));
+            emit_cli_defaults();
+            writeln("cfire::cli::FlagReader reader(argc, argv);");
+            for (const auto& t : tags) {
+                if (!t.cli_long.empty()) {
+                    writeln(std::format("reader.bind(\"{}\", \"{}\", out.{});", t.cli_long, t.cli_short, sanitize_cpp_ident(t.field_name)));
+                }
             }
+            writeln("if (reader.has_errors()) return std::unexpected(cfire::make_error(cfire::cli::join_errors(reader.errors())));");
+            writeln("return out;");
+            --indent_;
+            writeln("}");
         }
-        writeln("if (reader.has_errors()) return std::unexpected(cfire::make_error(cfire::cli::join_errors(reader.errors())));");
-        writeln("return out;");
-        --indent_;
-        writeln("}");
     }
 
     const bool can_emit_json = json_support::can_emit_json_struct(cf_, st);
+    const bool json_needed = !json_needed_types_.has_value() || json_needed_types_->contains(st.name);
 
-    if (can_emit_json && used_core_.contains("json")) {
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", st.name, st.name));
+    if (can_emit_json && json_needed && used_core_.contains("json")) {
+        if (emit_decls_only) {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error>;", st.name, st.name));
+            writeln();
+            writeln("template <>");
+            writeln(std::format("auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string;", st.name, st.name));
+            writeln();
+            writeln("template <>");
+            writeln(std::format("auto cfire::json::schema_struct<{}>() -> std::string;", st.name));
+        } else {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::json::parse_struct<{}>(simdjson::ondemand::object obj) -> std::expected<{}, cfire::Error> {{", opt_inline, st.name, st.name));
         ++indent_;
         writeln("(void)obj;");
         writeln(std::format("{} out{{}};", st.name));
@@ -284,9 +329,9 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
         --indent_;
         writeln("}");
 
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", st.name, st.name));
+            writeln();
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", opt_inline, st.name, st.name));
         ++indent_;
         writeln("(void)val;");
         writeln("std::string out = \"{\";");
@@ -314,167 +359,210 @@ CFIRE_CG_INLINE void Emitter::emit_struct_reflection(const StructDecl& st) {
         --indent_;
         writeln("}");
 
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::json::schema_struct<{}>() -> std::string {{", st.name));
-        ++indent_;
-        writeln("std::string props = \"{\";");
-        writeln("std::string req = \"[\";");
-        bool first_p = true;
-        bool first_r = true;
-        for (const auto& t : tags) {
-            std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
-            if (jkey.empty()) continue;
-            std::string p_prefix = first_p ? "" : ",";
-            first_p = false;
-            std::string f_cpp = lower_raw_owning_type(t.field_type);
-            std::string desc_str;
-            if (auto dit = t.custom_tags.find("desc"); dit != t.custom_tags.end()) {
-                desc_str = dit->second;
-            }
-            std::string extra_schema;
-            if (t.validation.has_rules) {
-                const auto& v = t.validation;
-                auto append_kv = [&](std::string_view kv) {
-                    if (!extra_schema.empty()) extra_schema += ",";
-                    extra_schema += kv;
-                };
-                if (v.has_min) append_kv(std::format("\"minimum\":{}", v.min_raw));
-                if (v.has_max) append_kv(std::format("\"maximum\":{}", v.max_raw));
-                std::size_t eff_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
-                if (eff_min_len > 0) {
-                    append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "minItems" : "minLength", eff_min_len));
+            writeln();
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::json::schema_struct<{}>() -> std::string {{", opt_inline, st.name));
+            ++indent_;
+            writeln("std::string props = \"{\";");
+            writeln("std::string req = \"[\";");
+            bool first_p = true;
+            bool first_r = true;
+            for (const auto& t : tags) {
+                std::string jkey = (t.json_key == "-") ? "" : (!t.json_key.empty() ? t.json_key : t.field_name);
+                if (jkey.empty()) continue;
+                std::string p_prefix = first_p ? "" : ",";
+                first_p = false;
+                std::string f_cpp = lower_raw_owning_type(t.field_type);
+                std::string desc_str;
+                if (auto dit = t.custom_tags.find("desc"); dit != t.custom_tags.end()) {
+                    desc_str = dit->second;
                 }
-                if (v.has_max_len) {
-                    append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "maxItems" : "maxLength", v.max_len));
-                }
-                if (!v.oneof.empty()) {
-                    std::string enum_arr = "\"enum\":[";
-                    for (std::size_t oi = 0; oi < v.oneof.size(); ++oi) {
-                        if (oi > 0) enum_arr += ",";
-                        enum_arr += std::format("\"{}\"", escape_unescaped_quotes(v.oneof[oi]));
+                std::string extra_schema;
+                if (t.validation.has_rules) {
+                    const auto& v = t.validation;
+                    auto append_kv = [&](std::string_view kv) {
+                        if (!extra_schema.empty()) extra_schema += ",";
+                        extra_schema += kv;
+                    };
+                    if (v.has_min) append_kv(std::format("\"minimum\":{}", v.min_raw));
+                    if (v.has_max) append_kv(std::format("\"maximum\":{}", v.max_raw));
+                    std::size_t eff_min_len = v.has_min_len ? v.min_len : (v.non_empty ? 1u : 0u);
+                    if (eff_min_len > 0) {
+                        append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "minItems" : "minLength", eff_min_len));
                     }
-                    enum_arr += "]";
-                    append_kv(enum_arr);
+                    if (v.has_max_len) {
+                        append_kv(std::format("\"{}\":{}", t.field_type.is_slice ? "maxItems" : "maxLength", v.max_len));
+                    }
+                    if (!v.oneof.empty()) {
+                        std::string enum_arr = "\"enum\":[";
+                        for (std::size_t oi = 0; oi < v.oneof.size(); ++oi) {
+                            if (oi > 0) enum_arr += ",";
+                            enum_arr += std::format("\"{}\"", escape_unescaped_quotes(v.oneof[oi]));
+                        }
+                        enum_arr += "]";
+                        append_kv(enum_arr);
+                    }
+                }
+                if (!desc_str.empty() || !extra_schema.empty()) {
+                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_schema_meta(cfire::json::schema<{}>(), R\"desc({})desc\", R\"meta({})meta\"));",
+                        p_prefix, jkey, f_cpp, desc_str, extra_schema));
+                } else {
+                    writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::schema<{}>());",
+                        p_prefix, jkey, f_cpp));
+                }
+                if (!t.field_type.is_optional) {
+                    std::string r_prefix = first_r ? "" : ",";
+                    first_r = false;
+                    writeln(std::format("req += \"{}\\\"{}\\\"\";", r_prefix, jkey));
                 }
             }
-            if (!desc_str.empty() || !extra_schema.empty()) {
-                writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::with_schema_meta(cfire::json::schema<{}>(), R\"desc({})desc\", R\"meta({})meta\"));",
-                    p_prefix, jkey, f_cpp, desc_str, extra_schema));
-            } else {
-                writeln(std::format("props += std::format(\"{}\\\"{}\\\":{{}}\", cfire::json::schema<{}>());",
-                    p_prefix, jkey, f_cpp));
-            }
-            if (!t.field_type.is_optional) {
-                std::string r_prefix = first_r ? "" : ",";
-                first_r = false;
-                writeln(std::format("req += \"{}\\\"{}\\\"\";", r_prefix, jkey));
-            }
+            writeln("props += \"}\";");
+            writeln("req += \"]\";");
+            writeln("return std::format(R\"({{\"type\":\"object\",\"properties\":{},\"required\":{},\"additionalProperties\":false}})\", props, req);");
+            --indent_;
+            writeln("}");
         }
-        writeln("props += \"}\";");
-        writeln("req += \"]\";");
-        writeln("return std::format(R\"({{\"type\":\"object\",\"properties\":{},\"required\":{},\"additionalProperties\":false}})\", props, req);");
-        --indent_;
-        writeln("}");
     }
 
     if (has_db && used_core_.contains("sqlite")) {
         writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::sqlite::map_row<{}>(sqlite3_stmt* stmt) -> {} {{", st.name, st.name));
-        ++indent_;
-        writeln(std::format("return {}{{", st.name));
-        ++indent_;
-        int col_idx = 0;
-        for (const auto& t : tags) {
-            if (!t.db_column.empty()) {
-                std::string col_fn = "col_str";
-                if (t.field_type.is_slice && t.field_type.elem_type) {
-                    if (t.field_type.elem_type->name == "f32") col_fn = "col_f32_vec";
-                    else if (t.field_type.elem_type->name == "byte") col_fn = "col_bytes";
-                    else if (t.field_type.elem_type->name == "u8") col_fn = "col_u8_vec";
-                } else if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
-                else if (t.field_type.name == "i64" || t.field_type.name == "isize") col_fn = "col_i64";
-                else if (t.field_type.name == "i32") col_fn = "col_i32";
-                else if (t.field_type.name == "f64") col_fn = "col_f64";
-                else if (t.field_type.name == "f32") col_fn = "col_f32";
-                else if (t.field_type.name == "bool") col_fn = "col_bool";
-                writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", sanitize_cpp_ident(t.field_name), col_fn, col_idx++));
+        if (emit_decls_only) {
+            writeln("template <>");
+            writeln(std::format("auto cfire::sqlite::map_row<{}>(sqlite3_stmt* stmt) -> {};", st.name, st.name));
+        } else {
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::sqlite::map_row<{}>(sqlite3_stmt* stmt) -> {} {{", opt_inline, st.name, st.name));
+            ++indent_;
+            writeln(std::format("return {}{{", st.name));
+            ++indent_;
+            int col_idx = 0;
+            for (const auto& t : tags) {
+                if (!t.db_column.empty()) {
+                    std::string col_fn = "col_str";
+                    if (t.field_type.is_slice && t.field_type.elem_type) {
+                        if (t.field_type.elem_type->name == "f32") col_fn = "col_f32_vec";
+                        else if (t.field_type.elem_type->name == "byte") col_fn = "col_bytes";
+                        else if (t.field_type.elem_type->name == "u8") col_fn = "col_u8_vec";
+                    } else if (t.field_type.name == "u64" || t.field_type.name == "usize") col_fn = "col_u64";
+                    else if (t.field_type.name == "i64" || t.field_type.name == "isize") col_fn = "col_i64";
+                    else if (t.field_type.name == "i32") col_fn = "col_i32";
+                    else if (t.field_type.name == "f64") col_fn = "col_f64";
+                    else if (t.field_type.name == "f32") col_fn = "col_f32";
+                    else if (t.field_type.name == "bool") col_fn = "col_bool";
+                    writeln(std::format(".{} = cfire::sqlite::{}(stmt, {}),", sanitize_cpp_ident(t.field_name), col_fn, col_idx++));
+                }
             }
+            --indent_;
+            writeln("};");
+            --indent_;
+            writeln("}");
         }
-        --indent_;
-        writeln("};");
-        --indent_;
-        writeln("}");
     }
 }
 
 CFIRE_CG_INLINE void Emitter::emit_enum_reflection(const EnumDecl& en) {
-    writeln();
-    if (!en.type_params.empty()) {
-        std::string tparams, targs;
-        for (std::size_t i = 0; i < en.type_params.size(); ++i) {
-            if (i > 0) {
-                tparams += ", ";
-                targs += ", ";
-            }
-            tparams += "typename " + en.type_params[i].name;
-            targs += en.type_params[i].name;
-        }
-        writeln(std::format("template <{}>", tparams));
-        writeln(std::format("struct cfire::reflect_enum<{}<{}> > {{", en.name, targs));
-    } else {
-        writeln("template <>");
-        writeln(std::format("struct cfire::reflect_enum<{}> {{", en.name));
-    }
-    ++indent_;
-    writeln("static constexpr bool is_enum = true;");
-    writeln(std::format("static constexpr std::string_view name = \"{}\";", en.name));
-    writeln(std::format("static constexpr std::size_t variant_count = {};", en.variants.size()));
-    writeln(std::format("static constexpr std::array<std::string_view, {}> variant_names = {{", en.variants.size()));
-    ++indent_;
-    for (const auto& v : en.variants) {
-        writeln(std::format("\"{}\",", v.name));
-    }
-    --indent_;
-    writeln("};");
-    writeln(std::format("static auto from_string(std::string_view s) -> std::optional<{}> {{", en.name));
-    writeln(std::format("    return {}::from_string(s);", en.name));
-    writeln("}");
-    --indent_;
-    writeln("};");
+    const bool emit_meta = (reflect_emit_mode_ == ReflectEmitMode::InlineAll ||
+                            reflect_emit_mode_ == ReflectEmitMode::MetaOnly);
+    const bool emit_decls_only = (reflect_emit_mode_ == ReflectEmitMode::HeaderDeclsOnly);
+    const std::string opt_inline = (reflect_emit_mode_ == ReflectEmitMode::InlineAll) ? "inline " : "";
 
-    bool is_plain = en.type_params.empty() && std::all_of(en.variants.begin(), en.variants.end(), [](const auto& v) { return v.payload_types.empty(); });
-    if (is_plain && !en.variants.empty()) {
+    if (emit_meta) {
         writeln();
-        writeln("template <>");
-        writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", en.name));
+        if (!en.type_params.empty()) {
+            std::string tparams, targs;
+            for (std::size_t i = 0; i < en.type_params.size(); ++i) {
+                if (i > 0) {
+                    tparams += ", ";
+                    targs += ", ";
+                }
+                tparams += "typename " + en.type_params[i].name;
+                targs += en.type_params[i].name;
+            }
+            writeln(std::format("template <{}>", tparams));
+            writeln(std::format("struct cfire::reflect_enum<{}<{}> > {{", en.name, targs));
+        } else {
+            writeln("template <>");
+            writeln(std::format("struct cfire::reflect_enum<{}> {{", en.name));
+        }
         ++indent_;
-        writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng&, std::size_t iter) -> {} {{", en.name));
-        writeln(std::format("    auto opt = {}::from_i32(static_cast<std::int32_t>(iter % {}));", en.name, en.variants.size()));
-        writeln(std::format("    return opt ? *opt : {}::{}();", en.name, en.variants[0].name));
+        writeln("static constexpr bool is_enum = true;");
+        writeln(std::format("static constexpr std::string_view name = \"{}\";", en.name));
+        writeln(std::format("static constexpr std::size_t variant_count = {};", en.variants.size()));
+        writeln(std::format("static constexpr std::array<std::string_view, {}> variant_names = {{", en.variants.size()));
+        ++indent_;
+        for (const auto& v : en.variants) {
+            writeln(std::format("\"{}\",", v.name));
+        }
+        --indent_;
+        writeln("};");
+        writeln(std::format("static auto from_string(std::string_view s) -> std::optional<{}> {{", en.name));
+        writeln(std::format("    return {}::from_string(s);", en.name));
         writeln("}");
         --indent_;
         writeln("};");
     }
+    if (reflect_emit_mode_ == ReflectEmitMode::MetaOnly) {
+        return;
+    }
 
-    if (en.type_params.empty() && used_core_.contains("json")) {
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", en.name, en.name));
-        writeln("    return std::format(\"\\\"{}\\\"\", val.to_string());");
-        writeln("}");
-
-        writeln();
-        writeln("template <>");
-        writeln(std::format("inline auto cfire::json::schema_struct<{}>() -> std::string {{", en.name));
-        std::string enum_list;
-        for (std::size_t i = 0; i < en.variants.size(); ++i) {
-            if (i > 0) enum_list += ",";
-            enum_list += std::format("\"{}\"", en.variants[i].name);
+    bool is_plain = emit_arbitrary_reflection_ && en.type_params.empty() &&
+        std::all_of(en.variants.begin(), en.variants.end(), [](const auto& v) { return v.payload_types.empty(); });
+    if (is_plain && !en.variants.empty()) {
+        if (emit_decls_only) {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", en.name));
+            ++indent_;
+            writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng& rng, std::size_t iter) -> {};", en.name));
+            --indent_;
+            writeln("};");
+        } else {
+            writeln();
+            if (reflect_emit_mode_ == ReflectEmitMode::InlineAll) {
+                writeln("template <>");
+                writeln(std::format("struct cfire::testing_detail::Arbitrary<{}> {{", en.name));
+                ++indent_;
+                writeln(std::format("static auto generate(cfire::testing_detail::FuzzRng&, std::size_t iter) -> {} {{", en.name));
+            } else {
+                writeln(std::format("auto cfire::testing_detail::Arbitrary<{}>::generate(cfire::testing_detail::FuzzRng&, std::size_t iter) -> {} {{", en.name, en.name));
+            }
+            writeln(std::format("    auto opt = {}::from_i32(static_cast<std::int32_t>(iter % {}));", en.name, en.variants.size()));
+            writeln(std::format("    return opt ? *opt : {}::{}();", en.name, en.variants[0].name));
+            writeln("}");
+            if (reflect_emit_mode_ == ReflectEmitMode::InlineAll) {
+                --indent_;
+                writeln("};");
+            }
         }
-        writeln(std::format("    return R\"({{\"type\":\"string\",\"enum\":[{}]}})\";", enum_list));
-        writeln("}");
+    }
+
+    const bool json_needed = !json_needed_types_.has_value() || json_needed_types_->contains(en.name);
+    if (en.type_params.empty() && json_needed && used_core_.contains("json")) {
+        if (emit_decls_only) {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string;", en.name, en.name));
+            writeln();
+            writeln("template <>");
+            writeln(std::format("auto cfire::json::schema_struct<{}>() -> std::string;", en.name));
+        } else {
+            writeln();
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::json::stringify_struct<{}>(const {}& val) -> std::string {{", opt_inline, en.name, en.name));
+            writeln("    return std::format(\"\\\"{}\\\"\", val.to_string());");
+            writeln("}");
+
+            writeln();
+            writeln("template <>");
+            writeln(std::format("{}auto cfire::json::schema_struct<{}>() -> std::string {{", opt_inline, en.name));
+            std::string enum_list;
+            for (std::size_t i = 0; i < en.variants.size(); ++i) {
+                if (i > 0) enum_list += ",";
+                enum_list += std::format("\"{}\"", en.variants[i].name);
+            }
+            writeln(std::format("    return R\"({{\"type\":\"string\",\"enum\":[{}]}})\";", enum_list));
+            writeln("}");
+        }
     }
 }
 

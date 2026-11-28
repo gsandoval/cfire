@@ -918,6 +918,8 @@ struct FileAST {
     std::shared_ptr<AstArena> arena = nullptr;
     std::vector<std::shared_ptr<AstArena>> child_arenas{};
     std::unordered_map<std::string, std::vector<std::string>> pkg_imports{};
+    std::unordered_map<std::string, std::vector<std::string>> pkg_nonlocal_imports{};
+    std::unordered_map<std::string, std::vector<std::string>> pkg_cpp_imports{};
     std::vector<std::string> resolved_source_files{};
     std::vector<std::string> resolved_build_cfs{};
     std::vector<ImportDecl> file_imports{};
